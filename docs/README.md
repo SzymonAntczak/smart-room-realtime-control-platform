@@ -9,6 +9,7 @@ goals, but they are not binding system contracts.
 
 ## Architecture
 
+- [Architecture README](architecture/README.md)
 - [System overview](architecture/system-overview.md)
 - [Control loop](architecture/control-loop.md)
 - [Devices](architecture/devices.md)
