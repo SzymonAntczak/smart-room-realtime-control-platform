@@ -1,0 +1,36 @@
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #bdc9d1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #24323a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7a8790;
+}
+
+.mock .dot {
+  background: #5d6b75;
+}
+
+.connected .dot {
+  background: #217a45;
+}
+
+.connecting .dot {
+  background: #9a6400;
+}
+
+.disconnected .dot {
+  background: #b42318;
+}

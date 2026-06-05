@@ -1,0 +1,8 @@
+{
+  "name": "smart-room-realtime-control-platform",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "test:frontend": "npm --prefix frontend run test"
+  }
+}

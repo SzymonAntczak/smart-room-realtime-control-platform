@@ -1,0 +1,66 @@
+.tile {
+  min-height: 186px;
+  padding: 16px;
+  border: 1px solid #d0d9df;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.header p,
+.lastSeen {
+  margin: 4px 0 0;
+  color: #5c6a73;
+  font-size: 13px;
+}
+
+.stateList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.stateList div {
+  padding: 10px;
+  border-radius: 6px;
+  background: #f3f6f8;
+}
+
+.stateList dt {
+  color: #5b6972;
+  font-size: 12px;
+}
+
+.stateList dd {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.requested {
+  margin-top: 12px;
+  padding: 8px;
+  border-left: 3px solid #9a6400;
+  background: #fff7e6;
+  color: #684000;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.warning {
+  margin: 12px 0 0;
+  color: #7a4b00;
+  font-size: 13px;
+}

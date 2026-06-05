@@ -1,0 +1,45 @@
+.feed {
+  padding: 16px;
+  border: 1px solid #cbd5dc;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.feed h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+
+.feed ol {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed li {
+  padding: 12px;
+  border-radius: 8px;
+  background: #f3f6f8;
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #52616a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.feed p {
+  margin: 8px 0;
+  color: #1c2930;
+  font-size: 14px;
+}
+
+.source {
+  color: #5e6c75;
+  font-size: 12px;
+}
