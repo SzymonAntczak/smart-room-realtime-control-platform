@@ -3,15 +3,21 @@
 ## Overview
 
 ```text
-Device or simulator
-  -> event
+Device, simulator or external source
+  -> device-native message
+  -> backend adapter
+  -> platform event
   -> event processor
   -> derived room state
   -> realtime UI
   -> user command
   -> command dispatch
-  -> device or simulator
-  -> confirmation event
+  -> backend adapter
+  -> device-native command
+  -> device, simulator or external source
+  -> device-native confirmation or state report
+  -> backend adapter
+  -> platform confirmation event or state report
   -> updated room state
 ```
 
@@ -19,11 +25,12 @@ The platform is event-driven, but the user experience is command-driven. The use
 
 ## Read Path
 
-1. A device or simulator emits an event.
-2. The event processor validates the event.
-3. The processor updates derived room state.
-4. The frontend receives the updated state in realtime.
-5. The event is stored for history and debugging.
+1. A device, simulator or external source emits a device-native message.
+2. A backend adapter translates the message into a platform event.
+3. The event processor validates the event.
+4. The processor updates derived room state.
+5. The frontend receives the updated state in realtime.
+6. The event is stored for history and debugging.
 
 ## Command Path
 
@@ -33,8 +40,11 @@ The platform is event-driven, but the user experience is command-driven. The use
 3. The backend accepts or rejects the command request.
 4. After acceptance, the backend records the requested state, marks the command
    as `pending` and dispatches the command.
-5. The device or simulator eventually reports the observed state.
-6. The UI updates the confirmed state when a matching confirmation arrives.
+5. A backend adapter translates the platform command into a device-native
+   command for the simulator or hardware source.
+6. The device or simulator eventually reports the observed state.
+7. The backend adapter translates the report into a platform event.
+8. The UI updates the confirmed state when a matching confirmation arrives.
 
 For the first implementation, a device can have only one pending command at a
 time. A new command for a device with an active pending command is rejected as a

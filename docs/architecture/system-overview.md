@@ -20,7 +20,7 @@ The architecture is organized around the main domain concepts, not around implem
 | --- | --- |
 | Room state | Current derived view of devices, telemetry, health and pending commands. |
 | Devices | Report observable state, receive commands and expose connection health. |
-| Events | Facts emitted by devices, simulator, backend or user-facing workflows. |
+| Events | Facts emitted by backend adapters, backend workflows or user-facing workflows. |
 | Commands | User or automation requests that may later succeed, fail or time out. |
 | Telemetry | Time-series readings and historical facts used for debugging and trends. |
 | Realtime UI | Human-facing projection of state, command progress and history. |
@@ -58,13 +58,23 @@ of understandable devices.
 
 ## Main Components
 
+For Stage 1, these components are architectural roles rather than separate
+production services. They should still be separated in the repository:
+`frontend` for the realtime UI, `backend` for the realtime API, event
+processing, command handling and in-memory storage, `simulator` for simulated
+devices and scenarios, and `shared` for platform contracts and adapter-facing
+message types used across project boundaries.
+Backend-owned adapters translate external device sources, including the
+simulator, into platform events and commands.
+
 ### Event Simulator
 
 Produces realistic device telemetry and state changes before real hardware is available.
 
 Expected responsibilities:
 
-- emit device readings and state reports
+- emit simulator-native device readings and state reports
+- consume simulator-native commands for simulated controllable devices
 - simulate delays, missed messages and offline periods
 - provide repeatable scenarios for testing the UI and event processor
 
@@ -93,7 +103,10 @@ Expected responsibilities:
 
 ### Telemetry Storage
 
-Persists events and derived telemetry used for history, debugging and trend analysis.
+Stores events and derived telemetry used for history, debugging and trend analysis.
+
+This is a logical storage responsibility. In Stage 1, it is backend-owned
+in-memory storage rather than durable persistence.
 
 Expected responsibilities:
 
@@ -107,15 +120,41 @@ currently believes. The first implementation does not need full event sourcing,
 but it should keep enough event history to audit commands and debug state
 changes.
 
-### Hardware Adapter
+Stage 1 storage should still preserve recent accepted events and derived state
+long enough for the realtime UI and local demo to explain what happened.
 
-Introduced in later stages to connect real devices without changing the core event model.
+### Realtime API / BFF Boundary
+
+Provides the frontend with UI-oriented access to the local backend.
 
 Expected responsibilities:
 
-- translate device-specific protocols into platform events
-- send platform commands to physical devices
+- provide an initial room snapshot when the frontend connects
+- stream state, command and event updates to the frontend over WebSocket in
+  Stage 1
+- accept command requests from the frontend
+- expose UI-friendly derived views without making the frontend interpret raw
+  event streams by itself
+
+This boundary is BFF-like because it is shaped for the realtime frontend. In the
+first implementation it belongs to the local Node.js backend together with the
+event processor and in-memory storage.
+
+### Device Adapters
+
+Translate external device protocols into the platform event and command model.
+
+Expected responsibilities:
+
+- translate simulator-native messages into platform events in Stage 1
+- translate platform commands into simulator-native commands in Stage 1
+- translate hardware-specific protocols into platform events in later stages
+- send platform commands to physical devices in later stages
 - report acknowledgements, failures and connection health
+
+Adapters belong to the backend side of the boundary. The simulator and later
+hardware devices should remain device-like sources of observations and receivers
+of device-specific commands.
 
 ## Local-First Assumption
 

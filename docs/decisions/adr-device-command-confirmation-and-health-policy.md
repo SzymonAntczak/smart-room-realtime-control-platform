@@ -43,8 +43,10 @@ devices may override these values when there is a specific reason, such as
 network quality, battery behavior or firmware limitations.
 
 A `degraded` device accepts commands only when its command policy allows it. The
-backend or simulator derives this policy from the degradation reason and exposes
-it with the device state.
+backend derives platform command availability from the degradation reason and
+exposes it with the device state. The simulator may emit simulated degradation
+facts and may reject simulated commands as device behavior, but it does not own
+UI-facing command availability or command lifecycle interpretation.
 
 Default command availability is derived from health:
 

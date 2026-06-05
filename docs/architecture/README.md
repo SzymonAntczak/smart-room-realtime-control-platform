@@ -48,6 +48,7 @@ behavior:
 
 - [ADR: Local-first before cloud](../decisions/adr-local-first-before-cloud.md)
 - [ADR: Event simulator before real devices](../decisions/adr-event-simulator-before-real-devices.md)
+- [ADR: Stage 1 local runtime and repository boundaries](../decisions/adr-stage-1-local-runtime-and-repository-boundaries.md)
 - [ADR: Command correlation, confirmation and concurrency](../decisions/adr-command-correlation-confirmation-and-concurrency.md)
 - [ADR: Device command confirmation and health policy](../decisions/adr-device-command-confirmation-and-health-policy.md)
 - [Trade-offs and decision log](../decisions/tradeoffs.md)

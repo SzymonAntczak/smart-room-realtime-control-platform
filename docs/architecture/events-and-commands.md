@@ -23,7 +23,7 @@ Every stored event should include a stable envelope.
   "eventType": "device.state.reported",
   "version": 1,
   "occurredAt": "2026-05-21T07:10:01Z",
-  "source": "simulator",
+  "source": "simulator-adapter",
   "deviceId": "led-main",
   "payload": {}
 }
@@ -35,7 +35,8 @@ Required envelope fields:
 - `eventType`: stable event name
 - `version`: contract version
 - `occurredAt`: time when the fact happened
-- `source`: producer name, for example `simulator`, `hardware-adapter` or `backend`
+- `source`: producer name, for example `simulator-adapter`, `hardware-adapter`
+  or `backend`
 - `payload`: event-specific data
 
 Optional envelope fields:
@@ -56,7 +57,7 @@ rules.
 | `device.health.changed` | Device health changed between `online`, `offline`, `stale` or `degraded`. |
 | `telemetry.reading.recorded` | Sensor reading was recorded. |
 | `command.requested` | User or automation request was accepted as a command. |
-| `command.dispatched` | Backend sent a command to a device or simulator. |
+| `command.dispatched` | Backend dispatched a platform command to an adapter. |
 | `command.confirmed` | Command completion was confirmed. |
 | `command.failed` | Command failure was detected explicitly. |
 | `command.timed_out` | Command did not complete within the allowed time. |
@@ -113,7 +114,7 @@ The first implementation should keep payloads small and explicit.
 ```json
 {
   "commandType": "set.power",
-  "target": "simulator"
+  "target": "simulator-adapter"
 }
 ```
 
