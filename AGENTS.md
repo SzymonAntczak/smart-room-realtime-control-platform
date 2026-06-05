@@ -46,6 +46,16 @@ rules aligned with the project documentation.
   scenarios and user-visible reliability over superficial coverage.
 - Avoid broad refactors unless they directly support the requested change.
 
+## Repository Structure
+
+- Prefer domain-driven folder architecture over type-driven folders.
+- Group code by product/system domain and behavior, not by technical layer alone.
+- Avoid broad folders like `components`, `services`, `utils` or `types` when a
+  domain folder would make ownership clearer.
+- Shared code should become shared only after there is real reuse.
+- Keep event, command, simulator and state-derivation code close to the domain it
+  describes.
+
 ## Verification
 
 Before considering work done, check the change against:
