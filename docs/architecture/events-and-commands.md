@@ -19,13 +19,13 @@ Every stored event should include a stable envelope.
 
 ```json
 {
-  "eventId": "evt-123",
-  "eventType": "device.state.reported",
-  "version": 1,
-  "occurredAt": "2026-05-21T07:10:01Z",
-  "source": "simulator-adapter",
-  "deviceId": "led-main",
-  "payload": {}
+    "eventId": "evt-123",
+    "eventType": "device.state.reported",
+    "version": 1,
+    "occurredAt": "2026-05-21T07:10:01Z",
+    "source": "simulator-adapter",
+    "deviceId": "led-main",
+    "payload": {}
 }
 ```
 
@@ -51,16 +51,16 @@ rules.
 
 ## Initial Event Types
 
-| Event type | Purpose |
-| --- | --- |
-| `device.state.reported` | Device reported its current observable state. |
-| `device.health.changed` | Device health changed between `online`, `offline`, `stale` or `degraded`. |
-| `telemetry.reading.recorded` | Sensor reading was recorded. |
-| `command.requested` | User or automation request was accepted as a command. |
-| `command.dispatched` | Backend dispatched a platform command to an adapter. |
-| `command.confirmed` | Command completion was confirmed. |
-| `command.failed` | Command failure was detected explicitly. |
-| `command.timed_out` | Command did not complete within the allowed time. |
+| Event type                   | Purpose                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| `device.state.reported`      | Device reported its current observable state.                             |
+| `device.health.changed`      | Device health changed between `online`, `offline`, `stale` or `degraded`. |
+| `telemetry.reading.recorded` | Sensor reading was recorded.                                              |
+| `command.requested`          | User or automation request was accepted as a command.                     |
+| `command.dispatched`         | Backend dispatched a platform command to an adapter.                      |
+| `command.confirmed`          | Command completion was confirmed.                                         |
+| `command.failed`             | Command failure was detected explicitly.                                  |
+| `command.timed_out`          | Command did not complete within the allowed time.                         |
 
 ## Initial Payload Shapes
 
@@ -70,10 +70,10 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-  "reportedState": {
-    "power": "on"
-  },
-  "reportedAt": "2026-05-21T07:10:01Z"
+    "reportedState": {
+        "power": "on"
+    },
+    "reportedAt": "2026-05-21T07:10:01Z"
 }
 ```
 
@@ -81,9 +81,9 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-  "previousHealth": "stale",
-  "health": "offline",
-  "reason": "offline_threshold_exceeded"
+    "previousHealth": "stale",
+    "health": "offline",
+    "reason": "offline_threshold_exceeded"
 }
 ```
 
@@ -91,9 +91,9 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-  "metric": "temperature",
-  "value": 22.4,
-  "unit": "celsius"
+    "metric": "temperature",
+    "value": 22.4,
+    "unit": "celsius"
 }
 ```
 
@@ -101,11 +101,11 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-  "commandType": "set.power",
-  "requestedState": {
-    "power": "on"
-  },
-  "requestedBy": "user"
+    "commandType": "set.power",
+    "requestedState": {
+        "power": "on"
+    },
+    "requestedBy": "user"
 }
 ```
 
@@ -113,8 +113,8 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-  "commandType": "set.power",
-  "target": "simulator-adapter"
+    "commandType": "set.power",
+    "target": "simulator-adapter"
 }
 ```
 
@@ -122,10 +122,10 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-  "confirmationSource": "device.state.reported",
-  "matchedState": {
-    "power": "on"
-  }
+    "confirmationSource": "device.state.reported",
+    "matchedState": {
+        "power": "on"
+    }
 }
 ```
 
@@ -133,8 +133,8 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-  "reason": "command_already_pending",
-  "message": "Device already has an active pending command."
+    "reason": "command_already_pending",
+    "message": "Device already has an active pending command."
 }
 ```
 
@@ -142,8 +142,8 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-  "timeoutMs": 5000,
-  "reason": "confirmation_not_received"
+    "timeoutMs": 5000,
+    "reason": "confirmation_not_received"
 }
 ```
 
@@ -154,14 +154,14 @@ device has changed.
 
 ```json
 {
-  "commandId": "cmd-123",
-  "deviceId": "led-main",
-  "commandType": "set.power",
-  "requestedState": {
-    "power": "on"
-  },
-  "requestedBy": "user",
-  "requestedAt": "2026-05-21T07:10:00Z"
+    "commandId": "cmd-123",
+    "deviceId": "led-main",
+    "commandType": "set.power",
+    "requestedState": {
+        "power": "on"
+    },
+    "requestedBy": "user",
+    "requestedAt": "2026-05-21T07:10:00Z"
 }
 ```
 

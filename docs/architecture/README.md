@@ -22,15 +22,15 @@ behavior:
 
 ## Document Map
 
-| Document | Use it for |
-| --- | --- |
-| [System overview](system-overview.md) | Domain boundaries, MVP scope, main components and the local-first assumption. |
-| [Control loop](control-loop.md) | Read path, command path, requested vs confirmed state and timing rules. |
-| [Devices](devices.md) | Device health, command states, state fields, freshness and command availability. |
-| [Events and commands](events-and-commands.md) | Event envelope, event types, command lifecycle events and validation rules. |
-| [Reliability and testing](reliability-and-testing.md) | Failure modes, observability, recovery behavior and test strategy. |
-| [Architecture examples](examples.md) | Concrete flows for command confirmation, timeout, stale/offline recovery and projection behavior. |
-| [System context](system-context.md) | High-level component context diagram. |
+| Document                                              | Use it for                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [System overview](system-overview.md)                 | Domain boundaries, MVP scope, main components and the local-first assumption.                     |
+| [Control loop](control-loop.md)                       | Read path, command path, requested vs confirmed state and timing rules.                           |
+| [Devices](devices.md)                                 | Device health, command states, state fields, freshness and command availability.                  |
+| [Events and commands](events-and-commands.md)         | Event envelope, event types, command lifecycle events and validation rules.                       |
+| [Reliability and testing](reliability-and-testing.md) | Failure modes, observability, recovery behavior and test strategy.                                |
+| [Architecture examples](examples.md)                  | Concrete flows for command confirmation, timeout, stale/offline recovery and projection behavior. |
+| [System context](system-context.md)                   | High-level component context diagram.                                                             |
 
 ## Rules To Preserve
 

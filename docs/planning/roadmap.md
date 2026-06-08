@@ -45,16 +45,16 @@ role each device plays in the control loop.
 
 ## Roadmap Overview
 
-| Stage | Focus | Intended outcome |
-| --- | --- | --- |
-| Stage 0 | Project foundation | Clear direction, initial architecture and documentation structure |
-| Stage 1 | Simulated realtime system | A working realtime UI driven by simulated events |
+| Stage   | Focus                     | Intended outcome                                                         |
+| ------- | ------------------------- | ------------------------------------------------------------------------ |
+| Stage 0 | Project foundation        | Clear direction, initial architecture and documentation structure        |
+| Stage 1 | Simulated realtime system | A working realtime UI driven by simulated events                         |
 | Stage 2 | Reliable control behavior | Clear handling of requested, pending, confirmed, failed and stale states |
-| Stage 3 | Minimal real hardware | One real physical loop connected to the same system model |
-| Stage 4 | Telemetry and history | Useful event history, trends and operational visibility |
-| Stage 5 | Automation UX | Simple explainable rules and scenes |
-| Stage 6 | Testing and resilience | Repeatable failure scenarios and confidence in behavior |
-| Stage 7 | Portfolio packaging | Demo, case study and project narrative |
+| Stage 3 | Minimal real hardware     | One real physical loop connected to the same system model                |
+| Stage 4 | Telemetry and history     | Useful event history, trends and operational visibility                  |
+| Stage 5 | Automation UX             | Simple explainable rules and scenes                                      |
+| Stage 6 | Testing and resilience    | Repeatable failure scenarios and confidence in behavior                  |
+| Stage 7 | Portfolio packaging       | Demo, case study and project narrative                                   |
 
 ## Stage 0 - Project Foundation
 

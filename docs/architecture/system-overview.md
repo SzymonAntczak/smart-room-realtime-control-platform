@@ -16,14 +16,14 @@ The system should be small enough to build incrementally, but realistic enough t
 
 The architecture is organized around the main domain concepts, not around implementation layers.
 
-| Domain area | Responsibility |
-| --- | --- |
-| Room state | Current derived view of devices, telemetry, health and pending commands. |
-| Devices | Report observable state, receive commands and expose connection health. |
-| Events | Facts emitted by backend adapters, backend workflows or user-facing workflows. |
-| Commands | User or automation requests that may later succeed, fail or time out. |
-| Telemetry | Time-series readings and historical facts used for debugging and trends. |
-| Realtime UI | Human-facing projection of state, command progress and history. |
+| Domain area | Responsibility                                                                 |
+| ----------- | ------------------------------------------------------------------------------ |
+| Room state  | Current derived view of devices, telemetry, health and pending commands.       |
+| Devices     | Report observable state, receive commands and expose connection health.        |
+| Events      | Facts emitted by backend adapters, backend workflows or user-facing workflows. |
+| Commands    | User or automation requests that may later succeed, fail or time out.          |
+| Telemetry   | Time-series readings and historical facts used for debugging and trends.       |
+| Realtime UI | Human-facing projection of state, command progress and history.                |
 
 ## Initial MVP Scope
 

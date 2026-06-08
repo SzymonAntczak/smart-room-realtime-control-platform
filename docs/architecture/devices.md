@@ -2,23 +2,23 @@
 
 ## Device Health States
 
-| State | Meaning | UI expectation |
-| --- | --- | --- |
-| `online` | Device is connected and reporting within the expected interval. | Normal controls may be enabled. |
-| `offline` | Device is known to be disconnected or unreachable. | Controls should be disabled or clearly marked as unavailable. |
-| `stale` | Last known report is older than the expected freshness window. | Show last known value with a stale warning. |
+| State      | Meaning                                                                      | UI expectation                                                |
+| ---------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `online`   | Device is connected and reporting within the expected interval.              | Normal controls may be enabled.                               |
+| `offline`  | Device is known to be disconnected or unreachable.                           | Controls should be disabled or clearly marked as unavailable. |
+| `stale`    | Last known report is older than the expected freshness window.               | Show last known value with a stale warning.                   |
 | `degraded` | Device is reachable but reporting errors, partial data or unstable behavior. | Controls may stay available, but the problem must be visible. |
 
 ## Command States
 
-| State | Meaning |
-| --- | --- |
-| `idle` | No active command is waiting for completion. |
+| State        | Meaning                                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idle`       | No active command is waiting for completion.                                                                                                            |
 | `submitting` | The frontend has sent a command request and is waiting for backend acceptance. This is a UI-side transient state, not a persisted device command state. |
-| `pending` | Command was accepted and dispatched, but not confirmed yet. |
-| `confirmed` | Device state matches the command, or the device type allows trusted acknowledgement as confirmation. |
-| `failed` | Device or backend explicitly rejected the command. |
-| `timed_out` | No confirmation arrived within the allowed time. |
+| `pending`    | Command was accepted and dispatched, but not confirmed yet.                                                                                             |
+| `confirmed`  | Device state matches the command, or the device type allows trusted acknowledgement as confirmation.                                                    |
+| `failed`     | Device or backend explicitly rejected the command.                                                                                                      |
+| `timed_out`  | No confirmation arrived within the allowed time.                                                                                                        |
 
 ## State Fields
 
@@ -26,21 +26,21 @@ A useful device state record should separate current observations from user inte
 
 ```json
 {
-  "deviceId": "led-main",
-  "type": "light",
-  "health": "online",
-  "reportedState": {
-    "power": "off"
-  },
-  "requestedState": {
-    "power": "on"
-  },
-  "command": {
-    "id": "cmd-123",
-    "state": "pending",
-    "requestedAt": "2026-05-21T07:10:00Z"
-  },
-  "lastSeenAt": "2026-05-21T07:10:01Z"
+    "deviceId": "led-main",
+    "type": "light",
+    "health": "online",
+    "reportedState": {
+        "power": "off"
+    },
+    "requestedState": {
+        "power": "on"
+    },
+    "command": {
+        "id": "cmd-123",
+        "state": "pending",
+        "requestedAt": "2026-05-21T07:10:00Z"
+    },
+    "lastSeenAt": "2026-05-21T07:10:01Z"
 }
 ```
 
@@ -62,12 +62,12 @@ derived after the stale period exceeds the offline threshold.
 
 ## Command Availability By Health
 
-| Health | Default command policy | Meaning |
-| --- | --- | --- |
-| `online` | `allow` | Commands may be sent normally. |
-| `stale` | `allow_with_warning` | Commands may be sent only if the UI makes stale data visible. |
-| `offline` | `block` | Commands should not be sent while the device is unreachable. |
-| `degraded` | Derived from reason | Availability depends on the degradation reason. |
+| Health     | Default command policy | Meaning                                                       |
+| ---------- | ---------------------- | ------------------------------------------------------------- |
+| `online`   | `allow`                | Commands may be sent normally.                                |
+| `stale`    | `allow_with_warning`   | Commands may be sent only if the UI makes stale data visible. |
+| `offline`  | `block`                | Commands should not be sent while the device is unreachable.  |
+| `degraded` | Derived from reason    | Availability depends on the degradation reason.               |
 
 ## Example Transition
 
@@ -104,11 +104,11 @@ reason.
 
 Initial command policies:
 
-| Policy | Meaning |
-| --- | --- |
-| `allow` | Commands may be sent normally. |
+| Policy               | Meaning                                                                  |
+| -------------------- | ------------------------------------------------------------------------ |
+| `allow`              | Commands may be sent normally.                                           |
 | `allow_with_warning` | Commands may be sent, but the UI should show the degraded state clearly. |
-| `block` | Commands should not be sent while this degraded condition is active. |
+| `block`              | Commands should not be sent while this degraded condition is active.     |
 
 Decision context and trade-offs are documented in
 [ADR: Device Command Confirmation and Health Policy](../decisions/adr-device-command-confirmation-and-health-policy.md).

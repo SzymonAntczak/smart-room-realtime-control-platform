@@ -23,17 +23,17 @@ Use this skill to turn finished work into one or more clean Git commits.
 ## Workflow
 
 1. Check repository state:
-   - `git status --short`
-   - inspect staged changes with `git diff --cached`
-   - inspect unstaged changes with `git diff`
-   - include untracked files by reading their contents before staging
+    - `git status --short`
+    - inspect staged changes with `git diff --cached`
+    - inspect unstaged changes with `git diff`
+    - include untracked files by reading their contents before staging
 2. Decide commit scope:
-   - group closely related changes into one commit
-   - split unrelated changes into separate commits only when the user wants that
-   - leave unrelated user changes unstaged
+    - group closely related changes into one commit
+    - split unrelated changes into separate commits only when the user wants that
+    - leave unrelated user changes unstaged
 3. Verify when practical:
-   - run the narrowest relevant test, lint, typecheck, or documentation check
-   - if no command exists, say that explicitly in the final summary
+    - run the narrowest relevant test, lint, typecheck, or documentation check
+    - if no command exists, say that explicitly in the final summary
 4. Stage only intended files.
 5. Re-check staged diff before committing.
 6. Write a concise imperative commit message.

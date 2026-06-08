@@ -57,11 +57,11 @@ Default command availability is derived from health:
 
 Initial command policies:
 
-| Policy | Meaning |
-| --- | --- |
-| `allow` | Commands may be sent normally. |
+| Policy               | Meaning                                                                  |
+| -------------------- | ------------------------------------------------------------------------ |
+| `allow`              | Commands may be sent normally.                                           |
 | `allow_with_warning` | Commands may be sent, but the UI should show the degraded state clearly. |
-| `block` | Commands should not be sent while this degraded condition is active. |
+| `block`              | Commands should not be sent while this degraded condition is active.     |
 
 ## Consequences
 

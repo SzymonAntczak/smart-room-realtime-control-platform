@@ -14,7 +14,7 @@ Read the relevant parts of:
 - `frontend/AGENTS.md`
 - `frontend/package.json`
 - `frontend/eslint.config.js`
-- `frontend/.prettierrc.json`
+- root `.prettierrc.json`
 - `frontend/tsconfig.json`
 - root `shared/src/contracts.ts` when working with platform contracts
 - architecture docs when behavior touches command lifecycle, device health,
@@ -31,10 +31,10 @@ Read the relevant parts of:
 5. Add or update tests for user-visible documented behavior when behavior
    changes.
 6. Run the narrowest useful checks from `frontend/`, usually:
-   - `npm.cmd run lint`
-   - `npm.cmd run typecheck`
-   - `npm.cmd test`
-   - `npm.cmd run format`
+    - `npm.cmd run lint`
+    - `npm.cmd run typecheck`
+    - `npm.cmd test`
+    - `npm.cmd run format`
 7. Report any command that could not be run.
 
 ## Avoid

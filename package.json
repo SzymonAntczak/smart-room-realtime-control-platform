@@ -1,8 +1,13 @@
 {
-  "name": "smart-room-realtime-control-platform",
-  "private": true,
-  "scripts": {
-    "dev:frontend": "npm --prefix frontend run dev",
-    "test:frontend": "npm --prefix frontend run test"
-  }
+    "name": "smart-room-realtime-control-platform",
+    "private": true,
+    "scripts": {
+        "dev:frontend": "npm --prefix frontend run dev",
+        "format": "prettier --check .",
+        "format:write": "prettier --write .",
+        "test:frontend": "npm --prefix frontend run test"
+    },
+    "devDependencies": {
+        "prettier": "^3.8.3"
+    }
 }
