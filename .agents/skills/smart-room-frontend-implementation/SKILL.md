@@ -31,10 +31,10 @@ Read the relevant parts of:
 5. Add or update tests for user-visible documented behavior when behavior
    changes.
 6. Run the narrowest useful checks from `frontend/`, usually:
-    - `npm.cmd run lint`
-    - `npm.cmd run typecheck`
-    - `npm.cmd test`
-    - `npm.cmd run format`
+    - `npm run lint`
+    - `npm run typecheck`
+    - `npm test`
+    - `npm run format`
 7. Report any command that could not be run.
 
 ## Avoid

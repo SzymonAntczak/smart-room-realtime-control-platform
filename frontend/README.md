@@ -32,14 +32,14 @@ generic loading or error states.
 Run commands from `frontend/`.
 
 ```powershell
-npm.cmd run dev
-npm.cmd run lint
-npm.cmd run typecheck
-npm.cmd test
-npm.cmd run format
+npm run dev
+npm run lint
+npm run typecheck
+npm test
+npm run format
 ```
 
-Use `npm.cmd run format:write` only when intentionally updating formatting.
+Use `npm run format:write` only when intentionally updating formatting.
 
 ## Realtime Modes
 
