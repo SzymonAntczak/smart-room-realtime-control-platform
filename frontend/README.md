@@ -2,10 +2,10 @@
 
 React, TypeScript and Vite control surface for the Smart Room realtime platform.
 
-The frontend renders backend/shared room projections and lets the user send
-command intent. It must keep reported device state, requested state, command
-lifecycle, device health and uncertainty visible instead of collapsing them into
-generic loading or error states.
+The current Stage 1 implementation is intentionally small: one read-only
+simulated temperature sensor with a realtime-updating frontend value. Broader
+control behavior, backend realtime transport and simulator integration remain
+later slices.
 
 ## Source Of Truth
 
@@ -18,13 +18,9 @@ generic loading or error states.
 
 - `src/main.tsx`: Vite/React bootstrap.
 - `src/globals.css`: global reset and shared design tokens.
-- `src/app`: product code grouped by domain.
-- `src/app/room-control`: room view model and dashboard composition.
-- `src/app/room-realtime`: realtime client boundary and fixture client.
-- `src/app/led-control`: LED command UI.
-- `src/app/sensors`: device state cards.
-- `src/app/event-feed`: recent platform event history.
-- `src/app/shared`: low-level frontend UI and formatting helpers.
+- `src/app/App.tsx`: minimal temperature sensor UI and local realtime simulation.
+- `src/app/App.module.css`: styles for the current sensor view.
+- `src/app/App.test.tsx`: user-visible behavior tests for the sensor view.
 - `src/test`: global test setup only.
 
 ## Scripts
@@ -41,27 +37,12 @@ npm run format
 
 Use `npm run format:write` only when intentionally updating formatting.
 
-## Realtime Modes
-
-By default, the app connects to the local backend WebSocket:
-
-```text
-ws://localhost:8787/realtime
-```
-
-Set `VITE_REALTIME_URL` to point at another backend endpoint.
-
-Set `VITE_REALTIME_MODE=fixture` to render the local fixture client without a
-backend. Fixture data should demonstrate reliability states such as pending
-commands, stale devices, offline devices and event history, not only happy paths.
-
 ## Verification Focus
 
 Before finishing frontend work, prefer the narrowest useful checks and make sure
-the UI still shows:
+the current slice still shows:
 
-- requested state separately from reported state
-- pending, failed and timed-out command states
-- stale, offline and degraded device health
-- command availability from backend/shared projections
-- recent events that explain user actions and device reports
+- the temperature sensor name
+- the current temperature value and unit
+- the last reading time
+- a visible simulated realtime source/status

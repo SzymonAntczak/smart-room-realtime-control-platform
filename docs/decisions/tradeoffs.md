@@ -91,6 +91,25 @@ snapshots can be used for current reads.
 
 Status: keep as trade-off for now.
 
+## Stage 1 Runtime Reset
+
+Decision: withdraw the dedicated Stage 1 runtime ADR and restart implementation
+from a smaller read-only temperature sensor slice.
+
+Reason: the previous Stage 1 runtime decision made the first implementation too
+large before the project had a simple realtime read path.
+
+Benefit: the project can rebuild confidence with one understandable sensor,
+less frontend scaffold and fewer runtime assumptions.
+
+Cost: backend, WebSocket transport, command handling and the separate simulator
+runtime are deferred again.
+
+Consequence: the first implementation may simulate realtime readings inside the
+frontend temporarily, while the broader architecture remains a later target.
+
+Status: keep as trade-off for now.
+
 ## AI As Implementation Assistant
 
 Decision: AI can help with implementation, documentation drafts, tests and

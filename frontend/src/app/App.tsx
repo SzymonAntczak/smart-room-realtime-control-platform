@@ -1,40 +1,66 @@
 import { useEffect, useState } from 'react';
-import { RoomDashboard } from './room-control/RoomDashboard';
-import { createSetPowerCommandRequest } from './room-control/room-view-model';
-import { createBackendRealtimeClient } from './room-realtime/backend-realtime-client';
-import { createFixtureRealtimeClient } from './room-realtime/fixture-realtime-client';
-import type { RealtimeClient } from './room-realtime/realtime-client';
-import type { RoomSnapshotView } from './room-control/room-view-model';
+import styles from './App.module.css';
 
-const realtimeClient = createDefaultRealtimeClient();
-
-interface AppProps {
-    client?: RealtimeClient;
+interface TemperatureReading {
+    sequence: number;
+    sensorName: string;
+    value: number;
+    unit: 'celsius';
+    recordedAt: string;
 }
 
-export function App({ client = realtimeClient }: AppProps) {
-    const [snapshot, setSnapshot] = useState<RoomSnapshotView>(() => client.getInitialSnapshot());
+const readingPattern = [0, 0.2, 0.4, 0.1, -0.1, -0.3] as const;
+
+export function App() {
+    const [reading, setReading] = useState(() => createTemperatureReading(0));
 
     useEffect(() => {
-        return client.subscribe(setSnapshot);
-    }, [client]);
+        const intervalId = window.setInterval(() => {
+            setReading((currentReading) => createTemperatureReading(currentReading.sequence + 1));
+        }, 1000);
+
+        return () => window.clearInterval(intervalId);
+    }, []);
 
     return (
-        <RoomDashboard
-            snapshot={snapshot}
-            onLedPowerRequest={(power) =>
-                client.sendCommand(createSetPowerCommandRequest('led-main', power))
-            }
-        />
+        <main className={styles.shell}>
+            <section className={styles.panel} aria-labelledby="sensor-heading">
+                <div className={styles.header}>
+                    <div>
+                        <p className={styles.eyebrow}>Simulated realtime</p>
+                        <h1 id="sensor-heading">{reading.sensorName}</h1>
+                    </div>
+                    <span className={styles.status}>Live</span>
+                </div>
+
+                <div className={styles.reading} aria-label="Current temperature">
+                    <span className={styles.value}>{reading.value.toFixed(1)}</span>
+                    <span className={styles.unit}>celsius</span>
+                </div>
+
+                <p className={styles.updated}>
+                    Last reading{' '}
+                    <time dateTime={reading.recordedAt}>
+                        {formatReadingTime(reading.recordedAt)}
+                    </time>
+                </p>
+            </section>
+        </main>
     );
 }
 
-function createDefaultRealtimeClient() {
-    if (import.meta.env.VITE_REALTIME_MODE === 'fixture') {
-        return createFixtureRealtimeClient();
-    }
+function createTemperatureReading(sequence: number): TemperatureReading {
+    const offset = readingPattern[sequence % readingPattern.length];
 
-    return createBackendRealtimeClient(
-        import.meta.env.VITE_REALTIME_URL ?? 'ws://localhost:8787/realtime',
-    );
+    return {
+        sequence,
+        sensorName: 'Desk Temperature',
+        value: 22.1 + offset,
+        unit: 'celsius',
+        recordedAt: new Date().toISOString(),
+    };
+}
+
+function formatReadingTime(recordedAt: string) {
+    return `${recordedAt.slice(11, 19)} UTC`;
 }

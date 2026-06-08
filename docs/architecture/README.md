@@ -34,6 +34,11 @@ behavior:
 
 ## Rules To Preserve
 
+The current Stage 1 implementation starts with a smaller read-only slice: one
+simulated temperature sensor with realtime UI updates. The broader control
+rules below remain the target model for later slices, not requirements for this
+first implementation step.
+
 - Events are facts that already happened.
 - Commands are requests for something to happen.
 - Requested state is not confirmed device state.
@@ -48,7 +53,6 @@ behavior:
 
 - [ADR: Local-first before cloud](../decisions/adr-local-first-before-cloud.md)
 - [ADR: Event simulator before real devices](../decisions/adr-event-simulator-before-real-devices.md)
-- [ADR: Stage 1 local runtime and repository boundaries](../decisions/adr-stage-1-local-runtime-and-repository-boundaries.md)
 - [ADR: Command correlation, confirmation and concurrency](../decisions/adr-command-correlation-confirmation-and-concurrency.md)
 - [ADR: Device command confirmation and health policy](../decisions/adr-device-command-confirmation-and-health-policy.md)
 - [Trade-offs and decision log](../decisions/tradeoffs.md)

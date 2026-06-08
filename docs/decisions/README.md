@@ -17,6 +17,5 @@ Keep current system behavior in [architecture](../architecture/). Promote a trad
 
 - [Local-First Before Cloud](adr-local-first-before-cloud.md)
 - [Event Simulator Before Real Devices](adr-event-simulator-before-real-devices.md)
-- [Stage 1 Local Runtime and Repository Boundaries](adr-stage-1-local-runtime-and-repository-boundaries.md)
 - [Device Command Confirmation and Health Policy](adr-device-command-confirmation-and-health-policy.md)
 - [Command Correlation, Confirmation and Concurrency](adr-command-correlation-confirmation-and-concurrency.md)

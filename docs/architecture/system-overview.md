@@ -25,7 +25,26 @@ The architecture is organized around the main domain concepts, not around implem
 | Telemetry   | Time-series readings and historical facts used for debugging and trends.       |
 | Realtime UI | Human-facing projection of state, command progress and history.                |
 
-## Initial MVP Scope
+## Current Stage 1 Implementation Slice
+
+The current implementation starts smaller than the full smart-room model. The
+first Stage 1 slice is a read-only realtime view of one simulated temperature
+sensor.
+
+This slice should show:
+
+- the sensor name
+- the current temperature reading
+- the reading unit
+- the last reading time
+- that the value is coming from simulated realtime updates
+
+This first slice intentionally does not include commands, LED control, event
+history, stale/offline handling, a backend runtime or a separate simulator
+process. Those remain later slices after the smallest realtime read path is
+working and easy to explain.
+
+## Target MVP Scope
 
 The first useful system slice focuses on a small smart-room model.
 
@@ -58,14 +77,18 @@ of understandable devices.
 
 ## Main Components
 
-For Stage 1, these components are architectural roles rather than separate
-production services. They should still be separated in the repository:
-`frontend` for the realtime UI, `backend` for the realtime API, event
-processing, command handling and in-memory storage, `simulator` for simulated
-devices and scenarios, and `shared` for platform contracts and adapter-facing
-message types used across project boundaries.
-Backend-owned adapters translate external device sources, including the
-simulator, into platform events and commands.
+For the current Stage 1 implementation slice, the only active runtime component
+is `frontend`: a React and TypeScript UI that simulates one temperature reading
+locally. This keeps the first read path small while the project resets from the
+larger dashboard scaffold.
+
+The broader architecture still expects separate roles later: `frontend` for the
+realtime UI, `backend` for the realtime API, event processing, command handling
+and in-memory storage, `simulator` for simulated devices and scenarios, and
+`shared` for platform contracts and adapter-facing message types used across
+project boundaries. Backend-owned adapters will translate external device
+sources, including the simulator, into platform events and commands when those
+later slices are introduced.
 
 ### Event Simulator
 
@@ -92,10 +115,13 @@ Expected responsibilities:
 
 ### Realtime Frontend
 
-Displays the current room state and allows the user to send commands.
+Displays the current room state. In the current Stage 1 implementation slice it
+only shows a read-only simulated temperature sensor.
 
 Expected responsibilities:
 
+- show the current simulated temperature reading in realtime
+- show when the reading was last updated
 - show confirmed device state separately from requested state
 - show pending, failed and timed-out commands
 - surface offline, stale and degraded devices clearly
@@ -105,8 +131,8 @@ Expected responsibilities:
 
 Stores events and derived telemetry used for history, debugging and trend analysis.
 
-This is a logical storage responsibility. In Stage 1, it is backend-owned
-in-memory storage rather than durable persistence.
+This is a logical storage responsibility for a later backend slice. The current
+frontend-only sensor slice does not include telemetry storage.
 
 Expected responsibilities:
 
@@ -120,8 +146,8 @@ currently believes. The first implementation does not need full event sourcing,
 but it should keep enough event history to audit commands and debug state
 changes.
 
-Stage 1 storage should still preserve recent accepted events and derived state
-long enough for the realtime UI and local demo to explain what happened.
+A later local storage slice should preserve recent accepted events and derived
+state long enough for the realtime UI and local demo to explain what happened.
 
 ### Realtime API / BFF Boundary
 
@@ -130,14 +156,14 @@ Provides the frontend with UI-oriented access to the local backend.
 Expected responsibilities:
 
 - provide an initial room snapshot when the frontend connects
-- stream state, command and event updates to the frontend over WebSocket in
-  Stage 1
+- stream state, command and event updates to the frontend over WebSocket in a
+  later backend-backed realtime slice
 - accept command requests from the frontend
 - expose UI-friendly derived views without making the frontend interpret raw
   event streams by itself
 
 This boundary is BFF-like because it is shaped for the realtime frontend. In the
-first implementation it belongs to the local Node.js backend together with the
+target local runtime it belongs to the local Node.js backend together with the
 event processor and in-memory storage.
 
 ### Device Adapters
@@ -146,8 +172,10 @@ Translate external device protocols into the platform event and command model.
 
 Expected responsibilities:
 
-- translate simulator-native messages into platform events in Stage 1
-- translate platform commands into simulator-native commands in Stage 1
+- translate simulator-native messages into platform events in a later simulator
+  integration slice
+- translate platform commands into simulator-native commands in a later control
+  slice
 - translate hardware-specific protocols into platform events in later stages
 - send platform commands to physical devices in later stages
 - report acknowledgements, failures and connection health
