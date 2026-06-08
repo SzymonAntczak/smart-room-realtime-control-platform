@@ -2,10 +2,14 @@
 
 This is the documentation entry point for the Smart Room Realtime Control Platform.
 
-The current application behavior is the source of truth. Architecture documents
-describe the intended current system model. Decision documents describe why
-important choices were made. Planning documents describe direction and learning
-goals, but they are not binding system contracts.
+The documentation is the source of truth for the project. Architecture
+documents describe the intended current system model. Decision documents
+describe durable choices and trade-offs. Planning documents describe direction
+and learning goals, but they are not binding system contracts until promoted to
+architecture or decisions.
+
+When application behavior disagrees with architecture or accepted decisions,
+treat that as drift to resolve in code, tests, documentation or a new decision.
 
 ## Architecture
 
@@ -30,6 +34,6 @@ goals, but they are not binding system contracts.
 - [Decision records](decisions/README.md)
 - [ADR template](decisions/adr-template.md)
 
+Use [architecture](architecture/) for the current system model and behavior.
 Use [decisions](decisions/) for durable architectural decisions and trade-offs.
-Use [architecture](architecture/) for the current target shape of the system.
 Use [planning](planning/) for direction, roadmap and learning intent.

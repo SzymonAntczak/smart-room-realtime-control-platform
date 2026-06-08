@@ -1,6 +1,6 @@
 ---
 name: smart-room-architecture-decision
-description: Use for Smart Room architecture planning, ADR drafting, trade-off analysis, roadmap alignment, or deciding system behavior. Trigger when work touches docs/architecture, docs/decisions, control-loop design, simulator-before-hardware, local-first architecture, or AI-assisted development boundaries.
+description: Use for Smart Room architecture planning, ADR drafting, trade-off analysis, roadmap alignment, or preparing options for human-owned system behavior decisions. Trigger when work touches docs/architecture, docs/decisions, control-loop design, simulator-before-hardware, local-first architecture, or AI-assisted development boundaries.
 ---
 
 # Smart Room Architecture Decision
@@ -13,13 +13,10 @@ the project goal.
 1. Read the relevant planning and architecture docs before proposing changes.
 2. Identify whether the work is a new decision, an update to an existing ADR, or
    a temporary trade-off.
-3. Preserve the project direction: local-first, simulator-first, event-driven,
-   reliable control UX, minimal hardware early.
-4. Separate facts from intent:
-   - events are facts
-   - commands are requests
-   - UI state must not pretend intent is confirmed reality
-5. Document consequences, not only the chosen option.
+3. Pull behavior rules from the architecture docs and accepted ADRs, not from
+   this workflow.
+4. Document consequences, not only the chosen option.
+5. When a planning idea becomes binding, move it into architecture or an ADR.
 
 ## Source Files
 

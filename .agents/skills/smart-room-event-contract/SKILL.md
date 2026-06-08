@@ -14,42 +14,17 @@ Read these before changing behavior:
 - `docs/architecture/events-and-commands.md`
 - `docs/architecture/control-loop.md`
 - `docs/architecture/devices.md`
+- `docs/architecture/reliability-and-testing.md`
 - `docs/decisions/adr-command-correlation-confirmation-and-concurrency.md`
 - `docs/decisions/adr-device-command-confirmation-and-health-policy.md`
 
-## Contract Rules
+## Workflow
 
-- Keep event names as past-tense facts, for example `command.dispatched`.
-- Keep command names as imperative intent, for example `set.power`.
-- Require stable envelope fields: `eventId`, `eventType`, `version`,
-  `occurredAt`, `source` and `payload`.
-- Command lifecycle events must include `commandId`.
-- Device state reports should not include `commandId` by default.
-- Unknown event versions must not silently update derived state.
-- Duplicate events must not create duplicate history entries.
-- Malformed or invalid events should be rejected or quarantined rather than
-  applied.
-
-## Command Lifecycle
-
-Preserve these states and transitions:
-
-- `command.requested`
-- `command.dispatched`
-- `command.confirmed`
-- `command.failed`
-- `command.timed_out`
-
-Requested state is not confirmed state. A late device report may update current
-device state, but must not reopen or confirm an already timed-out command.
-
-## Review Checklist
-
-Check every event/command change for:
-
-- traceability by `eventId` and `commandId`
-- idempotency for duplicates
-- explicit timing fields
-- user-visible pending, failed and timed-out states
-- compatibility with simulator scenarios
-- tests for state derivation and lifecycle edge cases
+1. Summarize the binding contract from the required sources before changing or
+   reviewing code.
+2. Identify the affected event, command, projection, simulator or UI boundary.
+3. Check whether the change preserves the documented contract shape,
+   lifecycle, timing, validation and confirmation behavior.
+4. Check whether tests or simulator scenarios cover the affected contract edge.
+5. If behavior is ambiguous, recommend a documentation or ADR update before
+   treating the new behavior as durable.

@@ -6,9 +6,7 @@ This repository is a local-first realtime/IoT systems design project. The goal
 is to build a small but credible smart-room control platform that makes device
 state, user intent, time, uncertainty and failure visible.
 
-AI is an implementation assistant here, not the owner of the architecture. Keep
-system behavior, event contracts, state modeling, control UX and reliability
-rules aligned with the project documentation.
+AI is an implementation assistant here, not the owner of the architecture.
 
 ## Important Context
 
@@ -18,32 +16,23 @@ rules aligned with the project documentation.
 - Core system behavior lives in `docs/architecture/`.
 - Stable decisions live in `docs/decisions/`; early trade-offs live in
   `docs/decisions/tradeoffs.md`.
-- There is no committed application manifest yet. Do not invent build, lint or
-  test commands before checking the repo.
+- The documentation is the source of truth for project behavior. Treat
+  `docs/architecture/` and accepted ADRs in `docs/decisions/` as binding unless
+  the user explicitly asks to change them.
+- Planning docs describe direction and learning goals; promote a planning idea
+  to architecture or an ADR before treating it as a durable system rule.
+- Do not invent build, lint or test commands before checking the repo.
 
-## System Rules To Preserve
+## Behavior Changes
 
-- Events are facts that already happened; commands are requests for something to
-  happen.
-- Commands are intent, not proof of device state.
-- The UI must distinguish requested, pending, confirmed, failed, timed-out,
-  stale and offline states.
-- Device reports are observable facts and can update current state even when
-  they arrive late.
-- A timed-out command must not later become confirmed because of a late device
-  report.
-- The first implementation should allow only one pending command per device.
-- Failure, stale data and missing data should be visible user states, not hidden
-  implementation details.
+- Before changing system behavior, read the relevant architecture docs and ADRs.
+- If implementation, tests or examples disagree with the docs, treat that as
+  drift and make the resolution explicit.
+- Update architecture or decision docs when the intended behavior changes.
 
 ## Working Style
 
-- Read the relevant docs before changing behavior.
 - Keep changes small and explainable.
-- Prefer explicit contracts and named states over implicit UI assumptions.
-- Update architecture or decision docs when behavior rules change.
-- When adding tests, prioritize state derivation, command lifecycle, simulator
-  scenarios and user-visible reliability over superficial coverage.
 - Avoid broad refactors unless they directly support the requested change.
 
 ## Repository Structure
@@ -58,12 +47,8 @@ rules aligned with the project documentation.
 
 ## Verification
 
-Before considering work done, check the change against:
-
-- `docs/architecture/events-and-commands.md`
-- `docs/architecture/control-loop.md`
-- `docs/architecture/reliability-and-testing.md`
-- relevant ADRs in `docs/decisions/`
+Before considering behavior work done, check the change against the relevant
+architecture docs and accepted ADRs.
 
 If executable commands exist for the touched area, run the narrowest useful
 tests or checks and report what was run. If no commands exist yet, say so

@@ -5,8 +5,7 @@ These instructions apply to files under `frontend/`.
 ## Role
 
 The frontend is the user-facing control surface for the Smart Room platform. It
-must present the domain states defined by the architecture docs without
-simplifying or hiding them.
+must present the domain states defined by the architecture docs honestly.
 
 Do not redefine event, command or reliability semantics here. Follow the root
 `AGENTS.md` and the architecture docs.
@@ -24,13 +23,10 @@ Do not redefine event, command or reliability semantics here. Follow the root
 
 - Use modern React with function components, hooks and composition.
 - Keep derived UI state explicit and testable.
-- Do not collapse domain lifecycle states into generic booleans like `isLoading`
-  when the user needs to see the distinction.
 - Avoid duplicating realtime state into local component state unless there is a
   clear interaction reason.
-- Render backend/shared projections for command lifecycle, health and command
-  availability. Do not re-derive command confirmation, timeout completion or
-  degraded/offline command policy in component code.
+- Keep component code focused on rendering documented projections instead of
+  redefining domain semantics.
 
 ## Contract Boundary
 
@@ -50,11 +46,8 @@ Do not redefine event, command or reliability semantics here. Follow the root
 
 ## Fixtures And Demo Data
 
-- Fixture clients should demonstrate reliability behavior, not only happy paths.
-- Useful fixtures should cover representative states such as pending commands,
-  failed commands, timed-out commands, stale devices, offline devices, degraded
-  devices, reconnects with fresh reported state and late device reports after a
-  timeout.
+- Fixture clients should demonstrate representative documented behavior, not
+  only happy paths.
 - Fixtures may provide controlled snapshots for UI development and tests, but
   they must not become the production source of command lifecycle semantics.
 
@@ -73,8 +66,7 @@ Do not redefine event, command or reliability semantics here. Follow the root
 - Prefer `oklch()` for new color tokens unless existing tooling or design
   conventions require another format.
 - Define shared colors as named CSS variables instead of scattering raw values.
-- Keep state colors accessible and distinguishable for normal, pending, failed,
-  timed-out, stale and offline states.
+- Keep state colors accessible and distinguishable.
 - Keep layouts stable across state changes.
 
 ## Linting and Formatting
@@ -93,22 +85,13 @@ Do not redefine event, command or reliability semantics here. Follow the root
 - Shared UI tests belong near `frontend/src/app/shared/ui`.
 - Global test setup belongs under `frontend/src/test`.
 - Test names should describe user-visible behavior, not implementation details.
-- Prioritize tests for requested vs reported state separation, pending command
-  visibility, failed or timed-out command visibility, stale and offline state
-  visibility, command availability and event history clarity.
+- Prioritize tests for documented user-visible behavior over implementation
+  details.
 
-## Manual Acceptance Checklist
+## Behavior Checks
 
-Before treating a frontend milestone as done, verify the relevant items:
-
-- A pending command is visible before confirmation.
-- Requested state is not presented as confirmed state.
-- Failed and timed-out commands remain understandable.
-- Stale and offline device states are visible.
-- Command availability follows backend/shared projections.
-- Event history explains important user actions and device reports.
-- A late device report after timeout updates reported state without confirming
-  the timed-out command.
+Before treating frontend behavior work as done, verify the relevant architecture
+and ADR acceptance criteria instead of relying on duplicated checklists here.
 
 ## Architecture Decision Triggers
 
