@@ -3,7 +3,6 @@ type NonEmptyReadingPattern = readonly [number, ...number[]];
 export interface TemperatureReadingMessage {
     messageType: 'temperature.reading';
     sensorId: string;
-    sensorName: string;
     sequence: number;
     value: number;
     unit: 'celsius';
@@ -12,7 +11,6 @@ export interface TemperatureReadingMessage {
 
 export interface TemperatureSensorConfig {
     sensorId: string;
-    sensorName: string;
     baseTemperature: number;
     readingPattern: NonEmptyReadingPattern;
 }
@@ -45,7 +43,6 @@ export function createTemperatureSensorSimulator(
             const message: TemperatureReadingMessage = {
                 messageType: 'temperature.reading',
                 sensorId: config.sensorId,
-                sensorName: config.sensorName,
                 sequence,
                 value:
                     config.baseTemperature +

@@ -8,7 +8,6 @@ describe('createTemperatureSensorSimulator', () => {
     it('emits the first native temperature reading from the configured sensor', () => {
         const sensor = createTemperatureSensorSimulator({
             sensorId: 'temp-desk',
-            sensorName: 'Desk Temperature',
             baseTemperature: 22.1,
             readingPattern: [0, 0.2, 0.4],
         });
@@ -20,7 +19,6 @@ describe('createTemperatureSensorSimulator', () => {
         expect(reading).toEqual({
             messageType: 'temperature.reading',
             sensorId: 'temp-desk',
-            sensorName: 'Desk Temperature',
             sequence: 0,
             value: 22.1,
             unit: 'celsius',
@@ -32,7 +30,6 @@ describe('createTemperatureSensorSimulator', () => {
     it('cycles through the configured reading pattern deterministically', () => {
         const sensor = createTemperatureSensorSimulator({
             sensorId: 'temp-desk',
-            sensorName: 'Desk Temperature',
             baseTemperature: 22,
             readingPattern: [0, 0.2, -0.1],
         });
@@ -58,7 +55,6 @@ describe('createTemperatureSensorSimulator', () => {
     it('stops delivering readings after unsubscribe', () => {
         const sensor = createTemperatureSensorSimulator({
             sensorId: 'temp-desk',
-            sensorName: 'Desk Temperature',
             baseTemperature: 22,
             readingPattern: [0],
         });
@@ -77,7 +73,6 @@ describe('createTemperatureSensorSimulator', () => {
     it('delivers the same native message to multiple listeners', () => {
         const sensor = createTemperatureSensorSimulator({
             sensorId: 'temp-desk',
-            sensorName: 'Desk Temperature',
             baseTemperature: 22,
             readingPattern: [0],
         });
