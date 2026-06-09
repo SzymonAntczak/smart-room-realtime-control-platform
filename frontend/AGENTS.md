@@ -63,9 +63,26 @@ Do not redefine event, command or reliability semantics here. Follow the root
 
 - Use modern CSS: CSS variables, logical properties, grid, flexbox, container
   queries, `clamp`, `min`, `max` and `:has` where appropriate.
+- Prefer relative units such as `rem` and `em` for spacing, sizing, breakpoints
+  and radii. Prefer logical properties such as `inline-size`, `block-size`,
+  `min-block-size`, `padding-block` and `padding-inline` over physical
+  properties such as `width`, `height`, `padding-left` or `margin-top`.
 - Prefer `oklch()` for new color tokens unless existing tooling or design
   conventions require another format.
 - Define shared colors as named CSS variables instead of scattering raw values.
+- Define shared spacing, radius and border-size values as named CSS variables
+  in `src/globals.css` instead of scattering repeated raw values through
+  component styles.
+- Define shared typography and shadow values as named CSS variables in
+  `src/globals.css`; keep component classes semantic and apply those tokens
+  locally instead of introducing global utility classes before real reuse.
+- Use existing design tokens from `src/globals.css` before introducing raw
+  values in component styles. Add a new token when a value represents reusable
+  visual language; keep raw values local only for one-off component constraints.
+- Prefer CSS for visual effects, transitions, responsive behavior, hover/focus
+  states and layout adaptations when they do not require application state,
+  domain logic or DOM measurement. Use JavaScript only when the behavior cannot
+  be expressed reliably in CSS.
 - Keep state colors accessible and distinguishable.
 - Keep layouts stable across state changes.
 
