@@ -35,6 +35,14 @@ AI is an implementation assistant here, not the owner of the architecture.
 - Keep changes small and explainable.
 - Avoid broad refactors unless they directly support the requested change.
 
+## TypeScript
+
+- Prefer `unknown` over `any`.
+- Prefer discriminated unions for observable lifecycle and domain states.
+- Use `as const`, `satisfies`, utility types and narrow type guards where they
+  clarify intent.
+- Avoid stringly typed state when a named type would better express the domain.
+
 ## Repository Structure
 
 - Prefer domain-driven folder architecture over type-driven folders.

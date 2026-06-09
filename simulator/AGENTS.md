@@ -16,6 +16,8 @@ particular, keep the simulator aligned with:
 - `docs/architecture/events-and-commands.md`
 - `docs/architecture/reliability-and-testing.md`
 
+For TypeScript modules in the simulator, follow the root TypeScript rules.
+
 ## Boundary
 
 - The simulator may define simulator-native device messages and

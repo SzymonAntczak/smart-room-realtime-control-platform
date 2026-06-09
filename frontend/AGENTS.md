@@ -12,12 +12,9 @@ Do not redefine event, command or reliability semantics here. Follow the root
 
 ## TypeScript
 
-- Prefer `unknown` over `any`.
-- Prefer discriminated unions for UI-visible lifecycle states.
-- Use `as const`, `satisfies`, utility types and narrow type guards where they
-  clarify intent.
-- Avoid stringly typed UI state when a named type would better express the
-  domain.
+Follow the root TypeScript rules. For frontend-specific code, prefer named
+types for UI-visible lifecycle states and keep domain-facing state explicit
+enough to render documented behavior honestly.
 
 ## React
 
