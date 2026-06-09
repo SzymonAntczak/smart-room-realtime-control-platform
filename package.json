@@ -5,7 +5,8 @@
         "dev:frontend": "npm --prefix frontend run dev",
         "format": "prettier --check .",
         "format:write": "prettier --write .",
-        "test:frontend": "npm --prefix frontend run test"
+        "test:frontend": "npm --prefix frontend run test",
+        "test:simulator": "npm --prefix simulator run test"
     },
     "devDependencies": {
         "prettier": "^3.8.3"
