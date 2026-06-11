@@ -1,8 +1,9 @@
 # Architecture Examples
 
 These examples turn the architecture decisions into concrete flows. They are
-not implementation diagrams; they show the behavior the first implementation
-should preserve.
+not implementation diagrams and do not describe the repository's current
+runtime state. They show target behavior for backend-backed slices as the system
+grows beyond the smallest read path.
 
 ## Local-First System Slice
 
@@ -25,10 +26,10 @@ flowchart LR
     hwAdapter -.->|device-native commands| hardware
 ```
 
-This is the first useful vertical slice. The simulator behaves like a real
-device source behind a backend adapter: it emits simulator-native messages,
-consumes simulator-native commands and exercises failure modes before hardware
-is introduced.
+This is the first useful backend-backed vertical slice. The simulator behaves
+like a real device source behind a backend adapter: it emits simulator-native
+messages, consumes simulator-native commands and exercises failure modes before
+hardware is introduced.
 
 ## Successful Command Confirmation
 

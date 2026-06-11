@@ -20,6 +20,7 @@ treat that as drift to resolve in code, tests, documentation or a new decision.
 - [Events and commands](architecture/events-and-commands.md)
 - [Reliability and testing](architecture/reliability-and-testing.md)
 - [Architecture examples](architecture/examples.md)
+- [AI collaboration model](architecture/ai-collaboration.md)
 
 ## Planning
 

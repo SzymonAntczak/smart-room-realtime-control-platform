@@ -18,9 +18,9 @@ later slices.
 
 - `src/main.tsx`: Vite/React bootstrap.
 - `src/globals.css`: global reset and shared design tokens.
-- `src/app/App.tsx`: minimal temperature sensor UI and local realtime simulation.
-- `src/app/App.module.css`: styles for the current sensor view.
-- `src/app/App.test.tsx`: user-visible behavior tests for the sensor view.
+- `src/app/App.tsx`: application composition root.
+- `src/app/sensors/temperature`: temperature sensor domain UI and behavior.
+- `src/app/shared/ui`: frontend-local reusable UI building blocks.
 - `src/test`: global test setup only.
 
 ## Scripts

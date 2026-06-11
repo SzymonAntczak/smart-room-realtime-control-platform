@@ -6,8 +6,9 @@ developer_instructions = """
 Review frontend changes as a read-only Smart Room frontend reviewer.
 Apply the smart-room-review-workflow skill.
 
-Use frontend/AGENTS.md, docs/architecture and accepted ADRs as the source of
-truth. Inspect touched frontend files and nearby modules under frontend/src.
+Use docs/architecture and accepted ADRs as the source of truth for behavior.
+Use frontend/AGENTS.md as local operating guidance. Inspect touched frontend
+files and nearby modules under frontend/src.
 
 Focus on frontend structure, realtime control UX, module boundaries, naming,
 contract usage, UI behavior, projection behavior, missing tests and verification

@@ -1,12 +1,12 @@
 type NonEmptyReadingPattern = readonly [number, ...number[]];
 
 export interface TemperatureReadingMessage {
-    messageType: 'temperature.reading';
-    sensorId: string;
-    sequence: number;
-    value: number;
-    unit: 'celsius';
-    recordedAt: string;
+    readonly messageType: 'temperature.reading';
+    readonly sensorId: string;
+    readonly sequence: number;
+    readonly value: number;
+    readonly unit: 'celsius';
+    readonly recordedAt: string;
 }
 
 export interface TemperatureSensorConfig {
@@ -25,6 +25,8 @@ export interface TemperatureSensorSimulator {
 export function createTemperatureSensorSimulator(
     config: TemperatureSensorConfig,
 ): TemperatureSensorSimulator {
+    assertValidConfig(config);
+
     const listeners = new Set<TemperatureReadingListener>();
     let nextSequence = 0;
 
@@ -37,6 +39,8 @@ export function createTemperatureSensorSimulator(
             };
         },
         tick(recordedAt) {
+            assertValidIsoTimestamp(recordedAt, 'Temperature reading recordedAt');
+
             const sequence = nextSequence;
             nextSequence += 1;
 
@@ -52,10 +56,34 @@ export function createTemperatureSensorSimulator(
             };
 
             for (const listener of listeners) {
-                listener(message);
+                listener({ ...message });
             }
 
             return message;
         },
     };
+}
+
+function assertValidConfig(config: TemperatureSensorConfig): void {
+    if (config.sensorId.trim().length === 0) {
+        throw new TypeError('Temperature sensorId must be a non-empty string.');
+    }
+
+    if (!Number.isFinite(config.baseTemperature)) {
+        throw new TypeError('Temperature baseTemperature must be a finite number.');
+    }
+
+    for (const readingOffset of config.readingPattern) {
+        if (!Number.isFinite(readingOffset)) {
+            throw new TypeError('Temperature readingPattern values must be finite numbers.');
+        }
+    }
+}
+
+function assertValidIsoTimestamp(timestamp: string, label: string): void {
+    const parsedTime = Date.parse(timestamp);
+
+    if (!Number.isFinite(parsedTime)) {
+        throw new TypeError(`${label} must be a valid timestamp string.`);
+    }
 }

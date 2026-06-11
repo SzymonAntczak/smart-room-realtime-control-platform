@@ -19,6 +19,7 @@ behavior:
 5. [Reliability and testing](reliability-and-testing.md)
 6. [Architecture examples](examples.md)
 7. [System context](system-context.md)
+8. [AI collaboration model](ai-collaboration.md)
 
 ## Document Map
 
@@ -31,6 +32,7 @@ behavior:
 | [Reliability and testing](reliability-and-testing.md) | Failure modes, observability, recovery behavior and test strategy.                                |
 | [Architecture examples](examples.md)                  | Concrete flows for command confirmation, timeout, stale/offline recovery and projection behavior. |
 | [System context](system-context.md)                   | High-level component context diagram.                                                             |
+| [AI collaboration model](ai-collaboration.md)         | Source-of-truth hierarchy for docs, AGENTS.md files, skills and subagent reviews.                 |
 
 ## Rules To Preserve
 

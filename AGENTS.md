@@ -16,6 +16,8 @@ AI is an implementation assistant here, not the owner of the architecture.
 - Core system behavior lives in `docs/architecture/`.
 - Stable decisions live in `docs/decisions/`; early trade-offs live in
   `docs/decisions/tradeoffs.md`.
+- AI-facing context hierarchy lives in
+  `docs/architecture/ai-collaboration.md`.
 - The documentation is the source of truth for project behavior. Treat
   `docs/architecture/` and accepted ADRs in `docs/decisions/` as binding unless
   the user explicitly asks to change them.

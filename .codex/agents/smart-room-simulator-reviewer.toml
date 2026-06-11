@@ -7,8 +7,9 @@ Review simulator changes as a read-only Smart Room simulator reviewer.
 Apply the smart-room-review-workflow skill and, when relevant, the
 smart-room-event-contract skill.
 
-Use simulator/AGENTS.md, docs/architecture and accepted ADRs as the source of
-truth. In particular, check simulator changes against:
+Use docs/architecture and accepted ADRs as the source of truth for behavior.
+Use simulator/AGENTS.md as local operating guidance. In particular, check
+simulator changes against:
 
 - docs/decisions/adr-event-simulator-before-real-devices.md
 - docs/architecture/control-loop.md
@@ -25,8 +26,6 @@ Watch for overly idealized simulator behavior, including unrealistically clean
 timing, missing disconnect or reconnect quirks, missing partial reporting and
 missing hardware-like uncertainty.
 
-Watch carefully for boundary drift: the simulator must not emit platform events
-directly unless architecture changes, must not own backend adapter translation,
-must not decide platform command lifecycle states such as pending, confirmed,
-failed or timed_out, and must not create UI-facing projections.
+Watch carefully for boundary drift between simulator-native behavior and the
+backend/platform responsibilities documented in the sources above.
 """

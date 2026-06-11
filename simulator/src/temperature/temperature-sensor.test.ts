@@ -70,7 +70,7 @@ describe('createTemperatureSensorSimulator', () => {
         expect(readings[0]?.sequence).toBe(0);
     });
 
-    it('delivers the same native message to multiple listeners', () => {
+    it('delivers isolated native reading objects to multiple listeners', () => {
         const sensor = createTemperatureSensorSimulator({
             sensorId: 'temp-desk',
             baseTemperature: 22,
@@ -86,6 +86,69 @@ describe('createTemperatureSensorSimulator', () => {
 
         expect(firstListenerReadings).toEqual([reading]);
         expect(secondListenerReadings).toEqual([reading]);
-        expect(firstListenerReadings[0]).toBe(secondListenerReadings[0]);
+        expect(firstListenerReadings[0]).not.toBe(secondListenerReadings[0]);
+        expect(firstListenerReadings[0]).not.toBe(reading);
+        expect(secondListenerReadings[0]).not.toBe(reading);
+    });
+
+    it('prevents one listener from mutating the reading observed by another listener', () => {
+        const sensor = createTemperatureSensorSimulator({
+            sensorId: 'temp-desk',
+            baseTemperature: 22,
+            readingPattern: [0],
+        });
+        const readings: TemperatureReadingMessage[] = [];
+
+        sensor.onReading((reading) => {
+            (reading as { value: number }).value = 999;
+        });
+        sensor.onReading((reading) => readings.push(reading));
+
+        const reading = sensor.tick('2026-06-08T09:30:00Z');
+
+        expect(reading.value).toBe(22);
+        expect(readings[0]?.value).toBe(22);
+    });
+
+    it('rejects an empty sensor id', () => {
+        expect(() =>
+            createTemperatureSensorSimulator({
+                sensorId: '   ',
+                baseTemperature: 22,
+                readingPattern: [0],
+            }),
+        ).toThrow('Temperature sensorId must be a non-empty string.');
+    });
+
+    it('rejects non-finite base temperatures', () => {
+        expect(() =>
+            createTemperatureSensorSimulator({
+                sensorId: 'temp-desk',
+                baseTemperature: Number.NaN,
+                readingPattern: [0],
+            }),
+        ).toThrow('Temperature baseTemperature must be a finite number.');
+    });
+
+    it('rejects non-finite reading pattern values', () => {
+        expect(() =>
+            createTemperatureSensorSimulator({
+                sensorId: 'temp-desk',
+                baseTemperature: 22,
+                readingPattern: [Number.POSITIVE_INFINITY],
+            }),
+        ).toThrow('Temperature readingPattern values must be finite numbers.');
+    });
+
+    it('rejects invalid reading timestamps', () => {
+        const sensor = createTemperatureSensorSimulator({
+            sensorId: 'temp-desk',
+            baseTemperature: 22,
+            readingPattern: [0],
+        });
+
+        expect(() => sensor.tick('not-a-date')).toThrow(
+            'Temperature reading recordedAt must be a valid timestamp string.',
+        );
     });
 });

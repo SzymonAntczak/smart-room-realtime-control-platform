@@ -25,13 +25,14 @@ The architecture is organized around the main domain concepts, not around implem
 | Telemetry   | Time-series readings and historical facts used for debugging and trends.       |
 | Realtime UI | Human-facing projection of state, command progress and history.                |
 
-## Current Stage 1 Implementation Slice
+## Incremental Read Path
 
-The current implementation starts smaller than the full smart-room model. The
-first Stage 1 slice is a read-only realtime view of one simulated temperature
-sensor.
+The architecture can be built in smaller slices before the full smart-room
+model exists. A minimal read path may start as a read-only realtime view of one
+simulated temperature sensor before backend transport, command handling and
+storage are introduced.
 
-This slice should show:
+A minimal read path should show:
 
 - the sensor name
 - the current temperature reading
@@ -39,10 +40,9 @@ This slice should show:
 - the last reading time
 - that the value is coming from simulated realtime updates
 
-This first slice intentionally does not include commands, LED control, event
-history, stale/offline handling, a backend runtime or a separate simulator
-process. Those remain later slices after the smallest realtime read path is
-working and easy to explain.
+This early slice does not define the long-term runtime topology. Backend
+adapters, event processing, event history, stale/offline handling and command
+flows are added as later slices while preserving the same platform model.
 
 ## Target MVP Scope
 
@@ -77,18 +77,12 @@ of understandable devices.
 
 ## Main Components
 
-For the current Stage 1 implementation slice, the only active runtime component
-is `frontend`: a React and TypeScript UI that simulates one temperature reading
-locally. This keeps the first read path small while the project resets from the
-larger dashboard scaffold.
-
-The broader architecture still expects separate roles later: `frontend` for the
-realtime UI, `backend` for the realtime API, event processing, command handling
-and in-memory storage, `simulator` for simulated devices and scenarios, and
-`shared` for platform contracts and adapter-facing message types used across
-project boundaries. Backend-owned adapters will translate external device
-sources, including the simulator, into platform events and commands when those
-later slices are introduced.
+The architecture separates `frontend` for the realtime UI, `backend` for the
+realtime API, event processing, command handling and in-memory storage,
+`simulator` for simulated devices and scenarios, and `shared` for platform
+contracts and adapter-facing message types used across project boundaries.
+Backend-owned adapters translate external device sources, including the
+simulator, into platform events and commands.
 
 ### Event Simulator
 
@@ -115,8 +109,7 @@ Expected responsibilities:
 
 ### Realtime Frontend
 
-Displays the current room state. In the current Stage 1 implementation slice it
-only shows a read-only simulated temperature sensor.
+Displays the current room state.
 
 Expected responsibilities:
 
@@ -131,8 +124,7 @@ Expected responsibilities:
 
 Stores events and derived telemetry used for history, debugging and trend analysis.
 
-This is a logical storage responsibility for a later backend slice. The current
-frontend-only sensor slice does not include telemetry storage.
+This is a logical storage responsibility for a backend-backed slice.
 
 Expected responsibilities:
 

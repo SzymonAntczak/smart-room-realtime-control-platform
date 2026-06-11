@@ -27,8 +27,15 @@ Use these files as the main context:
 - `docs/architecture/system-overview.md`
 - `docs/architecture/system-context.md`
 - `docs/architecture/control-loop.md`
+- `docs/architecture/devices.md`
 - `docs/architecture/events-and-commands.md`
+- `docs/architecture/reliability-and-testing.md`
+- `docs/architecture/ai-collaboration.md`
 - `docs/decisions/adr-template.md`
+- `docs/decisions/adr-local-first-before-cloud.md`
+- `docs/decisions/adr-event-simulator-before-real-devices.md`
+- `docs/decisions/adr-command-correlation-confirmation-and-concurrency.md`
+- `docs/decisions/adr-device-command-confirmation-and-health-policy.md`
 - `docs/decisions/tradeoffs.md`
 
 ## Decision Output
