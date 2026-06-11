@@ -1,10 +1,10 @@
 {
-    "name": "@smart-room/simulator",
+    "name": "@smart-room/backend",
     "private": true,
     "version": "0.1.0",
     "type": "module",
     "scripts": {
-        "lint": "eslint ../simulator --config ../eslint.config.js",
+        "lint": "eslint ../backend --config ../eslint.config.js",
         "test": "vitest run",
         "typecheck": "tsc --noEmit"
     },
