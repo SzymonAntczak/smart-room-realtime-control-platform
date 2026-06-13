@@ -3,7 +3,7 @@
 The platform folder contains backend code that belongs to the stable Smart Room
 control model rather than to one external source.
 
-## Responsibilities
+## Contents
 
 - `event-processing/` validates platform events, deduplicates them and applies
   event-processing rules before state changes are accepted.
@@ -15,9 +15,6 @@ control model rather than to one external source.
 
 Adapters for simulator, Home Assistant, MQTT or hardware should live outside
 `platform/` and translate their source-specific messages into platform events.
-For command paths, adapters also translate platform commands into
-source-specific device commands.
 
-Do not add a `runtime/` folder until the backend has a real composition root
-that chooses a scenario, wires adapters to the event processor and starts API or
-transport processes.
+Detailed behavior rules live in the architecture docs, accepted ADRs and
+`backend/AGENTS.md`.
