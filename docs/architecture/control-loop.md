@@ -8,7 +8,8 @@ Device, simulator or external source
   -> backend adapter
   -> platform event
   -> event processor
-  -> derived room state
+  -> backend read model / projections
+  -> backend realtime API / BFF
   -> realtime UI
   -> user command
   -> command dispatch
@@ -18,7 +19,9 @@ Device, simulator or external source
   -> device-native confirmation or state report
   -> backend adapter
   -> platform confirmation event or state report
-  -> updated room state
+  -> updated backend read model / projections
+  -> backend realtime API / BFF
+  -> realtime UI
 ```
 
 The platform is event-driven, but the user experience is command-driven. The user asks for something to happen; the system records the request, dispatches it and waits for evidence that the device actually changed.
@@ -28,9 +31,11 @@ The platform is event-driven, but the user experience is command-driven. The use
 1. A device, simulator or external source emits a device-native message.
 2. A backend adapter translates the message into a platform event.
 3. The event processor validates the event.
-4. The processor updates derived room state.
-5. The frontend receives the updated state in realtime.
-6. The event is stored for history and debugging.
+4. The processor applies deduplication and event-specific processing rules.
+5. Accepted events update the backend read model/projections.
+6. The realtime API/BFF reads the updated projections.
+7. The frontend receives the updated state in realtime.
+8. The event is stored for history and debugging.
 
 ## Command Path
 
@@ -44,7 +49,9 @@ The platform is event-driven, but the user experience is command-driven. The use
    command for the simulator or hardware source.
 6. The device or simulator eventually reports the observed state.
 7. The backend adapter translates the report into a platform event.
-8. The UI updates the confirmed state when a matching confirmation arrives.
+8. The event processor updates the backend read model/projections when a
+   matching confirmation arrives.
+9. The realtime API/BFF streams the updated projection to the UI.
 
 For the first implementation, a device can have only one pending command at a
 time. A new command for a device with an active pending command is rejected as a

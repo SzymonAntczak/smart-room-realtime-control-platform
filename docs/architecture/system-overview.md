@@ -78,11 +78,11 @@ of understandable devices.
 ## Main Components
 
 The architecture separates `frontend` for the realtime UI, `backend` for the
-realtime API, event processing, command handling and in-memory storage,
-`simulator` for simulated devices and scenarios, and `shared` for platform
-contracts and adapter-facing message types used across project boundaries.
-Backend-owned adapters translate external device sources, including the
-simulator, into platform events and commands.
+realtime API, event processing, read model/projections, command handling and
+in-memory storage, `simulator` for simulated devices and scenarios, and
+`shared` for platform contracts and adapter-facing message types used across
+project boundaries. Backend-owned adapters translate external device sources,
+including the simulator, into platform events and commands.
 
 ### Event Simulator
 
@@ -97,15 +97,33 @@ Expected responsibilities:
 
 ### Event Processor
 
-Consumes events, validates them and updates derived system state.
+Consumes platform events and applies backend processing rules.
 
 Expected responsibilities:
 
 - validate event shape and version
-- reject or quarantine malformed events
-- derive current room and device state
-- keep an append-only event history for important actions
-- publish state updates to the frontend
+- reject malformed or unsupported events
+- route invalid events to a quarantine stream when the storage/quarantine slice
+  exists
+- deduplicate events before they update derived state
+- apply command lifecycle and confirmation matching rules
+- update backend read model/projections from accepted events
+- append accepted and quarantined events to backend storage when those slices
+  exist
+
+### Backend Read Model / Projections
+
+Materialized backend views derived from accepted platform events.
+
+Expected responsibilities:
+
+- keep the current room and device state used by realtime reads
+- expose active command state, requested state, confirmed reported state and
+  device health as derived projections
+- keep recent event history for UI troubleshooting and audit-oriented views
+- provide UI-friendly read data to the realtime API/BFF without requiring the
+  frontend to interpret raw events
+- remain rebuildable from accepted events when the storage slice supports that
 
 ### Realtime Frontend
 
@@ -151,12 +169,12 @@ Expected responsibilities:
 - stream state, command and event updates to the frontend over WebSocket in a
   later backend-backed realtime slice
 - accept command requests from the frontend
-- expose UI-friendly derived views without making the frontend interpret raw
-  event streams by itself
+- read from backend read model/projections and expose UI-friendly derived views
+  without making the frontend interpret raw event streams by itself
 
 This boundary is BFF-like because it is shaped for the realtime frontend. In the
 target local runtime it belongs to the local Node.js backend together with the
-event processor and in-memory storage.
+event processor, read model/projections and in-memory storage.
 
 ### Device Adapters
 
@@ -181,3 +199,14 @@ of device-specific commands.
 The platform should work on a local machine or local network first. Cloud services can be added later, but the core control loop should not require them.
 
 This keeps the architecture easier to reason about and makes failures more explicit.
+
+## Current Implementation Status
+
+The current backend-backed slice starts with the read-only telemetry path for a
+simulated temperature sensor. It includes a simulator adapter, event processor
+and read-model projection for `telemetry.reading.recorded` events.
+
+Command lifecycle processing, confirmation matching, command projections,
+backend realtime transport, persistence and quarantine storage remain target
+responsibilities for later slices. Until command lifecycle events are
+implemented, the backend read model may expose empty command collections.

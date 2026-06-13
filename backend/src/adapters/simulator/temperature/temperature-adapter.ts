@@ -1,14 +1,12 @@
-import type { TemperatureSensorSimulator } from '../../../../simulator/src';
-import type { TelemetryReadingRecordedEvent } from '../../../../shared/src/events';
-
-export type PlatformEventSink = (event: TelemetryReadingRecordedEvent) => void;
-export type EventIdGenerator = () => string;
+import type { TemperatureSensorSimulator } from '../../../../../simulator/src';
+import type { TelemetryReadingRecordedEvent } from '../../../../../shared/src/events';
+import type { EventIdGenerator, PlatformEventSink } from '../../../platform/ports/event-sink';
 
 export interface SimulatorTemperatureAdapterConfig {
     sensor: TemperatureSensorSimulator;
     deviceId: string;
     generateEventId: EventIdGenerator;
-    emitEvent: PlatformEventSink;
+    emitEvent: PlatformEventSink<TelemetryReadingRecordedEvent>;
 }
 
 export interface SimulatorTemperatureAdapter {

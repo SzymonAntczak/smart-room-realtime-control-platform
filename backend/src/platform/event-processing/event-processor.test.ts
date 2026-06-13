@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PlatformEventEnvelope } from '../../../shared/src/events';
+import type { PlatformEventEnvelope } from '../../../../shared/src/events';
+import { createRoomProjector } from '../read-model/room-projection';
 import { createEventProcessor } from './event-processor';
 
 describe('createEventProcessor', () => {
@@ -175,7 +176,6 @@ describe('createEventProcessor', () => {
 
     it('does not apply a temperature reading to a non-temperature device role', () => {
         const processor = createEventProcessor({
-            initialUpdatedAt: '2026-06-08T09:29:59Z',
             devices: [
                 {
                     deviceId: 'led-main',
@@ -183,6 +183,16 @@ describe('createEventProcessor', () => {
                     role: 'led-output',
                 },
             ],
+            roomProjector: createRoomProjector({
+                initialUpdatedAt: '2026-06-08T09:29:59Z',
+                devices: [
+                    {
+                        deviceId: 'led-main',
+                        name: 'Main LED',
+                        role: 'led-output',
+                    },
+                ],
+            }),
         });
 
         const result = processor.processEvent(
@@ -200,15 +210,20 @@ describe('createEventProcessor', () => {
 });
 
 function createTemperatureProcessor() {
+    const devices = [
+        {
+            deviceId: 'temp-desk',
+            name: 'Desk Temperature',
+            role: 'temperature-sensor' as const,
+        },
+    ];
+
     return createEventProcessor({
-        initialUpdatedAt: '2026-06-08T09:29:59Z',
-        devices: [
-            {
-                deviceId: 'temp-desk',
-                name: 'Desk Temperature',
-                role: 'temperature-sensor',
-            },
-        ],
+        devices,
+        roomProjector: createRoomProjector({
+            initialUpdatedAt: '2026-06-08T09:29:59Z',
+            devices,
+        }),
     });
 }
 
