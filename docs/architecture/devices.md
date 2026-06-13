@@ -62,6 +62,14 @@ derived after the stale period exceeds the offline threshold.
 
 ## Command Availability By Health
 
+Command availability is derived from device capability first, then health.
+Read-only telemetry devices such as temperature, humidity, motion and ambient
+light sensors do not accept platform commands. Their command policy should be
+`block` with reason `read_only_device`, even when the device is otherwise
+`online`.
+
+For controllable devices, health provides the default command policy:
+
 | Health     | Default command policy | Meaning                                                       |
 | ---------- | ---------------------- | ------------------------------------------------------------- |
 | `online`   | `allow`                | Commands may be sent normally.                                |
@@ -101,6 +109,11 @@ devices may override these values when there is a specific reason.
 
 A `degraded` device exposes a command policy derived from the degradation
 reason.
+
+Read-only devices always expose `block` command availability with reason
+`read_only_device`. This is different from being `offline`: an online
+temperature sensor can report fresh telemetry while still rejecting commands
+because there is no command surface for that role.
 
 Initial command policies:
 

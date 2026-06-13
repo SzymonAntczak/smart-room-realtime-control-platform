@@ -48,7 +48,13 @@ exposes it with the device state. The simulator may emit simulated degradation
 facts and may reject simulated commands as device behavior, but it does not own
 UI-facing command availability or command lifecycle interpretation.
 
-Default command availability is derived from health:
+Command availability is derived from device capability before health.
+Read-only telemetry devices such as temperature, humidity, motion and ambient
+light sensors do not accept platform commands. The backend exposes them with
+`block` command availability and reason `read_only_device`, even when their
+health is `online`.
+
+For controllable devices, default command availability is derived from health:
 
 - `online`: allow commands
 - `stale`: allow commands with a visible warning
@@ -79,6 +85,11 @@ debugging harder.
 Deriving command availability from degraded reasons is more flexible than always
 allowing or always blocking commands, but it requires a small shared vocabulary
 for degradation reasons and command policies.
+
+Read-only sensors can remain healthy and useful while still blocking commands.
+The UI should avoid presenting controls for those devices, and backend command
+handling should reject command requests that target a read-only role as a
+first-class failure rather than dispatching them to an adapter.
 
 ## Links
 
