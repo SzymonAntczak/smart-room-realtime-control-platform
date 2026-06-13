@@ -5,18 +5,51 @@ Room platform.
 
 ```mermaid
 flowchart LR
-    user[User] --> ui[Realtime Frontend]
-    ui <-->|WebSocket| api[Backend Realtime API / BFF Boundary]
-    readModel[Backend Read Model / Projections] --> api
-    api -->|command requests| processor
-    processor[Backend Event Processor] --> readModel
-    processor --> storage[(Backend In-Memory Storage)]
-    readModel --> storage
-    simulator[Event Simulator] <--> simAdapter[Backend Simulator Adapter]
+    subgraph external[External Sources]
+        direction TB
+        simulator[Event Simulator]
+        hardware[Hardware Device]
+    end
+
+    subgraph adapters[Backend Adapters]
+        direction TB
+        simAdapter[Simulator Adapter]
+        hardwareAdapter[Hardware Adapter]
+    end
+
+    subgraph platform[Backend Platform Core]
+        direction LR
+        processor[Event Processor]
+        readModel[Read Model / Projections]
+        storage[(In-Memory Storage)]
+
+        processor --> readModel
+        processor --> storage
+        readModel --> storage
+    end
+
+    subgraph apiBoundary[Backend API Boundary]
+        api[Realtime API / BFF]
+    end
+
+    subgraph client[Client]
+        direction TB
+        ui[Realtime Frontend]
+        user[User]
+    end
+
+    simulator <-->|simulator-native messages / commands| simAdapter
+    hardware <-->|device-native messages / commands| hardwareAdapter
+
     simAdapter -->|platform events| processor
-    processor -->|platform commands| simAdapter
-    hardware[Hardware Device] <--> hardwareAdapter[Backend Hardware Adapter]
     hardwareAdapter -->|platform events| processor
+
+    readModel -->|snapshots / updates| api
+    api <-->|WebSocket| ui
+    ui <--> user
+
+    api -->|command requests| processor
+    processor -->|platform commands| simAdapter
     processor -->|platform commands| hardwareAdapter
 ```
 
