@@ -65,11 +65,64 @@ describe('createRoomProjector', () => {
         ).toThrow('Cannot project telemetry for unknown device: unknown-temp');
         expect(projector.getProjection().devices).toEqual([]);
     });
+
+    it('keeps the newest events first in recent history', () => {
+        const projector = createTemperatureProjector();
+
+        projector.applyTelemetryReadingRecorded(
+            createTemperatureEvent({
+                eventId: 'evt-temperature-1',
+                occurredAt: '2026-06-08T09:30:00Z',
+            }),
+        );
+        projector.applyTelemetryReadingRecorded(
+            createTemperatureEvent({
+                eventId: 'evt-temperature-2',
+                occurredAt: '2026-06-08T09:30:01Z',
+            }),
+        );
+
+        expect(projector.getProjection().recentEvents.map((event) => event.eventId)).toEqual([
+            'evt-temperature-2',
+            'evt-temperature-1',
+        ]);
+    });
+
+    it('limits recent event history when configured', () => {
+        const projector = createTemperatureProjector({
+            recentEventLimit: 2,
+        });
+
+        projector.applyTelemetryReadingRecorded(
+            createTemperatureEvent({
+                eventId: 'evt-temperature-1',
+                occurredAt: '2026-06-08T09:30:00Z',
+            }),
+        );
+        projector.applyTelemetryReadingRecorded(
+            createTemperatureEvent({
+                eventId: 'evt-temperature-2',
+                occurredAt: '2026-06-08T09:30:01Z',
+            }),
+        );
+        projector.applyTelemetryReadingRecorded(
+            createTemperatureEvent({
+                eventId: 'evt-temperature-3',
+                occurredAt: '2026-06-08T09:30:02Z',
+            }),
+        );
+
+        expect(projector.getProjection().recentEvents.map((event) => event.eventId)).toEqual([
+            'evt-temperature-3',
+            'evt-temperature-2',
+        ]);
+    });
 });
 
-function createTemperatureProjector() {
+function createTemperatureProjector({ recentEventLimit }: { recentEventLimit?: number } = {}) {
     return createRoomProjector({
         initialUpdatedAt: '2026-06-08T09:29:59Z',
+        recentEventLimit,
         devices: [
             {
                 deviceId: 'temp-desk',

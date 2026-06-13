@@ -11,6 +11,7 @@ export {
     type EventProcessorState,
     type EventProcessingResult,
 } from './platform/event-processing/event-processor';
+export { createRoomBffServer, type RoomBffConfig } from './api/room-bff';
 export { type EventIdGenerator, type PlatformEventSink } from './platform/ports/event-sink';
 export {
     createRoomProjector,
@@ -18,3 +19,8 @@ export {
     type RoomProjectionConfig,
     type RoomProjector,
 } from './platform/read-model/room-projection';
+export {
+    createTemperatureRoomRuntime,
+    type TemperatureRoomRuntime,
+    type TemperatureRoomRuntimeConfig,
+} from './runtime/temperature-room-runtime';

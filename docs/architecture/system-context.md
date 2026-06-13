@@ -82,6 +82,10 @@ shows responsibility boundaries, not required production deployment boundaries.
 
 The current repository implementation does not yet include the full target
 context. The backend slice currently covers the simulator temperature telemetry
-path through adapter, event processor and read-model projection. Backend
-realtime API/BFF, command handling, persistence and quarantine storage are still
-future slices.
+path through adapter, event processor, read-model projection and a small HTTP
+snapshot BFF.
+
+The current BFF exposes `GET /room` for the latest `RoomSnapshotProjection`.
+It is a snapshot boundary for the frontend, not the final realtime transport.
+WebSocket/realtime streaming, command handling, persistence, quarantine storage
+and stale/offline derivation are still future slices.

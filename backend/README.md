@@ -15,9 +15,14 @@ UI-oriented realtime APIs.
 
 ## Commands
 
+- `npm --prefix backend run dev`
 - `npm --prefix backend run test`
 - `npm --prefix backend run typecheck`
 - `npm --prefix backend run lint`
+
+The local development BFF listens on `http://localhost:4310` by default. Its
+current snapshot endpoint is `GET http://localhost:4310/room`. The port can be
+overridden with `PORT`.
 
 Use the repository architecture docs and accepted ADRs as the source of truth
 for event, command, device and reliability behavior.

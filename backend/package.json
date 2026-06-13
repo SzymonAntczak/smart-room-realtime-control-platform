@@ -4,12 +4,14 @@
     "version": "0.1.0",
     "type": "module",
     "scripts": {
+        "dev": "tsx src/server.ts",
         "lint": "eslint ../backend --config ../eslint.config.js",
         "test": "vitest run",
         "typecheck": "tsc --noEmit"
     },
     "devDependencies": {
         "@types/node": "^24.10.4",
+        "tsx": "^4.22.4",
         "typescript": "^6.0.3",
         "vitest": "^4.1.8"
     }

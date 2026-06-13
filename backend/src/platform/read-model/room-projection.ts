@@ -17,6 +17,7 @@ export interface DeviceDefinition {
 export interface RoomProjectionConfig {
     devices: DeviceDefinition[];
     initialUpdatedAt: string;
+    recentEventLimit?: number;
 }
 
 export interface RoomProjection {
@@ -34,6 +35,7 @@ export interface RoomProjector {
 export function createRoomProjector({
     devices,
     initialUpdatedAt,
+    recentEventLimit = 50,
 }: RoomProjectionConfig): RoomProjector {
     const deviceDefinitions = new Map(devices.map((device) => [device.deviceId, device]));
     const deviceProjections = new Map<string, DeviceProjection>();
@@ -62,6 +64,7 @@ export function createRoomProjector({
                 lastSeenAt: event.occurredAt,
             });
             recentEvents.unshift(toEventFeedItem(event));
+            recentEvents.splice(recentEventLimit);
 
             return buildProjection();
         },
