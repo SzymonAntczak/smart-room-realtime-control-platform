@@ -7,6 +7,7 @@ describe('createTemperatureRoomRuntime', () => {
         const runtime = createTemperatureRoomRuntime({
             intervalMs: 10_000,
             clock: createSequenceClock(['2026-06-08T09:29:59Z', '2026-06-08T09:30:00Z']),
+            generateEventId: createSequenceEventIdGenerator(['evt-temperature-1']),
         });
 
         try {
@@ -58,6 +59,10 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:01Z',
             ]),
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-2',
+            ]),
             timer,
         });
 
@@ -93,6 +98,10 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:02Z',
             ]),
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-2',
+            ]),
             timer,
         });
 
@@ -120,6 +129,10 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:02Z',
             ]),
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-2',
+            ]),
             timer,
         });
 
@@ -139,6 +152,25 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.stop();
         }
     });
+
+    it('uses crypto UUID event ids by default', () => {
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 10_000,
+            clock: createSequenceClock(['2026-06-08T09:29:59Z', '2026-06-08T09:30:00Z']),
+        });
+
+        try {
+            runtime.start();
+
+            const eventId = runtime.getRoomSnapshot().recentEvents[0]?.eventId;
+
+            expect(eventId).toMatch(
+                /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
 });
 
 function createSequenceClock(timestamps: string[]): Clock {
@@ -154,6 +186,20 @@ function createSequenceClock(timestamps: string[]): Clock {
 
             return timestamp;
         },
+    };
+}
+
+function createSequenceEventIdGenerator(eventIds: string[]): () => string {
+    const pendingEventIds = [...eventIds];
+
+    return () => {
+        const eventId = pendingEventIds.shift();
+
+        if (!eventId) {
+            throw new Error('No deterministic event id configured.');
+        }
+
+        return eventId;
     };
 }
 

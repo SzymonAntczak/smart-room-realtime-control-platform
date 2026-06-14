@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
     createTemperatureSensorRuntime,
     createTemperatureSensorSimulator,
@@ -21,6 +22,7 @@ export interface TemperatureRoomRuntimeConfig {
     intervalMs?: number;
     clock?: Clock;
     timer?: TimerScheduler;
+    generateEventId?: () => string;
 }
 
 export interface TemperatureRoomRuntime {
@@ -44,6 +46,7 @@ export function createTemperatureRoomRuntime({
     intervalMs = 1000,
     clock = realClock,
     timer,
+    generateEventId = randomUUID,
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
     const sensor = createTemperatureSensorSimulator({
         sensorId: 'temp-desk-native',
@@ -64,7 +67,6 @@ export function createTemperatureRoomRuntime({
         clock,
         timer,
     });
-    let nextEventNumber = 1;
     let hasStarted = false;
     let adapter: SimulatorTemperatureAdapter | undefined;
 
@@ -78,11 +80,7 @@ export function createTemperatureRoomRuntime({
             adapter = createSimulatorTemperatureAdapter({
                 sensor,
                 deviceId: 'temp-desk',
-                generateEventId() {
-                    const eventId = `evt-temperature-${nextEventNumber}`;
-                    nextEventNumber += 1;
-                    return eventId;
-                },
+                generateEventId,
                 emitEvent(event) {
                     processor.processEvent(event);
                 },
