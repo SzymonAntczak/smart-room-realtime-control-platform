@@ -1,5 +1,5 @@
 import type { CommandProjection } from '../../../../shared/src/commands';
-import type { DeviceRole, DeviceState } from '../../../../shared/src/devices';
+import type { DeviceHealth, DeviceRole, DeviceState } from '../../../../shared/src/devices';
 import type { DeviceProjection, EventFeedItemProjection } from '../../../../shared/src/projections';
 import type {
     PlatformEventEnvelope,
@@ -14,10 +14,22 @@ export interface DeviceDefinition {
     role: DeviceRole;
 }
 
+export interface DeviceFreshnessThresholds {
+    staleAfterMs: number;
+    offlineAfterMs: number;
+}
+
+export type FreshnessThresholdsByRole = Partial<Record<DeviceRole, DeviceFreshnessThresholds>>;
+
 export interface RoomProjectionConfig {
     devices: DeviceDefinition[];
     initialUpdatedAt: string;
     recentEventLimit?: number;
+    freshnessThresholdsByRole?: FreshnessThresholdsByRole;
+}
+
+export interface ProjectionEvaluationOptions {
+    evaluatedAt?: string;
 }
 
 export interface RoomProjection {
@@ -29,13 +41,14 @@ export interface RoomProjection {
 
 export interface RoomProjector {
     applyTelemetryReadingRecorded(event: TelemetryReadingRecordedEvent): RoomProjection;
-    getProjection(): RoomProjection;
+    getProjection(options?: ProjectionEvaluationOptions): RoomProjection;
 }
 
 export function createRoomProjector({
     devices,
     initialUpdatedAt,
     recentEventLimit = 50,
+    freshnessThresholdsByRole = defaultFreshnessThresholdsByRole,
 }: RoomProjectionConfig): RoomProjector {
     const deviceDefinitions = new Map(devices.map((device) => [device.deviceId, device]));
     const deviceProjections = new Map<string, DeviceProjection>();
@@ -48,6 +61,21 @@ export function createRoomProjector({
 
             if (!device) {
                 throw new Error(`Cannot project telemetry for unknown device: ${event.deviceId}`);
+            }
+
+            recentEvents.unshift(toEventFeedItem(event));
+            recentEvents.splice(recentEventLimit);
+
+            const currentDevice = deviceProjections.get(device.deviceId);
+
+            if (
+                currentDevice?.lastSeenAt &&
+                parseTimestamp(event.occurredAt, 'event.occurredAt') <=
+                    parseTimestamp(currentDevice.lastSeenAt, 'device.lastSeenAt')
+            ) {
+                return buildProjection({
+                    evaluatedAt: event.occurredAt,
+                });
             }
 
             updatedAt = event.occurredAt;
@@ -63,24 +91,95 @@ export function createRoomProjector({
                 },
                 lastSeenAt: event.occurredAt,
             });
-            recentEvents.unshift(toEventFeedItem(event));
-            recentEvents.splice(recentEventLimit);
 
-            return buildProjection();
+            return buildProjection({
+                evaluatedAt: event.occurredAt,
+            });
         },
-        getProjection() {
-            return buildProjection();
+        getProjection(options = {}) {
+            return buildProjection({
+                evaluatedAt: options.evaluatedAt ?? updatedAt,
+            });
         },
     };
 
-    function buildProjection(): RoomProjection {
+    function buildProjection({ evaluatedAt }: Required<ProjectionEvaluationOptions>): RoomProjection {
         return {
             updatedAt,
-            devices: [...deviceProjections.values()],
+            devices: [...deviceProjections.values()].map((device) =>
+                applyFreshnessHealth(device, evaluatedAt),
+            ),
             activeCommands: [],
             recentEvents: [...recentEvents],
         };
     }
+
+    function applyFreshnessHealth(
+        device: DeviceProjection,
+        evaluatedAt: string,
+    ): DeviceProjection {
+        if (!device.lastSeenAt) {
+            return { ...device };
+        }
+
+        const thresholds = freshnessThresholdsByRole[device.role];
+
+        if (!thresholds) {
+            return { ...device };
+        }
+
+        return {
+            ...device,
+            health: deriveFreshnessHealth({
+                lastSeenAt: device.lastSeenAt,
+                evaluatedAt,
+                thresholds,
+            }),
+        };
+    }
+}
+
+const defaultFreshnessThresholdsByRole: FreshnessThresholdsByRole = {
+    'temperature-sensor': {
+        staleAfterMs: 2500,
+        offlineAfterMs: 10000,
+    },
+};
+
+function deriveFreshnessHealth({
+    lastSeenAt,
+    evaluatedAt,
+    thresholds,
+}: {
+    lastSeenAt: string;
+    evaluatedAt: string;
+    thresholds: DeviceFreshnessThresholds;
+}): DeviceHealth {
+    const ageMs = Math.max(
+        0,
+        parseTimestamp(evaluatedAt, 'projection.evaluatedAt') -
+            parseTimestamp(lastSeenAt, 'device.lastSeenAt'),
+    );
+
+    if (ageMs > thresholds.offlineAfterMs) {
+        return 'offline';
+    }
+
+    if (ageMs > thresholds.staleAfterMs) {
+        return 'stale';
+    }
+
+    return 'online';
+}
+
+function parseTimestamp(timestamp: string, fieldName: string): number {
+    const parsed = Date.parse(timestamp);
+
+    if (Number.isNaN(parsed)) {
+        throw new Error(`Invalid timestamp for ${fieldName}: ${timestamp}`);
+    }
+
+    return parsed;
 }
 
 function toTemperatureReportedState(payload: TelemetryReadingRecordedPayload): DeviceState {

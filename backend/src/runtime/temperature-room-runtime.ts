@@ -106,7 +106,7 @@ export function createTemperatureRoomRuntime({
             hasStarted = false;
         },
         getRoomSnapshot() {
-            return toRoomSnapshot(roomName, roomProjector);
+            return toRoomSnapshot(roomName, roomProjector, clock.now());
         },
         getDiagnosticsSnapshot() {
             return diagnostics.getSnapshot();
@@ -120,8 +120,14 @@ const realClock: Clock = {
     },
 };
 
-function toRoomSnapshot(roomName: string, roomProjector: RoomProjector): RoomSnapshotProjection {
-    const projection = roomProjector.getProjection();
+function toRoomSnapshot(
+    roomName: string,
+    roomProjector: RoomProjector,
+    evaluatedAt: string,
+): RoomSnapshotProjection {
+    const projection = roomProjector.getProjection({
+        evaluatedAt,
+    });
 
     return {
         roomName,

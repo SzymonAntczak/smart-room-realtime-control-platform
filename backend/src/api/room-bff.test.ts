@@ -27,6 +27,31 @@ describe('createRoomBffServer', () => {
         await expect(response.json()).resolves.toEqual(createRoomSnapshot());
     });
 
+    it('serves derived stale health from the current room snapshot', async () => {
+        const server = await listen(
+            createRoomBffServer(
+                createRoomBffConfig({
+                    roomSnapshot: createRoomSnapshot({
+                        health: 'stale',
+                    }),
+                }),
+            ),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/room`);
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            devices: [
+                {
+                    deviceId: 'temp-desk',
+                    health: 'stale',
+                },
+            ],
+        });
+    });
+
     it('returns 404 for unknown routes', async () => {
         const server = await listen(
             createRoomBffServer(createRoomBffConfig()),
@@ -99,10 +124,14 @@ describe('createRoomBffServer', () => {
     });
 });
 
-function createRoomBffConfig() {
+function createRoomBffConfig({
+    roomSnapshot = createRoomSnapshot(),
+}: {
+    roomSnapshot?: RoomSnapshotProjection;
+} = {}) {
     return {
         getRoomSnapshot() {
-            return createRoomSnapshot();
+            return roomSnapshot;
         },
         getDiagnosticsSnapshot() {
             return createDiagnosticsSnapshot();
@@ -110,7 +139,11 @@ function createRoomBffConfig() {
     };
 }
 
-function createRoomSnapshot(): RoomSnapshotProjection {
+function createRoomSnapshot({
+    health = 'online',
+}: {
+    health?: RoomSnapshotProjection['devices'][number]['health'];
+} = {}): RoomSnapshotProjection {
     return {
         roomName: 'Smart Room',
         updatedAt: '2026-06-08T09:30:00Z',
@@ -119,7 +152,7 @@ function createRoomSnapshot(): RoomSnapshotProjection {
                 deviceId: 'temp-desk',
                 name: 'Desk Temperature',
                 role: 'temperature-sensor',
-                health: 'online',
+                health,
                 reportedState: {
                     temperature: 22,
                     temperatureUnit: 'celsius',

@@ -6,7 +6,11 @@ describe('createTemperatureRoomRuntime', () => {
     it('starts with an immediate temperature reading from the injected clock', () => {
         const runtime = createTemperatureRoomRuntime({
             intervalMs: 10_000,
-            clock: createSequenceClock(['2026-06-08T09:29:59Z', '2026-06-08T09:30:00Z']),
+            clock: createSequenceClock([
+                '2026-06-08T09:29:59Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+            ]),
             generateEventId: createSequenceEventIdGenerator(['evt-temperature-1']),
         });
 
@@ -61,6 +65,7 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:29:59Z',
                 '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:01Z',
             ]),
             generateEventId: createSequenceEventIdGenerator([
                 'evt-temperature-1',
@@ -86,6 +91,77 @@ describe('createTemperatureRoomRuntime', () => {
                 'evt-temperature-1',
             ]);
             expect(timer.intervals).toEqual([1000]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('derives stale and offline health when temperature telemetry stops, then recovers on a fresh reading', () => {
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            clock: createSequenceClock([
+                '2026-06-08T09:29:59Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:02.501Z',
+                '2026-06-08T09:30:10.001Z',
+                '2026-06-08T09:30:11Z',
+                '2026-06-08T09:30:11Z',
+                '2026-06-08T09:30:05Z',
+                '2026-06-08T09:30:12Z',
+            ]),
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-2',
+                'evt-temperature-late',
+            ]),
+            timer,
+        });
+
+        try {
+            runtime.start();
+
+            expect(runtime.getRoomSnapshot().devices[0]?.health).toBe('online');
+            expect(runtime.getRoomSnapshot().devices[0]?.health).toBe('stale');
+            expect(runtime.getRoomSnapshot().devices[0]?.health).toBe('offline');
+
+            timer.runLatest();
+
+            const recoveredSnapshot = runtime.getRoomSnapshot();
+
+            expect(recoveredSnapshot.devices[0]).toEqual(
+                expect.objectContaining({
+                    health: 'online',
+                    lastSeenAt: '2026-06-08T09:30:11Z',
+                }),
+            );
+            expect(recoveredSnapshot.updatedAt).toBe('2026-06-08T09:30:11Z');
+            expect(recoveredSnapshot.recentEvents.map((event) => event.eventId)).toEqual([
+                'evt-temperature-2',
+                'evt-temperature-1',
+            ]);
+
+            timer.runLatest();
+
+            const snapshotAfterLateTelemetry = runtime.getRoomSnapshot();
+
+            expect(snapshotAfterLateTelemetry.devices[0]).toEqual(
+                expect.objectContaining({
+                    health: 'online',
+                    lastSeenAt: '2026-06-08T09:30:11Z',
+                    reportedState: {
+                        temperature: 22.2,
+                        temperatureUnit: 'celsius',
+                    },
+                }),
+            );
+            expect(snapshotAfterLateTelemetry.updatedAt).toBe('2026-06-08T09:30:11Z');
+            expect(snapshotAfterLateTelemetry.recentEvents.map((event) => event.eventId)).toEqual([
+                'evt-temperature-late',
+                'evt-temperature-2',
+                'evt-temperature-1',
+            ]);
         } finally {
             runtime.stop();
         }
@@ -159,7 +235,11 @@ describe('createTemperatureRoomRuntime', () => {
     it('uses crypto UUID event ids by default', () => {
         const runtime = createTemperatureRoomRuntime({
             intervalMs: 10_000,
-            clock: createSequenceClock(['2026-06-08T09:29:59Z', '2026-06-08T09:30:00Z']),
+            clock: createSequenceClock([
+                '2026-06-08T09:29:59Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+            ]),
         });
 
         try {
@@ -183,6 +263,7 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:29:59Z',
                 '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:02Z',
                 '2026-06-08T09:30:02Z',
             ]),
             generateEventId: createSequenceEventIdGenerator([
