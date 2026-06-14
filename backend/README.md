@@ -21,8 +21,9 @@ UI-oriented realtime APIs.
 - `npm --prefix backend run lint`
 
 The local development BFF listens on `http://localhost:4310` by default. Its
-current snapshot endpoint is `GET http://localhost:4310/room`. The port can be
-overridden with `PORT`.
+current snapshot endpoint is `GET http://localhost:4310/room`. Runtime event
+processing diagnostics are available at `GET http://localhost:4310/diagnostics`.
+The port can be overridden with `PORT`.
 
 Use the repository architecture docs and accepted ADRs as the source of truth
 for event, command, device and reliability behavior.

@@ -32,7 +32,7 @@ export type EventProcessingResult =
               | 'device_metric_mismatch';
           state: EventProcessorState;
       };
-type IgnoredEventReason = Extract<EventProcessingResult, { status: 'ignored' }>['reason'];
+export type IgnoredEventReason = Extract<EventProcessingResult, { status: 'ignored' }>['reason'];
 
 export interface EventProcessor {
     processEvent(event: unknown): EventProcessingResult;

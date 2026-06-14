@@ -1,20 +1,33 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 import type { RoomSnapshotProjection } from '../../../shared/src/projections';
 
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
+    getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
 }
 
-export function createRoomBffServer({ getRoomSnapshot }: RoomBffConfig): Server {
+export function createRoomBffServer({
+    getRoomSnapshot,
+    getDiagnosticsSnapshot,
+}: RoomBffConfig): Server {
     return createServer((request, response) => {
-        handleRoomBffRequest(request, response, getRoomSnapshot);
+        handleRoomBffRequest(request, response, {
+            getRoomSnapshot,
+            getDiagnosticsSnapshot,
+        });
     });
+}
+
+interface RoomBffHandlers {
+    getRoomSnapshot(): RoomSnapshotProjection;
+    getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
 }
 
 function handleRoomBffRequest(
     request: IncomingMessage,
     response: ServerResponse,
-    getRoomSnapshot: () => RoomSnapshotProjection,
+    handlers: RoomBffHandlers,
 ): void {
     setCorsHeaders(response);
 
@@ -26,7 +39,7 @@ function handleRoomBffRequest(
 
     const url = new URL(request.url ?? '/', 'http://localhost');
 
-    if (url.pathname !== '/room') {
+    if (url.pathname !== '/room' && url.pathname !== '/diagnostics') {
         writeJson(response, 404, {
             error: 'not_found',
             message: 'Route not found.',
@@ -43,7 +56,12 @@ function handleRoomBffRequest(
         return;
     }
 
-    writeJson(response, 200, getRoomSnapshot());
+    if (url.pathname === '/diagnostics') {
+        writeJson(response, 200, handlers.getDiagnosticsSnapshot());
+        return;
+    }
+
+    writeJson(response, 200, handlers.getRoomSnapshot());
 }
 
 function setCorsHeaders(response: ServerResponse): void {

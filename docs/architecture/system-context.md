@@ -87,5 +87,9 @@ snapshot BFF.
 
 The current BFF exposes `GET /room` for the latest `RoomSnapshotProjection`.
 It is a snapshot boundary for the frontend, not the final realtime transport.
-WebSocket/realtime streaming, command handling, persistence, quarantine storage
-and stale/offline derivation are still future slices.
+It also exposes `GET /diagnostics` for recent ignored event-processing outcomes
+so the development runtime can explain rejected duplicate or invalid events.
+The diagnostics response is bounded in-memory, newest-first and metadata-only;
+it is not event history or durable quarantine storage. WebSocket/realtime
+streaming, command handling, persistence, quarantine storage and stale/offline
+derivation are still future slices.

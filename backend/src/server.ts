@@ -6,6 +6,7 @@ const port = readPort(process.env.PORT);
 const runtime = createTemperatureRoomRuntime();
 const server = createRoomBffServer({
     getRoomSnapshot: runtime.getRoomSnapshot,
+    getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
 });
 
 runtime.start();

@@ -45,6 +45,9 @@ describe('createTemperatureRoomRuntime', () => {
             expect(snapshot.updatedAt).toBe('2026-06-08T09:30:00Z');
             expect(snapshot.devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:00Z');
             expect(snapshot.recentEvents[0]?.occurredAt).toBe('2026-06-08T09:30:00Z');
+            expect(runtime.getDiagnosticsSnapshot()).toEqual({
+                ignoredEvents: [],
+            });
         } finally {
             runtime.stop();
         }
@@ -167,6 +170,104 @@ describe('createTemperatureRoomRuntime', () => {
             expect(eventId).toMatch(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
             );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('records ignored duplicate events in diagnostics without updating recent events', () => {
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            clock: createSequenceClock([
+                '2026-06-08T09:29:59Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:02Z',
+            ]),
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-1',
+            ]),
+            timer,
+        });
+
+        try {
+            runtime.start();
+            timer.runLatest();
+
+            expect(runtime.getRoomSnapshot().recentEvents.map((event) => event.eventId)).toEqual([
+                'evt-temperature-1',
+            ]);
+            expect(runtime.getDiagnosticsSnapshot()).toEqual({
+                ignoredEvents: [
+                    {
+                        diagnosticId: 'diag-1',
+                        reason: 'duplicate_event',
+                        observedAt: '2026-06-08T09:30:02Z',
+                        eventId: 'evt-temperature-1',
+                        eventType: 'telemetry.reading.recorded',
+                        source: 'simulator-adapter',
+                        deviceId: 'temp-desk',
+                        occurredAt: '2026-06-08T09:30:01Z',
+                    },
+                ],
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('keeps ignored diagnostics newest-first and applies the diagnostics limit', () => {
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            diagnosticEventLimit: 2,
+            clock: createSequenceClock([
+                '2026-06-08T09:29:59Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:02Z',
+                '2026-06-08T09:30:03Z',
+                '2026-06-08T09:30:04Z',
+                '2026-06-08T09:30:05Z',
+                '2026-06-08T09:30:06Z',
+            ]),
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-1',
+                'evt-temperature-1',
+                'evt-temperature-1',
+            ]),
+            timer,
+        });
+
+        try {
+            runtime.start();
+            timer.runLatest();
+            timer.runLatest();
+            timer.runLatest();
+
+            expect(
+                runtime
+                    .getDiagnosticsSnapshot()
+                    .ignoredEvents.map((diagnostic) => diagnostic.diagnosticId),
+            ).toEqual(['diag-3', 'diag-2']);
+            expect(
+                runtime.getDiagnosticsSnapshot().ignoredEvents.map((diagnostic) => ({
+                    observedAt: diagnostic.observedAt,
+                    occurredAt: diagnostic.occurredAt,
+                })),
+            ).toEqual([
+                {
+                    observedAt: '2026-06-08T09:30:06Z',
+                    occurredAt: '2026-06-08T09:30:05Z',
+                },
+                {
+                    observedAt: '2026-06-08T09:30:04Z',
+                    occurredAt: '2026-06-08T09:30:03Z',
+                },
+            ]);
         } finally {
             runtime.stop();
         }

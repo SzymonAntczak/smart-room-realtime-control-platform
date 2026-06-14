@@ -4,6 +4,13 @@ export {
     type SimulatorTemperatureAdapterConfig,
 } from './adapters/simulator/temperature/temperature-adapter';
 export {
+    createEventProcessingDiagnostics,
+    type EventProcessingDiagnostics,
+    type EventProcessingDiagnosticsConfig,
+    type EventProcessingDiagnosticsSnapshot,
+    type IgnoredEventDiagnostic,
+} from './platform/event-processing/event-processing-diagnostics';
+export {
     createEventProcessor,
     type DeviceDefinition,
     type EventProcessor,

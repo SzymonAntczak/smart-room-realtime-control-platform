@@ -15,6 +15,10 @@ import {
     createEventProcessor,
     type DeviceDefinition,
 } from '../platform/event-processing/event-processor';
+import {
+    createEventProcessingDiagnostics,
+    type EventProcessingDiagnosticsSnapshot,
+} from '../platform/event-processing/event-processing-diagnostics';
 import { createRoomProjector, type RoomProjector } from '../platform/read-model/room-projection';
 
 export interface TemperatureRoomRuntimeConfig {
@@ -23,12 +27,14 @@ export interface TemperatureRoomRuntimeConfig {
     clock?: Clock;
     timer?: TimerScheduler;
     generateEventId?: () => string;
+    diagnosticEventLimit?: number;
 }
 
 export interface TemperatureRoomRuntime {
     start(): void;
     stop(): void;
     getRoomSnapshot(): RoomSnapshotProjection;
+    getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
 }
 
 const defaultDevices: DeviceDefinition[] = [
@@ -47,6 +53,7 @@ export function createTemperatureRoomRuntime({
     clock = realClock,
     timer,
     generateEventId = randomUUID,
+    diagnosticEventLimit,
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
     const sensor = createTemperatureSensorSimulator({
         sensorId: 'temp-desk-native',
@@ -60,6 +67,10 @@ export function createTemperatureRoomRuntime({
     const processor = createEventProcessor({
         devices: defaultDevices,
         roomProjector,
+    });
+    const diagnostics = createEventProcessingDiagnostics({
+        clock,
+        diagnosticEventLimit,
     });
     const sensorRuntime: TemperatureSensorRuntime = createTemperatureSensorRuntime({
         sensor,
@@ -82,7 +93,7 @@ export function createTemperatureRoomRuntime({
                 deviceId: 'temp-desk',
                 generateEventId,
                 emitEvent(event) {
-                    processor.processEvent(event);
+                    diagnostics.recordProcessingResult(event, processor.processEvent(event));
                 },
             });
             sensor.tick(clock.now());
@@ -96,6 +107,9 @@ export function createTemperatureRoomRuntime({
         },
         getRoomSnapshot() {
             return toRoomSnapshot(roomName, roomProjector);
+        },
+        getDiagnosticsSnapshot() {
+            return diagnostics.getSnapshot();
         },
     };
 }

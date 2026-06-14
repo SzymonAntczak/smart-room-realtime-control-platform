@@ -1,6 +1,7 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 import type { RoomSnapshotProjection } from '../../../shared/src/projections';
 import { createRoomBffServer } from './room-bff';
 
@@ -14,11 +15,7 @@ describe('createRoomBffServer', () => {
 
     it('serves the current room snapshot', async () => {
         const server = await listen(
-            createRoomBffServer({
-                getRoomSnapshot() {
-                    return createRoomSnapshot();
-                },
-            }),
+            createRoomBffServer(createRoomBffConfig()),
         );
         openServers.push(server);
 
@@ -32,11 +29,7 @@ describe('createRoomBffServer', () => {
 
     it('returns 404 for unknown routes', async () => {
         const server = await listen(
-            createRoomBffServer({
-                getRoomSnapshot() {
-                    return createRoomSnapshot();
-                },
-            }),
+            createRoomBffServer(createRoomBffConfig()),
         );
         openServers.push(server);
 
@@ -50,11 +43,7 @@ describe('createRoomBffServer', () => {
 
     it('returns 405 for unsupported room route methods', async () => {
         const server = await listen(
-            createRoomBffServer({
-                getRoomSnapshot() {
-                    return createRoomSnapshot();
-                },
-            }),
+            createRoomBffServer(createRoomBffConfig()),
         );
         openServers.push(server);
 
@@ -71,11 +60,7 @@ describe('createRoomBffServer', () => {
 
     it('handles CORS preflight requests', async () => {
         const server = await listen(
-            createRoomBffServer({
-                getRoomSnapshot() {
-                    return createRoomSnapshot();
-                },
-            }),
+            createRoomBffServer(createRoomBffConfig()),
         );
         openServers.push(server);
 
@@ -86,7 +71,44 @@ describe('createRoomBffServer', () => {
         expect(response.status).toBe(204);
         expect(response.headers.get('access-control-allow-methods')).toBe('GET, OPTIONS');
     });
+
+    it('serves the current event processing diagnostics snapshot', async () => {
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/diagnostics`);
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toContain('application/json');
+        await expect(response.json()).resolves.toEqual(createDiagnosticsSnapshot());
+    });
+
+    it('returns 405 for unsupported diagnostics route methods', async () => {
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/diagnostics`, {
+            method: 'POST',
+        });
+
+        expect(response.status).toBe(405);
+        expect(response.headers.get('allow')).toBe('GET, OPTIONS');
+        await expect(response.json()).resolves.toMatchObject({
+            error: 'method_not_allowed',
+        });
+    });
 });
+
+function createRoomBffConfig() {
+    return {
+        getRoomSnapshot() {
+            return createRoomSnapshot();
+        },
+        getDiagnosticsSnapshot() {
+            return createDiagnosticsSnapshot();
+        },
+    };
+}
 
 function createRoomSnapshot(): RoomSnapshotProjection {
     return {
@@ -119,6 +141,23 @@ function createRoomSnapshot(): RoomSnapshotProjection {
                 deviceId: 'temp-desk',
                 commandId: undefined,
                 summary: 'Temperature reading recorded',
+            },
+        ],
+    };
+}
+
+function createDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot {
+    return {
+        ignoredEvents: [
+            {
+                diagnosticId: 'diag-1',
+                reason: 'duplicate_event',
+                observedAt: '2026-06-08T09:30:01Z',
+                eventId: 'evt-temperature-1',
+                eventType: 'telemetry.reading.recorded',
+                source: 'simulator-adapter',
+                deviceId: 'temp-desk',
+                occurredAt: '2026-06-08T09:30:01Z',
             },
         ],
     };
