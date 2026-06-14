@@ -63,3 +63,17 @@ architecture docs and accepted ADRs.
 If executable commands exist for the touched area, run the narrowest useful
 tests or checks and report what was run. If no commands exist yet, say so
 explicitly.
+
+## Test Quality
+
+- Treat tests as protection for system behavior, not as coverage decoration.
+- Prefer tests that exercise documented behavior, domain invariants, failure
+  modes and user-visible reliability risks.
+- Cover important negative and boundary cases when they affect the touched
+  behavior, such as malformed events, duplicate events, unsupported versions,
+  lifecycle cleanup, ordering, limits, stale/offline state, timeouts and late
+  confirmations.
+- Avoid tests that pass trivially because assertions are too broad, only mirror
+  implementation details, or do not fail when the behavior is broken.
+- Avoid redundant tests that repeat the same scenario without covering a
+  distinct risk.
