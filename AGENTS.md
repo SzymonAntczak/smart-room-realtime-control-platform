@@ -55,6 +55,32 @@ AI is an implementation assistant here, not the owner of the architecture.
 - Keep event, command, simulator and state-derivation code close to the domain it
   describes.
 
+## Module Boundaries And Imports
+
+- Treat top-level packages and domain folders as architectural boundaries, not
+  just file organization.
+- `shared` may expose stable contracts, event shapes, command shapes and domain
+  primitives used by multiple runtimes. It must not import from `frontend`,
+  `backend` or `simulator`.
+- `frontend` may import shared contracts and its own domain/UI modules. It must
+  not import backend, simulator or server runtime internals.
+- `backend` may import shared contracts and backend-local platform, runtime,
+  adapter and API modules. Backend platform/domain code should not depend on API
+  handlers, simulator adapters or other outer runtime details unless an
+  architecture document says so.
+- Backend runtime/composition modules may wire concrete adapters and source
+  runtimes, such as the simulator, when building a runnable local slice. Keep
+  source-specific behavior behind adapters and do not let it leak into
+  `src/platform/` or shared contracts.
+- `simulator` may import shared contracts and simulator-local device behavior.
+  It must not import frontend or backend internals.
+- Cross-domain imports inside a package should go through an explicit shared
+  contract, port or small public module for that domain. Avoid reaching into
+  another domain folder's private implementation files.
+- If a change needs to reverse an import direction, introduce a new shared
+  contract/port or update the relevant architecture or decision document before
+  treating the new dependency as normal.
+
 ## Verification
 
 Before considering behavior work done, check the change against the relevant
