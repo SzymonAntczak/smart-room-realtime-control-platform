@@ -16,3 +16,14 @@ Core focus:
 - AI-assisted implementation with human-owned architecture
 
 Documentation starts in [docs/README.md](docs/README.md).
+
+## Local Development
+
+Run the backend and frontend together:
+
+```bash
+npm run dev
+```
+
+The backend BFF listens on `http://localhost:4310`, and the Vite frontend uses
+its default local dev URL.

@@ -8,6 +8,7 @@ import tseslint from 'typescript-eslint';
 const frontendSourceFiles = ['frontend/**/*.{ts,tsx}'];
 const frontendAppComponents = ['frontend/src/app/**/*.tsx', '**/src/app/**/*.tsx'];
 const nodeSourceFiles = ['backend/**/*.ts', 'simulator/**/*.ts'];
+const nodeScriptFiles = ['scripts/**/*.mjs'];
 const sharedSourceFiles = ['shared/**/*.ts'];
 const configFiles = ['*.config.js', 'frontend/*.config.js'];
 
@@ -71,7 +72,7 @@ export default tseslint.config(
         },
     },
     {
-        files: nodeSourceFiles,
+        files: [...nodeSourceFiles, ...nodeScriptFiles],
         languageOptions: {
             ecmaVersion: 2022,
             globals: {
