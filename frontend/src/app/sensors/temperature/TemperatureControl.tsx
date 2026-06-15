@@ -1,33 +1,102 @@
 import { useEffect, useState } from 'react';
 import { ControlCard } from '../../shared/ui/ControlCard';
 import styles from './TemperatureControl.module.css';
+import { loadTemperatureSnapshot, type TemperatureSensorReading } from './room-snapshot-client';
 
-interface TemperatureReading {
-    sequence: number;
-    sensorName: string;
-    value: number;
-    unit: 'celsius';
-    recordedAt: string;
-}
-
-const readingPattern = [0, 0.2, 0.4, 0.1, -0.1, -0.3] as const;
+type TemperatureControlState =
+    | {
+          status: 'loading';
+      }
+    | {
+          status: 'ready';
+          reading: TemperatureSensorReading;
+      }
+    | {
+          status: 'empty';
+      }
+    | {
+          status: 'error';
+      };
 
 export function TemperatureControl() {
-    const [reading, setReading] = useState(() => createTemperatureReading(0));
+    const [controlState, setControlState] = useState<TemperatureControlState>({
+        status: 'loading',
+    });
 
     useEffect(() => {
-        const intervalId = window.setInterval(() => {
-            setReading((currentReading) => createTemperatureReading(currentReading.sequence + 1));
-        }, 1000);
+        let isActive = true;
 
-        return () => window.clearInterval(intervalId);
+        loadTemperatureSnapshot()
+            .then((snapshot) => {
+                if (!isActive) {
+                    return;
+                }
+
+                setControlState(snapshot);
+            })
+            .catch(() => {
+                if (!isActive) {
+                    return;
+                }
+
+                setControlState({
+                    status: 'error',
+                });
+            });
+
+        return () => {
+            isActive = false;
+        };
     }, []);
+
+    if (controlState.status === 'loading') {
+        return (
+            <ControlCard
+                eyebrow="Backend snapshot"
+                title="Desk Temperature"
+                status="Loading"
+                titleId="sensor-heading"
+            >
+                <p className={styles.message}>Loading room snapshot...</p>
+            </ControlCard>
+        );
+    }
+
+    if (controlState.status === 'error') {
+        return (
+            <ControlCard
+                eyebrow="Backend snapshot"
+                title="Desk Temperature"
+                status="Unavailable"
+                titleId="sensor-heading"
+            >
+                <p className={styles.message} role="alert">
+                    Room snapshot is unavailable. Start the backend and refresh the page.
+                </p>
+            </ControlCard>
+        );
+    }
+
+    if (controlState.status === 'empty') {
+        return (
+            <ControlCard
+                eyebrow="Backend snapshot"
+                title="Desk Temperature"
+                status="No reading"
+                titleId="sensor-heading"
+            >
+                <p className={styles.message}>No temperature reading is available yet.</p>
+            </ControlCard>
+        );
+    }
+
+    const { reading } = controlState;
 
     return (
         <ControlCard
-            eyebrow="Simulated realtime"
+            eyebrow="Backend snapshot"
             title={reading.sensorName}
-            status="Live"
+            status={formatHealth(reading.health)}
             titleId="sensor-heading"
         >
             <div className={styles.reading} aria-label="Current temperature">
@@ -43,18 +112,22 @@ export function TemperatureControl() {
     );
 }
 
-function createTemperatureReading(sequence: number): TemperatureReading {
-    const offset = readingPattern[sequence % readingPattern.length];
-
-    return {
-        sequence,
-        sensorName: 'Desk Temperature',
-        value: 22.1 + offset,
-        unit: 'celsius',
-        recordedAt: new Date().toISOString(),
-    };
+function formatReadingTime(recordedAt: string): string {
+    return `${recordedAt.slice(11, 19)} UTC`;
 }
 
-function formatReadingTime(recordedAt: string) {
-    return `${recordedAt.slice(11, 19)} UTC`;
+function formatHealth(health: TemperatureSensorReading['health']): string {
+    if (health === 'online') {
+        return 'Online';
+    }
+
+    if (health === 'stale') {
+        return 'Stale';
+    }
+
+    if (health === 'offline') {
+        return 'Offline';
+    }
+
+    return 'Degraded';
 }

@@ -6,10 +6,20 @@ interface ControlCardProps {
     title: string;
     status: string;
     children: ReactNode;
+    statusAriaLive?: 'off' | 'polite' | 'assertive';
+    statusRole?: 'status';
     titleId?: string;
 }
 
-export function ControlCard({ eyebrow, title, status, children, titleId }: ControlCardProps) {
+export function ControlCard({
+    eyebrow,
+    title,
+    status,
+    children,
+    statusAriaLive = 'polite',
+    statusRole = 'status',
+    titleId,
+}: ControlCardProps) {
     return (
         <section className={styles.card} aria-labelledby={titleId}>
             <div className={styles.header}>
@@ -17,7 +27,9 @@ export function ControlCard({ eyebrow, title, status, children, titleId }: Contr
                     <p className={styles.eyebrow}>{eyebrow}</p>
                     <h1 id={titleId}>{title}</h1>
                 </div>
-                <span className={styles.status}>{status}</span>
+                <span className={styles.status} role={statusRole} aria-live={statusAriaLive}>
+                    {status}
+                </span>
             </div>
 
             {children}
