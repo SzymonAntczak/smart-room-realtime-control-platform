@@ -166,8 +166,7 @@ Provides the frontend with UI-oriented access to the local backend.
 Expected responsibilities:
 
 - provide an initial room snapshot when the frontend connects
-- stream state, command and event updates to the frontend over WebSocket in a
-  later backend-backed realtime slice
+- stream state, command and event updates to the frontend over WebSocket
 - accept command requests from the frontend
 - read from backend read model/projections and expose UI-friendly derived views
   without making the frontend interpret raw event streams by itself
@@ -175,6 +174,19 @@ Expected responsibilities:
 This boundary is BFF-like because it is shaped for the realtime frontend. In the
 target local runtime it belongs to the local Node.js backend together with the
 event processor, read model/projections and in-memory storage.
+
+The current realtime read contract uses `room.snapshot` messages over
+WebSocket. Version 1 messages contain:
+
+- `messageType: "room.snapshot"`
+- `version: 1`
+- `sentAt`: backend send timestamp
+- `payload`: the current `RoomSnapshotProjection`
+
+Unsupported message types, unsupported versions and malformed payloads are not
+renderable frontend state. The BFF may send snapshots after accepted events and
+from periodic projection reads so time-derived health changes such as `stale`
+and `offline` reach connected clients.
 
 ### Device Adapters
 
@@ -204,9 +216,12 @@ This keeps the architecture easier to reason about and makes failures more expli
 
 The current backend-backed slice starts with the read-only telemetry path for a
 simulated temperature sensor. It includes a simulator adapter, event processor
-and read-model projection for `telemetry.reading.recorded` events.
+and read-model projection for `telemetry.reading.recorded` events. The frontend
+runtime receives UI-oriented `room.snapshot` messages over WebSocket from the
+local backend BFF. `GET /room` remains available as a debug/read snapshot
+endpoint, but it is not the frontend fallback path.
 
 Command lifecycle processing, confirmation matching, command projections,
-backend realtime transport, persistence and quarantine storage remain target
-responsibilities for later slices. Until command lifecycle events are
-implemented, the backend read model may expose empty command collections.
+persistence and quarantine storage remain target responsibilities for later
+slices. Until command lifecycle events are implemented, the backend read model
+may expose empty command collections.

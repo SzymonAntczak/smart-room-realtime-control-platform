@@ -1,22 +1,25 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { WebSocket } from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 import type { RoomSnapshotProjection } from '../../../shared/src/projections';
+import type { RoomRealtimeServerMessage } from '../../../shared/src/realtime';
 import { createRoomBffServer } from './room-bff';
 
 describe('createRoomBffServer', () => {
     const openServers: Server[] = [];
+    const openSockets: WebSocket[] = [];
 
     afterEach(async () => {
+        openSockets.forEach((socket) => socket.close());
+        openSockets.length = 0;
         await Promise.all(openServers.map((server) => closeServer(server)));
         openServers.length = 0;
     });
 
     it('serves the current room snapshot', async () => {
-        const server = await listen(
-            createRoomBffServer(createRoomBffConfig()),
-        );
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
         openServers.push(server);
 
         const response = await fetch(`${serverUrl(server)}/room`);
@@ -53,9 +56,7 @@ describe('createRoomBffServer', () => {
     });
 
     it('returns 404 for unknown routes', async () => {
-        const server = await listen(
-            createRoomBffServer(createRoomBffConfig()),
-        );
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
         openServers.push(server);
 
         const response = await fetch(`${serverUrl(server)}/unknown`);
@@ -67,9 +68,7 @@ describe('createRoomBffServer', () => {
     });
 
     it('returns 405 for unsupported room route methods', async () => {
-        const server = await listen(
-            createRoomBffServer(createRoomBffConfig()),
-        );
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
         openServers.push(server);
 
         const response = await fetch(`${serverUrl(server)}/room`, {
@@ -84,9 +83,7 @@ describe('createRoomBffServer', () => {
     });
 
     it('handles CORS preflight requests', async () => {
-        const server = await listen(
-            createRoomBffServer(createRoomBffConfig()),
-        );
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
         openServers.push(server);
 
         const response = await fetch(`${serverUrl(server)}/room`, {
@@ -122,6 +119,123 @@ describe('createRoomBffServer', () => {
             error: 'method_not_allowed',
         });
     });
+
+    it('sends an initial room snapshot over the realtime WebSocket', async () => {
+        const harness = createRoomBffHarness({
+            sentAt: ['2026-06-08T09:30:01Z'],
+        });
+        const server = await listen(createRoomBffServer(harness.config));
+        openServers.push(server);
+
+        const socket = connectWebSocket(server);
+        openSockets.push(socket);
+
+        await expect(readRealtimeMessage(socket)).resolves.toEqual({
+            messageType: 'room.snapshot',
+            version: 1,
+            sentAt: '2026-06-08T09:30:01Z',
+            payload: createRoomSnapshot(),
+        });
+    });
+
+    it('registers the realtime subscriber before sending the initial room snapshot', async () => {
+        const harness = createRoomBffHarness({
+            roomSnapshot: createRoomSnapshot({
+                temperature: 22,
+            }),
+            sentAt: ['2026-06-08T09:30:01Z'],
+            onSubscribe() {
+                harness.setRoomSnapshot(
+                    createRoomSnapshot({
+                        temperature: 22.8,
+                        updatedAt: '2026-06-08T09:30:01Z',
+                    }),
+                );
+            },
+        });
+        const server = await listen(createRoomBffServer(harness.config));
+        openServers.push(server);
+
+        const socket = connectWebSocket(server);
+        openSockets.push(socket);
+
+        await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+            messageType: 'room.snapshot',
+            payload: {
+                updatedAt: '2026-06-08T09:30:01Z',
+                devices: [
+                    expect.objectContaining({
+                        reportedState: {
+                            temperature: 22.8,
+                            temperatureUnit: 'celsius',
+                        },
+                    }),
+                ],
+            },
+        });
+    });
+
+    it('streams room snapshot updates over the realtime WebSocket', async () => {
+        const harness = createRoomBffHarness({
+            sentAt: ['2026-06-08T09:30:01Z', '2026-06-08T09:30:02Z'],
+        });
+        const server = await listen(createRoomBffServer(harness.config));
+        openServers.push(server);
+
+        const socket = connectWebSocket(server);
+        openSockets.push(socket);
+        await readRealtimeMessage(socket);
+
+        harness.publishRoomSnapshot(
+            createRoomSnapshot({
+                temperature: 22.4,
+                updatedAt: '2026-06-08T09:30:02Z',
+            }),
+        );
+
+        await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+            messageType: 'room.snapshot',
+            version: 1,
+            sentAt: '2026-06-08T09:30:02Z',
+            payload: {
+                updatedAt: '2026-06-08T09:30:02Z',
+                devices: [
+                    expect.objectContaining({
+                        reportedState: {
+                            temperature: 22.4,
+                            temperatureUnit: 'celsius',
+                        },
+                    }),
+                ],
+            },
+        });
+    });
+
+    it('removes realtime snapshot subscriptions when the WebSocket closes', async () => {
+        const harness = createRoomBffHarness({
+            sentAt: ['2026-06-08T09:30:01Z'],
+        });
+        const server = await listen(createRoomBffServer(harness.config));
+        openServers.push(server);
+
+        const socket = connectWebSocket(server);
+        openSockets.push(socket);
+        await readRealtimeMessage(socket);
+
+        expect(harness.listenerCount()).toBe(1);
+
+        await closeWebSocket(socket);
+        await waitForCondition(() => harness.listenerCount() === 0);
+
+        expect(harness.listenerCount()).toBe(0);
+        harness.publishRoomSnapshot(
+            createRoomSnapshot({
+                temperature: 22.6,
+                updatedAt: '2026-06-08T09:30:03Z',
+            }),
+        );
+        expect(harness.listenerCount()).toBe(0);
+    });
 });
 
 function createRoomBffConfig({
@@ -136,17 +250,79 @@ function createRoomBffConfig({
         getDiagnosticsSnapshot() {
             return createDiagnosticsSnapshot();
         },
+        subscribeRoomSnapshot() {
+            return () => undefined;
+        },
+    };
+}
+
+function createRoomBffHarness({
+    roomSnapshot = createRoomSnapshot(),
+    sentAt,
+    onSubscribe,
+}: {
+    roomSnapshot?: RoomSnapshotProjection;
+    sentAt: string[];
+    onSubscribe?: () => void;
+}) {
+    let currentRoomSnapshot = roomSnapshot;
+    const listeners = new Set<(snapshot: RoomSnapshotProjection) => void>();
+    const pendingSentAt = [...sentAt];
+
+    return {
+        config: {
+            getRoomSnapshot() {
+                return currentRoomSnapshot;
+            },
+            getDiagnosticsSnapshot() {
+                return createDiagnosticsSnapshot();
+            },
+            subscribeRoomSnapshot(listener: (snapshot: RoomSnapshotProjection) => void) {
+                listeners.add(listener);
+                onSubscribe?.();
+
+                return () => {
+                    listeners.delete(listener);
+                };
+            },
+            now() {
+                const timestamp = pendingSentAt.shift();
+
+                if (!timestamp) {
+                    throw new Error('No deterministic sentAt timestamp configured.');
+                }
+
+                return timestamp;
+            },
+        },
+        publishRoomSnapshot(snapshot: RoomSnapshotProjection) {
+            currentRoomSnapshot = snapshot;
+
+            for (const listener of listeners) {
+                listener(snapshot);
+            }
+        },
+        setRoomSnapshot(snapshot: RoomSnapshotProjection) {
+            currentRoomSnapshot = snapshot;
+        },
+        listenerCount() {
+            return listeners.size;
+        },
     };
 }
 
 function createRoomSnapshot({
     health = 'online',
+    temperature = 22,
+    updatedAt = '2026-06-08T09:30:00Z',
 }: {
     health?: RoomSnapshotProjection['devices'][number]['health'];
+    temperature?: number;
+    updatedAt?: string;
 } = {}): RoomSnapshotProjection {
     return {
         roomName: 'Smart Room',
-        updatedAt: '2026-06-08T09:30:00Z',
+        updatedAt,
         devices: [
             {
                 deviceId: 'temp-desk',
@@ -154,7 +330,7 @@ function createRoomSnapshot({
                 role: 'temperature-sensor',
                 health,
                 reportedState: {
-                    temperature: 22,
+                    temperature,
                     temperatureUnit: 'celsius',
                 },
                 commandAvailability: {
@@ -223,4 +399,59 @@ function serverUrl(server: Server): string {
     const address = server.address() as AddressInfo;
 
     return `http://127.0.0.1:${address.port}`;
+}
+
+function websocketUrl(server: Server): string {
+    const address = server.address() as AddressInfo;
+
+    return `ws://127.0.0.1:${address.port}/room/realtime`;
+}
+
+function connectWebSocket(server: Server): WebSocket {
+    return new WebSocket(websocketUrl(server));
+}
+
+function readRealtimeMessage(socket: WebSocket): Promise<RoomRealtimeServerMessage> {
+    return new Promise((resolve, reject) => {
+        socket.once('message', (data) => {
+            try {
+                resolve(JSON.parse(data.toString()) as RoomRealtimeServerMessage);
+            } catch (error) {
+                reject(error);
+            }
+        });
+        socket.once('error', reject);
+    });
+}
+
+function closeWebSocket(socket: WebSocket): Promise<void> {
+    return new Promise((resolve) => {
+        if (socket.readyState === WebSocket.CLOSED) {
+            resolve();
+            return;
+        }
+
+        socket.once('close', () => {
+            resolve();
+        });
+        socket.close();
+    });
+}
+
+function waitForCondition(condition: () => boolean): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const startedAt = Date.now();
+        const interval = setInterval(() => {
+            if (condition()) {
+                clearInterval(interval);
+                resolve();
+                return;
+            }
+
+            if (Date.now() - startedAt > 1000) {
+                clearInterval(interval);
+                reject(new Error('Condition was not met before the timeout.'));
+            }
+        }, 5);
+    });
 }

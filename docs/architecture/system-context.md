@@ -82,14 +82,21 @@ shows responsibility boundaries, not required production deployment boundaries.
 
 The current repository implementation does not yet include the full target
 context. The backend slice currently covers the simulator temperature telemetry
-path through adapter, event processor, read-model projection and a small HTTP
-snapshot BFF.
+path through adapter, event processor, read-model projection and a small
+realtime BFF.
 
-The current BFF exposes `GET /room` for the latest `RoomSnapshotProjection`.
-It is a snapshot boundary for the frontend, not the final realtime transport.
-It also exposes `GET /diagnostics` for recent ignored event-processing outcomes
-so the development runtime can explain rejected duplicate or invalid events.
-The diagnostics response is bounded in-memory, newest-first and metadata-only;
-it is not event history or durable quarantine storage. WebSocket/realtime
-streaming, command handling, persistence, quarantine storage and stale/offline
-derivation are still future slices.
+The current BFF exposes `ws://localhost:4310/room/realtime` as the frontend
+runtime path. The backend sends an initial `room.snapshot` message when the
+frontend connects and streams later `room.snapshot` messages after accepted
+temperature telemetry updates the read model. It also periodically rereads the
+projection so time-derived health changes such as `stale` and `offline` are
+pushed even when telemetry stops. The frontend does not interpret raw platform
+events.
+
+The BFF also keeps `GET /room` as a debug/read snapshot endpoint for the latest
+`RoomSnapshotProjection`; it is not the frontend runtime fallback. `GET
+/diagnostics` exposes recent ignored event-processing outcomes so the
+development runtime can explain rejected duplicate or invalid events. The
+diagnostics response is bounded in-memory, newest-first and metadata-only; it is
+not event history or durable quarantine storage. Command handling, persistence
+and quarantine storage are still future slices.

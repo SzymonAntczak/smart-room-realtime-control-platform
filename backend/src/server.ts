@@ -7,6 +7,7 @@ const runtime = createTemperatureRoomRuntime();
 const server = createRoomBffServer({
     getRoomSnapshot: runtime.getRoomSnapshot,
     getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
+    subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
 });
 
 runtime.start();

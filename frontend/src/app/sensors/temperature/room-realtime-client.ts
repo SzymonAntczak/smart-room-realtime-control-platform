@@ -5,9 +5,10 @@ import type {
     DeviceProjection,
     DeviceRole,
     DeviceState,
+    RoomRealtimeServerMessage,
 } from '../../../../../shared/src/contracts';
 
-const defaultRoomBffUrl = 'http://localhost:4310';
+const defaultRoomRealtimeUrl = 'ws://localhost:4310/room/realtime';
 
 export type TemperatureSnapshotResult =
     | {
@@ -26,32 +27,85 @@ export interface TemperatureSensorReading {
     health: DeviceProjection['health'];
 }
 
-export async function loadTemperatureSnapshot(): Promise<TemperatureSnapshotResult> {
-    const response = await fetch(`${getRoomBffUrl()}/room`);
+export interface TemperatureRealtimeClientHandlers {
+    onOpen(): void;
+    onSnapshot(snapshot: TemperatureSnapshotResult): void;
+    onError(): void;
+    onClose(): void;
+    onInvalidMessage(): void;
+}
 
-    if (!response.ok) {
-        throw new Error(`Room snapshot request failed with status ${response.status}.`);
+export interface TemperatureRealtimeConnection {
+    close(): void;
+}
+
+type RealtimeWebSocket = Pick<WebSocket, 'addEventListener' | 'close'>;
+type WebSocketConstructor = new (url: string) => RealtimeWebSocket;
+
+export function connectTemperatureRealtime(
+    handlers: TemperatureRealtimeClientHandlers,
+    WebSocketImplementation: WebSocketConstructor = WebSocket,
+): TemperatureRealtimeConnection {
+    const socket = new WebSocketImplementation(getRoomRealtimeUrl());
+    let isClosed = false;
+
+    socket.addEventListener('open', () => {
+        if (!isClosed) {
+            handlers.onOpen();
+        }
+    });
+    socket.addEventListener('error', () => {
+        if (!isClosed) {
+            handlers.onError();
+        }
+    });
+    socket.addEventListener('close', () => {
+        if (!isClosed) {
+            handlers.onClose();
+        }
+    });
+    socket.addEventListener('message', (event) => {
+        if (isClosed) {
+            return;
+        }
+
+        try {
+            handlers.onSnapshot(toTemperatureSnapshotResult(parseRoomRealtimeMessage(event.data)));
+        } catch {
+            handlers.onInvalidMessage();
+        }
+    });
+
+    return {
+        close() {
+            isClosed = true;
+            socket.close();
+        },
+    };
+}
+
+function getRoomRealtimeUrl(): string {
+    return import.meta.env.VITE_ROOM_REALTIME_URL ?? defaultRoomRealtimeUrl;
+}
+
+function parseRoomRealtimeMessage(data: unknown): RoomRealtimeServerMessage {
+    if (typeof data !== 'string') {
+        throw new Error('Realtime message data must be text.');
     }
 
-    const body: unknown = await response.json();
+    const body: unknown = JSON.parse(data);
 
-    if (!isRoomSnapshotWithDevices(body)) {
-        throw new Error('Room snapshot response did not match the expected contract.');
+    if (!isRoomRealtimeServerMessage(body)) {
+        throw new Error('Realtime message did not match the expected contract.');
     }
 
-    return toTemperatureSnapshotResult(body);
+    return body;
 }
 
-function getRoomBffUrl(): string {
-    return import.meta.env.VITE_ROOM_BFF_URL ?? defaultRoomBffUrl;
-}
-
-interface RoomSnapshotWithDevices {
-    devices: DeviceProjection[];
-}
-
-function toTemperatureSnapshotResult(snapshot: RoomSnapshotWithDevices): TemperatureSnapshotResult {
-    const temperatureDevice = snapshot.devices.find(
+function toTemperatureSnapshotResult(
+    message: RoomRealtimeServerMessage,
+): TemperatureSnapshotResult {
+    const temperatureDevice = message.payload.devices.find(
         (device) => device.role === 'temperature-sensor',
     );
 
@@ -77,7 +131,23 @@ function toTemperatureSnapshotResult(snapshot: RoomSnapshotWithDevices): Tempera
     };
 }
 
-function isRoomSnapshotWithDevices(value: unknown): value is RoomSnapshotWithDevices {
+function isRoomRealtimeServerMessage(value: unknown): value is RoomRealtimeServerMessage {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    if (value.messageType === 'room.snapshot') {
+        return (
+            value.version === 1 &&
+            typeof value.sentAt === 'string' &&
+            isRoomSnapshotPayload(value.payload)
+        );
+    }
+
+    return false;
+}
+
+function isRoomSnapshotPayload(value: unknown): value is { devices: DeviceProjection[] } {
     if (!isRecord(value)) {
         return false;
     }

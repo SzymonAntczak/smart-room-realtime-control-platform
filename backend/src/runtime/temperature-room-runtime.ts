@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { clearInterval, setInterval } from 'node:timers';
 import {
     createTemperatureSensorRuntime,
     createTemperatureSensorSimulator,
@@ -24,6 +25,7 @@ import { createRoomProjector, type RoomProjector } from '../platform/read-model/
 export interface TemperatureRoomRuntimeConfig {
     roomName?: string;
     intervalMs?: number;
+    snapshotBroadcastIntervalMs?: number;
     clock?: Clock;
     timer?: TimerScheduler;
     generateEventId?: () => string;
@@ -35,7 +37,10 @@ export interface TemperatureRoomRuntime {
     stop(): void;
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    subscribeRoomSnapshot(listener: RoomSnapshotListener): () => void;
 }
+
+export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
 
 const defaultDevices: DeviceDefinition[] = [
     {
@@ -50,6 +55,7 @@ const readingPattern = [0, 0.2, 0.4, 0.1, -0.1, -0.3] as const;
 export function createTemperatureRoomRuntime({
     roomName = 'Smart Room',
     intervalMs = 1000,
+    snapshotBroadcastIntervalMs = 1000,
     clock = realClock,
     timer,
     generateEventId = randomUUID,
@@ -78,8 +84,11 @@ export function createTemperatureRoomRuntime({
         clock,
         timer,
     });
+    const snapshotBroadcastTimer = timer ?? (realTimer as TimerScheduler);
+    const snapshotListeners = new Set<RoomSnapshotListener>();
     let hasStarted = false;
     let adapter: SimulatorTemperatureAdapter | undefined;
+    let snapshotBroadcastTimerHandle: unknown | undefined;
 
     return {
         start() {
@@ -93,14 +102,27 @@ export function createTemperatureRoomRuntime({
                 deviceId: 'temp-desk',
                 generateEventId,
                 emitEvent(event) {
-                    diagnostics.recordProcessingResult(event, processor.processEvent(event));
+                    const result = processor.processEvent(event);
+
+                    diagnostics.recordProcessingResult(event, result);
+
+                    if (result.status === 'accepted') {
+                        notifySnapshotListeners(result.state.updatedAt);
+                    }
                 },
             });
             sensor.tick(clock.now());
+            snapshotBroadcastTimerHandle = snapshotBroadcastTimer.setInterval(() => {
+                notifySnapshotListeners(clock.now());
+            }, snapshotBroadcastIntervalMs);
             sensorRuntime.start();
         },
         stop() {
             sensorRuntime.stop();
+            if (snapshotBroadcastTimerHandle !== undefined) {
+                snapshotBroadcastTimer.clearInterval(snapshotBroadcastTimerHandle);
+                snapshotBroadcastTimerHandle = undefined;
+            }
             adapter?.stop();
             adapter = undefined;
             hasStarted = false;
@@ -111,8 +133,36 @@ export function createTemperatureRoomRuntime({
         getDiagnosticsSnapshot() {
             return diagnostics.getSnapshot();
         },
+        subscribeRoomSnapshot(listener) {
+            snapshotListeners.add(listener);
+
+            return () => {
+                snapshotListeners.delete(listener);
+            };
+        },
     };
+
+    function notifySnapshotListeners(evaluatedAt: string): void {
+        const snapshot = toRoomSnapshot(roomName, roomProjector, evaluatedAt);
+
+        for (const listener of snapshotListeners) {
+            try {
+                listener(snapshot);
+            } catch {
+                // A failed realtime client must not block event ingestion or other clients.
+            }
+        }
+    }
 }
+
+const realTimer: TimerScheduler<ReturnType<typeof setInterval>> = {
+    setInterval(callback, intervalMs) {
+        return setInterval(callback, intervalMs);
+    },
+    clearInterval(timerHandle) {
+        clearInterval(timerHandle);
+    },
+};
 
 const realClock: Clock = {
     now() {

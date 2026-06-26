@@ -1,63 +1,97 @@
 import { useEffect, useState } from 'react';
 import { ControlCard } from '../../shared/ui/ControlCard';
 import styles from './TemperatureControl.module.css';
-import { loadTemperatureSnapshot, type TemperatureSensorReading } from './room-snapshot-client';
+import {
+    connectTemperatureRealtime,
+    type TemperatureSensorReading,
+    type TemperatureSnapshotResult,
+} from './room-realtime-client';
 
 type TemperatureControlState =
     | {
-          status: 'loading';
+          status: 'connecting';
       }
     | {
           status: 'ready';
           reading: TemperatureSensorReading;
+          connectionStatus: 'connected' | 'disconnected';
       }
     | {
           status: 'empty';
+          connectionStatus: 'connected' | 'disconnected';
       }
     | {
           status: 'error';
+          message: string;
       };
 
 export function TemperatureControl() {
     const [controlState, setControlState] = useState<TemperatureControlState>({
-        status: 'loading',
+        status: 'connecting',
     });
 
     useEffect(() => {
-        let isActive = true;
+        const connection = connectTemperatureRealtime({
+            onOpen() {
+                setControlState((currentState) => {
+                    if (currentState.status === 'ready' || currentState.status === 'empty') {
+                        return withConnectionStatus(currentState, 'connected');
+                    }
 
-        loadTemperatureSnapshot()
-            .then((snapshot) => {
-                if (!isActive) {
-                    return;
-                }
+                    return currentState;
+                });
+            },
+            onSnapshot(snapshot) {
+                setControlState(toConnectedControlState(snapshot));
+            },
+            onError() {
+                setControlState((currentState) => {
+                    if (currentState.status === 'ready' || currentState.status === 'empty') {
+                        return withConnectionStatus(currentState, 'disconnected');
+                    }
 
-                setControlState(snapshot);
-            })
-            .catch(() => {
-                if (!isActive) {
-                    return;
-                }
+                    return {
+                        status: 'error',
+                        message:
+                            'Realtime room stream is unavailable. Start the backend and refresh the page.',
+                    };
+                });
+            },
+            onClose() {
+                setControlState((currentState) => {
+                    if (currentState.status === 'ready' || currentState.status === 'empty') {
+                        return withConnectionStatus(currentState, 'disconnected');
+                    }
 
+                    return {
+                        status: 'error',
+                        message:
+                            'Realtime room stream disconnected before a snapshot was received.',
+                    };
+                });
+            },
+            onInvalidMessage() {
                 setControlState({
                     status: 'error',
+                    message: 'Realtime room stream sent an invalid snapshot.',
                 });
-            });
+            },
+        });
 
         return () => {
-            isActive = false;
+            connection.close();
         };
     }, []);
 
-    if (controlState.status === 'loading') {
+    if (controlState.status === 'connecting') {
         return (
             <ControlCard
-                eyebrow="Backend snapshot"
+                eyebrow="Realtime room stream"
                 title="Desk Temperature"
-                status="Loading"
+                status="Connecting"
                 titleId="sensor-heading"
             >
-                <p className={styles.message}>Loading room snapshot...</p>
+                <p className={styles.message}>Connecting to realtime room stream...</p>
             </ControlCard>
         );
     }
@@ -65,13 +99,13 @@ export function TemperatureControl() {
     if (controlState.status === 'error') {
         return (
             <ControlCard
-                eyebrow="Backend snapshot"
+                eyebrow="Realtime room stream"
                 title="Desk Temperature"
                 status="Unavailable"
                 titleId="sensor-heading"
             >
                 <p className={styles.message} role="alert">
-                    Room snapshot is unavailable. Start the backend and refresh the page.
+                    {controlState.message}
                 </p>
             </ControlCard>
         );
@@ -80,11 +114,16 @@ export function TemperatureControl() {
     if (controlState.status === 'empty') {
         return (
             <ControlCard
-                eyebrow="Backend snapshot"
+                eyebrow="Realtime room stream"
                 title="Desk Temperature"
                 status="No reading"
                 titleId="sensor-heading"
             >
+                {controlState.connectionStatus === 'disconnected' ? (
+                    <p className={styles.warning} role="alert">
+                        Realtime stream disconnected. Showing the last room state.
+                    </p>
+                ) : null}
                 <p className={styles.message}>No temperature reading is available yet.</p>
             </ControlCard>
         );
@@ -94,11 +133,16 @@ export function TemperatureControl() {
 
     return (
         <ControlCard
-            eyebrow="Backend snapshot"
+            eyebrow="Realtime room stream"
             title={reading.sensorName}
             status={formatHealth(reading.health)}
             titleId="sensor-heading"
         >
+            {controlState.connectionStatus === 'disconnected' ? (
+                <p className={styles.warning} role="alert">
+                    Realtime stream disconnected. Showing the last temperature snapshot.
+                </p>
+            ) : null}
             <div className={styles.reading} aria-label="Current temperature">
                 <span className={styles.value}>{reading.value.toFixed(1)}</span>
                 <span className={styles.unit}>{reading.unit}</span>
@@ -110,6 +154,31 @@ export function TemperatureControl() {
             </p>
         </ControlCard>
     );
+}
+
+function toConnectedControlState(snapshot: TemperatureSnapshotResult): TemperatureControlState {
+    if (snapshot.status === 'empty') {
+        return {
+            status: 'empty',
+            connectionStatus: 'connected',
+        };
+    }
+
+    return {
+        status: 'ready',
+        reading: snapshot.reading,
+        connectionStatus: 'connected',
+    };
+}
+
+function withConnectionStatus(
+    state: Extract<TemperatureControlState, { status: 'ready' | 'empty' }>,
+    connectionStatus: 'connected' | 'disconnected',
+): TemperatureControlState {
+    return {
+        ...state,
+        connectionStatus,
+    };
 }
 
 function formatReadingTime(recordedAt: string): string {

@@ -4,10 +4,7 @@ import { App } from './App';
 
 describe('App', () => {
     beforeEach(() => {
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => new Promise(() => undefined)),
-        );
+        vi.stubGlobal('WebSocket', MockWebSocket);
     });
 
     afterEach(() => {
@@ -18,7 +15,13 @@ describe('App', () => {
         render(<App />);
 
         expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
-        expect(screen.getByText('Backend snapshot')).toBeInTheDocument();
-        expect(screen.getByText('Loading room snapshot...')).toBeInTheDocument();
+        expect(screen.getByText('Realtime room stream')).toBeInTheDocument();
+        expect(screen.getByText('Connecting to realtime room stream...')).toBeInTheDocument();
     });
 });
+
+class MockWebSocket extends EventTarget {
+    close(): void {
+        this.dispatchEvent(new Event('close'));
+    }
+}
