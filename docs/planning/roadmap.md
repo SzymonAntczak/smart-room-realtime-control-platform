@@ -24,6 +24,31 @@ The main emphasis is:
 - a small but credible end-to-end system,
 - AI used as an implementation assistant, not as the system designer.
 
+## Delivery Principle
+
+The planned device list describes product breadth, not implementation order.
+The project should complete one narrow device slice to a reliable, explainable
+standard before adding more device roles.
+
+Each device or capability should move through the same delivery rhythm:
+
+1. build the slice in the simulator,
+2. make it reliable enough to explain and test,
+3. validate the same slice on real hardware,
+4. then move to the next device role or capability.
+
+The current reference slice is the simulated temperature sensor read path. It
+should become the pattern for later slices by finishing the event contract,
+simulator scenario coverage, stale/offline behavior, recovery behavior,
+realtime UI states, recent event visibility and manual acceptance checklist for
+temperature first. Once that temperature slice is reliable, the next step is a
+real temperature sensor path, not a broad simulated room.
+
+This keeps the project from becoming either a broad dashboard with shallow
+behavior or a hardware demo that skips reliability. Each later device should
+reuse or deliberately adapt the previous slice pattern instead of redefining
+reliability, freshness, command lifecycle and UI semantics from scratch.
+
 ## Planned Device Scope
 
 The planned device set should stay small, but it should cover enough different
@@ -32,29 +57,52 @@ signals to exercise the system model.
 Initial device candidates:
 
 - temperature sensor,
-- humidity sensor,
 - motion sensor,
 - ambient light sensor,
 - LED output,
-- physical LED button.
+- physical LED button,
+- humidity sensor as a later optional telemetry role.
 
 This set gives the project a useful mix of telemetry, presence detection,
 environmental context, physical input and visible output. The exact hardware
 models can be chosen later; at the roadmap level, the important part is the
 role each device plays in the control loop.
 
+Ambient light should be the next read-only sensor after the temperature, LED
+and motion slices are reliable. It adds more learning value than another
+temperature-like telemetry sensor because it gives automation contextual
+meaning: motion can turn on the LED only when the room is dark. Humidity can
+remain optional until the project needs another environmental time-series
+signal.
+
+These roles should not all be implemented in the simulator before hardware work
+begins. The temperature sensor is the first reference implementation. After the
+simulated temperature slice can demonstrate stale, offline and recovery
+behavior without hiding uncertainty from the user, the same role should be
+validated with a real sensor before the roadmap moves on to the next device
+role.
+
+At the roadmap level, "production ready" means reliability-first for a local
+project slice: clear contracts, explicit uncertainty and failure states,
+repeatable simulator scenarios, meaningful tests, useful recent history or
+observability and a manual acceptance checklist. It does not mean a commercial
+deployment posture with cloud operations, fleet management or full monitoring.
+
 ## Roadmap Overview
 
-| Stage   | Focus                     | Intended outcome                                                         |
-| ------- | ------------------------- | ------------------------------------------------------------------------ |
-| Stage 0 | Project foundation        | Clear direction, initial architecture and documentation structure        |
-| Stage 1 | Simulated realtime system | A working realtime UI driven by simulated events                         |
-| Stage 2 | Reliable control behavior | Clear handling of requested, pending, confirmed, failed and stale states |
-| Stage 3 | Minimal real hardware     | One real physical loop connected to the same system model                |
-| Stage 4 | Telemetry and history     | Useful event history, trends and operational visibility                  |
-| Stage 5 | Automation UX             | Simple explainable rules and scenes                                      |
-| Stage 6 | Testing and resilience    | Repeatable failure scenarios and confidence in behavior                  |
-| Stage 7 | Portfolio packaging       | Demo, case study and project narrative                                   |
+| Stage   | Focus                                      | Intended outcome                                                        |
+| ------- | ------------------------------------------ | ----------------------------------------------------------------------- |
+| Stage 0 | Project foundation                         | Clear direction, initial architecture and documentation structure       |
+| Stage 1 | Simulated temperature read path            | A working realtime UI driven by one simulated temperature sensor        |
+| Stage 2 | Reliable simulated temperature slice       | Temperature shows stale, offline, recovery, history and failure signals |
+| Stage 3 | Real temperature hardware slice            | A real temperature sensor validates the same read model                 |
+| Stage 4 | Simulated LED button and output slice      | User intent, commands and LED confirmation are visible in the simulator |
+| Stage 5 | Real LED button and output hardware slice  | Physical input or UI control affects a real LED through the same model  |
+| Stage 6 | Simulated motion-triggered LED behavior    | Motion telemetry can trigger LED behavior with explainable causality    |
+| Stage 7 | Real motion sensor hardware slice          | A physical motion sensor validates the motion-triggered LED behavior    |
+| Stage 8 | Simulated ambient light slice              | Lux readings add context for light-aware automation                     |
+| Stage 9 | Real ambient light hardware slice          | A physical light sensor validates the same contextual read model        |
+| Stage 10 | Scenes, telemetry depth and packaging     | Multi-device scenes, history, resilience and project narrative mature   |
 
 ## Stage 0 - Project Foundation
 
@@ -76,138 +124,237 @@ Expected outcome:
 Stage 0 is complete when the repository explains what kind of system is being
 built, why it matters and how the first simulated slice should behave.
 
-## Stage 1 - Simulated Realtime System
+## Stage 1 - Simulated Temperature Read Path
 
 Stage 1 creates the first useful vertical slice without waiting for physical
-hardware.
+hardware. The slice is intentionally narrow: one simulated temperature sensor
+feeding a backend-backed realtime read path.
 
 The goal is to make the interface react to live system events and establish the
-basic feedback loop between simulated devices, system state and the user.
+basic feedback loop between a simulated device, backend state and the user.
 
 Expected outcome:
 
-- simulated devices produce realtime updates,
-- the UI shows current device state,
-- the system exposes an event feed or history view,
-- the first control actions can be represented,
+- the simulated temperature sensor produces realtime updates,
+- the UI shows the current temperature state,
+- the backend translates simulator-native readings into platform events,
+- the event processor validates and projects accepted telemetry,
 - the project becomes demonstrable without special equipment.
 
 Stage 1 is complete when a user can watch system state change in realtime and
 understand where those changes came from.
 
-## Stage 2 - Reliable Control Behavior
+## Stage 2 - Reliable Simulated Temperature Slice
 
-Stage 2 turns the project from a dashboard into a control system.
+Stage 2 turns the first realtime read path from a live value into a trustworthy
+reference implementation.
 
-The goal is to make uncertainty visible. The UI should not pretend that a
-requested change is already confirmed, and the system should treat failures,
-delays and missing data as normal parts of operation.
-
-Expected outcome:
-
-- requested state is separated from confirmed state,
-- pending commands are visible,
-- failed and timed-out actions are understandable,
-- stale and offline devices are shown clearly,
-- delayed or missing updates are part of the system model,
-- event history can explain important user actions.
-
-Stage 2 is complete when the system can demonstrate both successful and failed
-control flows without hiding uncertainty from the user.
-
-## Stage 3 - Minimal Real Hardware
-
-Stage 3 adds a small physical proof of the system model.
-
-The goal is not to maximize hardware scope. The goal is to prove that the same
-event and control ideas work when at least one real device is involved.
+The goal is to make uncertainty visible for temperature before broadening the
+device set. The system should treat missing telemetry, stale data, duplicate
+events, invalid events, offline periods and recovery as normal parts of
+operation.
 
 Expected outcome:
 
-- one real device participates in the control loop,
-- physical input or sensor data appears in the UI,
-- a UI action can affect a physical output,
-- disconnecting or delaying the real device is handled visibly,
-- the real device follows the same mental model as the simulator.
+- stale and offline temperature states are shown clearly,
+- delayed or missing temperature updates are part of the system model,
+- duplicate and invalid temperature telemetry do not corrupt current state,
+- recovery after stale or offline periods is visible and tested,
+- recent temperature events can explain how the current reading was reached,
+- a manual acceptance checklist exists for the temperature slice.
 
-Stage 3 is complete when the project can show a real end-to-end flow without
-changing the core system story.
+Stage 2 is complete when the temperature slice can demonstrate normal,
+stale, offline, invalid, duplicate and recovery flows without hiding
+uncertainty from the user.
 
-## Stage 4 - Telemetry And History
+## Stage 3 - Real Temperature Hardware Slice
 
-Stage 4 makes the system easier to inspect, debug and explain over time.
+Stage 3 validates the temperature read model with a real physical sensor.
 
-The goal is to move beyond current state and give the user enough history to
-understand what happened, when it happened and whether the system behaved
-reliably.
-
-Expected outcome:
-
-- important events are historically visible,
-- telemetry can be inspected over time,
-- last-seen and freshness information is available,
-- latency or responsiveness can be discussed,
-- the system can support simple operational questions.
-
-Stage 4 is complete when the system can explain both the current state and the
-recent path that led to it.
-
-## Stage 5 - Automation UX
-
-Stage 5 explores controlled automation without hiding responsibility from the
-user.
-
-The goal is to design simple rules and scenes in a way that remains
-understandable, inspectable and explainable.
+The goal is not to introduce new product behavior. The goal is to prove that
+the simulator-backed temperature model survives real transport, real timing,
+real connection behavior and hardware-specific quirks without changing the core
+system story.
 
 Expected outcome:
 
-- simple automations or scenes can be represented,
-- the UI can show why an automation triggered,
-- automation activity appears in history,
-- manual control and automation can be reasoned about together,
-- the user can understand what the system is likely to do next.
+- one real temperature sensor reports through a backend-owned adapter,
+- real readings use the same platform event and projection model as the
+  simulator,
+- disconnecting, delaying or stopping the real sensor becomes visible as stale
+  or offline state,
+- recent history can explain whether a reading came from simulator or hardware,
+- the hardware slice has a manual acceptance checklist.
 
-Stage 5 is complete when automation adds value without making the system feel
-opaque.
+Stage 3 is complete when a real temperature sensor can replace or sit beside
+the simulator without changing the read-path mental model.
 
-## Stage 6 - Testing And Resilience
+## Stage 4 - Simulated LED Button And Output Slice
 
-Stage 6 proves that the important behaviors are repeatable.
+Stage 4 introduces the first controllable device behavior in the simulator.
 
-The goal is to test the parts that carry the real project value: state
-derivation, command lifecycle, realtime UI behavior and failure handling.
-
-Expected outcome:
-
-- core state transitions are tested,
-- command success, failure and timeout scenarios are tested,
-- simulator scenarios cover realistic failure modes,
-- UI behavior is verified for important user-visible states,
-- a manual demo checklist exists.
-
-Stage 6 is complete when the project can intentionally reproduce failures and
-show that the system responds in a predictable way.
-
-## Stage 7 - Portfolio Packaging
-
-Stage 7 turns the project into something that can be understood outside the
-repository.
-
-The goal is to present the project as a coherent technical story: the problem,
-the model, the trade-offs, the implementation and the lessons learned.
+The goal is to move from read-only telemetry to a command-oriented loop where a
+button or UI action requests LED power and the system waits for observed
+confirmation. This slice should exercise requested state, confirmed state,
+pending commands, command failure and timeout behavior before hardware is added.
 
 Expected outcome:
 
-- the main README explains the project clearly,
-- the architecture can be understood quickly,
-- a short demo or walkthrough exists,
-- important trade-offs are documented,
-- the project explains how AI was used and verified,
-- the final narrative supports technical conversation.
+- the simulated LED exposes `set.power` behavior,
+- a simulated or UI-facing button can request LED state changes,
+- requested LED state is never displayed as confirmed before evidence arrives,
+- normal confirmation, delayed confirmation, rejection, timeout and late report
+  scenarios are repeatable,
+- command history explains what was requested, dispatched and confirmed or
+  failed.
 
-Stage 7 is complete when the project can be shown to a recruiter, tech lead or
-architect without needing a long spoken preface.
+Stage 4 is complete when the simulated LED command loop is reliable and
+explainable enough to be used as the reference command slice.
+
+## Stage 5 - Real LED Button And Output Hardware Slice
+
+Stage 5 validates the LED command model with physical input and output.
+
+The goal is to prove that the same requested-vs-confirmed state model works
+when a real button, LED, ESP32, MQTT, Home Assistant or another local hardware
+path participates in the loop.
+
+Expected outcome:
+
+- a physical input or UI action can request a real LED state change,
+- the hardware adapter translates device-native messages into the same platform
+  events used by the simulator,
+- command confirmation, rejection, timeout and disconnect behavior remain
+  visible,
+- the UI can show whether current LED state came from real hardware evidence,
+- the hardware slice has a manual acceptance checklist.
+
+Stage 5 is complete when the real LED slice follows the same command lifecycle
+and user-facing reliability rules as the simulated LED slice.
+
+## Stage 6 - Simulated Motion-Triggered LED Behavior
+
+Stage 6 introduces device-to-device behavior in the simulator.
+
+The goal is to add a simulated motion sensor and use motion detection to
+trigger LED behavior while keeping causality visible. This is the first slice
+where one device observation can cause a command or desired behavior for
+another device.
+
+Expected outcome:
+
+- simulated motion telemetry follows the read-only sensor reliability model,
+- motion-triggered LED behavior is represented as an explainable system action,
+- automation-triggered commands use the same command lifecycle as manual
+  commands,
+- history shows the motion event, the triggered intent and the LED result,
+- stale or offline motion state does not silently drive automation.
+
+Stage 6 is complete when the simulator can demonstrate motion-driven LED
+behavior without hiding why the LED changed.
+
+## Stage 7 - Real Motion Sensor Hardware Slice
+
+Stage 7 validates the motion-triggered LED behavior with a real motion sensor.
+
+The goal is to check whether the simulated motion assumptions hold when motion
+events arrive from physical hardware with real timing, noise and connection
+behavior.
+
+Expected outcome:
+
+- a real motion sensor reports through a backend-owned adapter,
+- real motion observations use the same platform model as simulated motion,
+- the system can trigger LED behavior from real motion events,
+- hardware noise, disconnects or missing reports are visible instead of hidden,
+- the hardware slice has a manual acceptance checklist.
+
+Stage 7 is complete when real motion can trigger LED behavior through the same
+explainable event and command model proven in the simulator.
+
+## Stage 8 - Simulated Ambient Light Slice
+
+Stage 8 adds a simulated ambient light sensor after the project already has
+temperature telemetry, LED command behavior and motion-triggered behavior.
+
+The goal is to add environmental context that makes automation more realistic.
+Ambient light should follow the read-only sensor reliability model while
+teaching threshold-based interpretation such as bright, dim or dark conditions.
+
+Expected outcome:
+
+- simulated lux readings flow through the same adapter, event and projection
+  model as other telemetry,
+- stale, offline, invalid and recovery behavior are visible for ambient light,
+- light-level interpretation is explainable and does not hide raw telemetry,
+- motion-triggered LED behavior can be constrained by "room is dark" context,
+- the slice has a manual acceptance checklist.
+
+Stage 8 is complete when simulated ambient light can provide reliable context
+for automation without becoming a one-off telemetry path.
+
+## Stage 9 - Real Ambient Light Hardware Slice
+
+Stage 9 validates the ambient light model with a real light sensor.
+
+The goal is to check whether the simulated lux and threshold assumptions hold
+under real room lighting, sensor noise, placement differences and connection
+behavior.
+
+Expected outcome:
+
+- a real ambient light sensor reports through a backend-owned adapter,
+- real lux observations use the same platform model as simulated light,
+- sensor noise, missing reports and disconnects are visible instead of hidden,
+- the system can explain when motion did or did not trigger LED behavior
+  because the room was bright enough,
+- the hardware slice has a manual acceptance checklist.
+
+Stage 9 is complete when real ambient light can safely act as contextual input
+for light-aware automation.
+
+## Stage 10 - Scenes, Telemetry Depth And Packaging
+
+Stage 10 grows the project after several device roles already exist in both the
+simulator-first and hardware-validated model.
+
+The goal is to make multi-device behavior easier to define, inspect, test and
+explain. Scenes and automation should build on the existing event, state,
+command, history and reliability model instead of bypassing it.
+
+Expected outcome:
+
+- simple scenes can coordinate the existing temperature, LED, motion and
+  ambient light roles,
+- the first light-aware scene can express "when motion is detected and the room
+  is dark, turn on the LED for a bounded time",
+- automation activity appears in history with clear triggering causes,
+- telemetry and event history can answer operational questions over time,
+- repeatable failure scenarios cover state derivation, command lifecycle,
+  realtime UI behavior and hardware validation,
+- the README, architecture and walkthrough explain the project clearly.
+
+Stage 10 is complete when the project can intentionally reproduce important
+normal and failure flows, show that the system responds predictably and be
+shown to a recruiter, tech lead or architect without needing a long spoken
+preface.
+
+## Cross-Slice Reliability Expectations
+
+Every device or capability slice should be treated as complete only when it can
+be explained and verified at the same standard as the previous slices.
+
+Expected for each slice:
+
+- relevant contracts and message shapes are documented or consciously deferred,
+- simulator scenarios cover realistic normal and failure modes,
+- state derivation or command lifecycle behavior is tested where the slice
+  touches it,
+- a manual demo checklist exists,
+- the UI exposes freshness, uncertainty, command progress or failure when those
+  concerns apply,
+- history or recent-event visibility can explain how the current state was
+  reached.
 
 ## Success Criteria
 

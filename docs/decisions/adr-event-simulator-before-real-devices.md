@@ -31,6 +31,11 @@ The simulator should emit realistic simulator-native device messages, accept
 simulator-native commands and model common edge cases such as latency, explicit
 failures, stale data, offline periods and recovery.
 
+This is a per-slice delivery rule, not a requirement to finish the whole
+simulated room before any hardware appears. Each new device role or capability
+should be proven in the simulator first, then validated on the corresponding
+real hardware before the roadmap moves on to the next device role.
+
 ## Consequences
 
 The system can test edge cases without requiring a large physical device setup.
@@ -47,6 +52,11 @@ not the simulator.
 There is a risk that the simulator becomes too idealized. Real device
 integration is still needed to validate timing, transport behavior and hardware
 quirks.
+
+Real hardware should therefore appear early after each reliable simulated slice.
+Hardware validation should check whether the simulator-taught event contracts,
+state derivation, command lifecycle and UI expectations still hold under real
+device timing and connectivity.
 
 ## Links
 
