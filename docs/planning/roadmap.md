@@ -90,19 +90,20 @@ deployment posture with cloud operations, fleet management or full monitoring.
 
 ## Roadmap Overview
 
-| Stage    | Focus                                     | Intended outcome                                                        |
-| -------- | ----------------------------------------- | ----------------------------------------------------------------------- |
-| Stage 0  | Project foundation                        | Clear direction, initial architecture and documentation structure       |
-| Stage 1  | Simulated temperature read path           | A working realtime UI driven by one simulated temperature sensor        |
-| Stage 2  | Reliable simulated temperature slice      | Temperature shows stale, offline, recovery, history and failure signals |
-| Stage 3  | Real temperature hardware slice           | A real temperature sensor validates the same read model                 |
-| Stage 4  | Simulated LED button and output slice     | User intent, commands and LED confirmation are visible in the simulator |
-| Stage 5  | Real LED button and output hardware slice | Physical input or UI control affects a real LED through the same model  |
-| Stage 6  | Simulated motion-triggered LED behavior   | Motion telemetry can trigger LED behavior with explainable causality    |
-| Stage 7  | Real motion sensor hardware slice         | A physical motion sensor validates the motion-triggered LED behavior    |
-| Stage 8  | Simulated ambient light slice             | Lux readings add context for light-aware automation                     |
-| Stage 9  | Real ambient light hardware slice         | A physical light sensor validates the same contextual read model        |
-| Stage 10 | Scenes, telemetry depth and packaging     | Multi-device scenes, history, resilience and project narrative mature   |
+| Stage     | Focus                                     | Intended outcome                                                        |
+| --------- | ----------------------------------------- | ----------------------------------------------------------------------- |
+| Stage 0   | Project foundation                        | Clear direction, initial architecture and documentation structure       |
+| Stage 1   | Simulated temperature read path           | A working realtime UI driven by one simulated temperature sensor        |
+| Stage 2   | Reliable simulated temperature slice      | Temperature shows stale, offline, recovery, history and failure signals |
+| Stage 2.5 | Dev scenario controls                     | Manual simulator controls make reliability scenarios demonstrable       |
+| Stage 3   | Real temperature hardware slice           | A real temperature sensor validates the same read model                 |
+| Stage 4   | Simulated LED button and output slice     | User intent, commands and LED confirmation are visible in the simulator |
+| Stage 5   | Real LED button and output hardware slice | Physical input or UI control affects a real LED through the same model  |
+| Stage 6   | Simulated motion-triggered LED behavior   | Motion telemetry can trigger LED behavior with explainable causality    |
+| Stage 7   | Real motion sensor hardware slice         | A physical motion sensor validates the motion-triggered LED behavior    |
+| Stage 8   | Simulated ambient light slice             | Lux readings add context for light-aware automation                     |
+| Stage 9   | Real ambient light hardware slice         | A physical light sensor validates the same contextual read model        |
+| Stage 10  | Scenes, telemetry depth and packaging     | Multi-device scenes, history, resilience and project narrative mature   |
 
 ## Stage 0 - Project Foundation
 
@@ -166,6 +167,37 @@ Expected outcome:
 Stage 2 is complete when the temperature slice can demonstrate normal,
 stale, offline, invalid, duplicate and recovery flows without hiding
 uncertainty from the user.
+
+## Stage 2.5 - Dev Scenario Controls
+
+Stage 2.5 makes the reliable simulated temperature slice manually
+demonstrable before hardware work begins.
+
+The goal is to add development-only controls for simulator scenarios so the
+temperature reliability checklist can be clicked through during local
+acceptance and demos. These controls are not product features. They should
+exercise the same backend-owned event flow as normal simulator readings instead
+of mutating frontend state directly.
+
+Expected outcome:
+
+- a local dev panel or equivalent dev-only controls can trigger temperature
+  simulator scenarios,
+- supported actions include pausing telemetry, resuming telemetry, replaying
+  the last reading, emitting an invalid reading, emitting the next reading and
+  resetting the scenario,
+- each action flows through backend scenario control, simulator behavior,
+  adapter translation, event processing, projection updates and `room.snapshot`
+  delivery,
+- the UI can manually demonstrate normal, stale, offline, recovery, duplicate,
+  invalid and reconnect behavior without changing the product model,
+- the dev controls are clearly separated from the user-facing smart-room
+  surface and can be reused by later simulator-first slices.
+
+Stage 2.5 is complete when the temperature reliability scenarios are not only
+covered by automated tests, but can also be demonstrated manually through the
+local simulator control path. Stage 3 should wait until this manual acceptance
+loop exists.
 
 ## Stage 3 - Real Temperature Hardware Slice
 
