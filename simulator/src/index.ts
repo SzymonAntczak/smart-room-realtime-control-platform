@@ -6,6 +6,11 @@ export {
     type TemperatureSensorSimulator,
 } from './temperature/temperature-sensor';
 export {
+    createTemperatureSensorScenario,
+    type TemperatureSensorScenario,
+    type TemperatureTelemetryPause,
+} from './temperature/temperature-sensor-scenarios';
+export {
     createTemperatureSensorRuntime,
     type Clock,
     type TemperatureSensorRuntime,

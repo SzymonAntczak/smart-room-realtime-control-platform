@@ -4,7 +4,11 @@ import type {
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
 } from '../../../../shared/src/events';
-import type { DeviceDefinition, RoomProjection, RoomProjector } from '../read-model/room-projection';
+import type {
+    DeviceDefinition,
+    RoomProjection,
+    RoomProjector,
+} from '../read-model/room-projection';
 
 export type { DeviceDefinition } from '../read-model/room-projection';
 

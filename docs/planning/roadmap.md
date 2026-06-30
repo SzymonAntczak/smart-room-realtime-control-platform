@@ -90,18 +90,18 @@ deployment posture with cloud operations, fleet management or full monitoring.
 
 ## Roadmap Overview
 
-| Stage   | Focus                                      | Intended outcome                                                        |
-| ------- | ------------------------------------------ | ----------------------------------------------------------------------- |
-| Stage 0 | Project foundation                         | Clear direction, initial architecture and documentation structure       |
-| Stage 1 | Simulated temperature read path            | A working realtime UI driven by one simulated temperature sensor        |
-| Stage 2 | Reliable simulated temperature slice       | Temperature shows stale, offline, recovery, history and failure signals |
-| Stage 3 | Real temperature hardware slice            | A real temperature sensor validates the same read model                 |
-| Stage 4 | Simulated LED button and output slice      | User intent, commands and LED confirmation are visible in the simulator |
-| Stage 5 | Real LED button and output hardware slice  | Physical input or UI control affects a real LED through the same model  |
-| Stage 6 | Simulated motion-triggered LED behavior    | Motion telemetry can trigger LED behavior with explainable causality    |
-| Stage 7 | Real motion sensor hardware slice          | A physical motion sensor validates the motion-triggered LED behavior    |
-| Stage 8 | Simulated ambient light slice              | Lux readings add context for light-aware automation                     |
-| Stage 9 | Real ambient light hardware slice          | A physical light sensor validates the same contextual read model        |
+| Stage    | Focus                                     | Intended outcome                                                        |
+| -------- | ----------------------------------------- | ----------------------------------------------------------------------- |
+| Stage 0  | Project foundation                        | Clear direction, initial architecture and documentation structure       |
+| Stage 1  | Simulated temperature read path           | A working realtime UI driven by one simulated temperature sensor        |
+| Stage 2  | Reliable simulated temperature slice      | Temperature shows stale, offline, recovery, history and failure signals |
+| Stage 3  | Real temperature hardware slice           | A real temperature sensor validates the same read model                 |
+| Stage 4  | Simulated LED button and output slice     | User intent, commands and LED confirmation are visible in the simulator |
+| Stage 5  | Real LED button and output hardware slice | Physical input or UI control affects a real LED through the same model  |
+| Stage 6  | Simulated motion-triggered LED behavior   | Motion telemetry can trigger LED behavior with explainable causality    |
+| Stage 7  | Real motion sensor hardware slice         | A physical motion sensor validates the motion-triggered LED behavior    |
+| Stage 8  | Simulated ambient light slice             | Lux readings add context for light-aware automation                     |
+| Stage 9  | Real ambient light hardware slice         | A physical light sensor validates the same contextual read model        |
 | Stage 10 | Scenes, telemetry depth and packaging     | Multi-device scenes, history, resilience and project narrative mature   |
 
 ## Stage 0 - Project Foundation

@@ -5,10 +5,20 @@ import type {
     DeviceProjection,
     DeviceRole,
     DeviceState,
+    EventFeedItemProjection,
+    PlatformEventSource,
+    PlatformEventType,
     RoomRealtimeServerMessage,
 } from '../../../../../shared/src/contracts';
 
 const defaultRoomRealtimeUrl = 'ws://localhost:4310/room/realtime';
+const defaultReconnectDelayMs = 1000;
+
+export type TemperatureRealtimeConnectionStatus =
+    | 'connecting'
+    | 'connected'
+    | 'reconnecting'
+    | 'disconnected';
 
 export type TemperatureSnapshotResult =
     | {
@@ -20,23 +30,35 @@ export type TemperatureSnapshotResult =
       };
 
 export interface TemperatureSensorReading {
+    sensorId: string;
     sensorName: string;
     value: number;
     unit: 'celsius';
     recordedAt: string;
     health: DeviceProjection['health'];
+    snapshotSentAt: string;
+    recentEvents: TemperatureEventFeedItem[];
+}
+
+export interface TemperatureEventFeedItem {
+    eventId: string;
+    summary: string;
+    occurredAt: string;
+    source: PlatformEventSource;
 }
 
 export interface TemperatureRealtimeClientHandlers {
-    onOpen(): void;
+    onConnectionStatus(status: TemperatureRealtimeConnectionStatus): void;
     onSnapshot(snapshot: TemperatureSnapshotResult): void;
-    onError(): void;
-    onClose(): void;
     onInvalidMessage(): void;
 }
 
 export interface TemperatureRealtimeConnection {
     close(): void;
+}
+
+export interface TemperatureRealtimeClientOptions {
+    reconnectDelayMs?: number;
 }
 
 type RealtimeWebSocket = Pick<WebSocket, 'addEventListener' | 'close'>;
@@ -45,43 +67,87 @@ type WebSocketConstructor = new (url: string) => RealtimeWebSocket;
 export function connectTemperatureRealtime(
     handlers: TemperatureRealtimeClientHandlers,
     WebSocketImplementation: WebSocketConstructor = WebSocket,
+    options: TemperatureRealtimeClientOptions = {},
 ): TemperatureRealtimeConnection {
-    const socket = new WebSocketImplementation(getRoomRealtimeUrl());
+    const reconnectDelayMs = options.reconnectDelayMs ?? defaultReconnectDelayMs;
     let isClosed = false;
+    let activeSocket: RealtimeWebSocket | undefined;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
-    socket.addEventListener('open', () => {
-        if (!isClosed) {
-            handlers.onOpen();
-        }
-    });
-    socket.addEventListener('error', () => {
-        if (!isClosed) {
-            handlers.onError();
-        }
-    });
-    socket.addEventListener('close', () => {
-        if (!isClosed) {
-            handlers.onClose();
-        }
-    });
-    socket.addEventListener('message', (event) => {
-        if (isClosed) {
-            return;
-        }
-
-        try {
-            handlers.onSnapshot(toTemperatureSnapshotResult(parseRoomRealtimeMessage(event.data)));
-        } catch {
-            handlers.onInvalidMessage();
-        }
-    });
+    connectSocket('connecting');
 
     return {
         close() {
             isClosed = true;
-            socket.close();
+
+            if (reconnectTimer !== undefined) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = undefined;
+            }
+
+            activeSocket?.close();
+            activeSocket = undefined;
         },
     };
+
+    function connectSocket(
+        status: Extract<TemperatureRealtimeConnectionStatus, 'connecting' | 'reconnecting'>,
+    ): void {
+        if (isClosed) {
+            return;
+        }
+
+        handlers.onConnectionStatus(status);
+
+        const socket = new WebSocketImplementation(getRoomRealtimeUrl());
+        activeSocket = socket;
+
+        socket.addEventListener('open', () => {
+            if (!isClosed && activeSocket === socket) {
+                handlers.onConnectionStatus('connected');
+            }
+        });
+        socket.addEventListener('error', () => {
+            scheduleReconnect(socket);
+        });
+        socket.addEventListener('close', () => {
+            scheduleReconnect(socket);
+        });
+        socket.addEventListener('message', (event) => {
+            if (isClosed || activeSocket !== socket) {
+                return;
+            }
+
+            try {
+                handlers.onSnapshot(
+                    toTemperatureSnapshotResult(parseRoomRealtimeMessage(event.data)),
+                );
+            } catch {
+                isClosed = true;
+                activeSocket?.close();
+                activeSocket = undefined;
+                handlers.onInvalidMessage();
+            }
+        });
+    }
+
+    function scheduleReconnect(socket: RealtimeWebSocket): void {
+        if (isClosed || activeSocket !== socket) {
+            return;
+        }
+
+        activeSocket = undefined;
+        handlers.onConnectionStatus('reconnecting');
+
+        if (reconnectTimer !== undefined) {
+            return;
+        }
+
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = undefined;
+            connectSocket('reconnecting');
+        }, reconnectDelayMs);
+    }
 }
 
 function getRoomRealtimeUrl(): string {
@@ -122,11 +188,17 @@ function toTemperatureSnapshotResult(
     return {
         status: 'ready',
         reading: {
+            sensorId: temperatureDevice.deviceId,
             sensorName: temperatureDevice.name,
             value: temperatureDevice.reportedState.temperature,
             unit: temperatureDevice.reportedState.temperatureUnit,
             recordedAt: temperatureDevice.lastSeenAt,
             health: temperatureDevice.health,
+            snapshotSentAt: message.sentAt,
+            recentEvents: message.payload.recentEvents
+                .filter((event) => event.deviceId === temperatureDevice.deviceId)
+                .slice(0, 5)
+                .map(toTemperatureEventFeedItem),
         },
     };
 }
@@ -158,7 +230,8 @@ function isRoomSnapshotPayload(value: unknown): value is { devices: DeviceProjec
         Array.isArray(value.devices) &&
         value.devices.every(isDeviceProjection) &&
         Array.isArray(value.activeCommands) &&
-        Array.isArray(value.recentEvents)
+        Array.isArray(value.recentEvents) &&
+        value.recentEvents.every(isEventFeedItemProjection)
     );
 }
 
@@ -206,6 +279,39 @@ function isDeviceHealth(value: unknown): value is DeviceHealth {
     return value === 'online' || value === 'stale' || value === 'offline' || value === 'degraded';
 }
 
+function isEventFeedItemProjection(value: unknown): value is EventFeedItemProjection {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.eventId === 'string' &&
+        isPlatformEventType(value.eventType) &&
+        typeof value.occurredAt === 'string' &&
+        isPlatformEventSource(value.source) &&
+        (value.deviceId === undefined || typeof value.deviceId === 'string') &&
+        (value.commandId === undefined || typeof value.commandId === 'string') &&
+        typeof value.summary === 'string'
+    );
+}
+
+function isPlatformEventType(value: unknown): value is PlatformEventType {
+    return (
+        value === 'device.state.reported' ||
+        value === 'device.health.changed' ||
+        value === 'telemetry.reading.recorded' ||
+        value === 'command.requested' ||
+        value === 'command.dispatched' ||
+        value === 'command.confirmed' ||
+        value === 'command.failed' ||
+        value === 'command.timed_out'
+    );
+}
+
+function isPlatformEventSource(value: unknown): value is PlatformEventSource {
+    return value === 'simulator-adapter' || value === 'hardware-adapter' || value === 'backend';
+}
+
 function isCommandAvailability(value: unknown): value is CommandAvailability {
     if (!isRecord(value)) {
         return false;
@@ -235,4 +341,13 @@ function isDeviceStateValue(value: unknown): value is DeviceState[keyof DeviceSt
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
+}
+
+function toTemperatureEventFeedItem(event: EventFeedItemProjection): TemperatureEventFeedItem {
+    return {
+        eventId: event.eventId,
+        summary: event.summary,
+        occurredAt: event.occurredAt,
+        source: event.source,
+    };
 }

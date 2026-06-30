@@ -21,7 +21,10 @@ describe('createEventProcessingDiagnostics', () => {
             observedAt: ['2026-06-08T09:30:01Z', '2026-06-08T09:30:02Z'],
         });
 
-        diagnostics.recordProcessingResult(createEvent({ eventId: 'evt-1' }), ignored('duplicate_event'));
+        diagnostics.recordProcessingResult(
+            createEvent({ eventId: 'evt-1' }),
+            ignored('duplicate_event'),
+        );
         diagnostics.recordProcessingResult(
             createEvent({
                 eventId: 'evt-2',
@@ -59,16 +62,21 @@ describe('createEventProcessingDiagnostics', () => {
     it('keeps ignored diagnostics newest-first and applies the configured limit', () => {
         const diagnostics = createDiagnostics({
             diagnosticEventLimit: 2,
-            observedAt: [
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:02Z',
-                '2026-06-08T09:30:03Z',
-            ],
+            observedAt: ['2026-06-08T09:30:01Z', '2026-06-08T09:30:02Z', '2026-06-08T09:30:03Z'],
         });
 
-        diagnostics.recordProcessingResult(createEvent({ eventId: 'evt-1' }), ignored('duplicate_event'));
-        diagnostics.recordProcessingResult(createEvent({ eventId: 'evt-2' }), ignored('invalid_payload'));
-        diagnostics.recordProcessingResult(createEvent({ eventId: 'evt-3' }), ignored('unknown_device'));
+        diagnostics.recordProcessingResult(
+            createEvent({ eventId: 'evt-1' }),
+            ignored('duplicate_event'),
+        );
+        diagnostics.recordProcessingResult(
+            createEvent({ eventId: 'evt-2' }),
+            ignored('invalid_payload'),
+        );
+        diagnostics.recordProcessingResult(
+            createEvent({ eventId: 'evt-3' }),
+            ignored('unknown_device'),
+        );
 
         expect(diagnostics.getSnapshot().ignoredEvents.map((event) => event.diagnosticId)).toEqual([
             'diag-3',
@@ -166,7 +174,9 @@ function createDiagnostics({
     });
 }
 
-function ignored(reason: Extract<EventProcessingResult, { status: 'ignored' }>['reason']): EventProcessingResult {
+function ignored(
+    reason: Extract<EventProcessingResult, { status: 'ignored' }>['reason'],
+): EventProcessingResult {
     return {
         status: 'ignored',
         reason,

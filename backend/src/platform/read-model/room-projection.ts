@@ -103,7 +103,9 @@ export function createRoomProjector({
         },
     };
 
-    function buildProjection({ evaluatedAt }: Required<ProjectionEvaluationOptions>): RoomProjection {
+    function buildProjection({
+        evaluatedAt,
+    }: Required<ProjectionEvaluationOptions>): RoomProjection {
         return {
             updatedAt,
             devices: [...deviceProjections.values()].map((device) =>
@@ -114,10 +116,7 @@ export function createRoomProjector({
         };
     }
 
-    function applyFreshnessHealth(
-        device: DeviceProjection,
-        evaluatedAt: string,
-    ): DeviceProjection {
+    function applyFreshnessHealth(device: DeviceProjection, evaluatedAt: string): DeviceProjection {
         if (!device.lastSeenAt) {
             return { ...device };
         }

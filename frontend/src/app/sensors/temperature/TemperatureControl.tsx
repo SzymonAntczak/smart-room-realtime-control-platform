@@ -3,6 +3,8 @@ import { ControlCard } from '../../shared/ui/ControlCard';
 import styles from './TemperatureControl.module.css';
 import {
     connectTemperatureRealtime,
+    type TemperatureEventFeedItem,
+    type TemperatureRealtimeConnectionStatus,
     type TemperatureSensorReading,
     type TemperatureSnapshotResult,
 } from './room-realtime-client';
@@ -10,15 +12,25 @@ import {
 type TemperatureControlState =
     | {
           status: 'connecting';
+          connectionStatus: Extract<
+              TemperatureRealtimeConnectionStatus,
+              'connecting' | 'reconnecting'
+          >;
       }
     | {
           status: 'ready';
           reading: TemperatureSensorReading;
-          connectionStatus: 'connected' | 'disconnected';
+          connectionStatus: Extract<
+              TemperatureRealtimeConnectionStatus,
+              'connected' | 'reconnecting'
+          >;
       }
     | {
           status: 'empty';
-          connectionStatus: 'connected' | 'disconnected';
+          connectionStatus: Extract<
+              TemperatureRealtimeConnectionStatus,
+              'connected' | 'reconnecting'
+          >;
       }
     | {
           status: 'error';
@@ -28,47 +40,28 @@ type TemperatureControlState =
 export function TemperatureControl() {
     const [controlState, setControlState] = useState<TemperatureControlState>({
         status: 'connecting',
+        connectionStatus: 'connecting',
     });
 
     useEffect(() => {
         const connection = connectTemperatureRealtime({
-            onOpen() {
+            onConnectionStatus(connectionStatus) {
                 setControlState((currentState) => {
                     if (currentState.status === 'ready' || currentState.status === 'empty') {
-                        return withConnectionStatus(currentState, 'connected');
+                        return withConnectionStatus(
+                            currentState,
+                            toSnapshotConnectionStatus(connectionStatus),
+                        );
                     }
 
-                    return currentState;
+                    return {
+                        status: 'connecting',
+                        connectionStatus: toConnectingStatus(connectionStatus),
+                    };
                 });
             },
             onSnapshot(snapshot) {
                 setControlState(toConnectedControlState(snapshot));
-            },
-            onError() {
-                setControlState((currentState) => {
-                    if (currentState.status === 'ready' || currentState.status === 'empty') {
-                        return withConnectionStatus(currentState, 'disconnected');
-                    }
-
-                    return {
-                        status: 'error',
-                        message:
-                            'Realtime room stream is unavailable. Start the backend and refresh the page.',
-                    };
-                });
-            },
-            onClose() {
-                setControlState((currentState) => {
-                    if (currentState.status === 'ready' || currentState.status === 'empty') {
-                        return withConnectionStatus(currentState, 'disconnected');
-                    }
-
-                    return {
-                        status: 'error',
-                        message:
-                            'Realtime room stream disconnected before a snapshot was received.',
-                    };
-                });
             },
             onInvalidMessage() {
                 setControlState({
@@ -88,10 +81,19 @@ export function TemperatureControl() {
             <ControlCard
                 eyebrow="Realtime room stream"
                 title="Desk Temperature"
-                status="Connecting"
+                status={
+                    controlState.connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting'
+                }
+                statusTone={
+                    controlState.connectionStatus === 'reconnecting' ? 'warning' : 'neutral'
+                }
                 titleId="sensor-heading"
             >
-                <p className={styles.message}>Connecting to realtime room stream...</p>
+                <p className={styles.message}>
+                    {controlState.connectionStatus === 'reconnecting'
+                        ? 'Reconnecting to realtime room stream...'
+                        : 'Connecting to realtime room stream...'}
+                </p>
             </ControlCard>
         );
     }
@@ -102,6 +104,7 @@ export function TemperatureControl() {
                 eyebrow="Realtime room stream"
                 title="Desk Temperature"
                 status="Unavailable"
+                statusTone="danger"
                 titleId="sensor-heading"
             >
                 <p className={styles.message} role="alert">
@@ -117,11 +120,12 @@ export function TemperatureControl() {
                 eyebrow="Realtime room stream"
                 title="Desk Temperature"
                 status="No reading"
+                statusTone="warning"
                 titleId="sensor-heading"
             >
-                {controlState.connectionStatus === 'disconnected' ? (
+                {controlState.connectionStatus === 'reconnecting' ? (
                     <p className={styles.warning} role="alert">
-                        Realtime stream disconnected. Showing the last room state.
+                        Realtime stream is reconnecting. Waiting for the first room snapshot.
                     </p>
                 ) : null}
                 <p className={styles.message}>No temperature reading is available yet.</p>
@@ -136,11 +140,17 @@ export function TemperatureControl() {
             eyebrow="Realtime room stream"
             title={reading.sensorName}
             status={formatHealth(reading.health)}
+            statusTone={toHealthTone(reading.health)}
             titleId="sensor-heading"
         >
-            {controlState.connectionStatus === 'disconnected' ? (
+            {controlState.connectionStatus === 'reconnecting' ? (
                 <p className={styles.warning} role="alert">
-                    Realtime stream disconnected. Showing the last temperature snapshot.
+                    Realtime stream is reconnecting. Showing the last temperature snapshot.
+                </p>
+            ) : null}
+            {getHealthWarning(reading) ? (
+                <p className={styles.warning} role="alert">
+                    {getHealthWarning(reading)}
                 </p>
             ) : null}
             <div className={styles.reading} aria-label="Current temperature">
@@ -151,7 +161,11 @@ export function TemperatureControl() {
             <p className={styles.updated}>
                 Last reading{' '}
                 <time dateTime={reading.recordedAt}>{formatReadingTime(reading.recordedAt)}</time>
+                {' - '}
+                {formatReadingAge(reading.recordedAt, reading.snapshotSentAt)}
             </p>
+
+            <TemperatureEventFeed events={reading.recentEvents} />
         </ControlCard>
     );
 }
@@ -173,12 +187,32 @@ function toConnectedControlState(snapshot: TemperatureSnapshotResult): Temperatu
 
 function withConnectionStatus(
     state: Extract<TemperatureControlState, { status: 'ready' | 'empty' }>,
-    connectionStatus: 'connected' | 'disconnected',
+    connectionStatus: Extract<TemperatureRealtimeConnectionStatus, 'connected' | 'reconnecting'>,
 ): TemperatureControlState {
     return {
         ...state,
         connectionStatus,
     };
+}
+
+function toSnapshotConnectionStatus(
+    connectionStatus: TemperatureRealtimeConnectionStatus,
+): Extract<TemperatureRealtimeConnectionStatus, 'connected' | 'reconnecting'> {
+    if (connectionStatus === 'connected') {
+        return 'connected';
+    }
+
+    return 'reconnecting';
+}
+
+function toConnectingStatus(
+    connectionStatus: TemperatureRealtimeConnectionStatus,
+): Extract<TemperatureRealtimeConnectionStatus, 'connecting' | 'reconnecting'> {
+    if (connectionStatus === 'connecting' || connectionStatus === 'connected') {
+        return 'connecting';
+    }
+
+    return 'reconnecting';
 }
 
 function formatReadingTime(recordedAt: string): string {
@@ -199,4 +233,77 @@ function formatHealth(health: TemperatureSensorReading['health']): string {
     }
 
     return 'Degraded';
+}
+
+function toHealthTone(health: TemperatureSensorReading['health']) {
+    if (health === 'online') {
+        return 'success';
+    }
+
+    if (health === 'offline') {
+        return 'danger';
+    }
+
+    return 'warning';
+}
+
+function getHealthWarning(reading: TemperatureSensorReading): string | undefined {
+    const age = formatReadingAge(reading.recordedAt, reading.snapshotSentAt);
+
+    if (reading.health === 'stale') {
+        return `Temperature telemetry is stale. Showing the last known reading from ${formatReadingTime(reading.recordedAt)} (${age}).`;
+    }
+
+    if (reading.health === 'offline') {
+        return `Temperature sensor is offline. Showing the last known reading from ${formatReadingTime(reading.recordedAt)} (${age}).`;
+    }
+
+    if (reading.health === 'degraded') {
+        return `Temperature sensor is degraded. Showing the latest reported reading from ${formatReadingTime(reading.recordedAt)} (${age}).`;
+    }
+
+    return undefined;
+}
+
+function formatReadingAge(recordedAt: string, observedAt: string): string {
+    const ageMs = Math.max(0, Date.parse(observedAt) - Date.parse(recordedAt));
+    const ageSeconds = Math.floor(ageMs / 1000);
+
+    if (!Number.isFinite(ageSeconds)) {
+        return 'age unavailable';
+    }
+
+    if (ageSeconds < 60) {
+        return `${ageSeconds}s old`;
+    }
+
+    const ageMinutes = Math.floor(ageSeconds / 60);
+
+    if (ageMinutes < 60) {
+        return `${ageMinutes}m old`;
+    }
+
+    return `${Math.floor(ageMinutes / 60)}h old`;
+}
+
+function TemperatureEventFeed({ events }: { events: TemperatureEventFeedItem[] }) {
+    if (events.length === 0) {
+        return null;
+    }
+
+    return (
+        <section className={styles.eventFeed} aria-label="Recent temperature events">
+            <h2>Recent events</h2>
+            <ol>
+                {events.map((event) => (
+                    <li key={event.eventId}>
+                        <span>{event.summary}</span>
+                        <time dateTime={event.occurredAt}>
+                            {formatReadingTime(event.occurredAt)}
+                        </time>
+                    </li>
+                ))}
+            </ol>
+        </section>
+    );
 }

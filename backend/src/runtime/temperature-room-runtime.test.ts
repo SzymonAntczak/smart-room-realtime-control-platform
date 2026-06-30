@@ -171,6 +171,13 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:30:00Z',
             ]);
             expect(snapshots.at(-1)?.devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:00Z');
+            expect(snapshots.at(-1)?.recentEvents).toEqual([
+                expect.objectContaining({
+                    eventId: 'evt-temperature-1',
+                    eventType: 'telemetry.reading.recorded',
+                    occurredAt: '2026-06-08T09:30:00Z',
+                }),
+            ]);
         } finally {
             runtime.stop();
         }
