@@ -100,3 +100,28 @@ development runtime can explain rejected duplicate or invalid events. The
 diagnostics response is bounded in-memory, newest-first and metadata-only; it is
 not event history or durable quarantine storage. Command handling, persistence
 and quarantine storage are still future slices.
+
+## Development Scenario Controls
+
+The local development runtime may expose a dev-only HTTP control boundary at
+`POST /dev/scenarios/temperature`. It accepts a named simulator scenario action
+and delegates it to the backend runtime. It is not a product command API, is not
+part of `room.snapshot`, and must not be enabled in production.
+It is disabled by default and is enabled only when the backend process receives
+`ENABLE_DEV_SCENARIOS=true`. The root `npm run dev` launcher sets this local
+development flag deliberately; deployed or ad-hoc backend processes do not
+inherit scenario mutation access by default.
+
+The frontend development panel uses this boundary only to request simulator
+behavior. The resulting observations still travel through the simulator adapter,
+event processor, read model and normal realtime `room.snapshot` delivery path.
+This preserves the distinction between dev tooling and user-facing room state.
+
+The initial controls pause or resume scheduled telemetry, emit the next native
+reading, replay the last native reading, emit a deliberately invalid reading,
+and reset the simulator sequence. Reset restarts simulated telemetry and emits
+a new first reading; it does not clear the backend's event history, deduplication
+memory or diagnostics. Replaying a reading preserves its adapter-created
+platform event identity, so it exercises platform-event deduplication. An
+invalid reading reaches platform validation and is visible through diagnostics
+without changing the room projection.

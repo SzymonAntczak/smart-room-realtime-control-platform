@@ -157,7 +157,7 @@ describe('temperature read path integration', () => {
         ]);
     });
 
-    it('keeps replayed native readings in history without regressing current state', () => {
+    it('rejects replayed native readings as duplicate platform events', () => {
         const readPath = createTemperatureReadPath({
             eventIds: ['evt-temperature-1', 'evt-temperature-replay'],
             readingPattern: [0.5],
@@ -168,13 +168,15 @@ describe('temperature read path integration', () => {
 
         const result = readPath.lastResult();
 
-        expect(result.status).toBe('accepted');
+        expect(result).toMatchObject({
+            status: 'ignored',
+            reason: 'duplicate_event',
+        });
         expect(result.state.devices[0]?.reportedState).toEqual({
             temperature: 22.5,
             temperatureUnit: 'celsius',
         });
         expect(result.state.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-replay',
             'evt-temperature-1',
         ]);
     });

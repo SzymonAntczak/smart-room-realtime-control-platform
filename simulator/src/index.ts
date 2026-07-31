@@ -9,6 +9,7 @@ export {
     createTemperatureSensorScenario,
     type TemperatureSensorScenario,
     type TemperatureTelemetryPause,
+    type TemperatureTelemetryResume,
 } from './temperature/temperature-sensor-scenarios';
 export {
     createTemperatureSensorRuntime,

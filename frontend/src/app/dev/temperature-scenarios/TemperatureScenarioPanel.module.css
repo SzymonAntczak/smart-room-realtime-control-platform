@@ -1,0 +1,65 @@
+.panel {
+    max-inline-size: 34rem;
+    border: var(--border-width-thin) dashed var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    padding: var(--space-6);
+}
+
+.eyebrow {
+    margin: 0;
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-label-sm);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.panel h2 {
+    margin: var(--space-2) 0;
+    font-size: var(--font-size-heading-md);
+}
+
+.description,
+.message {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: 1.5;
+}
+
+.controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin-block: var(--space-5);
+}
+
+.button {
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    padding: var(--space-3);
+}
+
+.button:hover:not(:disabled) {
+    border-color: var(--color-action-primary);
+}
+
+.button:focus-visible {
+    outline: 0.1875rem solid var(--color-info-text);
+    outline-offset: 0.125rem;
+}
+
+.button:disabled {
+    color: var(--color-text-subtle);
+    cursor: wait;
+}
+
+@media (max-width: 32.5rem) {
+    .controls {
+        grid-template-columns: 1fr;
+    }
+}

@@ -93,6 +93,35 @@ describe('createTemperatureSensorScenario', () => {
             'Cannot replay temperature reading before one has been recorded.',
         );
     });
+
+    it('emits an invalid native reading without changing the deterministic sequence', () => {
+        const scenario = createTemperatureScenario();
+        const readings: TemperatureReadingMessage[] = [];
+        scenario.onReading((reading) => readings.push(reading));
+
+        scenario.emitInvalidReading('2026-06-08T09:30:00Z');
+        scenario.tick('2026-06-08T09:30:01Z');
+
+        expect(readings.map(({ sequence, value }) => ({ sequence, value }))).toEqual([
+            { sequence: 0, value: Number.NaN },
+            { sequence: 1, value: 22.2 },
+        ]);
+    });
+
+    it('resets the deterministic sequence and forgets its replayable reading', () => {
+        const scenario = createTemperatureScenario();
+        scenario.tick('2026-06-08T09:30:00Z');
+
+        scenario.reset();
+
+        expect(() => scenario.replayLastReading()).toThrow(
+            'Cannot replay temperature reading before one has been recorded.',
+        );
+        expect(scenario.tick('2026-06-08T09:30:01Z')).toMatchObject({
+            sequence: 0,
+            value: 22,
+        });
+    });
 });
 
 function createTemperatureScenario() {

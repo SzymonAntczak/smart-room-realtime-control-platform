@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 import type { RoomSnapshotProjection } from '../../../shared/src/projections';
 import type { RoomRealtimeServerMessage } from '../../../shared/src/realtime';
+import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
 import { createRoomBffServer } from './room-bff';
 
 describe('createRoomBffServer', () => {
@@ -91,7 +92,7 @@ describe('createRoomBffServer', () => {
         });
 
         expect(response.status).toBe(204);
-        expect(response.headers.get('access-control-allow-methods')).toBe('GET, OPTIONS');
+        expect(response.headers.get('access-control-allow-methods')).toBe('GET, POST, OPTIONS');
     });
 
     it('serves the current event processing diagnostics snapshot', async () => {
@@ -117,6 +118,128 @@ describe('createRoomBffServer', () => {
         expect(response.headers.get('allow')).toBe('GET, OPTIONS');
         await expect(response.json()).resolves.toMatchObject({
             error: 'method_not_allowed',
+        });
+    });
+
+    it('runs a validated development temperature scenario', async () => {
+        const actions: string[] = [];
+        const server = await listen(
+            createRoomBffServer({
+                ...createRoomBffConfig(),
+                runScenario(action) {
+                    actions.push(action);
+                    return { action, status: 'completed' };
+                },
+            }),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'pause_telemetry' }),
+        });
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toEqual({
+            action: 'pause_telemetry',
+            status: 'completed',
+        });
+        expect(actions).toEqual(['pause_telemetry']);
+    });
+
+    it('routes a development scenario through the real runtime and room projection', async () => {
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 10_000,
+        });
+        runtime.start();
+        const server = await listen(
+            createRoomBffServer({
+                getRoomSnapshot: runtime.getRoomSnapshot,
+                getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
+                subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
+                runScenario: runtime.runScenario,
+            }),
+        );
+        openServers.push(server);
+
+        try {
+            const actionResponse = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'emit_next_reading' }),
+            });
+            const roomResponse = await fetch(`${serverUrl(server)}/room`);
+
+            expect(actionResponse.status).toBe(200);
+            await expect(roomResponse.json()).resolves.toMatchObject({
+                recentEvents: [
+                    expect.objectContaining({
+                        eventType: 'telemetry.reading.recorded',
+                    }),
+                    expect.objectContaining({
+                        eventType: 'telemetry.reading.recorded',
+                    }),
+                ],
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('keeps development scenarios unavailable when no control handler is configured', async () => {
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'pause_telemetry' }),
+        });
+
+        expect(response.status).toBe(404);
+    });
+
+    it('rejects unsupported development scenario actions', async () => {
+        const server = await listen(
+            createRoomBffServer({
+                ...createRoomBffConfig(),
+                runScenario(action) {
+                    return { action, status: 'completed' };
+                },
+            }),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'delete_room' }),
+        });
+
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toMatchObject({
+            error: 'invalid_request',
+        });
+    });
+
+    it('reports scenario execution failures without treating them as invalid requests', async () => {
+        const server = await listen(
+            createRoomBffServer({
+                ...createRoomBffConfig(),
+                runScenario() {
+                    throw new Error('Simulator unavailable.');
+                },
+            }),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'pause_telemetry' }),
+        });
+
+        expect(response.status).toBe(500);
+        await expect(response.json()).resolves.toEqual({
+            error: 'scenario_failed',
+            message: 'Scenario could not be executed.',
         });
     });
 

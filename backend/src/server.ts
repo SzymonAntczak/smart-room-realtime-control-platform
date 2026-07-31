@@ -1,13 +1,16 @@
 import { createRoomBffServer } from './api/room-bff';
+import { isDevScenarioControlsEnabled } from './api/dev-scenario-controls';
 import { createTemperatureRoomRuntime } from './runtime/temperature-room-runtime';
 
 const defaultPort = 4310;
 const port = readPort(process.env.PORT);
 const runtime = createTemperatureRoomRuntime();
+const enableDevScenarioControls = isDevScenarioControlsEnabled(process.env.ENABLE_DEV_SCENARIOS);
 const server = createRoomBffServer({
     getRoomSnapshot: runtime.getRoomSnapshot,
     getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
     subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
+    runScenario: enableDevScenarioControls ? runtime.runScenario : undefined,
 });
 
 runtime.start();

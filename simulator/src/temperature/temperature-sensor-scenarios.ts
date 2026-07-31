@@ -11,15 +11,23 @@ export interface TemperatureTelemetryPause {
     readonly observedAt: string;
 }
 
+export interface TemperatureTelemetryResume {
+    readonly scenarioEvent: 'telemetry.resume';
+    readonly observedAt: string;
+}
+
 export interface TemperatureSensorScenario extends TemperatureSensorSimulator {
     pauseTelemetry(observedAt: string): TemperatureTelemetryPause;
+    resumeTelemetry(observedAt: string): TemperatureTelemetryResume;
     replayLastReading(): TemperatureReadingMessage;
+    emitInvalidReading(recordedAt: string): TemperatureReadingMessage;
+    reset(): void;
 }
 
 export function createTemperatureSensorScenario(
     config: TemperatureSensorConfig,
 ): TemperatureSensorScenario {
-    const sensor = createTemperatureSensorSimulator(config);
+    let sensor = createTemperatureSensorSimulator(config);
     const listeners = new Set<TemperatureReadingListener>();
     let lastReading: TemperatureReadingMessage | undefined;
 
@@ -46,6 +54,14 @@ export function createTemperatureSensorScenario(
                 observedAt,
             };
         },
+        resumeTelemetry(observedAt) {
+            assertValidIsoTimestamp(observedAt, 'Temperature telemetry resume observedAt');
+
+            return {
+                scenarioEvent: 'telemetry.resume',
+                observedAt,
+            };
+        },
         replayLastReading() {
             if (!lastReading) {
                 throw new Error('Cannot replay temperature reading before one has been recorded.');
@@ -54,6 +70,21 @@ export function createTemperatureSensorScenario(
             emitReading(lastReading);
 
             return { ...lastReading };
+        },
+        emitInvalidReading(recordedAt) {
+            const reading = sensor.tick(recordedAt);
+            const invalidReading = {
+                ...reading,
+                value: Number.NaN,
+            };
+
+            emitReading(invalidReading);
+
+            return invalidReading;
+        },
+        reset() {
+            sensor = createTemperatureSensorSimulator(config);
+            lastReading = undefined;
         },
     };
 

@@ -3,11 +3,17 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 import type { RoomSnapshotProjection } from '../../../shared/src/projections';
 import type { RoomRealtimeServerMessage } from '../../../shared/src/realtime';
+import {
+    isTemperatureScenarioAction,
+    type TemperatureScenarioAction,
+    type TemperatureScenarioResult,
+} from '../../../shared/src/dev-scenarios';
 
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
     subscribeRoomSnapshot(listener: (snapshot: RoomSnapshotProjection) => void): () => void;
+    runScenario?: (action: TemperatureScenarioAction) => TemperatureScenarioResult;
     now?: () => string;
 }
 
@@ -15,12 +21,14 @@ export function createRoomBffServer({
     getRoomSnapshot,
     getDiagnosticsSnapshot,
     subscribeRoomSnapshot,
+    runScenario,
     now = realClock,
 }: RoomBffConfig): Server {
     const server = createServer((request, response) => {
         handleRoomBffRequest(request, response, {
             getRoomSnapshot,
             getDiagnosticsSnapshot,
+            runScenario,
         });
     });
     const websocketServer = new WebSocketServer({
@@ -62,6 +70,7 @@ export function createRoomBffServer({
 interface RoomBffHandlers {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    runScenario?: (action: TemperatureScenarioAction) => TemperatureScenarioResult;
 }
 
 function handleRoomBffRequest(
@@ -78,6 +87,11 @@ function handleRoomBffRequest(
     }
 
     const url = new URL(request.url ?? '/', 'http://localhost');
+
+    if (url.pathname === '/dev/scenarios/temperature') {
+        void handleTemperatureScenarioRequest(request, response, handlers.runScenario);
+        return;
+    }
 
     if (url.pathname !== '/room' && url.pathname !== '/diagnostics') {
         writeJson(response, 404, {
@@ -104,10 +118,89 @@ function handleRoomBffRequest(
     writeJson(response, 200, handlers.getRoomSnapshot());
 }
 
+async function handleTemperatureScenarioRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+    runScenario: RoomBffHandlers['runScenario'],
+): Promise<void> {
+    if (!runScenario) {
+        writeJson(response, 404, {
+            error: 'not_found',
+            message: 'Route not found.',
+        });
+        return;
+    }
+
+    if (request.method !== 'POST') {
+        response.setHeader('Allow', 'POST, OPTIONS');
+        writeJson(response, 405, {
+            error: 'method_not_allowed',
+            message: 'Only POST is supported for this route.',
+        });
+        return;
+    }
+
+    let action: TemperatureScenarioAction;
+
+    try {
+        const body = await readJsonBody(request);
+        action = readTemperatureScenarioAction(body);
+    } catch (error) {
+        writeJson(response, 400, {
+            error: 'invalid_request',
+            message: error instanceof Error ? error.message : 'Invalid request.',
+        });
+        return;
+    }
+
+    try {
+        writeJson(response, 200, runScenario(action));
+    } catch {
+        writeJson(response, 500, {
+            error: 'scenario_failed',
+            message: 'Scenario could not be executed.',
+        });
+    }
+}
+
 function setCorsHeaders(response: ServerResponse): void {
     response.setHeader('Access-Control-Allow-Origin', '*');
-    response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+    const chunks: Buffer[] = [];
+
+    for await (const chunk of request) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+
+    const content = Buffer.concat(chunks).toString('utf8');
+
+    if (!content) {
+        throw new TypeError('Request body must contain a scenario action.');
+    }
+
+    try {
+        return JSON.parse(content) as unknown;
+    } catch {
+        throw new TypeError('Request body must be valid JSON.');
+    }
+}
+
+function readTemperatureScenarioAction(value: unknown): TemperatureScenarioAction {
+    if (!value || typeof value !== 'object' || !('action' in value)) {
+        throw new TypeError('Request body must contain an action field.');
+    }
+
+    const action = value.action;
+
+    if (!isTemperatureScenarioAction(action)) {
+        throw new TypeError('Request body contains an unsupported scenario action.');
+    }
+
+    return action;
 }
 
 function writeJson(response: ServerResponse, statusCode: number, body: unknown): void {

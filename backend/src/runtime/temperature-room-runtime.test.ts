@@ -378,6 +378,7 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:02Z',
                 '2026-06-08T09:30:02Z',
+                '2026-06-08T09:30:03Z',
             ]),
             generateEventId: createSequenceEventIdGenerator([
                 'evt-temperature-1',
@@ -407,6 +408,95 @@ describe('createTemperatureRoomRuntime', () => {
                     },
                 ],
             });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('runs invalid and replay scenarios through diagnostics without changing confirmed state', () => {
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 10_000,
+            clock: createSequenceClock([
+                '2026-06-08T09:29:59Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:02Z',
+                '2026-06-08T09:30:02Z',
+                '2026-06-08T09:30:03Z',
+                '2026-06-08T09:30:04Z',
+                '2026-06-08T09:30:05Z',
+            ]),
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-invalid',
+                'evt-temperature-reset',
+            ]),
+        });
+
+        try {
+            runtime.start();
+            runtime.runScenario('emit_invalid_reading');
+            runtime.runScenario('replay_last_reading');
+            runtime.runScenario('reset');
+
+            expect(runtime.getRoomSnapshot().devices[0]?.reportedState).toEqual({
+                temperature: 22,
+                temperatureUnit: 'celsius',
+            });
+            expect(
+                runtime.getDiagnosticsSnapshot().ignoredEvents.map((event) => event.reason),
+            ).toEqual(['duplicate_event', 'invalid_payload']);
+            expect(runtime.getRoomSnapshot().recentEvents.map((event) => event.eventId)).toEqual([
+                'evt-temperature-reset',
+                'evt-temperature-1',
+            ]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('pauses telemetry through stale and offline health, then recovers with one resumed timer', () => {
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            snapshotBroadcastIntervalMs: 1000,
+            clock: createSequenceClock([
+                '2026-06-08T09:29:59Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:02.501Z',
+                '2026-06-08T09:30:10.001Z',
+                '2026-06-08T09:30:11Z',
+                '2026-06-08T09:30:11Z',
+                '2026-06-08T09:30:11Z',
+            ]),
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-2',
+            ]),
+            timer,
+        });
+        const healthSnapshots: string[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => {
+            const health = snapshot.devices[0]?.health;
+
+            if (health) {
+                healthSnapshots.push(health);
+            }
+        });
+
+        try {
+            runtime.start();
+            runtime.runScenario('pause_telemetry');
+            timer.run(1);
+            timer.run(1);
+            runtime.runScenario('resume_telemetry');
+            timer.run(3);
+
+            expect(healthSnapshots).toEqual(['online', 'stale', 'offline', 'online']);
+            expect(runtime.getRoomSnapshot().devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:11Z');
+            expect(timer.intervals).toEqual([1000, 1000, 1000]);
         } finally {
             runtime.stop();
         }

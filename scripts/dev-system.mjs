@@ -73,7 +73,10 @@ function startProcess({ name, command, args }) {
 
 function createChildProcessEnv() {
     if (process.platform !== 'win32') {
-        return process.env;
+        return {
+            ...process.env,
+            ENABLE_DEV_SCENARIOS: 'true',
+        };
     }
 
     const env = {};
@@ -89,6 +92,8 @@ function createChildProcessEnv() {
         seenKeys.add(normalizedKey);
         env[key] = value;
     }
+
+    env.ENABLE_DEV_SCENARIOS = 'true';
 
     return env;
 }

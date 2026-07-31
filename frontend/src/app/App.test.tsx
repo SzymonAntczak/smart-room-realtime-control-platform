@@ -18,6 +18,14 @@ describe('App', () => {
         expect(screen.getByText('Realtime room stream')).toBeInTheDocument();
         expect(screen.getByText('Connecting to realtime room stream...')).toBeInTheDocument();
     });
+
+    it('does not render development scenario controls outside the development build', () => {
+        render(<App showDevScenarioPanel={false} />);
+
+        expect(
+            screen.queryByRole('heading', { name: 'Temperature scenarios' }),
+        ).not.toBeInTheDocument();
+    });
 });
 
 class MockWebSocket extends EventTarget {

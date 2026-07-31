@@ -39,6 +39,27 @@ npm run lint
 npm run format
 ```
 
+## Local Manual Scenario Checklist
+
+Run the backend and frontend locally with `npm run dev`. The development panel
+is intentionally separate from the temperature control surface and is available
+only in the local development build.
+
+1. Confirm that normal telemetry shows an `Online` reading and recent events.
+2. Choose **Pause telemetry**; wait for the reading to become `Stale`, then
+   `Offline`, while its last value remains visible.
+3. Choose **Resume telemetry** and **Emit next reading**; confirm the fresh
+   observation restores `Online` health.
+4. Choose **Replay last reading**; confirm the current reading and event feed
+   do not change, then inspect `/diagnostics` for `duplicate_event`.
+5. Choose **Emit invalid reading**; confirm the current reading does not change,
+   then inspect `/diagnostics` for `invalid_payload`.
+6. Choose **Reset scenario**; confirm scheduled telemetry resumes from the
+   deterministic first simulator value. Existing recent-event and diagnostics
+   history remains available for inspection.
+7. Stop and restart the local backend to confirm the frontend shows reconnecting
+   state without erasing its last valid snapshot.
+
 ## Completion Rule
 
 Temperature is complete when the checklist above passes and the UI can

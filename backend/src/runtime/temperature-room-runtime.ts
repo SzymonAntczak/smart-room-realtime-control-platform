@@ -2,12 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { clearInterval, setInterval } from 'node:timers';
 import {
     createTemperatureSensorRuntime,
-    createTemperatureSensorSimulator,
+    createTemperatureSensorScenario,
     type Clock,
     type TimerScheduler,
     type TemperatureSensorRuntime,
 } from '../../../simulator/src';
 import type { RoomSnapshotProjection } from '../../../shared/src/projections';
+import type {
+    TemperatureScenarioAction,
+    TemperatureScenarioResult,
+} from '../../../shared/src/dev-scenarios';
 import {
     createSimulatorTemperatureAdapter,
     type SimulatorTemperatureAdapter,
@@ -38,6 +42,7 @@ export interface TemperatureRoomRuntime {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
     subscribeRoomSnapshot(listener: RoomSnapshotListener): () => void;
+    runScenario(action: TemperatureScenarioAction): TemperatureScenarioResult;
 }
 
 export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
@@ -61,7 +66,7 @@ export function createTemperatureRoomRuntime({
     generateEventId = randomUUID,
     diagnosticEventLimit,
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
-    const sensor = createTemperatureSensorSimulator({
+    const sensor = createTemperatureSensorScenario({
         sensorId: 'temp-desk-native',
         baseTemperature: 22,
         readingPattern,
@@ -97,20 +102,7 @@ export function createTemperatureRoomRuntime({
             }
 
             hasStarted = true;
-            adapter = createSimulatorTemperatureAdapter({
-                sensor,
-                deviceId: 'temp-desk',
-                generateEventId,
-                emitEvent(event) {
-                    const result = processor.processEvent(event);
-
-                    diagnostics.recordProcessingResult(event, result);
-
-                    if (result.status === 'accepted') {
-                        notifySnapshotListeners(result.state.updatedAt);
-                    }
-                },
-            });
+            adapter = createAdapter();
             sensor.tick(clock.now());
             snapshotBroadcastTimerHandle = snapshotBroadcastTimer.setInterval(() => {
                 notifySnapshotListeners(clock.now());
@@ -140,7 +132,66 @@ export function createTemperatureRoomRuntime({
                 snapshotListeners.delete(listener);
             };
         },
+        runScenario(action) {
+            if (!hasStarted) {
+                throw new Error(
+                    'Temperature room runtime must be started before running a scenario.',
+                );
+            }
+
+            const observedAt = clock.now();
+
+            switch (action) {
+                case 'pause_telemetry':
+                    sensorRuntime.stop();
+                    sensor.pauseTelemetry(observedAt);
+                    break;
+                case 'resume_telemetry':
+                    sensor.resumeTelemetry(observedAt);
+                    sensorRuntime.start();
+                    break;
+                case 'replay_last_reading':
+                    sensor.replayLastReading();
+                    break;
+                case 'emit_invalid_reading':
+                    sensor.emitInvalidReading(observedAt);
+                    break;
+                case 'emit_next_reading':
+                    sensor.tick(observedAt);
+                    break;
+                case 'reset':
+                    sensorRuntime.stop();
+                    adapter?.stop();
+                    sensor.reset();
+                    adapter = createAdapter();
+                    sensor.tick(observedAt);
+                    sensorRuntime.start();
+                    break;
+            }
+
+            return {
+                action,
+                status: 'completed',
+            };
+        },
     };
+
+    function createAdapter(): SimulatorTemperatureAdapter {
+        return createSimulatorTemperatureAdapter({
+            sensor,
+            deviceId: 'temp-desk',
+            generateEventId,
+            emitEvent(event) {
+                const result = processor.processEvent(event);
+
+                diagnostics.recordProcessingResult(event, result);
+
+                if (result.status === 'accepted') {
+                    notifySnapshotListeners(result.state.updatedAt);
+                }
+            },
+        });
+    }
 
     function notifySnapshotListeners(evaluatedAt: string): void {
         const snapshot = toRoomSnapshot(roomName, roomProjector, evaluatedAt);
