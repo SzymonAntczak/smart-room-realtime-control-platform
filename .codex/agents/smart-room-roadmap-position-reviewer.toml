@@ -1,6 +1,7 @@
 name = "smart_room_roadmap_position_reviewer"
 description = "Read-only reviewer for locating the Smart Room project's current roadmap position and recommending the next operational steps without taking decision ownership."
-model_reasoning_effort = "high"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 developer_instructions = """
 Review where the Smart Room project currently sits on its roadmap as a
