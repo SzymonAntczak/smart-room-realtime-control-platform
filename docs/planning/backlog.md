@@ -13,3 +13,6 @@ behavior.
   Fastify. Preserve the existing local BFF responsibilities and
   `room.snapshot` WebSocket contract; choose the WebSocket integration before
   starting the migration.
+- [ ] Select and add a consistent icon set for the UI. Define its usage for
+  device status, control actions and feedback states, keeping the choice
+  compatible with the frontend's visual language and accessibility needs.
