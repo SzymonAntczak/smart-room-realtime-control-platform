@@ -8,6 +8,7 @@ interface ControlCardProps {
     eyebrow: string;
     title: string;
     status: string;
+    statusIcon?: ReactNode;
     children: ReactNode;
     statusTone?: ControlCardStatusTone;
     statusAriaLive?: 'off' | 'polite' | 'assertive';
@@ -19,6 +20,7 @@ export function ControlCard({
     eyebrow,
     title,
     status,
+    statusIcon,
     children,
     statusTone = 'neutral',
     statusAriaLive = 'polite',
@@ -38,6 +40,7 @@ export function ControlCard({
                     role={statusRole}
                     aria-live={statusAriaLive}
                 >
+                    {statusIcon}
                     {status}
                 </span>
             </div>

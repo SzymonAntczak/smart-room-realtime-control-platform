@@ -1,3 +1,4 @@
+import { FlaskConical, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import styles from './TemperatureScenarioDrawer.module.css';
@@ -35,6 +36,7 @@ export function TemperatureScenarioDrawer() {
                 aria-expanded={isOpen}
                 onClick={() => (isOpen ? closeDrawer() : setIsOpen(true))}
             >
+                <FlaskConical aria-hidden="true" size={16} strokeWidth={1.75} />
                 Dev scenarios
             </button>
             {isOpen ? (
@@ -54,6 +56,7 @@ export function TemperatureScenarioDrawer() {
                         type="button"
                         onClick={closeDrawer}
                     >
+                        <X aria-hidden="true" size={16} strokeWidth={1.75} />
                         Close panel
                     </button>
                     <TemperatureScenarioPanel />

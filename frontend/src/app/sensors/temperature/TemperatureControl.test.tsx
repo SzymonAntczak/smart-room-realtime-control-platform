@@ -32,6 +32,10 @@ describe('TemperatureControl', () => {
         expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
         expect(await screen.findByRole('status')).toHaveTextContent('Online');
         expect(screen.getByRole('status')).toHaveAttribute('data-tone', 'success');
+        expect(screen.getByRole('status').querySelector('svg')).toHaveAttribute(
+            'aria-hidden',
+            'true',
+        );
         expect(screen.getByText('Realtime room stream')).toBeInTheDocument();
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('celsius');
@@ -225,6 +229,10 @@ describe('TemperatureControl', () => {
 
             expect(await screen.findByRole('status')).toHaveTextContent(label);
             expect(screen.getByRole('status')).toHaveAttribute('data-tone', tone);
+            expect(screen.getByRole('status').querySelector('svg')).toHaveAttribute(
+                'aria-hidden',
+                'true',
+            );
             expect(screen.queryByText('Online')).not.toBeInTheDocument();
             expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
             expect(screen.getAllByText('09:30:00 UTC').length).toBeGreaterThan(0);

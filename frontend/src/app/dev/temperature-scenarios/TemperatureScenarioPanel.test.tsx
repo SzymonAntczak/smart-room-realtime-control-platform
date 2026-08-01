@@ -44,6 +44,16 @@ describe('TemperatureScenarioPanel', () => {
         expect(await screen.findByRole('status')).toHaveTextContent('Pause telemetry completed.');
     });
 
+    it('keeps scenario action labels accessible while rendering decorative icons', () => {
+        render(<TemperatureScenarioPanel />);
+
+        const pauseButton = screen.getByRole('button', { name: 'Pause telemetry' });
+        const diagnosticsButton = screen.getByRole('button', { name: 'Refresh diagnostics' });
+
+        expect(pauseButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+        expect(diagnosticsButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    });
+
     it('shows a failure without synthesizing room state', async () => {
         const user = userEvent.setup();
         const client: TemperatureScenarioClient = {

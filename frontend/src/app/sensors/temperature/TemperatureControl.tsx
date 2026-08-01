@@ -1,3 +1,5 @@
+import { CircleCheck, Clock3, Thermometer, TriangleAlert, WifiOff } from 'lucide-react';
+
 import { ControlCard } from '../../shared/ui/ControlCard';
 
 import {
@@ -70,6 +72,7 @@ export function TemperatureControlView({
             eyebrow="Realtime room stream"
             title={reading.sensorName}
             status={formatHealth(reading.health)}
+            statusIcon={getHealthIcon(reading.health)}
             statusTone={toHealthTone(reading.health)}
             titleId="sensor-heading"
         >
@@ -87,6 +90,12 @@ export function TemperatureControlView({
                 </p>
             ) : null}
             <div className={styles.reading} aria-label="Current temperature">
+                <Thermometer
+                    aria-hidden="true"
+                    className={styles.readingIcon}
+                    size={24}
+                    strokeWidth={1.75}
+                />
                 <span className={styles.value}>{reading.value.toFixed(1)}</span>
                 <span className={styles.unit}>{reading.unit}</span>
             </div>
@@ -141,6 +150,24 @@ function toHealthTone(health: TemperatureSensorReading['health']) {
     }
 
     return 'warning';
+}
+
+function getHealthIcon(health: TemperatureSensorReading['health']) {
+    const iconProps = { 'aria-hidden': true, size: 16, strokeWidth: 1.75 } as const;
+
+    if (health === 'online') {
+        return <CircleCheck {...iconProps} />;
+    }
+
+    if (health === 'stale') {
+        return <Clock3 {...iconProps} />;
+    }
+
+    if (health === 'offline') {
+        return <WifiOff {...iconProps} />;
+    }
+
+    return <TriangleAlert {...iconProps} />;
 }
 
 function getHealthWarning(reading: TemperatureSensorReading): string | undefined {

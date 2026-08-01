@@ -1,3 +1,14 @@
+import {
+    History,
+    type LucideIcon,
+    Pause,
+    Play,
+    RefreshCw,
+    RotateCcw,
+    StepForward,
+    TriangleAlert,
+} from 'lucide-react';
+
 import type {
     TemperatureScenarioAction,
     TemperatureScenarioClient,
@@ -8,15 +19,16 @@ import { useTemperatureScenario } from './use-temperature-scenario';
 interface ScenarioControl {
     readonly action: TemperatureScenarioAction;
     readonly label: string;
+    readonly Icon: LucideIcon;
 }
 
 const controls: readonly ScenarioControl[] = [
-    { action: 'pause_telemetry', label: 'Pause telemetry' },
-    { action: 'resume_telemetry', label: 'Resume telemetry' },
-    { action: 'emit_next_reading', label: 'Emit next reading' },
-    { action: 'replay_last_reading', label: 'Replay last reading' },
-    { action: 'emit_invalid_reading', label: 'Emit invalid reading' },
-    { action: 'reset', label: 'Reset scenario' },
+    { action: 'pause_telemetry', label: 'Pause telemetry', Icon: Pause },
+    { action: 'resume_telemetry', label: 'Resume telemetry', Icon: Play },
+    { action: 'emit_next_reading', label: 'Emit next reading', Icon: StepForward },
+    { action: 'replay_last_reading', label: 'Replay last reading', Icon: History },
+    { action: 'emit_invalid_reading', label: 'Emit invalid reading', Icon: TriangleAlert },
+    { action: 'reset', label: 'Reset scenario', Icon: RotateCcw },
 ];
 
 interface TemperatureScenarioPanelProps {
@@ -53,6 +65,7 @@ export function TemperatureScenarioPanel({ client }: TemperatureScenarioPanelPro
                         disabled={activeAction !== undefined}
                         onClick={() => void runScenario(control.action)}
                     >
+                        <control.Icon aria-hidden="true" size={16} strokeWidth={1.75} />
                         {activeAction === control.action ? 'Running...' : control.label}
                     </button>
                 ))}
@@ -74,6 +87,7 @@ export function TemperatureScenarioPanel({ client }: TemperatureScenarioPanelPro
                         disabled={isRefreshingDiagnostics || activeAction !== undefined}
                         onClick={() => void refreshDiagnostics()}
                     >
+                        <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
                         {isRefreshingDiagnostics ? 'Refreshing...' : 'Refresh diagnostics'}
                     </button>
                 </div>

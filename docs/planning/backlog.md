@@ -26,6 +26,6 @@ behavior.
       completed Stage 2/2.5 realtime temperature slice.
 - [x] Make page heading hierarchy scale beyond one device card: keep a single
       page-level `h1` and use lower-level headings in reusable device cards.
-- [ ] Select and add a consistent icon set for the UI. Define its usage for
+- [x] Select and add a consistent icon set for the UI. Define its usage for
       device status, control actions and feedback states, keeping the choice
       compatible with the frontend's visual language and accessibility needs.

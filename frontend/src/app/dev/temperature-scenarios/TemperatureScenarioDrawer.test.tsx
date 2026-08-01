@@ -11,6 +11,7 @@ describe('TemperatureScenarioDrawer', () => {
 
         const toggle = screen.getByRole('button', { name: 'Dev scenarios' });
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        expect(toggle.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
         expect(
             screen.queryByRole('heading', { name: 'Temperature scenarios' }),
         ).not.toBeInTheDocument();
@@ -19,7 +20,9 @@ describe('TemperatureScenarioDrawer', () => {
 
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
         expect(screen.getByRole('heading', { name: 'Temperature scenarios' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Close panel' })).toHaveFocus();
+        const closeButton = screen.getByRole('button', { name: 'Close panel' });
+        expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+        expect(closeButton).toHaveFocus();
     });
 
     it('closes the drawer with its visible close control', async () => {
