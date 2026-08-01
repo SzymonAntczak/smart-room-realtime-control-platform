@@ -3,6 +3,7 @@ import globals from 'globals';
 import checkFile from 'eslint-plugin-check-file';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
+import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import tseslint from 'typescript-eslint';
 
 const frontendSourceFiles = ['frontend/**/*.{ts,tsx}'];
@@ -27,8 +28,22 @@ export default tseslint.config(
         files: ['**/*.{ts,tsx}'],
         plugins: {
             'check-file': checkFile,
+            'simple-import-sort': simpleImportSort,
         },
         rules: {
+            '@typescript-eslint/consistent-type-imports': [
+                'error',
+                {
+                    prefer: 'type-imports',
+                    fixStyle: 'inline-type-imports',
+                },
+            ],
+            'simple-import-sort/imports': [
+                'error',
+                {
+                    groups: [['^\\u0000'], ['^(?:node:|@?\\w)'], ['^\\.\\.(?:/|$)'], ['^\\./']],
+                },
+            ],
             'check-file/filename-naming-convention': [
                 'error',
                 {

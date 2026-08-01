@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { readDeduplicationRuntimeConfig } from './deduplication-runtime-config';
 
 describe('readDeduplicationRuntimeConfig', () => {

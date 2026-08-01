@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+
 import styles from './TemperatureScenarioDrawer.module.css';
 import { TemperatureScenarioPanel } from './TemperatureScenarioPanel';
 

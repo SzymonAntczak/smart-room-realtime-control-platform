@@ -1,11 +1,12 @@
+import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { WebSocket } from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
+import { WebSocket } from 'ws';
+
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
-import type { RoomSnapshotProjection } from '../../../shared/src/projections';
-import type { RoomRealtimeServerMessage } from '../../../shared/src/realtime';
 import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
+
 import { createRoomBffServer } from './room-bff';
 
 describe('createRoomBffServer', () => {

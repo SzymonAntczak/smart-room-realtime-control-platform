@@ -1,15 +1,12 @@
 import {
-    isTemperatureScenarioAction,
-    type TemperatureScenarioResult,
-} from '../../../../../shared/src/dev-scenarios';
-import type { TemperatureScenarioAction } from '../../../../../shared/src/dev-scenarios';
-import {
-    isIgnoredEventReason,
     type EventProcessingDiagnosticsSnapshot,
-    type IgnoredEventDiagnostic,
-} from '../../../../../shared/src/dev-diagnostics';
+    eventProcessingDiagnosticsSnapshotSchema,
+    type TemperatureScenarioAction,
+    type TemperatureScenarioResult,
+    temperatureScenarioResultSchema,
+} from '@smart-room/contracts';
 
-export type { TemperatureScenarioAction } from '../../../../../shared/src/dev-scenarios';
+export type { TemperatureScenarioAction } from '@smart-room/contracts';
 
 const defaultScenarioControlUrl = 'http://localhost:4310/dev/scenarios/temperature';
 const defaultDiagnosticsUrl = 'http://localhost:4310/diagnostics';
@@ -40,15 +37,17 @@ export function createTemperatureScenarioClient(
 
             const result: unknown = await response.json();
 
-            if (!isTemperatureScenarioResult(result)) {
+            const parsedResult = temperatureScenarioResultSchema.safeParse(result);
+
+            if (!parsedResult.success) {
                 throw new Error('Scenario control returned an invalid response.');
             }
 
-            if (result.action !== action) {
+            if (parsedResult.data.action !== action) {
                 throw new Error('Scenario control returned a response for a different action.');
             }
 
-            return result;
+            return parsedResult.data;
         },
         async getDiagnostics() {
             const response = await fetchImplementation(diagnosticsUrl);
@@ -59,11 +58,13 @@ export function createTemperatureScenarioClient(
 
             const snapshot: unknown = await response.json();
 
-            if (!isDiagnosticsSnapshot(snapshot)) {
+            const parsedSnapshot = eventProcessingDiagnosticsSnapshotSchema.safeParse(snapshot);
+
+            if (!parsedSnapshot.success) {
                 throw new Error('Diagnostics returned an invalid response.');
             }
 
-            return snapshot;
+            return parsedSnapshot.data;
         },
     };
 }
@@ -76,58 +77,4 @@ function getScenarioControlUrl(): string {
 
 function getDiagnosticsUrl(): string {
     return import.meta.env.VITE_DIAGNOSTICS_URL ?? defaultDiagnosticsUrl;
-}
-
-function isTemperatureScenarioResult(value: unknown): value is TemperatureScenarioResult {
-    return (
-        typeof value === 'object' &&
-        value !== null &&
-        'action' in value &&
-        'status' in value &&
-        isTemperatureScenarioAction(value.action) &&
-        value.status === 'completed'
-    );
-}
-
-function isDiagnosticsSnapshot(value: unknown): value is EventProcessingDiagnosticsSnapshot {
-    return (
-        isRecord(value) &&
-        Array.isArray(value.ignoredEvents) &&
-        value.ignoredEvents.every(isIgnoredEventDiagnostic)
-    );
-}
-
-function isIgnoredEventDiagnostic(value: unknown): value is IgnoredEventDiagnostic {
-    return (
-        isRecord(value) &&
-        typeof value.diagnosticId === 'string' &&
-        isIgnoredEventReason(value.reason) &&
-        isIsoTimestamp(value.observedAt) &&
-        isOptionalString(value.eventId) &&
-        isOptionalString(value.eventType) &&
-        isOptionalString(value.source) &&
-        isOptionalString(value.deviceId) &&
-        isOptionalString(value.commandId) &&
-        isOptionalTimestamp(value.occurredAt)
-    );
-}
-
-function isOptionalString(value: unknown): boolean {
-    return value === undefined || typeof value === 'string';
-}
-
-function isOptionalTimestamp(value: unknown): boolean {
-    return value === undefined || isIsoTimestamp(value);
-}
-
-function isIsoTimestamp(value: unknown): value is string {
-    return (
-        typeof value === 'string' &&
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) &&
-        !Number.isNaN(Date.parse(value))
-    );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
 }

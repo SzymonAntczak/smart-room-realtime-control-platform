@@ -1,8 +1,8 @@
-import styles from './TemperatureScenarioPanel.module.css';
 import type {
     TemperatureScenarioAction,
     TemperatureScenarioClient,
 } from './temperature-scenario-client';
+import styles from './TemperatureScenarioPanel.module.css';
 import { useTemperatureScenario } from './use-temperature-scenario';
 
 interface ScenarioControl {

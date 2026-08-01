@@ -2,17 +2,23 @@
     "name": "smart-room-realtime-control-platform",
     "private": true,
     "type": "module",
+    "workspaces": [
+        "backend",
+        "frontend",
+        "shared",
+        "simulator"
+    ],
     "scripts": {
         "dev": "node scripts/dev-system.mjs",
-        "dev:backend": "npm --prefix backend run dev",
-        "dev:frontend": "npm --prefix frontend run dev",
+        "dev:backend": "npm run dev --workspace @smart-room/backend",
+        "dev:frontend": "npm run dev --workspace @smart-room/frontend",
         "format": "prettier --check .",
         "format:write": "prettier --write .",
         "lint": "eslint .",
-        "test:backend": "npm --prefix backend run test",
-        "test:frontend": "npm --prefix frontend run test",
-        "test:simulator": "npm --prefix simulator run test",
-        "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck && npm --prefix simulator run typecheck"
+        "test:backend": "npm run test --workspace @smart-room/backend",
+        "test:frontend": "npm run test --workspace @smart-room/frontend",
+        "test:simulator": "npm run test --workspace @smart-room/simulator",
+        "typecheck": "npm run typecheck --workspace @smart-room/contracts && npm run typecheck --workspace @smart-room/backend && npm run typecheck --workspace @smart-room/frontend && npm run typecheck --workspace @smart-room/simulator"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
@@ -20,6 +26,7 @@
         "eslint-plugin-check-file": "^3.3.1",
         "eslint-plugin-react-hooks": "^7.1.1",
         "eslint-plugin-react-refresh": "^0.5.2",
+        "eslint-plugin-simple-import-sort": "^14.0.0",
         "globals": "^17.6.0",
         "prettier": "^3.8.3",
         "typescript-eslint": "^8.60.1"

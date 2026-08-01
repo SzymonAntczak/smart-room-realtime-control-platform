@@ -1,7 +1,7 @@
-import { createRoomBffServer } from './api/room-bff';
 import { isDevScenarioControlsEnabled } from './api/dev-scenario-controls';
-import { createTemperatureRoomRuntime } from './runtime/temperature-room-runtime';
+import { createRoomBffServer } from './api/room-bff';
 import { readDeduplicationRuntimeConfig } from './runtime/deduplication-runtime-config';
+import { createTemperatureRoomRuntime } from './runtime/temperature-room-runtime';
 
 const defaultPort = 4310;
 const port = readPort(process.env.PORT);

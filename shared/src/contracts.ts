@@ -5,3 +5,13 @@ export type * from './dev-diagnostics';
 export type * from './events';
 export type * from './projections';
 export type * from './realtime';
+export {
+    eventProcessingDiagnosticsSnapshotSchema,
+    platformEventEnvelopeSchema,
+    roomRealtimeServerMessageSchema,
+    roomSnapshotProjectionSchema,
+    telemetryReadingRecordedPayloadSchema,
+    temperatureScenarioActionSchema,
+    temperatureScenarioRequestSchema,
+    temperatureScenarioResultSchema,
+} from './schemas';

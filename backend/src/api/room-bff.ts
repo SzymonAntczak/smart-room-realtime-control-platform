@@ -1,13 +1,14 @@
+import {
+    type RoomRealtimeServerMessage,
+    type RoomSnapshotProjection,
+    type TemperatureScenarioAction,
+    temperatureScenarioRequestSchema,
+    type TemperatureScenarioResult,
+} from '@smart-room/contracts';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
+
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
-import type { RoomSnapshotProjection } from '../../../shared/src/projections';
-import type { RoomRealtimeServerMessage } from '../../../shared/src/realtime';
-import {
-    isTemperatureScenarioAction,
-    type TemperatureScenarioAction,
-    type TemperatureScenarioResult,
-} from '../../../shared/src/dev-scenarios';
 
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
@@ -190,17 +191,13 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 }
 
 function readTemperatureScenarioAction(value: unknown): TemperatureScenarioAction {
-    if (!value || typeof value !== 'object' || !('action' in value)) {
-        throw new TypeError('Request body must contain an action field.');
-    }
+    const parsed = temperatureScenarioRequestSchema.safeParse(value);
 
-    const action = value.action;
-
-    if (!isTemperatureScenarioAction(action)) {
+    if (!parsed.success) {
         throw new TypeError('Request body contains an unsupported scenario action.');
     }
 
-    return action;
+    return parsed.data.action;
 }
 
 function writeJson(response: ServerResponse, statusCode: number, body: unknown): void {

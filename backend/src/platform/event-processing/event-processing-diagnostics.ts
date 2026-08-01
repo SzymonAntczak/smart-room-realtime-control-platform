@@ -2,13 +2,14 @@ import type {
     DeduplicationEvictionDiagnostic,
     EventProcessingDiagnosticsSnapshot,
     IgnoredEventDiagnostic,
-} from '../../../../shared/src/dev-diagnostics';
+} from '@smart-room/contracts';
+
 import type { EventProcessingResult } from './event-processor';
 
 export type {
     EventProcessingDiagnosticsSnapshot,
     IgnoredEventDiagnostic,
-} from '../../../../shared/src/dev-diagnostics';
+} from '@smart-room/contracts';
 
 export interface EventProcessingDiagnosticsClock {
     now(): string;

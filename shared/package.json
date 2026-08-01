@@ -1,0 +1,19 @@
+{
+    "name": "@smart-room/contracts",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "exports": {
+        ".": "./src/contracts.ts"
+    },
+    "scripts": {
+        "lint": "eslint ../shared --config ../eslint.config.js",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "zod": "^4.4.3"
+    },
+    "devDependencies": {
+        "typescript": "^6.0.3"
+    }
+}

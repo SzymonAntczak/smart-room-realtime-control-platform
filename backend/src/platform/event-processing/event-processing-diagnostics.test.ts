@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { EventProcessingResult } from './event-processor';
+
 import { createEventProcessingDiagnostics } from './event-processing-diagnostics';
+import type { EventProcessingResult } from './event-processor';
 
 describe('createEventProcessingDiagnostics', () => {
     it('does not record accepted processing results', () => {

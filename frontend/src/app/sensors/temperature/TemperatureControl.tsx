@@ -1,10 +1,11 @@
 import { ControlCard } from '../../shared/ui/ControlCard';
-import styles from './TemperatureControl.module.css';
+
 import {
     type TemperatureEventFeedItem,
     type TemperatureSensorReading,
 } from './room-realtime-client';
-import { useTemperatureRealtime, type TemperatureControlState } from './use-temperature-realtime';
+import styles from './TemperatureControl.module.css';
+import { type TemperatureControlState, useTemperatureRealtime } from './use-temperature-realtime';
 
 export function TemperatureControl() {
     return <TemperatureControlView state={useTemperatureRealtime()} />;

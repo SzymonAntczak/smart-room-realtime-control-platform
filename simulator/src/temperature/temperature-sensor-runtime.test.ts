@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
+
 import {
     createTemperatureSensorSimulator,
     type TemperatureReadingMessage,
 } from './temperature-sensor';
 import {
-    createTemperatureSensorRuntime,
     type Clock,
+    createTemperatureSensorRuntime,
     type TimerScheduler,
 } from './temperature-sensor-runtime';
 

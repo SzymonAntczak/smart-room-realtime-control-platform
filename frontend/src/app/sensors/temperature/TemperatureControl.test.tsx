@@ -1,9 +1,7 @@
+import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type {
-    RoomRealtimeServerMessage,
-    RoomSnapshotProjection,
-} from '../../../../../shared/src/contracts';
+
 import { TemperatureControl } from './TemperatureControl';
 
 describe('TemperatureControl', () => {

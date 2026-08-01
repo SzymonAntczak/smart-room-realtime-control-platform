@@ -1,12 +1,15 @@
-import type { CommandProjection } from '../../../../shared/src/commands';
-import type { DeviceHealth, DeviceRole, DeviceState } from '../../../../shared/src/devices';
-import type { DeviceProjection, EventFeedItemProjection } from '../../../../shared/src/projections';
 import type {
+    CommandProjection,
+    DeviceHealth,
+    DeviceProjection,
+    DeviceRole,
+    DeviceState,
+    EventFeedItemProjection,
     PlatformEventEnvelope,
     PlatformEventType,
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
-} from '../../../../shared/src/events';
+} from '@smart-room/contracts';
 
 export interface DeviceDefinition {
     deviceId: string;

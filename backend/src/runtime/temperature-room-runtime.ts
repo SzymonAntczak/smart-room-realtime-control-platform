@@ -1,29 +1,30 @@
-import { randomUUID } from 'node:crypto';
-import { clearInterval, setInterval } from 'node:timers';
-import {
-    createTemperatureSensorRuntime,
-    createTemperatureSensorScenario,
-    type Clock,
-    type TimerScheduler,
-    type TemperatureSensorRuntime,
-} from '../../../simulator/src';
-import type { RoomSnapshotProjection } from '../../../shared/src/projections';
 import type {
+    RoomSnapshotProjection,
     TemperatureScenarioAction,
     TemperatureScenarioResult,
-} from '../../../shared/src/dev-scenarios';
+} from '@smart-room/contracts';
+import { randomUUID } from 'node:crypto';
+import { clearInterval, setInterval } from 'node:timers';
+
+import {
+    type Clock,
+    createTemperatureSensorRuntime,
+    createTemperatureSensorScenario,
+    type TemperatureSensorRuntime,
+    type TimerScheduler,
+} from '../../../simulator/src';
 import {
     createSimulatorTemperatureAdapter,
     type SimulatorTemperatureAdapter,
 } from '../adapters/simulator/temperature/temperature-adapter';
 import {
-    createEventProcessor,
-    type DeviceDefinition,
-} from '../platform/event-processing/event-processor';
-import {
     createEventProcessingDiagnostics,
     type EventProcessingDiagnosticsSnapshot,
 } from '../platform/event-processing/event-processing-diagnostics';
+import {
+    createEventProcessor,
+    type DeviceDefinition,
+} from '../platform/event-processing/event-processor';
 import { createRoomProjector, type RoomProjector } from '../platform/read-model/room-projection';
 
 export interface TemperatureRoomRuntimeConfig {

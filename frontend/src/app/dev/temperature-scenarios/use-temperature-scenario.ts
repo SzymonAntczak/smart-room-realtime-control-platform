@@ -1,9 +1,10 @@
+import type { EventProcessingDiagnosticsSnapshot } from '@smart-room/contracts';
 import { useRef, useState } from 'react';
-import type { EventProcessingDiagnosticsSnapshot } from '../../../../../shared/src/dev-diagnostics';
+
 import {
-    temperatureScenarioClient,
-    type TemperatureScenarioClient,
     type TemperatureScenarioAction,
+    type TemperatureScenarioClient,
+    temperatureScenarioClient,
 } from './temperature-scenario-client';
 
 export interface TemperatureScenarioRequestState {

@@ -1,15 +1,16 @@
-import type {
-    PlatformEventEnvelope,
-    PlatformEventSource,
-    TelemetryReadingRecordedEvent,
-    TelemetryReadingRecordedPayload,
-} from '../../../../shared/src/events';
-import type { IgnoredEventReason } from '../../../../shared/src/dev-diagnostics';
+import {
+    type IgnoredEventReason,
+    platformEventEnvelopeSchema,
+    type TelemetryReadingRecordedEvent,
+    telemetryReadingRecordedPayloadSchema,
+} from '@smart-room/contracts';
+
 import type {
     DeviceDefinition,
     RoomProjection,
     RoomProjector,
 } from '../read-model/room-projection';
+
 import { createEventDeduplicator, type EventDeduplicationClock } from './event-deduplicator';
 
 export type { DeviceDefinition } from '../read-model/room-projection';
@@ -42,7 +43,7 @@ export type EventProcessingResult =
               | 'device_metric_mismatch';
           state: EventProcessorState;
       };
-export type { IgnoredEventReason } from '../../../../shared/src/dev-diagnostics';
+export type { IgnoredEventReason } from '@smart-room/contracts';
 
 export interface EventProcessor {
     processEvent(event: unknown): EventProcessingResult;
@@ -70,11 +71,13 @@ export function createEventProcessor({
                 state: roomProjector.getProjection(),
             });
 
-            if (!isPlatformEventEnvelope(candidateEvent)) {
+            const parsedEnvelope = platformEventEnvelopeSchema.safeParse(candidateEvent);
+
+            if (!parsedEnvelope.success) {
                 return ignored('malformed_event');
             }
 
-            const event = candidateEvent;
+            const event = parsedEnvelope.data;
 
             if (deduplicator.has(event.eventId)) {
                 return ignored('duplicate_event');
@@ -98,7 +101,9 @@ export function createEventProcessor({
                 return ignored('unknown_device');
             }
 
-            if (!isTemperatureReadingPayload(event.payload)) {
+            const parsedPayload = telemetryReadingRecordedPayloadSchema.safeParse(event.payload);
+
+            if (!parsedPayload.success) {
                 return ignored('invalid_payload');
             }
 
@@ -111,7 +116,7 @@ export function createEventProcessor({
                 eventType: 'telemetry.reading.recorded',
                 version: 1,
                 deviceId: event.deviceId,
-                payload: event.payload,
+                payload: parsedPayload.data,
             };
 
             const deduplicationEvictedEventIds = deduplicator.remember(event.eventId);
@@ -132,42 +137,3 @@ const realClock: EventDeduplicationClock = {
         return new Date().toISOString();
     },
 };
-
-function isPlatformEventEnvelope(value: unknown): value is PlatformEventEnvelope {
-    if (!isRecord(value)) {
-        return false;
-    }
-
-    return (
-        typeof value.eventId === 'string' &&
-        value.eventId.length > 0 &&
-        typeof value.eventType === 'string' &&
-        typeof value.version === 'number' &&
-        typeof value.occurredAt === 'string' &&
-        Date.parse(value.occurredAt) >= 0 &&
-        isPlatformEventSource(value.source) &&
-        'payload' in value &&
-        (value.deviceId === undefined || typeof value.deviceId === 'string') &&
-        (value.commandId === undefined || typeof value.commandId === 'string')
-    );
-}
-
-function isPlatformEventSource(value: unknown): value is PlatformEventSource {
-    return value === 'simulator-adapter' || value === 'hardware-adapter' || value === 'backend';
-}
-
-function isTemperatureReadingPayload(payload: unknown): payload is TelemetryReadingRecordedPayload {
-    if (!isRecord(payload)) {
-        return false;
-    }
-
-    return (
-        payload.metric === 'temperature' &&
-        Number.isFinite(payload.value) &&
-        payload.unit === 'celsius'
-    );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
-}

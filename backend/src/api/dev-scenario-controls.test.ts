@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { isDevScenarioControlsEnabled } from './dev-scenario-controls';
 
 describe('isDevScenarioControlsEnabled', () => {

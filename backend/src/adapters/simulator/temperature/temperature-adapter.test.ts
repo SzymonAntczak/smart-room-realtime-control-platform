@@ -1,6 +1,8 @@
+import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts';
 import { describe, expect, it } from 'vitest';
+
 import { createTemperatureSensorSimulator } from '../../../../../simulator/src';
-import type { TelemetryReadingRecordedEvent } from '../../../../../shared/src/events';
+
 import { createSimulatorTemperatureAdapter } from './temperature-adapter';
 
 describe('createSimulatorTemperatureAdapter', () => {

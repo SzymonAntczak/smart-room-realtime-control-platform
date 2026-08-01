@@ -1,5 +1,6 @@
+import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts';
 import { describe, expect, it } from 'vitest';
-import type { TelemetryReadingRecordedEvent } from '../../../../shared/src/events';
+
 import { createRoomProjector } from './room-projection';
 
 describe('createRoomProjector', () => {

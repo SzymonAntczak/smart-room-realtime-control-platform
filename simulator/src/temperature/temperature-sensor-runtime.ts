@@ -1,4 +1,5 @@
 import { clearInterval, setInterval } from 'node:timers';
+
 import type { TemperatureSensorSimulator } from './temperature-sensor';
 
 export interface Clock {

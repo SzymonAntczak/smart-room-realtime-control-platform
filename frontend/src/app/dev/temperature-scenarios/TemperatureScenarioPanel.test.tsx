@@ -1,10 +1,13 @@
+import type {
+    EventProcessingDiagnosticsSnapshot,
+    TemperatureScenarioResult,
+} from '@smart-room/contracts';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { TemperatureScenarioResult } from '../../../../../shared/src/dev-scenarios';
-import type { EventProcessingDiagnosticsSnapshot } from '../../../../../shared/src/dev-diagnostics';
-import { TemperatureScenarioPanel } from './TemperatureScenarioPanel';
+
 import type { TemperatureScenarioClient } from './temperature-scenario-client';
+import { TemperatureScenarioPanel } from './TemperatureScenarioPanel';
 
 describe('TemperatureScenarioPanel', () => {
     function createDeferred<Value>() {

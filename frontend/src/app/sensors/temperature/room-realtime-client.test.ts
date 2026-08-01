@@ -1,5 +1,6 @@
+import type { RoomRealtimeServerMessage } from '@smart-room/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RoomRealtimeServerMessage } from '../../../../../shared/src/contracts';
+
 import { connectTemperatureRealtime } from './room-realtime-client';
 
 describe('connectTemperatureRealtime', () => {

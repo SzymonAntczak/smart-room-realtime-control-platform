@@ -4,11 +4,11 @@ import { createInterface } from 'node:readline';
 const processes = [
     startNpmScript({
         name: 'backend',
-        args: ['--prefix', 'backend', 'run', 'dev'],
+        args: ['run', 'dev', '--workspace', '@smart-room/backend'],
     }),
     startNpmScript({
         name: 'frontend',
-        args: ['--prefix', 'frontend', 'run', 'dev'],
+        args: ['run', 'dev', '--workspace', '@smart-room/frontend'],
     }),
 ];
 

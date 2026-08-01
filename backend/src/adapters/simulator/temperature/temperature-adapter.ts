@@ -1,5 +1,6 @@
+import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts';
+
 import type { TemperatureSensorSimulator } from '../../../../../simulator/src';
-import type { TelemetryReadingRecordedEvent } from '../../../../../shared/src/events';
 import type { EventIdGenerator, PlatformEventSink } from '../../../platform/ports/event-sink';
 
 export interface SimulatorTemperatureAdapterConfig {

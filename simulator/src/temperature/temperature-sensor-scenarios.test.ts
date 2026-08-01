@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import type { TemperatureReadingMessage } from './temperature-sensor';
 import { createTemperatureSensorScenario } from './temperature-sensor-scenarios';
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+
 import type { Clock, TimerScheduler } from '../../../simulator/src';
+
 import { createTemperatureRoomRuntime } from './temperature-room-runtime';
 
 describe('createTemperatureRoomRuntime', () => {
