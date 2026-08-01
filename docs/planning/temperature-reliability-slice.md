@@ -51,9 +51,10 @@ only in the local development build.
 3. Choose **Resume telemetry** and **Emit next reading**; confirm the fresh
    observation restores `Online` health.
 4. Choose **Replay last reading**; confirm the current reading and event feed
-   do not change, then inspect `/diagnostics` for `duplicate_event`.
+   do not change, then use **Refresh diagnostics** in the dev panel to confirm
+   `duplicate_event`.
 5. Choose **Emit invalid reading**; confirm the current reading does not change,
-   then inspect `/diagnostics` for `invalid_payload`.
+   then use **Refresh diagnostics** to confirm `invalid_payload`.
 6. Choose **Reset scenario**; confirm scheduled telemetry resumes from the
    deterministic first simulator value. Existing recent-event and diagnostics
    history remains available for inspection.

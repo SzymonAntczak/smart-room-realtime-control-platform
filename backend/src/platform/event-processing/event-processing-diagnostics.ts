@@ -1,4 +1,13 @@
-import type { EventProcessingResult, IgnoredEventReason } from './event-processor';
+import type {
+    EventProcessingDiagnosticsSnapshot,
+    IgnoredEventDiagnostic,
+} from '../../../../shared/src/dev-diagnostics';
+import type { EventProcessingResult } from './event-processor';
+
+export type {
+    EventProcessingDiagnosticsSnapshot,
+    IgnoredEventDiagnostic,
+} from '../../../../shared/src/dev-diagnostics';
 
 export interface EventProcessingDiagnosticsClock {
     now(): string;
@@ -7,22 +16,6 @@ export interface EventProcessingDiagnosticsClock {
 export interface EventProcessingDiagnosticsConfig {
     clock: EventProcessingDiagnosticsClock;
     diagnosticEventLimit?: number;
-}
-
-export interface IgnoredEventDiagnostic {
-    diagnosticId: string;
-    reason: IgnoredEventReason;
-    observedAt: string;
-    eventId?: string;
-    eventType?: string;
-    source?: string;
-    deviceId?: string;
-    commandId?: string;
-    occurredAt?: string;
-}
-
-export interface EventProcessingDiagnosticsSnapshot {
-    ignoredEvents: IgnoredEventDiagnostic[];
 }
 
 export interface EventProcessingDiagnostics {

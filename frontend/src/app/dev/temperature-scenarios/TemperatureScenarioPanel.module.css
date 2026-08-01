@@ -58,6 +58,61 @@
     cursor: wait;
 }
 
+.diagnostics {
+    margin-block-start: var(--space-6);
+    padding-block-start: var(--space-5);
+    border-block-start: var(--border-width-thin) solid var(--color-border);
+}
+
+.diagnosticsHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.diagnosticsHeader h3,
+.diagnosticsHeader p,
+.diagnosticsEmpty {
+    margin: 0;
+}
+
+.diagnosticsHeader h3 {
+    font-size: var(--font-size-label-md);
+}
+
+.diagnosticsHeader p,
+.diagnosticsEmpty,
+.diagnosticsList {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.diagnosticsList {
+    display: grid;
+    gap: var(--space-3);
+    margin-block: var(--space-4) 0;
+    margin-inline: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.diagnosticsList li {
+    display: grid;
+    gap: var(--space-1);
+    border-inline-start: var(--border-width-thin) solid var(--color-border-strong);
+    padding-inline-start: var(--space-3);
+}
+
+.diagnosticsList strong {
+    color: var(--color-text);
+}
+
+.diagnosticsList time {
+    color: var(--color-text-subtle);
+    font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 32.5rem) {
     .controls {
         grid-template-columns: 1fr;

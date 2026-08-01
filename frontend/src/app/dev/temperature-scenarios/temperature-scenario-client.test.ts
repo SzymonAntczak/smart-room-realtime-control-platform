@@ -48,4 +48,58 @@ describe('createTemperatureScenarioClient', () => {
             'Scenario control returned a response for a different action.',
         );
     });
+
+    it('retrieves a validated diagnostics snapshot', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    ignoredEvents: [
+                        {
+                            diagnosticId: 'diag-1',
+                            reason: 'invalid_payload',
+                            observedAt: '2026-06-08T09:30:01Z',
+                        },
+                    ],
+                }),
+                { status: 200 },
+            ),
+        );
+        const client = createTemperatureScenarioClient(
+            fetchMock,
+            'http://localhost:4310/dev/test',
+            'http://localhost:4310/diagnostics-test',
+        );
+
+        await expect(client.getDiagnostics()).resolves.toMatchObject({
+            ignoredEvents: [
+                {
+                    diagnosticId: 'diag-1',
+                    reason: 'invalid_payload',
+                },
+            ],
+        });
+        expect(fetchMock).toHaveBeenCalledWith('http://localhost:4310/diagnostics-test');
+    });
+
+    it('rejects diagnostics with an invalid timestamp at the HTTP boundary', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    ignoredEvents: [
+                        {
+                            diagnosticId: 'diag-1',
+                            reason: 'invalid_payload',
+                            observedAt: 'not-a-timestamp',
+                        },
+                    ],
+                }),
+                { status: 200 },
+            ),
+        );
+        const client = createTemperatureScenarioClient(fetchMock);
+
+        await expect(client.getDiagnostics()).rejects.toThrow(
+            'Diagnostics returned an invalid response.',
+        );
+    });
 });

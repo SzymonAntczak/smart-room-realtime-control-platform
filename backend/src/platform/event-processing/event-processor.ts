@@ -4,6 +4,7 @@ import type {
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
 } from '../../../../shared/src/events';
+import type { IgnoredEventReason } from '../../../../shared/src/dev-diagnostics';
 import type {
     DeviceDefinition,
     RoomProjection,
@@ -36,7 +37,7 @@ export type EventProcessingResult =
               | 'device_metric_mismatch';
           state: EventProcessorState;
       };
-export type IgnoredEventReason = Extract<EventProcessingResult, { status: 'ignored' }>['reason'];
+export type { IgnoredEventReason } from '../../../../shared/src/dev-diagnostics';
 
 export interface EventProcessor {
     processEvent(event: unknown): EventProcessingResult;

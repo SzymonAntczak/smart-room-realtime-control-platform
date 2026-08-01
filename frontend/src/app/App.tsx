@@ -1,5 +1,5 @@
 import styles from './App.module.css';
-import { TemperatureScenarioPanel } from './dev/temperature-scenarios/TemperatureScenarioPanel';
+import { TemperatureScenarioDrawer } from './dev/temperature-scenarios/TemperatureScenarioDrawer';
 import { TemperatureControl } from './sensors/temperature/TemperatureControl';
 
 interface AppProps {
@@ -10,7 +10,7 @@ export function App({ showDevScenarioPanel = import.meta.env.DEV }: AppProps) {
     return (
         <main className={styles.shell}>
             <TemperatureControl />
-            {showDevScenarioPanel ? <TemperatureScenarioPanel /> : null}
+            {showDevScenarioPanel ? <TemperatureScenarioDrawer /> : null}
         </main>
     );
 }
