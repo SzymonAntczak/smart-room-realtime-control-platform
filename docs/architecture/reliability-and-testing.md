@@ -7,6 +7,8 @@
 - Stale data must be visible when it is still shown.
 - Every important user action should be visible in event history.
 - Command failures and timeouts should be first-class states, not generic errors.
+- Terminal command outcomes should remain available through bounded command
+  history with their reason and timing metadata.
 
 ## Failure Modes To Simulate
 

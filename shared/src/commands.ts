@@ -52,16 +52,19 @@ export type ConfirmedCommandProjection = CommandProjectionBase & {
     confirmedAt: string;
 };
 
-export type FailedCommandProjection = CommandProjectionBase & {
+export type FailedCommandProjection = Omit<CommandProjectionBase, 'reason' | 'message'> & {
     status: 'failed';
     dispatchedAt?: string;
     failedAt: string;
+    reason: string;
+    message: string;
 };
 
-export type TimedOutCommandProjection = CommandProjectionBase & {
+export type TimedOutCommandProjection = Omit<CommandProjectionBase, 'reason'> & {
     status: 'timed_out';
     dispatchedAt: string;
     timedOutAt: string;
+    reason: string;
 };
 
 export type IdleCommandProjection = CommandProjectionBase & {
@@ -69,6 +72,11 @@ export type IdleCommandProjection = CommandProjectionBase & {
 };
 
 export type ActiveCommandProjection = AcceptedCommandProjection | PendingCommandProjection;
+
+export type TerminalCommandProjection =
+    | ConfirmedCommandProjection
+    | FailedCommandProjection
+    | TimedOutCommandProjection;
 
 export type CommandProjection =
     | ActiveCommandProjection

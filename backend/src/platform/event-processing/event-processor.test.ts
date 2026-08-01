@@ -12,6 +12,9 @@ describe('createEventProcessor', () => {
         const result = processor.processEvent(createTemperatureEvent());
 
         expect(result.status).toBe('accepted');
+        if (result.status === 'accepted') {
+            expect(result.evaluatedAt).toBe('2026-06-08T09:30:00Z');
+        }
         expect(result.state).toEqual({
             updatedAt: '2026-06-08T09:30:00Z',
             devices: [
@@ -32,6 +35,7 @@ describe('createEventProcessor', () => {
                 },
             ],
             activeCommands: [],
+            recentCommands: [],
             recentEvents: [
                 {
                     eventId: 'evt-temperature-1',
@@ -226,6 +230,35 @@ describe('createEventProcessor', () => {
         expect(retried.state.devices[0]?.health).toBe('online');
     });
 
+    it('does not restore offline health from an accepted out-of-order report', () => {
+        const now = { value: '2026-06-08T09:30:00Z' };
+        const processor = createTemperatureProcessor({
+            clock: { now: () => now.value },
+        });
+
+        processor.processEvent(createTemperatureEvent());
+        now.value = '2026-06-08T09:30:10.001Z';
+
+        const result = processor.processEvent(
+            createTemperatureEvent({
+                eventId: 'evt-temperature-late',
+                occurredAt: '2026-06-08T09:29:59Z',
+            }),
+        );
+
+        expect(result.status).toBe('accepted');
+        expect(result.state.devices[0]).toEqual(
+            expect.objectContaining({
+                health: 'offline',
+                lastSeenAt: '2026-06-08T09:30:00Z',
+            }),
+        );
+        expect(result.state.recentEvents.map((event) => event.eventId)).toEqual([
+            'evt-temperature-late',
+            'evt-temperature-1',
+        ]);
+    });
+
     it('does not update state for malformed temperature payloads', () => {
         const processor = createTemperatureProcessor();
 
@@ -298,7 +331,7 @@ function createTemperatureProcessor({
 
     return createEventProcessor({
         devices,
-        ...(clock ? { clock } : now ? { clock: { now: () => now } } : {}),
+        clock: clock ?? { now: () => now ?? '2026-06-08T09:30:00Z' },
         roomProjector: createRoomProjector({
             initialUpdatedAt: '2026-06-08T09:29:59Z',
             devices,

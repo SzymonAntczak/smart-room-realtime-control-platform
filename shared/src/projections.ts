@@ -1,4 +1,4 @@
-import type { ActiveCommandProjection } from './commands';
+import type { ActiveCommandProjection, TerminalCommandProjection } from './commands';
 import type { CommandAvailability, DeviceHealth, DeviceRole, DeviceState } from './devices';
 import type { PlatformEventSource, PlatformEventType } from './events';
 
@@ -30,5 +30,6 @@ export interface RoomSnapshotProjection {
     updatedAt: string;
     devices: DeviceProjection[];
     activeCommands: ActiveCommandProjection[];
+    recentCommands?: TerminalCommandProjection[];
     recentEvents: EventFeedItemProjection[];
 }

@@ -32,6 +32,7 @@ export type EventProcessingResult =
     | {
           status: 'accepted';
           state: EventProcessorState;
+          evaluatedAt: string;
           deduplicationEvictedEventIds?: string[];
       }
     | {
@@ -130,7 +131,10 @@ export function createEventProcessor({
 
             return {
                 status: 'accepted',
-                state: roomProjector.applyTelemetryReadingRecorded(acceptedEvent),
+                evaluatedAt: deduplicationCheck.checkedAt,
+                state: roomProjector.applyTelemetryReadingRecorded(acceptedEvent, {
+                    evaluatedAt: deduplicationCheck.checkedAt,
+                }),
                 ...(deduplicationEvictedEventIds.length > 0
                     ? { deduplicationEvictedEventIds }
                     : {}),

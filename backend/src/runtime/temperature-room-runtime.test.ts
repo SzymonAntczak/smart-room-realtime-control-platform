@@ -74,7 +74,6 @@ describe('createTemperatureRoomRuntime', () => {
             ]),
             timer,
         });
-
         try {
             runtime.start();
 
@@ -277,8 +276,8 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:30:11Z',
                 '2026-06-08T09:30:11Z',
                 '2026-06-08T09:30:05Z',
-                '2026-06-08T09:30:05Z',
-                '2026-06-08T09:30:05Z',
+                '2026-06-08T09:30:21.001Z',
+                '2026-06-08T09:30:21.001Z',
                 '2026-06-08T09:30:12Z',
             ]),
             generateEventId: createSequenceEventIdGenerator([
@@ -287,6 +286,11 @@ describe('createTemperatureRoomRuntime', () => {
                 'evt-temperature-late',
             ]),
             timer,
+        });
+        const publishedSnapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+
+        runtime.subscribeRoomSnapshot((snapshot) => {
+            publishedSnapshots.push(snapshot);
         });
 
         try {
@@ -315,6 +319,8 @@ describe('createTemperatureRoomRuntime', () => {
             timer.runLatest();
 
             const snapshotAfterLateTelemetry = runtime.getRoomSnapshot();
+
+            expect(publishedSnapshots.at(-1)?.devices[0]?.health).toBe('offline');
 
             expect(snapshotAfterLateTelemetry.devices[0]).toEqual(
                 expect.objectContaining({

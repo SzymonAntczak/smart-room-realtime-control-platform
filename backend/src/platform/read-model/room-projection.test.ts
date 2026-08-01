@@ -11,6 +11,7 @@ describe('createRoomProjector', () => {
             updatedAt: '2026-06-08T09:29:59Z',
             devices: [],
             activeCommands: [],
+            recentCommands: [],
             recentEvents: [],
         });
     });
@@ -40,6 +41,7 @@ describe('createRoomProjector', () => {
                 },
             ],
             activeCommands: [],
+            recentCommands: [],
             recentEvents: [
                 {
                     eventId: 'evt-temperature-1',
@@ -186,6 +188,30 @@ describe('createRoomProjector', () => {
                     temperature: 22.8,
                     temperatureUnit: 'celsius',
                 },
+            }),
+        );
+        expect(projection.recentEvents.map((event) => event.eventId)).toEqual([
+            'evt-temperature-late',
+            'evt-temperature-1',
+        ]);
+    });
+
+    it('does not recover offline health from an out-of-order report evaluated later', () => {
+        const projector = createTemperatureProjector();
+
+        projector.applyTelemetryReadingRecorded(createTemperatureEvent());
+        const projection = projector.applyTelemetryReadingRecorded(
+            createTemperatureEvent({
+                eventId: 'evt-temperature-late',
+                occurredAt: '2026-06-08T09:29:59Z',
+            }),
+            { evaluatedAt: '2026-06-08T09:30:10.001Z' },
+        );
+
+        expect(projection.devices[0]).toEqual(
+            expect.objectContaining({
+                health: 'offline',
+                lastSeenAt: '2026-06-08T09:30:00Z',
             }),
         );
         expect(projection.recentEvents.map((event) => event.eventId)).toEqual([

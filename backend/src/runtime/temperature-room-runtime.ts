@@ -203,7 +203,7 @@ export function createTemperatureRoomRuntime({
                 diagnostics.recordProcessingResult(event, result);
 
                 if (result.status === 'accepted') {
-                    notifySnapshotListeners(result.state.updatedAt);
+                    notifySnapshotListeners(result.evaluatedAt);
                 }
             },
         });
@@ -251,6 +251,7 @@ function toRoomSnapshot(
         updatedAt: projection.updatedAt,
         devices: projection.devices,
         activeCommands: projection.activeCommands,
+        recentCommands: projection.recentCommands,
         recentEvents: projection.recentEvents,
     };
 }

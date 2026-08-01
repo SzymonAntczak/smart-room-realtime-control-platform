@@ -66,3 +66,7 @@ only in the local development build.
 Temperature is complete when the checklist above passes and the UI can
 demonstrate normal, stale, offline, recovery, duplicate, invalid and reconnect
 flows without hiding uncertainty from the user.
+
+## Acceptance Record
+
+The local manual checklist was completed successfully on 2026-08-01.

@@ -18,21 +18,6 @@ particular, keep the simulator aligned with:
 
 For TypeScript modules in the simulator, follow the root TypeScript rules.
 
-## Boundary
-
-- The simulator may define simulator-native device messages and
-  simulator-native commands.
-- The simulator must not emit platform events directly unless the architecture
-  explicitly changes.
-- Translation between simulator-native messages and platform events belongs to
-  the backend-owned simulator adapter, outside pure simulator device and
-  scenario modules.
-- Command lifecycle interpretation belongs outside the simulator. The simulator
-  can accept or reject a native command, delay a response, stop reporting or
-  report observed state, but it should not decide platform command statuses such
-  as `pending`, `confirmed`, `failed` or `timed_out`.
-- UI-facing projections belong outside the simulator.
-
 ## Device Modeling
 
 - Prefer small domain folders by device or scenario, for example
@@ -46,29 +31,13 @@ For TypeScript modules in the simulator, follow the root TypeScript rules.
 - Include timestamps in simulator-native messages when the simulated device
   would reasonably know when the observation happened.
 
-## Failure Scenarios
-
-Simulator scenarios should be named after system behavior, not implementation
-mechanics.
-
-Prioritize scenarios documented in reliability architecture:
-
-- delayed confirmations
-- command rejection
-- lost telemetry event
-- duplicate telemetry event
-- device goes stale
-- device goes offline
-- degraded device reporting partial data
-- late confirmation after command timeout
-
 ## Contracts
 
 - Shared platform contracts live in `shared/src`.
 - Do not add simulator-only fields to shared platform contracts.
 - Add simulator-native types close to the simulator domain that owns them.
-- Promote a simulator behavior into architecture docs or an ADR before treating
-  it as a durable platform rule.
+- Use the linked architecture documents for platform rules; do not restate
+  lifecycle or UI behavior here.
 
 ## Testing
 

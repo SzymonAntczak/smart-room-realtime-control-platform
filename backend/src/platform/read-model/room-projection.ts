@@ -9,6 +9,7 @@ import type {
     PlatformEventType,
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
+    TerminalCommandProjection,
 } from '@smart-room/contracts';
 
 export interface DeviceDefinition {
@@ -39,11 +40,15 @@ export interface RoomProjection {
     updatedAt: string;
     devices: DeviceProjection[];
     activeCommands: ActiveCommandProjection[];
+    recentCommands: TerminalCommandProjection[];
     recentEvents: EventFeedItemProjection[];
 }
 
 export interface RoomProjector {
-    applyTelemetryReadingRecorded(event: TelemetryReadingRecordedEvent): RoomProjection;
+    applyTelemetryReadingRecorded(
+        event: TelemetryReadingRecordedEvent,
+        options?: ProjectionEvaluationOptions,
+    ): RoomProjection;
     getProjection(options?: ProjectionEvaluationOptions): RoomProjection;
 }
 
@@ -59,7 +64,7 @@ export function createRoomProjector({
     let updatedAt = initialUpdatedAt;
 
     return {
-        applyTelemetryReadingRecorded(event) {
+        applyTelemetryReadingRecorded(event, options = {}) {
             const device = deviceDefinitions.get(event.deviceId);
 
             if (!device) {
@@ -77,7 +82,7 @@ export function createRoomProjector({
                     parseTimestamp(currentDevice.lastSeenAt, 'device.lastSeenAt')
             ) {
                 return buildProjection({
-                    evaluatedAt: event.occurredAt,
+                    evaluatedAt: options.evaluatedAt ?? event.occurredAt,
                 });
             }
 
@@ -96,7 +101,7 @@ export function createRoomProjector({
             });
 
             return buildProjection({
-                evaluatedAt: event.occurredAt,
+                evaluatedAt: options.evaluatedAt ?? event.occurredAt,
             });
         },
         getProjection(options = {}) {
@@ -115,6 +120,7 @@ export function createRoomProjector({
                 applyFreshnessHealth(device, evaluatedAt),
             ),
             activeCommands: [],
+            recentCommands: [],
             recentEvents: [...recentEvents],
         };
     }

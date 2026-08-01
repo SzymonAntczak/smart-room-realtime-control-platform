@@ -535,6 +535,7 @@ function createRoomSnapshot({
             },
         ],
         activeCommands: [],
+        recentCommands: [],
         recentEvents: [
             {
                 eventId: 'evt-temperature-1',

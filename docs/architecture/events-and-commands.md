@@ -209,3 +209,5 @@ a future storage responsibility.
 
 Command correlation, confirmation matching and overlapping command behavior are
 documented in [ADR: Command Correlation, Confirmation and Concurrency](../decisions/adr-command-correlation-confirmation-and-concurrency.md).
+Terminal command projection and history rules are documented in
+[ADR: Command History and Terminal Projections](../decisions/adr-command-history-and-terminal-projections.md).

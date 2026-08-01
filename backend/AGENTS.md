@@ -18,6 +18,8 @@ particular, keep backend behavior aligned with:
 - `docs/architecture/reliability-and-testing.md`
 - `docs/decisions/adr-command-correlation-confirmation-and-concurrency.md`
 - `docs/decisions/adr-device-command-confirmation-and-health-policy.md`
+- `docs/decisions/adr-command-history-and-terminal-projections.md`
+- `docs/decisions/adr-json-schema-transport-contracts.md`
 - `docs/decisions/adr-event-simulator-before-real-devices.md`
 - `docs/decisions/adr-local-first-before-cloud.md`
 
@@ -63,15 +65,6 @@ accept user intent, but command lifecycle interpretation and dispatch rules must
 stay in backend platform code and adapters must translate platform commands into
 source-specific commands.
 
-## Events And Commands
-
-- Use `docs/architecture/events-and-commands.md` for event envelope, payload,
-  validation, quarantine and duplicate-handling rules.
-- Use `docs/architecture/control-loop.md` and accepted command ADRs for command
-  lifecycle, confirmation matching, timing and late-confirmation rules.
-- Keep backend code aligned with those documents instead of redefining the
-  contract in backend-local modules.
-
 ## Adapter Design
 
 - Keep adapters small and testable. Prefer pure translation functions before
@@ -83,23 +76,12 @@ source-specific commands.
   behavior.
 - Keep adapter tests near the adapter module that owns the translation.
 
-## State Derivation
-
-- Use `docs/architecture/devices.md`, `docs/architecture/control-loop.md` and
-  accepted device ADRs for state derivation, health, command availability and
-  requested-vs-confirmed behavior.
-- Keep derived projections explainable from accepted platform events and the
-  documented device model.
-- Keep event processing under `src/platform/event-processing/` and read-model
-  projections under `src/platform/read-model/`.
-
 ## Realtime API
 
 - Shape backend API responses for the realtime frontend without moving domain
   semantics into presentation code.
 - Validate external input at backend boundaries before applying it to state.
-- Keep raw event history useful for audit and debugging, even when current
-  reads use derived projections.
+- Follow the binding docs above for projection semantics and history.
 
 ## Testing
 

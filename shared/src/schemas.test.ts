@@ -132,6 +132,7 @@ describe('realtime schemas', () => {
                             requestedAt: '2026-06-08T09:30:00Z',
                         },
                     ],
+                    recentCommands: [],
                     recentEvents: [],
                 },
             }),
@@ -231,9 +232,120 @@ describe('realtime schemas', () => {
             }),
         ).toBe(false);
     });
+
+    it('accepts terminal command history and rejects active or dangling entries', () => {
+        const snapshot = createSnapshotWithActiveCommands([]);
+        snapshot.payload.devices = [createLedDevice()];
+        snapshot.payload.recentCommands = [
+            {
+                commandId: 'cmd-confirmed',
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                status: 'confirmed',
+                requestedState: { power: 'on' },
+                requestedAt: '2026-06-08T09:30:00Z',
+                dispatchedAt: '2026-06-08T09:30:01Z',
+                confirmedAt: '2026-06-08T09:30:02Z',
+            },
+        ];
+
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...snapshot,
+                payload: {
+                    ...snapshot.payload,
+                    recentCommands: [
+                        {
+                            ...snapshot.payload.recentCommands[0],
+                            status: 'pending',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...snapshot,
+                payload: {
+                    ...snapshot.payload,
+                    recentCommands: [
+                        {
+                            ...snapshot.payload.recentCommands[0],
+                            deviceId: 'unknown-led',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+    });
+
+    it('accepts an earlier v1 snapshot without command history', () => {
+        const snapshot = createSnapshotWithActiveCommands([]);
+        const legacyPayload = Object.fromEntries(
+            Object.entries(snapshot.payload).filter(([key]) => key !== 'recentCommands'),
+        );
+
+        expect(
+            isRoomRealtimeServerMessage({
+                ...snapshot,
+                payload: legacyPayload,
+            }),
+        ).toBe(true);
+    });
+
+    it('requires failure detail for failed and timed-out command history', () => {
+        const snapshot = createSnapshotWithActiveCommands([]);
+        snapshot.payload.devices = [createLedDevice()];
+        snapshot.payload.recentCommands = [
+            {
+                commandId: 'cmd-failed',
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                status: 'failed',
+                requestedState: { power: 'on' },
+                requestedAt: '2026-06-08T09:30:00Z',
+                failedAt: '2026-06-08T09:30:01Z',
+            },
+        ];
+
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
+        snapshot.payload.recentCommands[0] = {
+            ...snapshot.payload.recentCommands[0],
+            reason: 'command_rejected',
+            message: 'The device rejected this command.',
+        };
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
+
+        snapshot.payload.recentCommands[0] = {
+            commandId: 'cmd-timeout',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            status: 'timed_out',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-06-08T09:30:00Z',
+            dispatchedAt: '2026-06-08T09:30:01Z',
+            timedOutAt: '2026-06-08T09:30:02Z',
+        };
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
+    });
 });
 
-function createSnapshotWithActiveCommands(activeCommands: unknown[]) {
+function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
+    messageType: string;
+    version: number;
+    sentAt: string;
+    payload: {
+        roomName: string;
+        updatedAt: string;
+        devices: Record<string, unknown>[];
+        activeCommands: unknown[];
+        recentCommands: Record<string, unknown>[];
+        recentEvents: unknown[];
+    };
+} {
+    const firstCommand = activeCommands[0] as { commandId?: string } | undefined;
+
     return {
         messageType: 'room.snapshot',
         version: 1,
@@ -241,10 +353,23 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]) {
         payload: {
             roomName: 'Smart Room',
             updatedAt: '2026-06-08T09:30:00Z',
-            devices: [],
+            devices: activeCommands.length > 0 ? [createLedDevice(firstCommand?.commandId)] : [],
             activeCommands,
+            recentCommands: [],
             recentEvents: [],
         },
+    };
+}
+
+function createLedDevice(activeCommandId?: string) {
+    return {
+        deviceId: 'led-main',
+        name: 'Main LED',
+        role: 'led-output',
+        health: 'online',
+        reportedState: { power: 'off' },
+        commandAvailability: { policy: 'allow' },
+        ...(activeCommandId ? { activeCommandId } : {}),
     };
 }
 

@@ -181,6 +181,37 @@ const activeCommandProjectionSchema = Type.Union([
         { additionalProperties: false },
     ),
 ]);
+const terminalCommandProjectionSchema = Type.Union([
+    Type.Object(
+        {
+            ...activeCommandProjectionBaseShape,
+            status: Type.Literal('confirmed'),
+            dispatchedAt: isoTimestampSchema,
+            confirmedAt: isoTimestampSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            ...activeCommandProjectionBaseShape,
+            status: Type.Literal('failed'),
+            failedAt: isoTimestampSchema,
+            reason: nonEmptyStringSchema,
+            message: nonEmptyStringSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            ...activeCommandProjectionBaseShape,
+            status: Type.Literal('timed_out'),
+            dispatchedAt: isoTimestampSchema,
+            timedOutAt: isoTimestampSchema,
+            reason: nonEmptyStringSchema,
+        },
+        { additionalProperties: false },
+    ),
+]);
 const eventFeedItemProjectionSchema = Type.Object({
     eventId: nonEmptyStringSchema,
     eventType: Type.Union(platformEventTypes.map((eventType) => Type.Literal(eventType))),
@@ -195,6 +226,7 @@ export const roomSnapshotProjectionSchema = Type.Object({
     updatedAt: isoTimestampSchema,
     devices: Type.Array(deviceProjectionSchema),
     activeCommands: Type.Array(activeCommandProjectionSchema),
+    recentCommands: Type.Optional(Type.Array(terminalCommandProjectionSchema)),
     recentEvents: Type.Array(eventFeedItemProjectionSchema),
 });
 export const roomRealtimeServerMessageSchema = Type.Object({
@@ -265,26 +297,35 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
 export function isRoomSnapshotProjection(value: unknown): boolean {
     return (
         isSchema(roomSnapshotProjectionSchema, value) &&
-        hasConsistentActiveCommands(value) &&
+        hasConsistentCommands(value) &&
         hasCanonicalProjectionTimestamps(value)
     );
 }
 
-function hasConsistentActiveCommands(
-    snapshot: Static<typeof roomSnapshotProjectionSchema>,
-): boolean {
+function hasConsistentCommands(snapshot: Static<typeof roomSnapshotProjectionSchema>): boolean {
+    const deviceIds = new Set(snapshot.devices.map((device) => device.deviceId));
     const activeCommandByDeviceId = new Map<string, string>();
+    const commandIds = new Set<string>();
 
     for (const command of snapshot.activeCommands) {
-        if (activeCommandByDeviceId.has(command.deviceId)) return false;
+        if (!deviceIds.has(command.deviceId) || activeCommandByDeviceId.has(command.deviceId)) {
+            return false;
+        }
+
         activeCommandByDeviceId.set(command.deviceId, command.commandId);
+        commandIds.add(command.commandId);
     }
 
-    return snapshot.devices.every(
-        (device) =>
-            !device.activeCommandId ||
-            activeCommandByDeviceId.get(device.deviceId) === device.activeCommandId,
-    );
+    for (const command of snapshot.recentCommands ?? []) {
+        if (!deviceIds.has(command.deviceId) || commandIds.has(command.commandId)) return false;
+        commandIds.add(command.commandId);
+    }
+
+    return snapshot.devices.every((device) => {
+        const activeCommandId = activeCommandByDeviceId.get(device.deviceId);
+
+        return device.activeCommandId === activeCommandId;
+    });
 }
 
 function hasCanonicalProjectionTimestamps(
@@ -301,6 +342,24 @@ function hasCanonicalProjectionTimestamps(
                 isCanonicalUtcTimestamp(command.requestedAt) &&
                 (command.status !== 'pending' || isCanonicalUtcTimestamp(command.dispatchedAt)),
         ) &&
+        (snapshot.recentCommands ?? []).every((command) => {
+            if (!isCanonicalUtcTimestamp(command.requestedAt)) return false;
+
+            switch (command.status) {
+                case 'confirmed':
+                    return (
+                        isCanonicalUtcTimestamp(command.dispatchedAt) &&
+                        isCanonicalUtcTimestamp(command.confirmedAt)
+                    );
+                case 'failed':
+                    return isCanonicalUtcTimestamp(command.failedAt);
+                case 'timed_out':
+                    return (
+                        isCanonicalUtcTimestamp(command.dispatchedAt) &&
+                        isCanonicalUtcTimestamp(command.timedOutAt)
+                    );
+            }
+        }) &&
         snapshot.recentEvents.every((event) => isCanonicalUtcTimestamp(event.occurredAt))
     );
 }

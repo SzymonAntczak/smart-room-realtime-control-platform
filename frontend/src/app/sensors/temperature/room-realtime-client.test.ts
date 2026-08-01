@@ -296,6 +296,7 @@ function createRoomSnapshotMessage({
             updatedAt: '2026-06-08T09:30:00Z',
             devices,
             activeCommands: [],
+            recentCommands: [],
             recentEvents,
         },
     };

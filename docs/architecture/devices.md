@@ -66,6 +66,10 @@ Only accepted, time-valid reports may advance `lastSeenAt`. A future-dated
 report beyond the event contract's one-second clock-skew tolerance is ignored;
 it cannot make a device appear fresh. A later report within tolerance is
 processed normally and can restore `online` health without a manual reset.
+An accepted report whose observation time is not newer than the projected
+`lastSeenAt` remains visible in history but cannot regress reported state,
+advance freshness or restore `online` health. Recovery requires a newer report
+evaluated at the backend processing time.
 
 ## Command Availability By Health
 

@@ -10,6 +10,7 @@ describe('createEventProcessingDiagnostics', () => {
 
         diagnostics.recordProcessingResult(createEvent(), {
             status: 'accepted',
+            evaluatedAt: '2026-06-08T09:30:00Z',
             state: createEmptyState(),
         });
 
@@ -254,6 +255,7 @@ function createEmptyState() {
         updatedAt: '2026-06-08T09:29:59Z',
         devices: [],
         activeCommands: [],
+        recentCommands: [],
         recentEvents: [],
     };
 }

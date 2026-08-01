@@ -21,6 +21,7 @@ describe('temperature read path integration', () => {
 
         expect(readPath.lastResult()).toEqual({
             status: 'accepted',
+            evaluatedAt: '2026-06-08T09:30:00Z',
             state: {
                 updatedAt: '2026-06-08T09:30:00Z',
                 devices: [
@@ -41,6 +42,7 @@ describe('temperature read path integration', () => {
                     },
                 ],
                 activeCommands: [],
+                recentCommands: [],
                 recentEvents: [
                     {
                         eventId: 'evt-temperature-1',
@@ -231,9 +233,11 @@ function createTemperatureReadPath({
         initialUpdatedAt: '2026-06-08T09:29:59Z',
         devices,
     });
+    let processingNow = '2026-06-08T09:29:59Z';
     const processor = createEventProcessor({
         devices,
         roomProjector: projector,
+        clock: { now: () => processingNow },
     });
     const results: EventProcessingResult[] = [];
     const pendingEventIds = [...eventIds];
@@ -252,6 +256,7 @@ function createTemperatureReadPath({
             return eventId;
         },
         emitEvent(event: TelemetryReadingRecordedEvent) {
+            processingNow = event.occurredAt;
             results.push(processor.processEvent(event));
         },
     });
