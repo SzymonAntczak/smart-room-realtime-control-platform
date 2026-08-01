@@ -238,22 +238,6 @@ describe('createRoomProjector', () => {
         ).toThrow('Invalid timestamp for projection.evaluatedAt: not-a-date');
     });
 
-    it('treats a future last-seen timestamp as fresh when evaluating health', () => {
-        const projector = createTemperatureProjector();
-
-        projector.applyTelemetryReadingRecorded(
-            createTemperatureEvent({
-                occurredAt: '2026-06-08T09:30:10Z',
-            }),
-        );
-
-        expect(
-            projector.getProjection({
-                evaluatedAt: '2026-06-08T09:30:00Z',
-            }).devices[0]?.health,
-        ).toBe('online');
-    });
-
     it('rejects projection updates for unknown devices', () => {
         const projector = createTemperatureProjector();
 

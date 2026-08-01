@@ -42,6 +42,13 @@ Freshness thresholds are configured per device type by default. Individual
 devices may override these values when there is a specific reason, such as
 network quality, battery behavior or firmware limitations.
 
+The event processor accepts a device observation no more than one second ahead
+of its injected backend clock. It ignores a report beyond that tolerance as
+`future_dated_report`, before deduplication and projection updates. A rejected
+report therefore cannot advance `lastSeenAt` or prevent stale/offline health;
+the same report may be retried after backend time catches up, and a subsequent
+time-valid report restores normal freshness behavior.
+
 A `degraded` device accepts commands only when its command policy allows it. The
 backend derives platform command availability from the degradation reason and
 exposes it with the device state. The simulator may emit simulated degradation
@@ -81,6 +88,11 @@ state well, but those exceptions must be documented and tested.
 Per-device freshness overrides should remain exceptions. If they become common,
 similar devices may appear to use inconsistent stale or offline behavior, making
 debugging harder.
+
+The one-second skew tolerance accommodates the current one-second simulator
+cadence while bounding how much a device clock can extend apparent freshness.
+The bounded diagnostics record explains rejected reports during the local
+process lifetime; durable quarantine storage remains future work.
 
 Deriving command availability from degraded reasons is more flexible than always
 allowing or always blocking commands, but it requires a small shared vocabulary

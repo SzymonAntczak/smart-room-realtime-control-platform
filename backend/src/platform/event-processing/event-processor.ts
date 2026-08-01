@@ -21,6 +21,7 @@ export interface EventProcessorConfig {
     clock?: EventDeduplicationClock;
     deduplicationRetentionMs?: number;
     deduplicationEntryLimit?: number;
+    maxFutureReportSkewMs?: number;
 }
 
 export type EventProcessorState = RoomProjection;
@@ -40,7 +41,8 @@ export type EventProcessingResult =
               | 'unsupported_event_version'
               | 'unknown_device'
               | 'invalid_payload'
-              | 'device_metric_mismatch';
+              | 'device_metric_mismatch'
+              | 'future_dated_report';
           state: EventProcessorState;
       };
 export type { IgnoredEventReason } from '@smart-room/contracts';
@@ -55,6 +57,7 @@ export function createEventProcessor({
     clock = realClock,
     deduplicationRetentionMs,
     deduplicationEntryLimit,
+    maxFutureReportSkewMs = defaultMaxFutureReportSkewMs,
 }: EventProcessorConfig): EventProcessor {
     const deviceDefinitions = new Map(devices.map((device) => [device.deviceId, device]));
     const deduplicator = createEventDeduplicator({
@@ -79,7 +82,9 @@ export function createEventProcessor({
 
             const event = parsedCandidate.data;
 
-            if (deduplicator.has(event.eventId)) {
+            const deduplicationCheck = deduplicator.check(event.eventId);
+
+            if (deduplicationCheck.isDuplicate) {
                 return ignored('duplicate_event');
             }
 
@@ -113,6 +118,16 @@ export function createEventProcessor({
 
             const acceptedEvent: TelemetryReadingRecordedEvent = parsedEvent.data;
 
+            if (
+                isFutureDatedBeyondTolerance(
+                    acceptedEvent.occurredAt,
+                    deduplicationCheck.checkedAt,
+                    maxFutureReportSkewMs,
+                )
+            ) {
+                return ignored('future_dated_report');
+            }
+
             const deduplicationEvictedEventIds = deduplicator.remember(event.eventId);
 
             return {
@@ -131,3 +146,13 @@ const realClock: EventDeduplicationClock = {
         return new Date().toISOString();
     },
 };
+
+export const defaultMaxFutureReportSkewMs = 1_000;
+
+function isFutureDatedBeyondTolerance(
+    occurredAt: string,
+    backendNow: string,
+    maxFutureReportSkewMs: number,
+): boolean {
+    return Date.parse(occurredAt) - Date.parse(backendNow) > maxFutureReportSkewMs;
+}

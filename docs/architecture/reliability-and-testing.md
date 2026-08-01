@@ -16,6 +16,7 @@ The simulator should eventually cover:
 - command rejection
 - lost telemetry event
 - duplicate telemetry event
+- future-dated device report
 - device goes stale
 - device goes offline
 - degraded device reporting partial data
@@ -82,6 +83,7 @@ Initial scenarios:
 - telemetry stops and device becomes stale
 - stale device becomes offline
 - device reconnects and reports fresh state
+- future-dated report is ignored and a later time-valid report recovers health
 
 ### UI Behavior Tests
 

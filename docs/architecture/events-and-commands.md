@@ -53,6 +53,13 @@ Timestamps may arrive as ISO-8601 UTC values or with an explicit UTC offset.
 The contract boundary normalizes accepted values to canonical UTC (`Z`) before
 they are stored or used by projections and diagnostics.
 
+Device observations are also checked against the backend processing clock. A
+report may be at most 1 second ahead of that clock; a report further in the
+future is ignored as `future_dated_report`. Ignored reports do not update the
+current projection, event history or deduplication state, but their metadata is
+available through development diagnostics. This prevents a bad device clock
+from advancing `lastSeenAt` and making stale or offline health appear fresh.
+
 ## Initial Event Types
 
 | Event type                   | Purpose                                                                   |

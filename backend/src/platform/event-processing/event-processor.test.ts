@@ -186,6 +186,46 @@ describe('createEventProcessor', () => {
         expect(result.state.updatedAt).toBe('2026-06-08T09:30:00Z');
     });
 
+    it('accepts a report exactly at the future clock-skew tolerance', () => {
+        const processor = createTemperatureProcessor({
+            now: '2026-06-08T09:30:00Z',
+        });
+
+        const result = processor.processEvent(
+            createTemperatureEvent({
+                occurredAt: '2026-06-08T09:30:01Z',
+            }),
+        );
+
+        expect(result.status).toBe('accepted');
+        expect(result.state.devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:01Z');
+    });
+
+    it('ignores a future-dated report without updating state or remembering its event id', () => {
+        const now = { value: '2026-06-08T09:30:00Z' };
+        const processor = createTemperatureProcessor({
+            clock: { now: () => now.value },
+        });
+
+        const futureEvent = createTemperatureEvent({
+            occurredAt: '2026-06-08T09:30:01.001Z',
+        });
+        const ignored = processor.processEvent(futureEvent);
+
+        expect(ignored).toMatchObject({
+            status: 'ignored',
+            reason: 'future_dated_report',
+        });
+        expect(ignored.state.devices).toEqual([]);
+        expect(ignored.state.recentEvents).toEqual([]);
+
+        now.value = '2026-06-08T09:30:00.001Z';
+        const retried = processor.processEvent(futureEvent);
+
+        expect(retried.status).toBe('accepted');
+        expect(retried.state.devices[0]?.health).toBe('online');
+    });
+
     it('does not update state for malformed temperature payloads', () => {
         const processor = createTemperatureProcessor();
 
@@ -241,7 +281,13 @@ describe('createEventProcessor', () => {
     });
 });
 
-function createTemperatureProcessor() {
+function createTemperatureProcessor({
+    clock,
+    now,
+}: {
+    clock?: { now(): string };
+    now?: string;
+} = {}) {
     const devices = [
         {
             deviceId: 'temp-desk',
@@ -252,6 +298,7 @@ function createTemperatureProcessor() {
 
     return createEventProcessor({
         devices,
+        ...(clock ? { clock } : now ? { clock: { now: () => now } } : {}),
         roomProjector: createRoomProjector({
             initialUpdatedAt: '2026-06-08T09:29:59Z',
             devices,

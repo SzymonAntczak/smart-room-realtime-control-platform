@@ -62,6 +62,11 @@ The exact timeout values can vary by device type, but the model should support t
 events. `offline` can be explicit, for example from a connection-loss event, or
 derived after the stale period exceeds the offline threshold.
 
+Only accepted, time-valid reports may advance `lastSeenAt`. A future-dated
+report beyond the event contract's one-second clock-skew tolerance is ignored;
+it cannot make a device appear fresh. A later report within tolerance is
+processed normally and can restore `online` health without a manual reset.
+
 ## Command Availability By Health
 
 Command availability is derived from device capability first, then health.

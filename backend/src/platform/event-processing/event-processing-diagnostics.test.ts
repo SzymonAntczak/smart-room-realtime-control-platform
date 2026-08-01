@@ -183,6 +183,32 @@ describe('createEventProcessingDiagnostics', () => {
         expect(eventProcessingDiagnosticsSnapshotSchema.safeParse(snapshot).success).toBe(true);
     });
 
+    it('records future-dated reports with normalized metadata', () => {
+        const diagnostics = createDiagnostics({
+            observedAt: ['2026-06-08T11:30:02+02:00'],
+        });
+
+        diagnostics.recordProcessingResult(
+            createEvent({ occurredAt: '2026-06-08T11:30:01+02:00' }),
+            ignored('future_dated_report'),
+        );
+
+        expect(diagnostics.getSnapshot()).toEqual({
+            ignoredEvents: [
+                {
+                    diagnosticId: 'diag-1',
+                    reason: 'future_dated_report',
+                    observedAt: '2026-06-08T09:30:02Z',
+                    eventId: 'evt-temperature-1',
+                    eventType: 'telemetry.reading.recorded',
+                    source: 'simulator-adapter',
+                    deviceId: 'temp-desk',
+                    occurredAt: '2026-06-08T09:30:01Z',
+                },
+            ],
+        });
+    });
+
     it('rejects an invalid injected diagnostics clock timestamp', () => {
         const diagnostics = createDiagnostics({
             observedAt: ['not-a-timestamp'],

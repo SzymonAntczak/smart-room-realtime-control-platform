@@ -15,7 +15,7 @@ behavior.
 - [x] Use one injected clock consistently across runtime, event processing and
       deduplication. Add a deterministic integration test for deduplication
       retention expiry.
-- [ ] Define and implement a clock-skew policy for future-dated device reports.
+- [x] Define and implement a clock-skew policy for future-dated device reports.
       Specify tolerance, handling of reports beyond it and recovery behavior so a
       bad device clock cannot leave current state or health stuck.
 - [ ] Recover the realtime frontend after an invalid `room.snapshot`. Preserve

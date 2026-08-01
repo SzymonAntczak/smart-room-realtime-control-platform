@@ -6,8 +6,13 @@ export interface EventDeduplicationClock {
 }
 
 export interface EventDeduplicator {
-    has(eventId: string): boolean;
+    check(eventId: string): EventDeduplicationCheck;
     remember(eventId: string): string[];
+}
+
+export interface EventDeduplicationCheck {
+    isDuplicate: boolean;
+    checkedAt: string;
 }
 
 export function createEventDeduplicator({
@@ -22,9 +27,13 @@ export function createEventDeduplicator({
     const entries = new Map<string, number>();
 
     return {
-        has(eventId) {
-            removeExpiredEntries(nowMs());
-            return entries.has(eventId);
+        check(eventId) {
+            const checkedAt = clock.now();
+            removeExpiredEntries(Date.parse(checkedAt));
+            return {
+                isDuplicate: entries.has(eventId),
+                checkedAt,
+            };
         },
         remember(eventId) {
             const acceptedAt = nowMs();

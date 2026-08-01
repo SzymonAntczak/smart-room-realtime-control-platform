@@ -6,6 +6,7 @@ export const ignoredEventReasons = [
     'unknown_device',
     'invalid_payload',
     'device_metric_mismatch',
+    'future_dated_report',
 ] as const;
 
 export type IgnoredEventReason = (typeof ignoredEventReasons)[number];
