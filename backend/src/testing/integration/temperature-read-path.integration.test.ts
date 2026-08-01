@@ -240,7 +240,8 @@ function createTemperatureReadPath({
 
     createSimulatorTemperatureAdapter({
         sensor,
-        deviceId: 'temp-desk',
+        nativeSensorId: 'temp-desk-native',
+        platformDeviceId: 'temp-desk',
         generateEventId() {
             const eventId = pendingEventIds.shift();
 

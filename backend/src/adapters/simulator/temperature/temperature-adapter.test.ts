@@ -1,5 +1,9 @@
 import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts';
-import { createTemperatureSensorSimulator } from '@smart-room/simulator';
+import {
+    createTemperatureSensorSimulator,
+    type TemperatureReadingMessage,
+    type TemperatureSensorSimulator,
+} from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
 import { createSimulatorTemperatureAdapter } from './temperature-adapter';
@@ -15,7 +19,8 @@ describe('createSimulatorTemperatureAdapter', () => {
 
         createSimulatorTemperatureAdapter({
             sensor,
-            deviceId: 'temp-desk',
+            nativeSensorId: 'temp-desk-native',
+            platformDeviceId: 'temp-desk',
             generateEventId: () => 'evt-temperature-1',
             emitEvent: (event) => emittedEvents.push(event),
         });
@@ -50,7 +55,8 @@ describe('createSimulatorTemperatureAdapter', () => {
 
         createSimulatorTemperatureAdapter({
             sensor,
-            deviceId: 'temp-desk',
+            nativeSensorId: 'temp-desk-native',
+            platformDeviceId: 'temp-desk',
             generateEventId: () => {
                 const eventId = eventIds.shift();
 
@@ -81,7 +87,8 @@ describe('createSimulatorTemperatureAdapter', () => {
         const emittedEvents: TelemetryReadingRecordedEvent[] = [];
         const adapter = createSimulatorTemperatureAdapter({
             sensor,
-            deviceId: 'temp-desk',
+            nativeSensorId: 'temp-desk-native',
+            platformDeviceId: 'temp-desk',
             generateEventId: () => 'evt-temperature-1',
             emitEvent: (event) => emittedEvents.push(event),
         });
@@ -93,4 +100,98 @@ describe('createSimulatorTemperatureAdapter', () => {
         expect(emittedEvents).toHaveLength(1);
         expect(emittedEvents[0]?.occurredAt).toBe('2026-06-08T09:30:00Z');
     });
+
+    it('rejects an unexpected native sensor before event generation or replay caching', () => {
+        const nativeSensor = createControllableNativeSensor();
+        const emittedEvents: TelemetryReadingRecordedEvent[] = [];
+        let generatedEventCount = 0;
+
+        createSimulatorTemperatureAdapter({
+            sensor: nativeSensor.sensor,
+            nativeSensorId: 'temp-desk-native',
+            platformDeviceId: 'temp-desk',
+            generateEventId: () => {
+                generatedEventCount += 1;
+                return 'evt-temperature-1';
+            },
+            emitEvent: (event) => emittedEvents.push(event),
+        });
+
+        nativeSensor.emit(createReading({ sensorId: 'unexpected-native', sequence: 3 }));
+        nativeSensor.emit(createReading({ sensorId: 'temp-desk-native', sequence: 3 }));
+
+        expect(generatedEventCount).toBe(1);
+        expect(emittedEvents).toEqual([
+            expect.objectContaining({
+                eventId: 'evt-temperature-1',
+                deviceId: 'temp-desk',
+            }),
+        ]);
+    });
+
+    it('replays a matching native reading with its original platform event', () => {
+        const nativeSensor = createControllableNativeSensor();
+        const emittedEvents: TelemetryReadingRecordedEvent[] = [];
+        let generatedEventCount = 0;
+
+        createSimulatorTemperatureAdapter({
+            sensor: nativeSensor.sensor,
+            nativeSensorId: 'temp-desk-native',
+            platformDeviceId: 'temp-desk',
+            generateEventId: () => {
+                generatedEventCount += 1;
+                return 'evt-temperature-1';
+            },
+            emitEvent: (event) => emittedEvents.push(event),
+        });
+
+        const reading = createReading({ sensorId: 'temp-desk-native', sequence: 3 });
+        nativeSensor.emit(reading);
+        nativeSensor.emit(reading);
+
+        expect(generatedEventCount).toBe(1);
+        expect(emittedEvents).toHaveLength(2);
+        expect(emittedEvents[1]).toBe(emittedEvents[0]);
+    });
 });
+
+function createControllableNativeSensor(): {
+    sensor: TemperatureSensorSimulator;
+    emit(reading: TemperatureReadingMessage): void;
+} {
+    const listeners = new Set<(reading: TemperatureReadingMessage) => void>();
+
+    return {
+        sensor: {
+            onReading(listener) {
+                listeners.add(listener);
+                return () => listeners.delete(listener);
+            },
+            tick(recordedAt) {
+                return createReading({ recordedAt });
+            },
+        },
+        emit(reading) {
+            for (const listener of listeners) {
+                listener(reading);
+            }
+        },
+    };
+}
+
+function createReading({
+    sensorId = 'temp-desk-native',
+    sequence = 0,
+    recordedAt = '2026-06-08T09:30:00Z',
+}: Partial<
+    Pick<TemperatureReadingMessage, 'sensorId' | 'sequence' | 'recordedAt'>
+>): TemperatureReadingMessage {
+    return {
+        messageType: 'temperature.reading',
+        sensorId,
+        sequence,
+        value: 22.5,
+        unit: 'celsius',
+        recordedAt,
+    };
+}

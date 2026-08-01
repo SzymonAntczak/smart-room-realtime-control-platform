@@ -202,6 +202,12 @@ Expected responsibilities:
 - send platform commands to physical devices in later stages
 - report acknowledgements, failures and connection health
 
+Each adapter instance is bound to one configured native device ID and one
+platform device ID. It must validate the native ID before creating or replaying
+a platform event; messages from other native IDs are rejected at the adapter
+boundary. A mapping registry is deferred until an adapter deliberately consumes
+a multiplexed source containing multiple native devices.
+
 Adapters belong to the backend side of the boundary. The simulator and later
 hardware devices should remain device-like sources of observations and receivers
 of device-specific commands.

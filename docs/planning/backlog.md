@@ -8,9 +8,10 @@ behavior.
       Fastify. Preserve the existing local BFF responsibilities, development
       scenario endpoints and `room.snapshot` WebSocket contract; choose and test
       the WebSocket integration before starting the migration.
-- [ ] Define and validate native-device to platform-device identity mapping at
-      adapter boundaries. Decide whether an adapter instance is bound to one native
-      ID or uses a mapping registry, then reject unexpected native IDs.
+- [x] Define and validate native-device to platform-device identity mapping at
+      adapter boundaries. An adapter instance is bound to one native ID and one
+      platform ID; reject unexpected native IDs. Introduce a mapping registry only
+      when an adapter consumes a multiplexed native source.
 - [ ] Use one injected clock consistently across runtime, event processing and
       deduplication. Add a deterministic integration test for deduplication
       retention expiry.

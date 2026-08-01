@@ -5,7 +5,8 @@ import type { EventIdGenerator, PlatformEventSink } from '../../../platform/port
 
 export interface SimulatorTemperatureAdapterConfig {
     sensor: TemperatureSensorSimulator;
-    deviceId: string;
+    nativeSensorId: string;
+    platformDeviceId: string;
     generateEventId: EventIdGenerator;
     emitEvent: PlatformEventSink<TelemetryReadingRecordedEvent>;
 }
@@ -16,12 +17,17 @@ export interface SimulatorTemperatureAdapter {
 
 export function createSimulatorTemperatureAdapter({
     sensor,
-    deviceId,
+    nativeSensorId,
+    platformDeviceId,
     generateEventId,
     emitEvent,
 }: SimulatorTemperatureAdapterConfig): SimulatorTemperatureAdapter {
     const recentEventsBySequence = new Map<number, TelemetryReadingRecordedEvent>();
     const unsubscribe = sensor.onReading((reading) => {
+        if (reading.sensorId !== nativeSensorId) {
+            return;
+        }
+
         const replayedEvent = recentEventsBySequence.get(reading.sequence);
 
         if (replayedEvent) {
@@ -35,7 +41,7 @@ export function createSimulatorTemperatureAdapter({
             version: 1,
             occurredAt: reading.recordedAt,
             source: 'simulator-adapter',
-            deviceId,
+            deviceId: platformDeviceId,
             payload: {
                 metric: 'temperature',
                 value: reading.value,

@@ -193,7 +193,8 @@ export function createTemperatureRoomRuntime({
     function createAdapter(): SimulatorTemperatureAdapter {
         return createSimulatorTemperatureAdapter({
             sensor,
-            deviceId: 'temp-desk',
+            nativeSensorId: 'temp-desk-native',
+            platformDeviceId: 'temp-desk',
             generateEventId,
             emitEvent(event) {
                 const result = processor.processEvent(event);
