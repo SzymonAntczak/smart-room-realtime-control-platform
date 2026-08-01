@@ -29,26 +29,13 @@ export function TemperatureControlView({
                 }
                 titleId="sensor-heading"
             >
+                {controlState.contractError ? (
+                    <ContractErrorAlert message={controlState.contractError} />
+                ) : null}
                 <p className={styles.message}>
                     {controlState.connectionStatus === 'reconnecting'
                         ? 'Reconnecting to realtime room stream...'
                         : 'Connecting to realtime room stream...'}
-                </p>
-            </ControlCard>
-        );
-    }
-
-    if (controlState.status === 'error') {
-        return (
-            <ControlCard
-                eyebrow="Realtime room stream"
-                title="Desk Temperature"
-                status="Unavailable"
-                statusTone="danger"
-                titleId="sensor-heading"
-            >
-                <p className={styles.message} role="alert">
-                    {controlState.message}
                 </p>
             </ControlCard>
         );
@@ -63,6 +50,9 @@ export function TemperatureControlView({
                 statusTone="warning"
                 titleId="sensor-heading"
             >
+                {controlState.contractError ? (
+                    <ContractErrorAlert message={controlState.contractError} />
+                ) : null}
                 {controlState.connectionStatus === 'reconnecting' ? (
                     <p className={styles.warning} role="alert">
                         Realtime stream is reconnecting. Waiting for the first room snapshot.
@@ -83,6 +73,9 @@ export function TemperatureControlView({
             statusTone={toHealthTone(reading.health)}
             titleId="sensor-heading"
         >
+            {controlState.contractError ? (
+                <ContractErrorAlert message={controlState.contractError} />
+            ) : null}
             {controlState.connectionStatus === 'reconnecting' ? (
                 <p className={styles.warning} role="alert">
                     Realtime stream is reconnecting. Showing the last temperature snapshot.
@@ -107,6 +100,14 @@ export function TemperatureControlView({
 
             <TemperatureEventFeed events={reading.recentEvents} />
         </ControlCard>
+    );
+}
+
+function ContractErrorAlert({ message }: { message: string }) {
+    return (
+        <p className={styles.warning} role="alert">
+            {message}
+        </p>
     );
 }
 

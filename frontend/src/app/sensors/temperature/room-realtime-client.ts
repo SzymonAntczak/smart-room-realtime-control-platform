@@ -119,10 +119,9 @@ export function connectTemperatureRealtime(
                     toTemperatureSnapshotResult(parseRoomRealtimeMessage(event.data)),
                 );
             } catch {
-                isClosed = true;
-                activeSocket?.close();
-                activeSocket = undefined;
                 handlers.onInvalidMessage();
+                scheduleReconnect(socket);
+                socket.close();
             }
         });
     }

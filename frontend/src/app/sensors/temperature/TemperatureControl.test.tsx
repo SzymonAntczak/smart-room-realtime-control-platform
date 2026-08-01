@@ -1,6 +1,6 @@
 import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
 import { act, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TemperatureControl } from './TemperatureControl';
 
@@ -12,6 +12,7 @@ describe('TemperatureControl', () => {
 
     afterEach(() => {
         MockWebSocket.instances.length = 0;
+        vi.useRealTimers();
     });
 
     it('shows connecting while waiting for the first realtime snapshot', () => {
@@ -102,9 +103,11 @@ describe('TemperatureControl', () => {
         expect(screen.getByText('Reconnecting to realtime room stream...')).toBeInTheDocument();
     });
 
-    it('shows an error state when the realtime stream payload is invalid', async () => {
+    it('preserves the last reading and recovers after an invalid realtime snapshot', async () => {
+        vi.useFakeTimers();
         render(<TemperatureControl />);
 
+        await emitLatestMessage(createRoomSnapshotMessage());
         await emitLatestMessage({
             messageType: 'room.snapshot',
             version: 1,
@@ -114,13 +117,38 @@ describe('TemperatureControl', () => {
             },
         });
 
-        expect(await screen.findByRole('status')).toHaveTextContent('Unavailable');
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'Realtime room stream sent an invalid snapshot.',
+        expect(screen.getByRole('status')).toHaveTextContent('Online');
+        expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
+        expect(screen.getByText('Realtime room stream sent an invalid snapshot.')).toHaveAttribute(
+            'role',
+            'alert',
         );
+
+        await act(async () => {
+            vi.advanceTimersByTime(1000);
+        });
+
+        expect(MockWebSocket.instances).toHaveLength(2);
+
+        await emitLatestMessage(
+            createRoomSnapshotMessage({
+                devices: [
+                    {
+                        ...createTemperatureDevice(),
+                        reportedState: {
+                            temperature: 22.6,
+                            temperatureUnit: 'celsius',
+                        },
+                    },
+                ],
+            }),
+        );
+
+        expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.6');
+        expect(screen.queryByText('Realtime room stream sent an invalid snapshot.')).toBeNull();
     });
 
-    it('shows an error state when the temperature sensor payload is malformed', async () => {
+    it('shows the contract error while reconnecting when the first snapshot is malformed', async () => {
         render(<TemperatureControl />);
 
         await emitLatestMessage(
@@ -137,7 +165,10 @@ describe('TemperatureControl', () => {
             }),
         );
 
-        expect(await screen.findByRole('status')).toHaveTextContent('Unavailable');
+        expect(await screen.findByRole('status')).toHaveTextContent('Reconnecting');
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Realtime room stream sent an invalid snapshot.',
+        );
     });
 
     it('keeps the last temperature visible while the realtime stream reconnects', async () => {

@@ -18,7 +18,7 @@ behavior.
 - [x] Define and implement a clock-skew policy for future-dated device reports.
       Specify tolerance, handling of reports beyond it and recovery behavior so a
       bad device clock cannot leave current state or health stuck.
-- [ ] Recover the realtime frontend after an invalid `room.snapshot`. Preserve
+- [x] Recover the realtime frontend after an invalid `room.snapshot`. Preserve
       the last valid snapshot, expose the contract error and reconnect or provide a
       visible retry path; cover invalid-message recovery with a test.
 - [ ] Update stale implementation-status documentation in package README files,

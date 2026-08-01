@@ -130,6 +130,35 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
     });
 
+    it('reconnects after an invalid snapshot and accepts a later valid snapshot', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, {
+            reconnectDelayMs: 1000,
+        });
+
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage({
+            messageType: 'room.snapshot',
+            version: 1,
+            sentAt: '2026-06-08T09:30:01Z',
+            payload: {
+                roomName: 'Smart Room',
+            },
+        });
+
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+
+        vi.advanceTimersByTime(1000);
+
+        expect(MockWebSocket.instances).toHaveLength(2);
+
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+
+        expect(handlers.onSnapshot).toHaveBeenCalledTimes(2);
+    });
+
     it('reports unsupported realtime message types as invalid messages', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);

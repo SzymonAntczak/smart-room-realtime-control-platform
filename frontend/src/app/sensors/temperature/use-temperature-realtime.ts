@@ -14,6 +14,7 @@ export type TemperatureControlState =
               TemperatureRealtimeConnectionStatus,
               'connecting' | 'reconnecting'
           >;
+          contractError?: string;
       }
     | {
           status: 'ready';
@@ -22,6 +23,7 @@ export type TemperatureControlState =
               TemperatureRealtimeConnectionStatus,
               'connected' | 'reconnecting'
           >;
+          contractError?: string;
       }
     | {
           status: 'empty';
@@ -29,8 +31,8 @@ export type TemperatureControlState =
               TemperatureRealtimeConnectionStatus,
               'connected' | 'reconnecting'
           >;
-      }
-    | { status: 'error'; message: string };
+          contractError?: string;
+      };
 
 export function useTemperatureRealtime(): TemperatureControlState {
     const [controlState, setControlState] = useState<TemperatureControlState>({
@@ -55,6 +57,7 @@ export function useTemperatureRealtime(): TemperatureControlState {
                             connectionStatus === 'connecting' || connectionStatus === 'connected'
                                 ? 'connecting'
                                 : 'reconnecting',
+                        contractError: currentState.contractError,
                     };
                 });
             },
@@ -62,10 +65,10 @@ export function useTemperatureRealtime(): TemperatureControlState {
                 setControlState(toControlState(snapshot));
             },
             onInvalidMessage() {
-                setControlState({
-                    status: 'error',
-                    message: 'Realtime room stream sent an invalid snapshot.',
-                });
+                setControlState((currentState) => ({
+                    ...currentState,
+                    contractError: 'Realtime room stream sent an invalid snapshot.',
+                }));
             },
         });
         return () => connection.close();
