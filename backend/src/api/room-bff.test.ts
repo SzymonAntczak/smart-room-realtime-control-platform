@@ -168,6 +168,7 @@ describe('createRoomBffServer', () => {
         try {
             const actionResponse = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'emit_next_reading' }),
             });
             const roomResponse = await fetch(`${serverUrl(server)}/room`);
@@ -194,6 +195,7 @@ describe('createRoomBffServer', () => {
 
         const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'pause_telemetry' }),
         });
 
@@ -213,6 +215,7 @@ describe('createRoomBffServer', () => {
 
         const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'delete_room' }),
         });
 
@@ -220,6 +223,26 @@ describe('createRoomBffServer', () => {
         await expect(response.json()).resolves.toMatchObject({
             error: 'invalid_request',
         });
+    });
+
+    it('rejects development scenario requests without application/json', async () => {
+        const server = await listen(
+            createRoomBffServer({
+                ...createRoomBffConfig(),
+                runScenario(action) {
+                    return { action, status: 'completed' };
+                },
+            }),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'pause_telemetry' }),
+        });
+
+        expect(response.status).toBe(415);
     });
 
     it('reports malformed development scenario JSON as an invalid request', async () => {
@@ -259,6 +282,7 @@ describe('createRoomBffServer', () => {
 
         const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'pause_telemetry' }),
         });
 
@@ -266,6 +290,27 @@ describe('createRoomBffServer', () => {
         await expect(response.json()).resolves.toEqual({
             error: 'scenario_failed',
             message: 'Scenario could not be executed.',
+        });
+    });
+
+    it('does not expose an invalid room projection through HTTP', async () => {
+        const server = await listen(
+            createRoomBffServer(
+                createRoomBffConfig({
+                    roomSnapshot: {
+                        ...createRoomSnapshot(),
+                        updatedAt: '2026-02-30T09:30:00Z',
+                    },
+                }),
+            ),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/room`);
+
+        expect(response.status).toBe(500);
+        await expect(response.json()).resolves.toMatchObject({
+            error: 'invalid_server_response',
         });
     });
 

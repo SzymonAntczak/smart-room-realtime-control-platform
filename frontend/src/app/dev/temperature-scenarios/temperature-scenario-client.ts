@@ -1,6 +1,7 @@
 import {
     type EventProcessingDiagnosticsSnapshot,
     eventProcessingDiagnosticsSnapshotSchema,
+    isSchema,
     type TemperatureScenarioAction,
     type TemperatureScenarioResult,
     temperatureScenarioResultSchema,
@@ -37,17 +38,15 @@ export function createTemperatureScenarioClient(
 
             const result: unknown = await response.json();
 
-            const parsedResult = temperatureScenarioResultSchema.safeParse(result);
-
-            if (!parsedResult.success) {
+            if (!isSchema(temperatureScenarioResultSchema, result)) {
                 throw new Error('Scenario control returned an invalid response.');
             }
 
-            if (parsedResult.data.action !== action) {
+            if (result.action !== action) {
                 throw new Error('Scenario control returned a response for a different action.');
             }
 
-            return parsedResult.data;
+            return result as TemperatureScenarioResult;
         },
         async getDiagnostics() {
             const response = await fetchImplementation(diagnosticsUrl);
@@ -58,13 +57,11 @@ export function createTemperatureScenarioClient(
 
             const snapshot: unknown = await response.json();
 
-            const parsedSnapshot = eventProcessingDiagnosticsSnapshotSchema.safeParse(snapshot);
-
-            if (!parsedSnapshot.success) {
+            if (!isSchema(eventProcessingDiagnosticsSnapshotSchema, snapshot)) {
                 throw new Error('Diagnostics returned an invalid response.');
             }
 
-            return parsedSnapshot.data;
+            return snapshot as EventProcessingDiagnosticsSnapshot;
         },
     };
 }

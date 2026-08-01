@@ -35,4 +35,4 @@ The backend BFF listens on `http://localhost:4310`, and the Vite frontend uses
 its default local dev URL.
 
 `shared` exposes the local `@smart-room/contracts` workspace, which owns
-runtime dependencies used by platform contracts, such as Zod.
+runtime dependencies used by platform contracts, such as TypeBox.

@@ -2,9 +2,9 @@ import {
     type DeviceProjection,
     type DeviceState,
     type EventFeedItemProjection,
+    isRoomRealtimeServerMessage,
     type PlatformEventSource,
     type RoomRealtimeServerMessage,
-    roomRealtimeServerMessageSchema,
 } from '@smart-room/contracts';
 
 const defaultRoomRealtimeUrl = 'ws://localhost:4310/room/realtime';
@@ -156,7 +156,11 @@ function parseRoomRealtimeMessage(data: unknown): RoomRealtimeServerMessage {
 
     const body: unknown = JSON.parse(data);
 
-    return roomRealtimeServerMessageSchema.parse(body);
+    if (!isRoomRealtimeServerMessage(body)) {
+        throw new Error('Realtime message did not match the room snapshot contract.');
+    }
+
+    return body;
 }
 
 function toTemperatureSnapshotResult(

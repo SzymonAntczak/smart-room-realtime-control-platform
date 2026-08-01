@@ -1,5 +1,7 @@
 import {
     type IgnoredEventReason,
+    isSchema,
+    normalizeIsoTimestamp,
     platformEventCandidateSchema,
     type TelemetryReadingRecordedEvent,
     telemetryReadingRecordedEventSchema,
@@ -74,13 +76,11 @@ export function createEventProcessor({
                 state: roomProjector.getProjection(),
             });
 
-            const parsedCandidate = platformEventCandidateSchema.safeParse(candidateEvent);
+            const event = normalizeEventTimestamps(candidateEvent);
 
-            if (!parsedCandidate.success) {
+            if (!isSchema(platformEventCandidateSchema, event)) {
                 return ignored('malformed_event');
             }
-
-            const event = parsedCandidate.data;
 
             const deduplicationCheck = deduplicator.check(event.eventId);
 
@@ -106,9 +106,7 @@ export function createEventProcessor({
                 return ignored('unknown_device');
             }
 
-            const parsedEvent = telemetryReadingRecordedEventSchema.safeParse(event);
-
-            if (!parsedEvent.success) {
+            if (!isSchema(telemetryReadingRecordedEventSchema, event)) {
                 return ignored('invalid_payload');
             }
 
@@ -116,7 +114,7 @@ export function createEventProcessor({
                 return ignored('device_metric_mismatch');
             }
 
-            const acceptedEvent: TelemetryReadingRecordedEvent = parsedEvent.data;
+            const acceptedEvent = event as TelemetryReadingRecordedEvent;
 
             if (
                 isFutureDatedBeyondTolerance(
@@ -139,6 +137,35 @@ export function createEventProcessor({
             };
         },
     };
+}
+
+function normalizeEventTimestamps(event: unknown): unknown {
+    if (!isRecord(event)) {
+        return event;
+    }
+
+    const occurredAt = normalizeIsoTimestamp(event.occurredAt);
+    const payload = normalizeReportedAt(event.payload);
+
+    return {
+        ...event,
+        ...(occurredAt ? { occurredAt } : {}),
+        ...(payload ? { payload } : {}),
+    };
+}
+
+function normalizeReportedAt(payload: unknown): Record<string, unknown> | undefined {
+    if (!isRecord(payload)) {
+        return undefined;
+    }
+
+    const reportedAt = normalizeIsoTimestamp(payload.reportedAt);
+
+    return reportedAt ? { ...payload, reportedAt } : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
 }
 
 const realClock: EventDeduplicationClock = {

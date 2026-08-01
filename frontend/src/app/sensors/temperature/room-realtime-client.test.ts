@@ -62,6 +62,19 @@ describe('connectTemperatureRealtime', () => {
         });
     });
 
+    it('rejects a realtime snapshot whose timestamp is not canonical UTC', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+
+        MockWebSocket.latest().emitMessage({
+            ...createRoomSnapshotMessage(),
+            sentAt: '2026-06-08T11:30:01+02:00',
+        });
+
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onSnapshot).not.toHaveBeenCalled();
+    });
+
     it('limits the renderable temperature event feed to recent events for the sensor', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);

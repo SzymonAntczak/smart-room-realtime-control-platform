@@ -3,7 +3,7 @@ import type {
     EventProcessingDiagnosticsSnapshot,
     IgnoredEventDiagnostic,
 } from '@smart-room/contracts';
-import { isoTimestampSchema } from '@smart-room/contracts';
+import { normalizeIsoTimestamp } from '@smart-room/contracts';
 
 import type { EventProcessingResult } from './event-processor';
 
@@ -91,21 +91,21 @@ function toEventMetadata(event: unknown): Partial<IgnoredEventDiagnostic> {
 }
 
 function normalizeClockTimestamp(timestamp: string): string {
-    const parsedTimestamp = isoTimestampSchema.safeParse(timestamp);
+    const normalizedTimestamp = normalizeIsoTimestamp(timestamp);
 
-    if (!parsedTimestamp.success) {
+    if (!normalizedTimestamp) {
         throw new Error('Event processing diagnostics clock returned an invalid ISO timestamp.');
     }
 
-    return parsedTimestamp.data;
+    return normalizedTimestamp;
 }
 
 function optionalNormalizedTimestamp(
     timestamp: string,
 ): Pick<IgnoredEventDiagnostic, 'occurredAt'> {
-    const parsedTimestamp = isoTimestampSchema.safeParse(timestamp);
+    const normalizedTimestamp = normalizeIsoTimestamp(timestamp);
 
-    return parsedTimestamp.success ? { occurredAt: parsedTimestamp.data } : {};
+    return normalizedTimestamp ? { occurredAt: normalizedTimestamp } : {};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

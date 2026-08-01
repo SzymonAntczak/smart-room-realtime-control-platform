@@ -8,7 +8,7 @@ behavior.
       Fastify. Preserve the existing local BFF responsibilities, development
       scenario endpoints and `room.snapshot` WebSocket contract; choose and test
       the WebSocket integration before starting the migration.
-- [ ] Migrate shared transport contracts from Zod-first schemas to JSON Schema
+- [x] Migrate shared transport contracts from Zod-first schemas to JSON Schema
       authored with TypeBox. Make JSON Schema the canonical contract format, use
       Fastify's native Ajv validation and response serialization for HTTP, and
       validate WebSocket messages at their transport boundary. Preserve existing

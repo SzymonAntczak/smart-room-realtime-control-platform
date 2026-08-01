@@ -1,100 +1,101 @@
-import { z } from 'zod';
+import { FormatRegistry, type Static, type TSchema, Type } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
+import { fullFormats } from 'ajv-formats/dist/formats.js';
 
 import { ignoredEventReasons } from './dev-diagnostics';
 import { temperatureScenarioActions } from './dev-scenarios';
 import { commandAvailabilityPolicies, deviceHealthStates, deviceRoles } from './devices';
 import { platformEventSources, platformEventTypes } from './events';
+import type { RoomRealtimeServerMessage } from './realtime';
 
-const deviceStateValueSchema = z.union([z.string(), z.number(), z.boolean()]);
-const deviceStateSchema = z.record(z.string(), deviceStateValueSchema);
-const powerStateSchema = z.enum(['on', 'off']);
-const powerStateProjectionSchema = z.object({ power: powerStateSchema });
-const nonEmptyStringSchema = z.string().min(1);
+if (!FormatRegistry.Has('date-time')) {
+    FormatRegistry.Set('date-time', isRfc3339DateTime);
+}
 
-export const isoTimestampSchema = z.iso
-    .datetime({ offset: true })
-    .transform((value) => new Date(value).toISOString().replace('.000Z', 'Z'));
+const nonEmptyStringSchema = Type.String({ minLength: 1 });
+const deviceStateValueSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean()]);
+const deviceStateSchema = Type.Record(Type.String(), deviceStateValueSchema);
+const powerStateSchema = Type.Union([Type.Literal('on'), Type.Literal('off')]);
+const powerStateProjectionSchema = Type.Object({ power: powerStateSchema });
+
+export const isoTimestampSchema = Type.String({ format: 'date-time' });
+export const canonicalUtcTimestampSchema = Type.String({
+    format: 'date-time',
+    pattern: 'Z$',
+});
 
 const platformEventCandidateShape = {
     eventId: nonEmptyStringSchema,
-    eventType: z.string(),
-    version: z.number(),
+    eventType: Type.String(),
+    version: Type.Number(),
     occurredAt: isoTimestampSchema,
-    source: z.enum(platformEventSources),
-    deviceId: nonEmptyStringSchema.optional(),
-    commandId: nonEmptyStringSchema.optional(),
-    payload: z.unknown(),
+    source: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
+    deviceId: Type.Optional(nonEmptyStringSchema),
+    commandId: Type.Optional(nonEmptyStringSchema),
+    payload: Type.Unknown(),
 };
 
-export const platformEventCandidateSchema = z.object(platformEventCandidateShape);
+export const platformEventCandidateSchema = Type.Object(platformEventCandidateShape);
 
-const deviceStateReportedPayloadSchema = z.object({
+const deviceStateReportedPayloadSchema = Type.Object({
     reportedState: deviceStateSchema,
     reportedAt: isoTimestampSchema,
 });
-
-const deviceHealthChangedPayloadSchema = z.object({
-    previousHealth: z.enum(deviceHealthStates),
-    health: z.enum(deviceHealthStates),
+const deviceHealthChangedPayloadSchema = Type.Object({
+    previousHealth: Type.Union(deviceHealthStates.map((health) => Type.Literal(health))),
+    health: Type.Union(deviceHealthStates.map((health) => Type.Literal(health))),
     reason: nonEmptyStringSchema,
 });
-
-export const telemetryReadingRecordedPayloadSchema = z.object({
-    metric: z.literal('temperature'),
-    value: z.number().finite(),
-    unit: z.literal('celsius'),
+export const telemetryReadingRecordedPayloadSchema = Type.Object({
+    metric: Type.Literal('temperature'),
+    value: Type.Number(),
+    unit: Type.Literal('celsius'),
 });
 
-const commandRequestedPayloadSchema = z.object({
-    commandType: z.literal('set.power'),
+const commandRequestedPayloadSchema = Type.Object({
+    commandType: Type.Literal('set.power'),
     requestedState: powerStateProjectionSchema,
-    requestedBy: z.enum(['user', 'automation']),
+    requestedBy: Type.Union([Type.Literal('user'), Type.Literal('automation')]),
 });
-
-const commandDispatchedPayloadSchema = z.object({
-    commandType: z.literal('set.power'),
-    target: z.enum(platformEventSources),
+const commandDispatchedPayloadSchema = Type.Object({
+    commandType: Type.Literal('set.power'),
+    target: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
 });
-
-const commandConfirmedPayloadSchema = z.object({
-    confirmationSource: z.literal('device.state.reported'),
+const commandConfirmedPayloadSchema = Type.Object({
+    confirmationSource: Type.Literal('device.state.reported'),
     matchedState: powerStateProjectionSchema,
 });
-
-const commandFailedPayloadSchema = z.object({
+const commandFailedPayloadSchema = Type.Object({
     reason: nonEmptyStringSchema,
     message: nonEmptyStringSchema,
 });
-
-const commandTimedOutPayloadSchema = z.object({
-    timeoutMs: z.number().int().positive(),
+const commandTimedOutPayloadSchema = Type.Object({
+    timeoutMs: Type.Integer({ minimum: 1 }),
     reason: nonEmptyStringSchema,
 });
 
 const platformEventBaseShape = {
     eventId: nonEmptyStringSchema,
-    version: z.literal(1),
+    version: Type.Literal(1),
     occurredAt: isoTimestampSchema,
-    source: z.enum(platformEventSources),
+    source: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
 };
 
-export const deviceStateReportedEventSchema = z.object({
+export const deviceStateReportedEventSchema = Type.Object({
     ...platformEventBaseShape,
-    eventType: z.literal('device.state.reported'),
+    eventType: Type.Literal('device.state.reported'),
     deviceId: nonEmptyStringSchema,
     payload: deviceStateReportedPayloadSchema,
 });
-
-export const deviceHealthChangedEventSchema = z.object({
+export const deviceHealthChangedEventSchema = Type.Object({
     ...platformEventBaseShape,
-    eventType: z.literal('device.health.changed'),
+    eventType: Type.Literal('device.health.changed'),
     deviceId: nonEmptyStringSchema,
     payload: deviceHealthChangedPayloadSchema,
 });
-
-export const telemetryReadingRecordedEventSchema = z.object({
+export const telemetryReadingRecordedEventSchema = Type.Object({
     ...platformEventBaseShape,
-    eventType: z.literal('telemetry.reading.recorded'),
+    eventType: Type.Literal('telemetry.reading.recorded'),
     deviceId: nonEmptyStringSchema,
     payload: telemetryReadingRecordedPayloadSchema,
 });
@@ -104,38 +105,33 @@ const commandEventBaseShape = {
     deviceId: nonEmptyStringSchema,
     commandId: nonEmptyStringSchema,
 };
-
-export const commandRequestedEventSchema = z.object({
+export const commandRequestedEventSchema = Type.Object({
     ...commandEventBaseShape,
-    eventType: z.literal('command.requested'),
+    eventType: Type.Literal('command.requested'),
     payload: commandRequestedPayloadSchema,
 });
-
-export const commandDispatchedEventSchema = z.object({
+export const commandDispatchedEventSchema = Type.Object({
     ...commandEventBaseShape,
-    eventType: z.literal('command.dispatched'),
+    eventType: Type.Literal('command.dispatched'),
     payload: commandDispatchedPayloadSchema,
 });
-
-export const commandConfirmedEventSchema = z.object({
+export const commandConfirmedEventSchema = Type.Object({
     ...commandEventBaseShape,
-    eventType: z.literal('command.confirmed'),
+    eventType: Type.Literal('command.confirmed'),
     payload: commandConfirmedPayloadSchema,
 });
-
-export const commandFailedEventSchema = z.object({
+export const commandFailedEventSchema = Type.Object({
     ...commandEventBaseShape,
-    eventType: z.literal('command.failed'),
+    eventType: Type.Literal('command.failed'),
     payload: commandFailedPayloadSchema,
 });
-
-export const commandTimedOutEventSchema = z.object({
+export const commandTimedOutEventSchema = Type.Object({
     ...commandEventBaseShape,
-    eventType: z.literal('command.timed_out'),
+    eventType: Type.Literal('command.timed_out'),
     payload: commandTimedOutPayloadSchema,
 });
 
-export const platformEventEnvelopeSchema = z.discriminatedUnion('eventType', [
+export const platformEventEnvelopeSchema = Type.Union([
     deviceStateReportedEventSchema,
     deviceHealthChangedEventSchema,
     telemetryReadingRecordedEventSchema,
@@ -146,135 +142,179 @@ export const platformEventEnvelopeSchema = z.discriminatedUnion('eventType', [
     commandTimedOutEventSchema,
 ]);
 
-const commandAvailabilitySchema = z.object({
-    policy: z.enum(commandAvailabilityPolicies),
-    reason: z.string().optional(),
+const commandAvailabilitySchema = Type.Object({
+    policy: Type.Union(commandAvailabilityPolicies.map((policy) => Type.Literal(policy))),
+    reason: Type.Optional(Type.String()),
 });
-
-const deviceProjectionSchema = z.object({
+const deviceProjectionSchema = Type.Object({
     deviceId: nonEmptyStringSchema,
     name: nonEmptyStringSchema,
-    role: z.enum(deviceRoles),
-    health: z.enum(deviceHealthStates),
+    role: Type.Union(deviceRoles.map((role) => Type.Literal(role))),
+    health: Type.Union(deviceHealthStates.map((health) => Type.Literal(health))),
     reportedState: deviceStateSchema,
-    requestedState: deviceStateSchema.optional(),
+    requestedState: Type.Optional(deviceStateSchema),
     commandAvailability: commandAvailabilitySchema,
-    lastSeenAt: isoTimestampSchema.optional(),
-    warning: z.string().optional(),
-    activeCommandId: nonEmptyStringSchema.optional(),
+    lastSeenAt: Type.Optional(isoTimestampSchema),
+    warning: Type.Optional(Type.String()),
+    activeCommandId: Type.Optional(nonEmptyStringSchema),
 });
-
 const activeCommandProjectionBaseShape = {
     commandId: nonEmptyStringSchema,
     deviceId: nonEmptyStringSchema,
-    commandType: z.literal('set.power'),
+    commandType: Type.Literal('set.power'),
     requestedState: powerStateProjectionSchema,
     requestedAt: isoTimestampSchema,
-    reason: z.string().optional(),
-    message: z.string().optional(),
-    confirmedAt: z.never().optional(),
-    failedAt: z.never().optional(),
-    timedOutAt: z.never().optional(),
+    reason: Type.Optional(Type.String()),
+    message: Type.Optional(Type.String()),
 };
-
-const activeCommandProjectionSchema = z.discriminatedUnion('status', [
-    z.object({
-        ...activeCommandProjectionBaseShape,
-        status: z.literal('accepted'),
-        dispatchedAt: z.never().optional(),
-    }),
-    z.object({
-        ...activeCommandProjectionBaseShape,
-        status: z.literal('pending'),
-        dispatchedAt: isoTimestampSchema,
-    }),
+const activeCommandProjectionSchema = Type.Union([
+    Type.Object(
+        { ...activeCommandProjectionBaseShape, status: Type.Literal('accepted') },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            ...activeCommandProjectionBaseShape,
+            status: Type.Literal('pending'),
+            dispatchedAt: isoTimestampSchema,
+        },
+        { additionalProperties: false },
+    ),
 ]);
-
-const eventFeedItemProjectionSchema = z.object({
+const eventFeedItemProjectionSchema = Type.Object({
     eventId: nonEmptyStringSchema,
-    eventType: z.enum(platformEventTypes),
+    eventType: Type.Union(platformEventTypes.map((eventType) => Type.Literal(eventType))),
     occurredAt: isoTimestampSchema,
-    source: z.enum(platformEventSources),
-    deviceId: nonEmptyStringSchema.optional(),
-    commandId: nonEmptyStringSchema.optional(),
+    source: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
+    deviceId: Type.Optional(nonEmptyStringSchema),
+    commandId: Type.Optional(nonEmptyStringSchema),
     summary: nonEmptyStringSchema,
 });
-
-export const roomSnapshotProjectionSchema = z
-    .object({
-        roomName: nonEmptyStringSchema,
-        updatedAt: isoTimestampSchema,
-        devices: z.array(deviceProjectionSchema),
-        activeCommands: z.array(activeCommandProjectionSchema),
-        recentEvents: z.array(eventFeedItemProjectionSchema),
-    })
-    .superRefine((snapshot, context) => {
-        const activeCommandByDeviceId = new Map<string, string>();
-
-        for (const [index, command] of snapshot.activeCommands.entries()) {
-            if (activeCommandByDeviceId.has(command.deviceId)) {
-                context.addIssue({
-                    code: 'custom',
-                    message: 'A device can have at most one active command.',
-                    path: ['activeCommands', index, 'deviceId'],
-                });
-            }
-            activeCommandByDeviceId.set(command.deviceId, command.commandId);
-        }
-
-        for (const [index, device] of snapshot.devices.entries()) {
-            if (
-                device.activeCommandId &&
-                activeCommandByDeviceId.get(device.deviceId) !== device.activeCommandId
-            ) {
-                context.addIssue({
-                    code: 'custom',
-                    message: 'activeCommandId must reference the device active command.',
-                    path: ['devices', index, 'activeCommandId'],
-                });
-            }
-        }
-    });
-
-export const roomRealtimeServerMessageSchema = z.object({
-    messageType: z.literal('room.snapshot'),
-    version: z.literal(1),
+export const roomSnapshotProjectionSchema = Type.Object({
+    roomName: nonEmptyStringSchema,
+    updatedAt: isoTimestampSchema,
+    devices: Type.Array(deviceProjectionSchema),
+    activeCommands: Type.Array(activeCommandProjectionSchema),
+    recentEvents: Type.Array(eventFeedItemProjectionSchema),
+});
+export const roomRealtimeServerMessageSchema = Type.Object({
+    messageType: Type.Literal('room.snapshot'),
+    version: Type.Literal(1),
     sentAt: isoTimestampSchema,
     payload: roomSnapshotProjectionSchema,
 });
 
-export const temperatureScenarioActionSchema = z.enum(temperatureScenarioActions);
-
-export const temperatureScenarioRequestSchema = z.object({
+export const temperatureScenarioActionSchema = Type.Union(
+    temperatureScenarioActions.map((action) => Type.Literal(action)),
+);
+export const temperatureScenarioRequestSchema = Type.Object({
     action: temperatureScenarioActionSchema,
 });
-
-export const temperatureScenarioResultSchema = z.object({
+export const temperatureScenarioResultSchema = Type.Object({
     action: temperatureScenarioActionSchema,
-    status: z.literal('completed'),
+    status: Type.Literal('completed'),
 });
 
-const ignoredEventDiagnosticSchema = z.object({
+const ignoredEventDiagnosticSchema = Type.Object({
     diagnosticId: nonEmptyStringSchema,
-    reason: z.enum(ignoredEventReasons),
+    reason: Type.Union(ignoredEventReasons.map((reason) => Type.Literal(reason))),
     observedAt: isoTimestampSchema,
-    eventId: z.string().optional(),
-    eventType: z.string().optional(),
-    source: z.string().optional(),
-    deviceId: z.string().optional(),
-    commandId: z.string().optional(),
-    occurredAt: isoTimestampSchema.optional(),
+    eventId: Type.Optional(Type.String()),
+    eventType: Type.Optional(Type.String()),
+    source: Type.Optional(Type.String()),
+    deviceId: Type.Optional(Type.String()),
+    commandId: Type.Optional(Type.String()),
+    occurredAt: Type.Optional(isoTimestampSchema),
 });
-
-export const eventProcessingDiagnosticsSnapshotSchema = z.object({
-    ignoredEvents: z.array(ignoredEventDiagnosticSchema),
-    deduplicationEvictions: z
-        .array(
-            z.object({
+export const eventProcessingDiagnosticsSnapshotSchema = Type.Object({
+    ignoredEvents: Type.Array(ignoredEventDiagnosticSchema),
+    deduplicationEvictions: Type.Optional(
+        Type.Array(
+            Type.Object({
                 diagnosticId: nonEmptyStringSchema,
                 evictedEventId: nonEmptyStringSchema,
                 observedAt: isoTimestampSchema,
             }),
-        )
-        .optional(),
+        ),
+    ),
 });
+
+export function isSchema<TSchemaType extends TSchema>(
+    schema: TSchemaType,
+    value: unknown,
+): value is Static<TSchemaType> {
+    return Value.Check(schema, value);
+}
+
+export function normalizeIsoTimestamp(value: unknown): string | undefined {
+    if (typeof value !== 'string' || !isSchema(isoTimestampSchema, value)) {
+        return undefined;
+    }
+
+    return new Date(value).toISOString().replace('.000Z', 'Z');
+}
+
+export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealtimeServerMessage {
+    return (
+        isSchema(roomRealtimeServerMessageSchema, value) &&
+        isRoomSnapshotProjection(value.payload) &&
+        isCanonicalUtcTimestamp(value.sentAt)
+    );
+}
+
+export function isRoomSnapshotProjection(value: unknown): boolean {
+    return (
+        isSchema(roomSnapshotProjectionSchema, value) &&
+        hasConsistentActiveCommands(value) &&
+        hasCanonicalProjectionTimestamps(value)
+    );
+}
+
+function hasConsistentActiveCommands(
+    snapshot: Static<typeof roomSnapshotProjectionSchema>,
+): boolean {
+    const activeCommandByDeviceId = new Map<string, string>();
+
+    for (const command of snapshot.activeCommands) {
+        if (activeCommandByDeviceId.has(command.deviceId)) return false;
+        activeCommandByDeviceId.set(command.deviceId, command.commandId);
+    }
+
+    return snapshot.devices.every(
+        (device) =>
+            !device.activeCommandId ||
+            activeCommandByDeviceId.get(device.deviceId) === device.activeCommandId,
+    );
+}
+
+function hasCanonicalProjectionTimestamps(
+    snapshot: Static<typeof roomSnapshotProjectionSchema>,
+): boolean {
+    return (
+        isCanonicalUtcTimestamp(snapshot.updatedAt) &&
+        snapshot.devices.every(
+            (device) =>
+                device.lastSeenAt === undefined || isCanonicalUtcTimestamp(device.lastSeenAt),
+        ) &&
+        snapshot.activeCommands.every(
+            (command) =>
+                isCanonicalUtcTimestamp(command.requestedAt) &&
+                (command.status !== 'pending' || isCanonicalUtcTimestamp(command.dispatchedAt)),
+        ) &&
+        snapshot.recentEvents.every((event) => isCanonicalUtcTimestamp(event.occurredAt))
+    );
+}
+
+function isCanonicalUtcTimestamp(value: string): boolean {
+    return isSchema(canonicalUtcTimestampSchema, value);
+}
+
+function isRfc3339DateTime(value: string): boolean {
+    const format = fullFormats['date-time'];
+    const validator =
+        typeof format === 'object' && format !== null && 'validate' in format
+            ? (format.validate as (candidate: string) => boolean)
+            : undefined;
+
+    return typeof validator === 'function' && validator(value) === true;
+}

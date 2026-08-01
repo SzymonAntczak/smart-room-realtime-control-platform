@@ -8,84 +8,105 @@ import {
     commandTimedOutEventSchema,
     deviceHealthChangedEventSchema,
     deviceStateReportedEventSchema,
+    isRoomRealtimeServerMessage,
+    isRoomSnapshotProjection,
+    isSchema,
+    normalizeIsoTimestamp,
     platformEventCandidateSchema,
     platformEventEnvelopeSchema,
-    roomRealtimeServerMessageSchema,
     telemetryReadingRecordedEventSchema,
 } from './contracts';
 
 describe('platform event schemas', () => {
     it.each([
-        deviceStateReportedEventSchema,
-        deviceHealthChangedEventSchema,
-        telemetryReadingRecordedEventSchema,
-        commandRequestedEventSchema,
-        commandDispatchedEventSchema,
-        commandConfirmedEventSchema,
-        commandFailedEventSchema,
-        commandTimedOutEventSchema,
-    ])('accepts its documented lifecycle event', (schema) => {
-        expect(schema.safeParse(createEvent(schema.shape.eventType.value)).success).toBe(true);
+        [deviceStateReportedEventSchema, 'device.state.reported'],
+        [deviceHealthChangedEventSchema, 'device.health.changed'],
+        [telemetryReadingRecordedEventSchema, 'telemetry.reading.recorded'],
+        [commandRequestedEventSchema, 'command.requested'],
+        [commandDispatchedEventSchema, 'command.dispatched'],
+        [commandConfirmedEventSchema, 'command.confirmed'],
+        [commandFailedEventSchema, 'command.failed'],
+        [commandTimedOutEventSchema, 'command.timed_out'],
+    ] as const)('accepts its documented lifecycle event', (schema, eventType) => {
+        expect(isSchema(schema, createEvent(eventType))).toBe(true);
     });
 
     it('requires a non-empty commandId on lifecycle events', () => {
         expect(
-            commandRequestedEventSchema.safeParse({
+            isSchema(commandRequestedEventSchema, {
                 ...createEvent('command.requested'),
                 commandId: '',
-            }).success,
+            }),
         ).toBe(false);
     });
 
     it('normalizes accepted ISO timestamps with an offset to UTC', () => {
-        const result = telemetryReadingRecordedEventSchema.parse({
+        const result = {
             ...createEvent('telemetry.reading.recorded'),
             occurredAt: '2026-06-08T11:30:00+02:00',
-        });
+        };
 
-        expect(result.occurredAt).toBe('2026-06-08T09:30:00Z');
+        expect(isSchema(telemetryReadingRecordedEventSchema, result)).toBe(true);
+        expect(normalizeIsoTimestamp(result.occurredAt)).toBe('2026-06-08T09:30:00Z');
+    });
+
+    it.each(['2026-02-30T09:30:00Z', '2025-02-29T09:30:00Z', '2026-13-01T09:30:00Z'])(
+        'rejects an impossible ISO timestamp: %s',
+        (occurredAt) => {
+            expect(
+                isSchema(telemetryReadingRecordedEventSchema, {
+                    ...createEvent('telemetry.reading.recorded'),
+                    occurredAt,
+                }),
+            ).toBe(false);
+            expect(normalizeIsoTimestamp(occurredAt)).toBeUndefined();
+        },
+    );
+
+    it('accepts a valid leap-day timestamp', () => {
+        expect(normalizeIsoTimestamp('2028-02-29T09:30:00+02:00')).toBe('2028-02-29T07:30:00Z');
     });
 
     it('rejects unsupported event types from the full event contract', () => {
         expect(
-            platformEventEnvelopeSchema.safeParse({
+            isSchema(platformEventEnvelopeSchema, {
                 ...createEvent('telemetry.reading.recorded'),
                 eventType: 'device.unknown',
-            }).success,
+            }),
         ).toBe(false);
     });
 
     it('preserves unknown event types for classification while normalizing their timestamp', () => {
-        const candidate = platformEventCandidateSchema.parse({
+        const candidate = {
             ...createEvent('telemetry.reading.recorded'),
             eventType: 'device.unknown',
             version: 2,
             occurredAt: '2026-06-08T11:30:00+02:00',
-        });
+        };
 
-        expect(candidate.occurredAt).toBe('2026-06-08T09:30:00Z');
-        expect(platformEventEnvelopeSchema.safeParse(candidate).success).toBe(false);
+        expect(isSchema(platformEventCandidateSchema, candidate)).toBe(true);
+        expect(isSchema(platformEventEnvelopeSchema, candidate)).toBe(false);
     });
 
     it('rejects semantically invalid set.power lifecycle facts', () => {
         expect(
-            commandRequestedEventSchema.safeParse({
+            isSchema(commandRequestedEventSchema, {
                 ...createEvent('command.requested'),
                 payload: {
                     commandType: 'set.power',
                     requestedState: {},
                     requestedBy: 'user',
                 },
-            }).success,
+            }),
         ).toBe(false);
         expect(
-            commandConfirmedEventSchema.safeParse({
+            isSchema(commandConfirmedEventSchema, {
                 ...createEvent('command.confirmed'),
                 payload: {
                     confirmationSource: 'command.failed',
                     matchedState: { power: 'on' },
                 },
-            }).success,
+            }),
         ).toBe(false);
     });
 });
@@ -93,7 +114,7 @@ describe('platform event schemas', () => {
 describe('realtime schemas', () => {
     it('requires dispatchedAt for a pending command', () => {
         expect(
-            roomRealtimeServerMessageSchema.safeParse({
+            isRoomRealtimeServerMessage({
                 messageType: 'room.snapshot',
                 version: 1,
                 sentAt: '2026-06-08T09:30:01Z',
@@ -113,13 +134,13 @@ describe('realtime schemas', () => {
                     ],
                     recentEvents: [],
                 },
-            }).success,
+            }),
         ).toBe(false);
     });
 
     it('accepts only documented active command states and metadata', () => {
         expect(
-            roomRealtimeServerMessageSchema.safeParse(
+            isRoomRealtimeServerMessage(
                 createSnapshotWithActiveCommands([
                     {
                         commandId: 'cmd-accepted',
@@ -130,10 +151,10 @@ describe('realtime schemas', () => {
                         requestedAt: '2026-06-08T09:30:00Z',
                     },
                 ]),
-            ).success,
+            ),
         ).toBe(true);
         expect(
-            roomRealtimeServerMessageSchema.safeParse(
+            isRoomRealtimeServerMessage(
                 createSnapshotWithActiveCommands([
                     {
                         commandId: 'cmd-confirmed',
@@ -145,10 +166,10 @@ describe('realtime schemas', () => {
                         confirmedAt: '2026-06-08T09:30:01Z',
                     },
                 ]),
-            ).success,
+            ),
         ).toBe(false);
         expect(
-            roomRealtimeServerMessageSchema.safeParse(
+            isRoomRealtimeServerMessage(
                 createSnapshotWithActiveCommands([
                     {
                         commandId: 'cmd-accepted',
@@ -160,7 +181,7 @@ describe('realtime schemas', () => {
                         dispatchedAt: '2026-06-08T09:30:01Z',
                     },
                 ]),
-            ).success,
+            ),
         ).toBe(false);
     });
 
@@ -175,15 +196,23 @@ describe('realtime schemas', () => {
         } as const;
 
         expect(
-            roomRealtimeServerMessageSchema.safeParse(
+            isRoomRealtimeServerMessage(
                 createSnapshotWithActiveCommands([
                     activeCommand,
                     { ...activeCommand, commandId: 'cmd-2' },
                 ]),
-            ).success,
+            ),
         ).toBe(false);
         expect(
-            roomRealtimeServerMessageSchema.safeParse({
+            isRoomSnapshotProjection(
+                createSnapshotWithActiveCommands([
+                    activeCommand,
+                    { ...activeCommand, commandId: 'cmd-2' },
+                ]).payload,
+            ),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
                 ...createSnapshotWithActiveCommands([activeCommand]),
                 payload: {
                     ...createSnapshotWithActiveCommands([activeCommand]).payload,
@@ -199,7 +228,7 @@ describe('realtime schemas', () => {
                         },
                     ],
                 },
-            }).success,
+            }),
         ).toBe(false);
     });
 });

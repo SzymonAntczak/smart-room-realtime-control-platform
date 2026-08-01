@@ -1,4 +1,4 @@
-import { eventProcessingDiagnosticsSnapshotSchema } from '@smart-room/contracts';
+import { eventProcessingDiagnosticsSnapshotSchema, isSchema } from '@smart-room/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { createEventProcessingDiagnostics } from './event-processing-diagnostics';
@@ -180,7 +180,7 @@ describe('createEventProcessingDiagnostics', () => {
             },
         ]);
         expect(snapshot.ignoredEvents[0]?.occurredAt).toBeUndefined();
-        expect(eventProcessingDiagnosticsSnapshotSchema.safeParse(snapshot).success).toBe(true);
+        expect(isSchema(eventProcessingDiagnosticsSnapshotSchema, snapshot)).toBe(true);
     });
 
     it('records future-dated reports with normalized metadata', () => {

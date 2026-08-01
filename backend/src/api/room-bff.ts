@@ -1,10 +1,17 @@
 import websocket from '@fastify/websocket';
 import {
+    eventProcessingDiagnosticsSnapshotSchema,
+    isRoomRealtimeServerMessage,
+    isRoomSnapshotProjection,
+    isSchema,
+    normalizeIsoTimestamp,
     type RoomRealtimeServerMessage,
     type RoomSnapshotProjection,
+    roomSnapshotProjectionSchema,
     type TemperatureScenarioAction,
     temperatureScenarioRequestSchema,
     type TemperatureScenarioResult,
+    temperatureScenarioResultSchema,
 } from '@smart-room/contracts';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket } from 'ws';
@@ -52,6 +59,14 @@ export function createRoomBffServer({
             return;
         }
 
+        if (request.url === '/dev/scenarios/temperature' && isInvalidScenarioRequestError(error)) {
+            writeJson(response, 400, {
+                error: 'invalid_request',
+                message: 'Request body contains an unsupported scenario action.',
+            });
+            return;
+        }
+
         void response.send(error);
     });
 
@@ -69,17 +84,62 @@ export function createRoomBffServer({
         });
     });
 
-    server.all('/dev/scenarios/temperature', async (request, response) => {
-        await handleTemperatureScenarioRequest(request, response, handlers.runScenario);
+    server.post(
+        '/dev/scenarios/temperature',
+        {
+            schema: {
+                body: temperatureScenarioRequestSchema,
+                response: {
+                    200: temperatureScenarioResultSchema,
+                    415: {
+                        type: 'object',
+                        properties: {
+                            error: { type: 'string' },
+                            message: { type: 'string' },
+                        },
+                    },
+                },
+            },
+            onRequest(request, response, done) {
+                if (!isJsonMediaType(request.headers['content-type'])) {
+                    void response.code(415).send({
+                        error: 'unsupported_media_type',
+                        message: 'Scenario requests must use application/json.',
+                    });
+                    return;
+                }
+
+                done();
+            },
+        },
+        async (request, response) => {
+            await handleTemperatureScenarioRequest(request, response, handlers.runScenario);
+        },
+    );
+
+    server.route({
+        method: ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        url: '/dev/scenarios/temperature',
+        handler: async (request, response) => {
+            await handleTemperatureScenarioRequest(request, response, handlers.runScenario);
+        },
     });
 
-    server.all('/room', (request, response) => {
-        handleRoomBffRequest(request, response, handlers);
-    });
+    server.all(
+        '/room',
+        { schema: { response: { 200: roomSnapshotProjectionSchema } } },
+        (request, response) => {
+            handleRoomBffRequest(request, response, handlers);
+        },
+    );
 
-    server.all('/diagnostics', (request, response) => {
-        handleRoomBffRequest(request, response, handlers);
-    });
+    server.all(
+        '/diagnostics',
+        { schema: { response: { 200: eventProcessingDiagnosticsSnapshotSchema } } },
+        (request, response) => {
+            handleRoomBffRequest(request, response, handlers);
+        },
+    );
 
     server.setNotFoundHandler((_, response) => {
         writeJson(response, 404, {
@@ -112,11 +172,25 @@ function handleRoomBffRequest(
     }
 
     if (request.routeOptions.url === '/diagnostics') {
-        writeJson(response, 200, handlers.getDiagnosticsSnapshot());
+        const snapshot = handlers.getDiagnosticsSnapshot();
+
+        if (!isSchema(eventProcessingDiagnosticsSnapshotSchema, snapshot)) {
+            writeInvalidServerResponse(response);
+            return;
+        }
+
+        writeJson(response, 200, snapshot);
         return;
     }
 
-    writeJson(response, 200, handlers.getRoomSnapshot());
+    const snapshot = handlers.getRoomSnapshot();
+
+    if (!isRoomSnapshotProjection(snapshot)) {
+        writeInvalidServerResponse(response);
+        return;
+    }
+
+    writeJson(response, 200, snapshot);
 }
 
 async function handleTemperatureScenarioRequest(
@@ -141,20 +215,17 @@ async function handleTemperatureScenarioRequest(
         return;
     }
 
-    let action: TemperatureScenarioAction;
+    const action = (request.body as { action: TemperatureScenarioAction }).action;
 
     try {
-        action = readTemperatureScenarioAction(request.body);
-    } catch (error) {
-        writeJson(response, 400, {
-            error: 'invalid_request',
-            message: error instanceof Error ? error.message : 'Invalid request.',
-        });
-        return;
-    }
+        const result = runScenario(action);
 
-    try {
-        writeJson(response, 200, runScenario(action));
+        if (!isSchema(temperatureScenarioResultSchema, result) || result.action !== action) {
+            writeInvalidServerResponse(response);
+            return;
+        }
+
+        writeJson(response, 200, result);
     } catch {
         writeJson(response, 500, {
             error: 'scenario_failed',
@@ -169,30 +240,6 @@ function setCorsHeaders(response: FastifyReply): void {
     response.header('Access-Control-Allow-Headers', 'Content-Type');
 }
 
-function readTemperatureScenarioAction(value: unknown): TemperatureScenarioAction {
-    if (value === undefined || value === '') {
-        throw new TypeError('Request body must contain a scenario action.');
-    }
-
-    let parsedBody: unknown = value;
-
-    if (typeof value === 'string') {
-        try {
-            parsedBody = JSON.parse(value) as unknown;
-        } catch {
-            throw new TypeError('Request body must be valid JSON.');
-        }
-    }
-
-    const parsed = temperatureScenarioRequestSchema.safeParse(parsedBody);
-
-    if (!parsed.success) {
-        throw new TypeError('Request body contains an unsupported scenario action.');
-    }
-
-    return parsed.data.action;
-}
-
 function writeJson(response: FastifyReply, statusCode: number, body: unknown): void {
     void response
         .code(statusCode)
@@ -200,10 +247,25 @@ function writeJson(response: FastifyReply, statusCode: number, body: unknown): v
         .send(body as Record<string, unknown>);
 }
 
+function writeInvalidServerResponse(response: FastifyReply): void {
+    writeJson(response, 500, {
+        error: 'invalid_server_response',
+        message: 'Server produced a response that does not match the transport contract.',
+    });
+}
+
 function isInvalidJsonBodyError(error: unknown): boolean {
     return (
         error instanceof Error && 'code' in error && error.code === 'FST_ERR_CTP_INVALID_JSON_BODY'
     );
+}
+
+function isInvalidScenarioRequestError(error: unknown): boolean {
+    return error instanceof Error && 'validation' in error;
+}
+
+function isJsonMediaType(contentType: string | undefined): boolean {
+    return contentType?.split(';', 1)[0]?.trim().toLowerCase() === 'application/json';
 }
 
 function sendRoomSnapshot(
@@ -215,12 +277,24 @@ function sendRoomSnapshot(
         return;
     }
 
+    const sentAt = normalizeIsoTimestamp(now());
+
+    if (!sentAt) {
+        socket.close();
+        return;
+    }
+
     const message: RoomRealtimeServerMessage = {
         messageType: 'room.snapshot',
         version: 1,
-        sentAt: now(),
+        sentAt,
         payload: snapshot,
     };
+
+    if (!isRoomRealtimeServerMessage(message)) {
+        socket.close();
+        return;
+    }
 
     try {
         socket.send(JSON.stringify(message), (error) => {
