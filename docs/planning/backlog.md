@@ -24,7 +24,7 @@ behavior.
 - [x] Update stale implementation-status documentation in package README files,
       architecture guidance and trade-off notes so they accurately describe the
       completed Stage 2/2.5 realtime temperature slice.
-- [ ] Make page heading hierarchy scale beyond one device card: keep a single
+- [x] Make page heading hierarchy scale beyond one device card: keep a single
       page-level `h1` and use lower-level headings in reusable device cards.
 - [ ] Select and add a consistent icon set for the UI. Define its usage for
       device status, control actions and feedback states, keeping the choice

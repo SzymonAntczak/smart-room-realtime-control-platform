@@ -30,7 +30,7 @@ export function ControlCard({
             <div className={styles.header}>
                 <div>
                     <p className={styles.eyebrow}>{eyebrow}</p>
-                    <h1 id={titleId}>{title}</h1>
+                    <h2 id={titleId}>{title}</h2>
                 </div>
                 <span
                     className={styles.status}

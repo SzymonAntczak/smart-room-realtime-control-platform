@@ -9,6 +9,7 @@ interface AppProps {
 export function App({ showDevScenarioPanel = import.meta.env.DEV }: AppProps) {
     return (
         <main className={styles.shell}>
+            <h1>Smart Room</h1>
             <TemperatureControl />
             {showDevScenarioPanel ? <TemperatureScenarioDrawer /> : null}
         </main>

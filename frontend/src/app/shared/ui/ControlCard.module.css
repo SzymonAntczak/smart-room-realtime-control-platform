@@ -24,7 +24,7 @@
     text-transform: uppercase;
 }
 
-.header h1 {
+.header h2 {
     margin: 0;
     font-size: var(--font-size-heading-md);
     line-height: var(--line-height-tight);
