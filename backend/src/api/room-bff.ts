@@ -1,5 +1,4 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-
+import websocket from '@fastify/websocket';
 import {
     type RoomRealtimeServerMessage,
     type RoomSnapshotProjection,
@@ -7,7 +6,8 @@ import {
     temperatureScenarioRequestSchema,
     type TemperatureScenarioResult,
 } from '@smart-room/contracts';
-import { WebSocket, WebSocketServer } from 'ws';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import { WebSocket } from 'ws';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 
@@ -25,45 +25,67 @@ export function createRoomBffServer({
     subscribeRoomSnapshot,
     runScenario,
     now = realClock,
-}: RoomBffConfig): Server {
-    const server = createServer((request, response) => {
-        handleRoomBffRequest(request, response, {
-            getRoomSnapshot,
-            getDiagnosticsSnapshot,
-            runScenario,
-        });
-    });
-    const websocketServer = new WebSocketServer({
-        noServer: true,
-    });
+}: RoomBffConfig): FastifyInstance {
+    const server = Fastify();
+    const handlers: RoomBffHandlers = {
+        getRoomSnapshot,
+        getDiagnosticsSnapshot,
+        runScenario,
+    };
 
-    websocketServer.on('connection', (socket) => {
-        const unsubscribe = subscribeRoomSnapshot((snapshot) => {
-            sendRoomSnapshot(socket, snapshot, now);
-        });
-        const cleanup = once(unsubscribe);
+    server.register(websocket);
 
-        socket.on('close', cleanup);
-        socket.on('error', cleanup);
+    server.addHook('onRequest', async (request, response) => {
+        setCorsHeaders(response);
 
-        sendRoomSnapshot(socket, getRoomSnapshot(), now);
+        if (request.method === 'OPTIONS') {
+            await response.code(204).send();
+        }
     });
 
-    server.on('upgrade', (request, socket, head) => {
-        const url = new URL(request.url ?? '/', 'http://localhost');
-
-        if (url.pathname !== '/room/realtime') {
-            socket.destroy();
+    server.setErrorHandler((error, request, response) => {
+        if (request.url === '/dev/scenarios/temperature' && isInvalidJsonBodyError(error)) {
+            writeJson(response, 400, {
+                error: 'invalid_request',
+                message: 'Request body must be valid JSON.',
+            });
             return;
         }
 
-        websocketServer.handleUpgrade(request, socket, head, (websocket) => {
-            websocketServer.emit('connection', websocket, request);
+        void response.send(error);
+    });
+
+    server.after(() => {
+        server.get('/room/realtime', { websocket: true }, (socket) => {
+            const unsubscribe = subscribeRoomSnapshot((snapshot) => {
+                sendRoomSnapshot(socket, snapshot, now);
+            });
+            const cleanup = once(unsubscribe);
+
+            socket.on('close', cleanup);
+            socket.on('error', cleanup);
+
+            sendRoomSnapshot(socket, getRoomSnapshot(), now);
         });
     });
 
-    server.on('close', () => {
-        websocketServer.close();
+    server.all('/dev/scenarios/temperature', async (request, response) => {
+        await handleTemperatureScenarioRequest(request, response, handlers.runScenario);
+    });
+
+    server.all('/room', (request, response) => {
+        handleRoomBffRequest(request, response, handlers);
+    });
+
+    server.all('/diagnostics', (request, response) => {
+        handleRoomBffRequest(request, response, handlers);
+    });
+
+    server.setNotFoundHandler((_, response) => {
+        writeJson(response, 404, {
+            error: 'not_found',
+            message: 'Route not found.',
+        });
     });
 
     return server;
@@ -76,35 +98,12 @@ interface RoomBffHandlers {
 }
 
 function handleRoomBffRequest(
-    request: IncomingMessage,
-    response: ServerResponse,
+    request: FastifyRequest,
+    response: FastifyReply,
     handlers: RoomBffHandlers,
 ): void {
-    setCorsHeaders(response);
-
-    if (request.method === 'OPTIONS') {
-        response.writeHead(204);
-        response.end();
-        return;
-    }
-
-    const url = new URL(request.url ?? '/', 'http://localhost');
-
-    if (url.pathname === '/dev/scenarios/temperature') {
-        void handleTemperatureScenarioRequest(request, response, handlers.runScenario);
-        return;
-    }
-
-    if (url.pathname !== '/room' && url.pathname !== '/diagnostics') {
-        writeJson(response, 404, {
-            error: 'not_found',
-            message: 'Route not found.',
-        });
-        return;
-    }
-
     if (request.method !== 'GET') {
-        response.setHeader('Allow', 'GET, OPTIONS');
+        response.header('Allow', 'GET, OPTIONS');
         writeJson(response, 405, {
             error: 'method_not_allowed',
             message: 'Only GET is supported for this route.',
@@ -112,7 +111,7 @@ function handleRoomBffRequest(
         return;
     }
 
-    if (url.pathname === '/diagnostics') {
+    if (request.routeOptions.url === '/diagnostics') {
         writeJson(response, 200, handlers.getDiagnosticsSnapshot());
         return;
     }
@@ -121,8 +120,8 @@ function handleRoomBffRequest(
 }
 
 async function handleTemperatureScenarioRequest(
-    request: IncomingMessage,
-    response: ServerResponse,
+    request: FastifyRequest,
+    response: FastifyReply,
     runScenario: RoomBffHandlers['runScenario'],
 ): Promise<void> {
     if (!runScenario) {
@@ -134,7 +133,7 @@ async function handleTemperatureScenarioRequest(
     }
 
     if (request.method !== 'POST') {
-        response.setHeader('Allow', 'POST, OPTIONS');
+        response.header('Allow', 'POST, OPTIONS');
         writeJson(response, 405, {
             error: 'method_not_allowed',
             message: 'Only POST is supported for this route.',
@@ -145,8 +144,7 @@ async function handleTemperatureScenarioRequest(
     let action: TemperatureScenarioAction;
 
     try {
-        const body = await readJsonBody(request);
-        action = readTemperatureScenarioAction(body);
+        action = readTemperatureScenarioAction(request.body);
     } catch (error) {
         writeJson(response, 400, {
             error: 'invalid_request',
@@ -165,34 +163,28 @@ async function handleTemperatureScenarioRequest(
     }
 }
 
-function setCorsHeaders(response: ServerResponse): void {
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
-
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-    const chunks: Buffer[] = [];
-
-    for await (const chunk of request) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-
-    const content = Buffer.concat(chunks).toString('utf8');
-
-    if (!content) {
-        throw new TypeError('Request body must contain a scenario action.');
-    }
-
-    try {
-        return JSON.parse(content) as unknown;
-    } catch {
-        throw new TypeError('Request body must be valid JSON.');
-    }
+function setCorsHeaders(response: FastifyReply): void {
+    response.header('Access-Control-Allow-Origin', '*');
+    response.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.header('Access-Control-Allow-Headers', 'Content-Type');
 }
 
 function readTemperatureScenarioAction(value: unknown): TemperatureScenarioAction {
-    const parsed = temperatureScenarioRequestSchema.safeParse(value);
+    if (value === undefined || value === '') {
+        throw new TypeError('Request body must contain a scenario action.');
+    }
+
+    let parsedBody: unknown = value;
+
+    if (typeof value === 'string') {
+        try {
+            parsedBody = JSON.parse(value) as unknown;
+        } catch {
+            throw new TypeError('Request body must be valid JSON.');
+        }
+    }
+
+    const parsed = temperatureScenarioRequestSchema.safeParse(parsedBody);
 
     if (!parsed.success) {
         throw new TypeError('Request body contains an unsupported scenario action.');
@@ -201,11 +193,17 @@ function readTemperatureScenarioAction(value: unknown): TemperatureScenarioActio
     return parsed.data.action;
 }
 
-function writeJson(response: ServerResponse, statusCode: number, body: unknown): void {
-    response.writeHead(statusCode, {
-        'Content-Type': 'application/json',
-    });
-    response.end(JSON.stringify(body));
+function writeJson(response: FastifyReply, statusCode: number, body: unknown): void {
+    void response
+        .code(statusCode)
+        .type('application/json')
+        .send(body as Record<string, unknown>);
+}
+
+function isInvalidJsonBodyError(error: unknown): boolean {
+    return (
+        error instanceof Error && 'code' in error && error.code === 'FST_ERR_CTP_INVALID_JSON_BODY'
+    );
 }
 
 function sendRoomSnapshot(

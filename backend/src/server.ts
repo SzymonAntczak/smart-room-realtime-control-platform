@@ -14,11 +14,20 @@ const server = createRoomBffServer({
     runScenario: enableDevScenarioControls ? runtime.runScenario : undefined,
 });
 
-runtime.start();
+await startServer();
 
-server.listen(port, () => {
+async function startServer(): Promise<void> {
+    runtime.start();
+
+    try {
+        await server.listen({ port });
+    } catch (error) {
+        runtime.stop();
+        throw error;
+    }
+
     console.log(`Smart Room BFF listening on http://localhost:${port}`);
-});
+}
 
 function readPort(value: string | undefined): number {
     if (value === undefined) {

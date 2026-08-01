@@ -1,7 +1,7 @@
-import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
+import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 
@@ -11,7 +11,7 @@ import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtim
 import { createRoomBffServer } from './room-bff';
 
 describe('createRoomBffServer', () => {
-    const openServers: Server[] = [];
+    const openServers: FastifyInstance[] = [];
     const openSockets: WebSocket[] = [];
 
     afterEach(async () => {
@@ -219,6 +219,30 @@ describe('createRoomBffServer', () => {
         expect(response.status).toBe(400);
         await expect(response.json()).resolves.toMatchObject({
             error: 'invalid_request',
+        });
+    });
+
+    it('reports malformed development scenario JSON as an invalid request', async () => {
+        const server = await listen(
+            createRoomBffServer({
+                ...createRoomBffConfig(),
+                runScenario(action) {
+                    return { action, status: 'completed' };
+                },
+            }),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{invalid',
+        });
+
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toEqual({
+            error: 'invalid_request',
+            message: 'Request body must be valid JSON.',
         });
     });
 
@@ -497,42 +521,32 @@ function createDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot {
     };
 }
 
-function listen(server: Server): Promise<Server> {
-    return new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', () => {
-            server.off('error', reject);
-            resolve(server);
-        });
+async function listen(server: FastifyInstance): Promise<FastifyInstance> {
+    await server.listen({
+        port: 0,
+        host: '127.0.0.1',
     });
+
+    return server;
 }
 
-function closeServer(server: Server): Promise<void> {
-    return new Promise((resolve, reject) => {
-        server.close((error) => {
-            if (error) {
-                reject(error);
-                return;
-            }
-
-            resolve();
-        });
-    });
+async function closeServer(server: FastifyInstance): Promise<void> {
+    await server.close();
 }
 
-function serverUrl(server: Server): string {
-    const address = server.address() as AddressInfo;
+function serverUrl(server: FastifyInstance): string {
+    const address = server.server.address() as AddressInfo;
 
     return `http://127.0.0.1:${address.port}`;
 }
 
-function websocketUrl(server: Server): string {
-    const address = server.address() as AddressInfo;
+function websocketUrl(server: FastifyInstance): string {
+    const address = server.server.address() as AddressInfo;
 
     return `ws://127.0.0.1:${address.port}/room/realtime`;
 }
 
-function connectWebSocket(server: Server): WebSocket {
+function connectWebSocket(server: FastifyInstance): WebSocket {
     return new WebSocket(websocketUrl(server));
 }
 

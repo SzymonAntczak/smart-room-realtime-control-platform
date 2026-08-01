@@ -4,10 +4,16 @@ This list records small technical follow-ups deliberately deferred during
 implementation. It does not repeat the product roadmap or define system
 behavior.
 
-- [ ] Migrate the backend HTTP runtime from the direct Node.js server to
+- [x] Migrate the backend HTTP runtime from the direct Node.js server to
       Fastify. Preserve the existing local BFF responsibilities, development
       scenario endpoints and `room.snapshot` WebSocket contract; choose and test
       the WebSocket integration before starting the migration.
+- [ ] Migrate shared transport contracts from Zod-first schemas to JSON Schema
+      authored with TypeBox. Make JSON Schema the canonical contract format, use
+      Fastify's native Ajv validation and response serialization for HTTP, and
+      validate WebSocket messages at their transport boundary. Preserve existing
+      event, BFF and `room.snapshot` behavior; document the decision in an ADR
+      before treating the new standard as binding.
 - [x] Define and validate native-device to platform-device identity mapping at
       adapter boundaries. An adapter instance is bound to one native ID and one
       platform ID; reject unexpected native IDs. Introduce a mapping registry only
