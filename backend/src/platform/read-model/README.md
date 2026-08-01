@@ -1,8 +1,8 @@
 # Read Model
 
 The read model owns backend projections derived from accepted platform events.
-Future realtime API or BFF code should read these projections instead of
-interpreting raw device-native messages.
+The current realtime API/BFF reads these projections instead of interpreting
+raw device-native messages.
 
 ## Contents
 

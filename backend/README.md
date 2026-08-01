@@ -2,8 +2,15 @@
 
 The backend owns the local platform boundary between device-like sources and
 the realtime UI. It translates external observations into platform events,
-validates those events, derives backend read-model projections and will expose
-UI-oriented realtime APIs.
+validates and deduplicates them, derives backend read-model projections, and
+exposes UI-oriented realtime APIs.
+
+The completed Stage 2/2.5 temperature slice runs a simulated sensor through
+the adapter, event processor, projection and realtime BFF. It broadcasts
+time-derived `stale` and `offline` health changes even while telemetry is
+paused. Its development-only scenario endpoint drives the same simulator and
+event path as normal readings; ignored duplicates and invalid payloads are
+available through diagnostics. Command handling remains a later slice.
 
 ## Structure
 

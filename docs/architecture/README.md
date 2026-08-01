@@ -36,10 +36,13 @@ behavior:
 
 ## Rules To Preserve
 
-The current Stage 1 implementation starts with a smaller read-only slice: one
-simulated temperature sensor with realtime UI updates. The broader control
-rules below remain the target model for later slices, not requirements for this
-first implementation step.
+The completed Stage 2/2.5 implementation is a read-only simulated temperature
+reference slice. It uses the backend adapter, event processor, read-model
+projection and realtime BFF; the UI exposes current telemetry, recent events,
+reconnect feedback and `stale`/`offline` health. Development-only controls
+exercise normal and failure scenarios through that same backend-owned path.
+The broader command rules below remain the target model for the later LED
+control slice.
 
 - Events are facts that already happened.
 - Commands are requests for something to happen.

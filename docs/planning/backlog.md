@@ -21,7 +21,7 @@ behavior.
 - [x] Recover the realtime frontend after an invalid `room.snapshot`. Preserve
       the last valid snapshot, expose the contract error and reconnect or provide a
       visible retry path; cover invalid-message recovery with a test.
-- [ ] Update stale implementation-status documentation in package README files,
+- [x] Update stale implementation-status documentation in package README files,
       architecture guidance and trade-off notes so they accurately describe the
       completed Stage 2/2.5 realtime temperature slice.
 - [ ] Make page heading hierarchy scale beyond one device card: keep a single

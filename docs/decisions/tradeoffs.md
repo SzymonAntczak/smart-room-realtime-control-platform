@@ -91,7 +91,7 @@ snapshots can be used for current reads.
 
 Status: keep as trade-off for now.
 
-## Stage 1 Runtime Reset
+## Stage 1 Runtime Reset (Superseded)
 
 Decision: withdraw the dedicated Stage 1 runtime ADR and restart implementation
 from a smaller read-only temperature sensor slice.
@@ -102,13 +102,17 @@ large before the project had a simple realtime read path.
 Benefit: the project can rebuild confidence with one understandable sensor,
 less frontend scaffold and fewer runtime assumptions.
 
-Cost: backend, WebSocket transport, command handling and the separate simulator
-runtime are deferred again.
+Cost at the time: backend, WebSocket transport, command handling and the
+separate simulator runtime were deferred while the read path was simplified.
 
-Consequence: the first implementation may simulate realtime readings inside the
-frontend temporarily, while the broader architecture remains a later target.
+Consequence: this reset established the narrow read-path starting point. The
+completed Stage 2/2.5 slice has since replaced the temporary frontend-only
+approach with a simulator, backend adapter, event processor, read-model
+projection, WebSocket BFF and development scenario controls. Command handling
+remains the next separate slice.
 
-Status: keep as trade-off for now.
+Status: historical trade-off; superseded by the completed Stage 2/2.5
+temperature reference slice.
 
 ## AI As Implementation Assistant
 

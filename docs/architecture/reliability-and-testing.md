@@ -10,17 +10,21 @@
 
 ## Failure Modes To Simulate
 
-The simulator should eventually cover:
+The completed temperature reference slice covers the following read-path
+scenarios through automated tests and development controls where applicable:
 
-- delayed confirmations
-- command rejection
 - lost telemetry event
 - duplicate telemetry event
-- future-dated device report
 - device goes stale
 - device goes offline
-- degraded device reporting partial data
-- late confirmation after command timeout
+- device recovers with a fresh reading
+- invalid telemetry payload
+- realtime stream reconnect while retaining the last valid snapshot
+
+Future command slices should add delayed confirmations, command rejection,
+degraded reports and late confirmation after timeout. Future-dated device
+reports are already rejected by the platform event contract and are covered by
+backend tests; they do not yet have a manual scenario control.
 
 ## Observability
 

@@ -2,10 +2,13 @@
 
 React, TypeScript and Vite control surface for the Smart Room realtime platform.
 
-The current Stage 1 implementation is intentionally small: one read-only
-simulated temperature sensor with a realtime-updating frontend value. Broader
-control behavior, backend realtime transport and simulator integration remain
-later slices.
+The completed Stage 2/2.5 reference slice is a read-only simulated temperature
+sensor backed by the local realtime runtime. The UI receives `room.snapshot`
+updates over WebSocket, keeps the last valid reading during reconnects, makes
+`stale` and `offline` health visible, and shows recent accepted temperature
+events. A development-only scenario panel controls the simulator through the
+backend and displays ignored-event diagnostics; it is separate from the
+user-facing room surface. Command controls remain a later slice.
 
 ## Source Of Truth
 
@@ -40,9 +43,13 @@ Use `npm run format:write` only when intentionally updating formatting.
 ## Verification Focus
 
 Before finishing frontend work, prefer the narrowest useful checks and make sure
-the current slice still shows:
+the completed temperature slice still shows:
 
 - the temperature sensor name
 - the current temperature value and unit
 - the last reading time
-- a visible simulated realtime source/status
+- realtime connection and device-health status, including stale and offline
+  states while retaining the last known reading
+- recent accepted temperature events that explain the current reading
+- reconnect and invalid-realtime-contract feedback without rendering invalid
+  room state

@@ -27,10 +27,11 @@ The architecture is organized around the main domain concepts, not around implem
 
 ## Incremental Read Path
 
-The architecture can be built in smaller slices before the full smart-room
-model exists. A minimal read path may start as a read-only realtime view of one
-simulated temperature sensor before backend transport, command handling and
-storage are introduced.
+The architecture is built in smaller slices before the full smart-room model
+exists. The completed first reference slice is a read-only realtime view of one
+simulated temperature sensor, implemented through backend transport, adapter
+translation, event processing and a derived room projection. Command handling
+and durable storage remain later responsibilities.
 
 A minimal read path should show:
 
@@ -40,9 +41,10 @@ A minimal read path should show:
 - the last reading time
 - that the value is coming from simulated realtime updates
 
-This early slice does not define the long-term runtime topology. Backend
-adapters, event processing, event history, stale/offline handling and command
-flows are added as later slices while preserving the same platform model.
+This read-only slice does not define the long-term command topology. It already
+includes backend adapters, event processing, recent event history and
+stale/offline handling; later command slices must preserve the same platform
+model.
 
 ## Target MVP Scope
 
@@ -220,12 +222,22 @@ This keeps the architecture easier to reason about and makes failures more expli
 
 ## Current Implementation Status
 
-The current backend-backed slice starts with the read-only telemetry path for a
-simulated temperature sensor. It includes a simulator adapter, event processor
-and read-model projection for `telemetry.reading.recorded` events. The frontend
-runtime receives UI-oriented `room.snapshot` messages over WebSocket from the
-local backend BFF. `GET /room` remains available as a debug/read snapshot
-endpoint, but it is not the frontend fallback path.
+The completed Stage 2/2.5 backend-backed reference slice is the read-only
+telemetry path for a simulated temperature sensor. It includes a simulator
+adapter, event processor with validation and deduplication, and a read-model
+projection for `telemetry.reading.recorded` events. The frontend receives
+UI-oriented `room.snapshot` messages over WebSocket from the local backend BFF,
+including periodic snapshots that make time-derived `stale` and `offline`
+health changes visible when telemetry stops. The projection retains recent
+accepted temperature events; ignored duplicate and invalid events are exposed
+only through bounded development diagnostics. `GET /room` remains available as
+a debug/read snapshot endpoint, but it is not the frontend fallback path.
+
+The local development runtime also provides scenario controls for pause,
+resume, next-reading, replay, invalid-reading and reset actions. They operate
+the simulator through the normal adapter and event-processing path rather than
+mutating frontend state. They are not product controls and remain disabled
+unless the development scenario flag is set.
 
 Command lifecycle processing, confirmation matching, command projections,
 persistence and quarantine storage remain target responsibilities for later
