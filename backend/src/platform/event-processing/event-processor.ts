@@ -10,12 +10,16 @@ import type {
     RoomProjection,
     RoomProjector,
 } from '../read-model/room-projection';
+import { createEventDeduplicator, type EventDeduplicationClock } from './event-deduplicator';
 
 export type { DeviceDefinition } from '../read-model/room-projection';
 
 export interface EventProcessorConfig {
     devices: DeviceDefinition[];
     roomProjector: RoomProjector;
+    clock?: EventDeduplicationClock;
+    deduplicationRetentionMs?: number;
+    deduplicationEntryLimit?: number;
 }
 
 export type EventProcessorState = RoomProjection;
@@ -24,6 +28,7 @@ export type EventProcessingResult =
     | {
           status: 'accepted';
           state: EventProcessorState;
+          deduplicationEvictedEventIds?: string[];
       }
     | {
           status: 'ignored';
@@ -46,9 +51,16 @@ export interface EventProcessor {
 export function createEventProcessor({
     devices,
     roomProjector,
+    clock = realClock,
+    deduplicationRetentionMs,
+    deduplicationEntryLimit,
 }: EventProcessorConfig): EventProcessor {
     const deviceDefinitions = new Map(devices.map((device) => [device.deviceId, device]));
-    const seenEventIds = new Set<string>();
+    const deduplicator = createEventDeduplicator({
+        clock,
+        retentionMs: deduplicationRetentionMs,
+        entryLimit: deduplicationEntryLimit,
+    });
 
     return {
         processEvent(candidateEvent) {
@@ -64,7 +76,7 @@ export function createEventProcessor({
 
             const event = candidateEvent;
 
-            if (seenEventIds.has(event.eventId)) {
+            if (deduplicator.has(event.eventId)) {
                 return ignored('duplicate_event');
             }
 
@@ -102,15 +114,24 @@ export function createEventProcessor({
                 payload: event.payload,
             };
 
-            seenEventIds.add(event.eventId);
+            const deduplicationEvictedEventIds = deduplicator.remember(event.eventId);
 
             return {
                 status: 'accepted',
                 state: roomProjector.applyTelemetryReadingRecorded(acceptedEvent),
+                ...(deduplicationEvictedEventIds.length > 0
+                    ? { deduplicationEvictedEventIds }
+                    : {}),
             };
         },
     };
 }
+
+const realClock: EventDeduplicationClock = {
+    now() {
+        return new Date().toISOString();
+    },
+};
 
 function isPlatformEventEnvelope(value: unknown): value is PlatformEventEnvelope {
     if (!isRecord(value)) {

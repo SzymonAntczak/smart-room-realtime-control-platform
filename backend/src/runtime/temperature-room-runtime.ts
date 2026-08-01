@@ -34,6 +34,8 @@ export interface TemperatureRoomRuntimeConfig {
     timer?: TimerScheduler;
     generateEventId?: () => string;
     diagnosticEventLimit?: number;
+    deduplicationRetentionMs?: number;
+    deduplicationEntryLimit?: number;
 }
 
 export interface TemperatureRoomRuntime {
@@ -65,6 +67,8 @@ export function createTemperatureRoomRuntime({
     timer,
     generateEventId = randomUUID,
     diagnosticEventLimit,
+    deduplicationRetentionMs,
+    deduplicationEntryLimit,
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
     const sensor = createTemperatureSensorScenario({
         sensorId: 'temp-desk-native',
@@ -78,6 +82,8 @@ export function createTemperatureRoomRuntime({
     const processor = createEventProcessor({
         devices: defaultDevices,
         roomProjector,
+        deduplicationRetentionMs,
+        deduplicationEntryLimit,
     });
     const diagnostics = createEventProcessingDiagnostics({
         clock,
@@ -141,33 +147,7 @@ export function createTemperatureRoomRuntime({
 
             const observedAt = clock.now();
 
-            switch (action) {
-                case 'pause_telemetry':
-                    sensorRuntime.stop();
-                    sensor.pauseTelemetry(observedAt);
-                    break;
-                case 'resume_telemetry':
-                    sensor.resumeTelemetry(observedAt);
-                    sensorRuntime.start();
-                    break;
-                case 'replay_last_reading':
-                    sensor.replayLastReading();
-                    break;
-                case 'emit_invalid_reading':
-                    sensor.emitInvalidReading(observedAt);
-                    break;
-                case 'emit_next_reading':
-                    sensor.tick(observedAt);
-                    break;
-                case 'reset':
-                    sensorRuntime.stop();
-                    adapter?.stop();
-                    sensor.reset();
-                    adapter = createAdapter();
-                    sensor.tick(observedAt);
-                    sensorRuntime.start();
-                    break;
-            }
+            runScenarioAction(action, observedAt);
 
             return {
                 action,
@@ -175,6 +155,38 @@ export function createTemperatureRoomRuntime({
             };
         },
     };
+
+    function runScenarioAction(action: TemperatureScenarioAction, observedAt: string): void {
+        const scenarioHandlers = {
+            pause_telemetry(observedAt: string) {
+                sensorRuntime.stop();
+                sensor.pauseTelemetry(observedAt);
+            },
+            resume_telemetry(observedAt: string) {
+                sensor.resumeTelemetry(observedAt);
+                sensorRuntime.start();
+            },
+            replay_last_reading() {
+                sensor.replayLastReading();
+            },
+            emit_invalid_reading(observedAt: string) {
+                sensor.emitInvalidReading(observedAt);
+            },
+            emit_next_reading(observedAt: string) {
+                sensor.tick(observedAt);
+            },
+            reset(observedAt: string) {
+                sensorRuntime.stop();
+                adapter?.stop();
+                sensor.reset();
+                adapter = createAdapter();
+                sensor.tick(observedAt);
+                sensorRuntime.start();
+            },
+        } satisfies Record<TemperatureScenarioAction, (observedAt: string) => void>;
+
+        scenarioHandlers[action](observedAt);
+    }
 
     function createAdapter(): SimulatorTemperatureAdapter {
         return createSimulatorTemperatureAdapter({

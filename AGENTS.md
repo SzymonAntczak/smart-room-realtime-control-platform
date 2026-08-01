@@ -44,6 +44,13 @@ AI is an implementation assistant here, not the owner of the architecture.
 - Use `as const`, `satisfies`, utility types and narrow type guards where they
   clarify intent.
 - Avoid stringly typed state when a named type would better express the domain.
+- Consider time and memory complexity when choosing collections, loops and data
+  transformations. Use `Map` or `Set` for repeated or hot key lookups and
+  membership checks; keep a one-off scan of a small array when it is clearer
+  and not performance-sensitive.
+- Do not add indexes or caches without a demonstrated need: account for their
+  memory, maintenance cost and added complexity. Prefer named lookup data over
+  long `if`/`else` chains when modeling a known set of variants.
 
 ## Repository Structure
 

@@ -10,6 +10,12 @@ import type {
     PlatformEventType,
     RoomRealtimeServerMessage,
 } from '../../../../../shared/src/contracts';
+import {
+    commandAvailabilityPolicies,
+    deviceHealthStates,
+    deviceRoles,
+} from '../../../../../shared/src/devices';
+import { platformEventSources, platformEventTypes } from '../../../../../shared/src/events';
 
 const defaultRoomRealtimeUrl = 'ws://localhost:4310/room/realtime';
 const defaultReconnectDelayMs = 1000;
@@ -266,17 +272,11 @@ function isRenderableTemperatureDevice(device: DeviceProjection): device is Devi
 }
 
 function isDeviceRole(value: unknown): value is DeviceRole {
-    return (
-        value === 'temperature-sensor' ||
-        value === 'humidity-sensor' ||
-        value === 'motion-sensor' ||
-        value === 'ambient-light-sensor' ||
-        value === 'led-output'
-    );
+    return typeof value === 'string' && deviceRoles.some((role) => role === value);
 }
 
 function isDeviceHealth(value: unknown): value is DeviceHealth {
-    return value === 'online' || value === 'stale' || value === 'offline' || value === 'degraded';
+    return typeof value === 'string' && deviceHealthStates.some((health) => health === value);
 }
 
 function isEventFeedItemProjection(value: unknown): value is EventFeedItemProjection {
@@ -296,20 +296,11 @@ function isEventFeedItemProjection(value: unknown): value is EventFeedItemProjec
 }
 
 function isPlatformEventType(value: unknown): value is PlatformEventType {
-    return (
-        value === 'device.state.reported' ||
-        value === 'device.health.changed' ||
-        value === 'telemetry.reading.recorded' ||
-        value === 'command.requested' ||
-        value === 'command.dispatched' ||
-        value === 'command.confirmed' ||
-        value === 'command.failed' ||
-        value === 'command.timed_out'
-    );
+    return typeof value === 'string' && platformEventTypes.some((eventType) => eventType === value);
 }
 
 function isPlatformEventSource(value: unknown): value is PlatformEventSource {
-    return value === 'simulator-adapter' || value === 'hardware-adapter' || value === 'backend';
+    return typeof value === 'string' && platformEventSources.some((source) => source === value);
 }
 
 function isCommandAvailability(value: unknown): value is CommandAvailability {
@@ -324,7 +315,9 @@ function isCommandAvailability(value: unknown): value is CommandAvailability {
 }
 
 function isCommandAvailabilityPolicy(value: unknown): value is CommandAvailabilityPolicy {
-    return value === 'allow' || value === 'allow_with_warning' || value === 'block';
+    return (
+        typeof value === 'string' && commandAvailabilityPolicies.some((policy) => policy === value)
+    );
 }
 
 function isDeviceState(value: unknown): value is DeviceState {

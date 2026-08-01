@@ -1,10 +1,11 @@
 import { createRoomBffServer } from './api/room-bff';
 import { isDevScenarioControlsEnabled } from './api/dev-scenario-controls';
 import { createTemperatureRoomRuntime } from './runtime/temperature-room-runtime';
+import { readDeduplicationRuntimeConfig } from './runtime/deduplication-runtime-config';
 
 const defaultPort = 4310;
 const port = readPort(process.env.PORT);
-const runtime = createTemperatureRoomRuntime();
+const runtime = createTemperatureRoomRuntime(readDeduplicationRuntimeConfig(process.env));
 const enableDevScenarioControls = isDevScenarioControlsEnabled(process.env.ENABLE_DEV_SCENARIOS);
 const server = createRoomBffServer({
     getRoomSnapshot: runtime.getRoomSnapshot,

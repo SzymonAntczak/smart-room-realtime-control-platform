@@ -1,17 +1,22 @@
 import type { CommandRequestedBy, CommandType } from './commands';
 import type { DeviceHealth, DeviceState } from './devices';
 
-export type PlatformEventType =
-    | 'device.state.reported'
-    | 'device.health.changed'
-    | 'telemetry.reading.recorded'
-    | 'command.requested'
-    | 'command.dispatched'
-    | 'command.confirmed'
-    | 'command.failed'
-    | 'command.timed_out';
+export const platformEventTypes = [
+    'device.state.reported',
+    'device.health.changed',
+    'telemetry.reading.recorded',
+    'command.requested',
+    'command.dispatched',
+    'command.confirmed',
+    'command.failed',
+    'command.timed_out',
+] as const;
 
-export type PlatformEventSource = 'simulator-adapter' | 'hardware-adapter' | 'backend';
+export type PlatformEventType = (typeof platformEventTypes)[number];
+
+export const platformEventSources = ['simulator-adapter', 'hardware-adapter', 'backend'] as const;
+
+export type PlatformEventSource = (typeof platformEventSources)[number];
 
 export type PlatformEventVersion = 1;
 

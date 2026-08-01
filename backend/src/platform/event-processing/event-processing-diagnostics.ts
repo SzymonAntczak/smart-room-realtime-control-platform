@@ -1,4 +1,5 @@
 import type {
+    DeduplicationEvictionDiagnostic,
     EventProcessingDiagnosticsSnapshot,
     IgnoredEventDiagnostic,
 } from '../../../../shared/src/dev-diagnostics';
@@ -28,11 +29,21 @@ export function createEventProcessingDiagnostics({
     diagnosticEventLimit = 50,
 }: EventProcessingDiagnosticsConfig): EventProcessingDiagnostics {
     const ignoredEvents: IgnoredEventDiagnostic[] = [];
+    const deduplicationEvictions: DeduplicationEvictionDiagnostic[] = [];
     let nextDiagnosticNumber = 1;
 
     return {
         recordProcessingResult(event, result) {
-            if (result.status !== 'ignored') {
+            if (result.status === 'accepted') {
+                for (const evictedEventId of result.deduplicationEvictedEventIds ?? []) {
+                    deduplicationEvictions.unshift({
+                        diagnosticId: `dedupe-${nextDiagnosticNumber}`,
+                        evictedEventId,
+                        observedAt: clock.now(),
+                    });
+                    nextDiagnosticNumber += 1;
+                }
+                deduplicationEvictions.splice(diagnosticEventLimit);
                 return;
             }
 
@@ -48,6 +59,13 @@ export function createEventProcessingDiagnostics({
         getSnapshot() {
             return {
                 ignoredEvents: ignoredEvents.map((event) => ({ ...event })),
+                ...(deduplicationEvictions.length > 0
+                    ? {
+                          deduplicationEvictions: deduplicationEvictions.map((event) => ({
+                              ...event,
+                          })),
+                      }
+                    : {}),
             };
         },
     };

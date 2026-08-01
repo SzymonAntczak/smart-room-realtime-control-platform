@@ -24,6 +24,13 @@ export interface IgnoredEventDiagnostic {
 
 export interface EventProcessingDiagnosticsSnapshot {
     ignoredEvents: IgnoredEventDiagnostic[];
+    deduplicationEvictions?: DeduplicationEvictionDiagnostic[];
+}
+
+export interface DeduplicationEvictionDiagnostic {
+    diagnosticId: string;
+    evictedEventId: string;
+    observedAt: string;
 }
 
 export function isIgnoredEventReason(value: unknown): value is IgnoredEventReason {

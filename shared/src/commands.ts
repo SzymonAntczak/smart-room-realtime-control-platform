@@ -1,10 +1,16 @@
 import type { DeviceState, PowerState } from './devices';
 
-export type CommandStatus = 'idle' | 'pending' | 'confirmed' | 'failed' | 'timed_out';
+export const commandStatuses = ['idle', 'pending', 'confirmed', 'failed', 'timed_out'] as const;
 
-export type CommandType = 'set.power';
+export type CommandStatus = (typeof commandStatuses)[number];
 
-export type CommandRequestedBy = 'user' | 'automation';
+export const commandTypes = ['set.power'] as const;
+
+export type CommandType = (typeof commandTypes)[number];
+
+export const commandRequestedByValues = ['user', 'automation'] as const;
+
+export type CommandRequestedBy = (typeof commandRequestedByValues)[number];
 
 export interface SetPowerCommandRequest {
     deviceId: string;

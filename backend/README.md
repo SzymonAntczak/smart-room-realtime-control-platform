@@ -26,5 +26,10 @@ frontend runtime reads room state from `ws://localhost:4310/room/realtime`.
 endpoint. Runtime event processing diagnostics are available at
 `GET http://localhost:4310/diagnostics`. The port can be overridden with `PORT`.
 
+The in-memory event deduplicator can be configured at server startup with
+`DEDUPLICATION_RETENTION_MS` (default `600000`) and
+`DEDUPLICATION_ENTRY_LIMIT` (default `1000`). Both values must be positive safe
+integers; an invalid value prevents the server from starting.
+
 Use the repository architecture docs and accepted ADRs as the source of truth
 for event, command, device and reliability behavior.

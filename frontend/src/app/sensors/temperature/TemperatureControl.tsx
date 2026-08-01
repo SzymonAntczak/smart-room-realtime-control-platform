@@ -1,81 +1,20 @@
-import { useEffect, useState } from 'react';
 import { ControlCard } from '../../shared/ui/ControlCard';
 import styles from './TemperatureControl.module.css';
 import {
-    connectTemperatureRealtime,
     type TemperatureEventFeedItem,
-    type TemperatureRealtimeConnectionStatus,
     type TemperatureSensorReading,
-    type TemperatureSnapshotResult,
 } from './room-realtime-client';
-
-type TemperatureControlState =
-    | {
-          status: 'connecting';
-          connectionStatus: Extract<
-              TemperatureRealtimeConnectionStatus,
-              'connecting' | 'reconnecting'
-          >;
-      }
-    | {
-          status: 'ready';
-          reading: TemperatureSensorReading;
-          connectionStatus: Extract<
-              TemperatureRealtimeConnectionStatus,
-              'connected' | 'reconnecting'
-          >;
-      }
-    | {
-          status: 'empty';
-          connectionStatus: Extract<
-              TemperatureRealtimeConnectionStatus,
-              'connected' | 'reconnecting'
-          >;
-      }
-    | {
-          status: 'error';
-          message: string;
-      };
+import { useTemperatureRealtime, type TemperatureControlState } from './use-temperature-realtime';
 
 export function TemperatureControl() {
-    const [controlState, setControlState] = useState<TemperatureControlState>({
-        status: 'connecting',
-        connectionStatus: 'connecting',
-    });
+    return <TemperatureControlView state={useTemperatureRealtime()} />;
+}
 
-    useEffect(() => {
-        const connection = connectTemperatureRealtime({
-            onConnectionStatus(connectionStatus) {
-                setControlState((currentState) => {
-                    if (currentState.status === 'ready' || currentState.status === 'empty') {
-                        return withConnectionStatus(
-                            currentState,
-                            toSnapshotConnectionStatus(connectionStatus),
-                        );
-                    }
-
-                    return {
-                        status: 'connecting',
-                        connectionStatus: toConnectingStatus(connectionStatus),
-                    };
-                });
-            },
-            onSnapshot(snapshot) {
-                setControlState(toConnectedControlState(snapshot));
-            },
-            onInvalidMessage() {
-                setControlState({
-                    status: 'error',
-                    message: 'Realtime room stream sent an invalid snapshot.',
-                });
-            },
-        });
-
-        return () => {
-            connection.close();
-        };
-    }, []);
-
+export function TemperatureControlView({
+    state: controlState,
+}: {
+    state: TemperatureControlState;
+}) {
     if (controlState.status === 'connecting') {
         return (
             <ControlCard
@@ -168,51 +107,6 @@ export function TemperatureControl() {
             <TemperatureEventFeed events={reading.recentEvents} />
         </ControlCard>
     );
-}
-
-function toConnectedControlState(snapshot: TemperatureSnapshotResult): TemperatureControlState {
-    if (snapshot.status === 'empty') {
-        return {
-            status: 'empty',
-            connectionStatus: 'connected',
-        };
-    }
-
-    return {
-        status: 'ready',
-        reading: snapshot.reading,
-        connectionStatus: 'connected',
-    };
-}
-
-function withConnectionStatus(
-    state: Extract<TemperatureControlState, { status: 'ready' | 'empty' }>,
-    connectionStatus: Extract<TemperatureRealtimeConnectionStatus, 'connected' | 'reconnecting'>,
-): TemperatureControlState {
-    return {
-        ...state,
-        connectionStatus,
-    };
-}
-
-function toSnapshotConnectionStatus(
-    connectionStatus: TemperatureRealtimeConnectionStatus,
-): Extract<TemperatureRealtimeConnectionStatus, 'connected' | 'reconnecting'> {
-    if (connectionStatus === 'connected') {
-        return 'connected';
-    }
-
-    return 'reconnecting';
-}
-
-function toConnectingStatus(
-    connectionStatus: TemperatureRealtimeConnectionStatus,
-): Extract<TemperatureRealtimeConnectionStatus, 'connecting' | 'reconnecting'> {
-    if (connectionStatus === 'connecting' || connectionStatus === 'connected') {
-        return 'connecting';
-    }
-
-    return 'reconnecting';
 }
 
 function formatReadingTime(recordedAt: string): string {

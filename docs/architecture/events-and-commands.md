@@ -180,6 +180,15 @@ observable state.
 - Events with valid envelopes but invalid payloads should be stored in the
   quarantine stream, not applied to derived state.
 
+## In-Memory Deduplication Retention
+
+The current in-memory processor rejects an accepted `eventId` for ten minutes.
+It retains at most 1000 identifiers; when that limit is reached, it removes the
+oldest identifier and records a metadata-only deduplication eviction diagnostic.
+This bounds memory, but high event volume can shorten the effective retention
+window. The guarantee ends when the process restarts; durable deduplication is
+a future storage responsibility.
+
 ## Naming Rules
 
 - Event names should use past-tense facts, for example `command.dispatched`.

@@ -24,6 +24,13 @@ enough to render documented behavior honestly.
   clear interaction reason.
 - Keep component code focused on rendering documented projections instead of
   redefining domain semantics.
+- Give each component, hook and module one cohesive responsibility. Pass data
+  and actions to presentational components through props; keep realtime,
+  transport and contract-adaptation integration in domain hooks or modules.
+- Keep external-source dependencies at module boundaries so UI behavior can be
+  tested without transport. Extend behavior through composition and small,
+  explicit contracts instead of growing conditional components; do not add
+  abstractions, interfaces or indirection without a second real use.
 
 ## Contract Boundary
 
