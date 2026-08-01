@@ -32,9 +32,12 @@ simulator-native commands and model common edge cases such as latency, explicit
 failures, stale data, offline periods and recovery.
 
 This is a per-slice delivery rule, not a requirement to finish the whole
-simulated room before any hardware appears. Each new device role or capability
-should be proven in the simulator first, then validated on the corresponding
-real hardware before the roadmap moves on to the next device role.
+simulated room before any hardware appears. Before the first hardware
+integration, the project may add one narrow simulated controllable-device slice
+to prove the bidirectional command loop under repeatable conditions. Each later
+device role or capability should be proven in the simulator first, then
+validated on the corresponding real hardware before the roadmap moves on to the
+next device role.
 
 ## Consequences
 

@@ -38,11 +38,16 @@ Each device or capability should move through the same delivery rhythm:
 4. then move to the next device role or capability.
 
 The current reference slice is the simulated temperature sensor read path. It
-should become the pattern for later slices by finishing the event contract,
-simulator scenario coverage, stale/offline behavior, recovery behavior,
-realtime UI states, recent event visibility and manual acceptance checklist for
-temperature first. Once that temperature slice is reliable, the next step is a
-real temperature sensor path, not a broad simulated room.
+should become the pattern for later read-only telemetry slices by finishing the
+event contract, simulator scenario coverage, stale/offline behavior, recovery
+behavior, realtime UI states, recent event visibility and manual acceptance
+checklist for temperature first. Before the first hardware integration, the
+project should add one narrow simulated LED command slice. This establishes the
+full bidirectional control loop—user intent, command dispatch, observed device
+report and confirmation—under repeatable simulator conditions. The real
+temperature sensor path follows as the first hardware validation; the
+simulated LED slice remains the reference implementation for later controllable
+device hardware.
 
 This keeps the project from becoming either a broad dashboard with shallow
 behavior or a hardware demo that skips reliability. Each later device should
@@ -76,11 +81,12 @@ remain optional until the project needs another environmental time-series
 signal.
 
 These roles should not all be implemented in the simulator before hardware work
-begins. The temperature sensor is the first reference implementation. After the
-simulated temperature slice can demonstrate stale, offline and recovery
-behavior without hiding uncertainty from the user, the same role should be
-validated with a real sensor before the roadmap moves on to the next device
-role.
+begins. The temperature sensor is the first read-only reference implementation.
+After its simulated reliability slice, one simulated LED control slice should
+prove the bidirectional command path before the first hardware integration.
+The real temperature sensor can then validate the read model with physical
+transport and timing. Each later device role should still be proven in the
+simulator before its corresponding hardware validation.
 
 At the roadmap level, "production ready" means reliability-first for a local
 project slice: clear contracts, explicit uncertainty and failure states,
@@ -96,8 +102,8 @@ deployment posture with cloud operations, fleet management or full monitoring.
 | Stage 1   | Simulated temperature read path           | A working realtime UI driven by one simulated temperature sensor        |
 | Stage 2   | Reliable simulated temperature slice      | Temperature shows stale, offline, recovery, history and failure signals |
 | Stage 2.5 | Dev scenario controls                     | Manual simulator controls make reliability scenarios demonstrable       |
-| Stage 3   | Real temperature hardware slice           | A real temperature sensor validates the same read model                 |
-| Stage 4   | Simulated LED button and output slice     | User intent, commands and LED confirmation are visible in the simulator |
+| Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator |
+| Stage 4   | Real temperature hardware slice           | A real temperature sensor validates the same read model                 |
 | Stage 5   | Real LED button and output hardware slice | Physical input or UI control affects a real LED through the same model  |
 | Stage 6   | Simulated motion-triggered LED behavior   | Motion telemetry can trigger LED behavior with explainable causality    |
 | Stage 7   | Real motion sensor hardware slice         | A physical motion sensor validates the motion-triggered LED behavior    |
@@ -199,9 +205,34 @@ covered by automated tests, but can also be demonstrated manually through the
 local simulator control path. Stage 3 should wait until this manual acceptance
 loop exists.
 
-## Stage 3 - Real Temperature Hardware Slice
+## Stage 3 - Simulated LED Command Reference Slice
 
-Stage 3 validates the temperature read model with a real physical sensor.
+Stage 3 introduces the first controllable device behavior while retaining the
+simulator as the only external device source.
+
+The goal is to exercise the entire bidirectional control loop before hardware
+is connected: a user action becomes a platform command, the backend adapter
+translates it to a simulator-native command, and an observed LED state report
+returns through the normal event path to confirm or fail the request.
+
+Expected outcome:
+
+- the simulated LED exposes `set.power` behavior,
+- a UI control can request LED state changes,
+- requested LED state is never displayed as confirmed before evidence arrives,
+- normal confirmation, delayed confirmation, rejection, timeout and late
+  report scenarios are repeatable,
+- command history explains what was requested, dispatched and confirmed or
+  failed,
+- the slice has a manual acceptance checklist for the full bidirectional loop.
+
+Stage 3 is complete when the simulated LED command loop is reliable and
+explainable enough to serve as the reference command slice before the first
+hardware integration.
+
+## Stage 4 - Real Temperature Hardware Slice
+
+Stage 4 validates the temperature read model with a real physical sensor.
 
 The goal is not to introduce new product behavior. The goal is to prove that
 the simulator-backed temperature model survives real transport, real timing,
@@ -218,30 +249,8 @@ Expected outcome:
 - recent history can explain whether a reading came from simulator or hardware,
 - the hardware slice has a manual acceptance checklist.
 
-Stage 3 is complete when a real temperature sensor can replace or sit beside
+Stage 4 is complete when a real temperature sensor can replace or sit beside
 the simulator without changing the read-path mental model.
-
-## Stage 4 - Simulated LED Button And Output Slice
-
-Stage 4 introduces the first controllable device behavior in the simulator.
-
-The goal is to move from read-only telemetry to a command-oriented loop where a
-button or UI action requests LED power and the system waits for observed
-confirmation. This slice should exercise requested state, confirmed state,
-pending commands, command failure and timeout behavior before hardware is added.
-
-Expected outcome:
-
-- the simulated LED exposes `set.power` behavior,
-- a simulated or UI-facing button can request LED state changes,
-- requested LED state is never displayed as confirmed before evidence arrives,
-- normal confirmation, delayed confirmation, rejection, timeout and late report
-  scenarios are repeatable,
-- command history explains what was requested, dispatched and confirmed or
-  failed.
-
-Stage 4 is complete when the simulated LED command loop is reliable and
-explainable enough to be used as the reference command slice.
 
 ## Stage 5 - Real LED Button And Output Hardware Slice
 
