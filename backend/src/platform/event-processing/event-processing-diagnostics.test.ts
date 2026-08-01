@@ -1,3 +1,4 @@
+import { eventProcessingDiagnosticsSnapshotSchema } from '@smart-room/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { createEventProcessingDiagnostics } from './event-processing-diagnostics';
@@ -153,6 +154,43 @@ describe('createEventProcessingDiagnostics', () => {
             ],
         });
         expect(JSON.stringify(diagnostics.getSnapshot())).not.toContain('do-not-expose');
+    });
+
+    it('normalizes valid metadata timestamps and omits invalid raw timestamps', () => {
+        const diagnostics = createDiagnostics({
+            observedAt: ['2026-06-08T11:30:01+02:00', '2026-06-08T11:30:02+02:00'],
+        });
+
+        diagnostics.recordProcessingResult(
+            createEvent({ occurredAt: '2026-06-08T11:30:00+02:00' }),
+            ignored('duplicate_event'),
+        );
+        diagnostics.recordProcessingResult(
+            createEvent({ occurredAt: 'not-a-timestamp' }),
+            ignored('malformed_event'),
+        );
+
+        const snapshot = diagnostics.getSnapshot();
+
+        expect(snapshot.ignoredEvents).toMatchObject([
+            { observedAt: '2026-06-08T09:30:02Z' },
+            {
+                observedAt: '2026-06-08T09:30:01Z',
+                occurredAt: '2026-06-08T09:30:00Z',
+            },
+        ]);
+        expect(snapshot.ignoredEvents[0]?.occurredAt).toBeUndefined();
+        expect(eventProcessingDiagnosticsSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    });
+
+    it('rejects an invalid injected diagnostics clock timestamp', () => {
+        const diagnostics = createDiagnostics({
+            observedAt: ['not-a-timestamp'],
+        });
+
+        expect(() => {
+            diagnostics.recordProcessingResult(createEvent(), ignored('duplicate_event'));
+        }).toThrow('Event processing diagnostics clock returned an invalid ISO timestamp.');
     });
 });
 

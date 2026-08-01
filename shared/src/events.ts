@@ -1,5 +1,5 @@
-import type { CommandRequestedBy, CommandType } from './commands';
-import type { DeviceHealth, DeviceState } from './devices';
+import type { CommandRequestedBy } from './commands';
+import type { DeviceHealth, DeviceState, PowerState } from './devices';
 
 export const platformEventTypes = [
     'device.state.reported',
@@ -56,19 +56,19 @@ export interface TelemetryReadingRecordedPayload {
 }
 
 export interface CommandRequestedPayload {
-    commandType: CommandType;
-    requestedState: DeviceState;
+    commandType: 'set.power';
+    requestedState: { power: PowerState };
     requestedBy: CommandRequestedBy;
 }
 
 export interface CommandDispatchedPayload {
-    commandType: CommandType;
+    commandType: 'set.power';
     target: PlatformEventSource;
 }
 
 export interface CommandConfirmedPayload {
-    confirmationSource: PlatformEventType;
-    matchedState: DeviceState;
+    confirmationSource: 'device.state.reported';
+    matchedState: { power: PowerState };
 }
 
 export interface CommandFailedPayload {
@@ -106,6 +106,7 @@ export type CommandRequestedEvent = PlatformEventEnvelope<
     'command.requested',
     CommandRequestedPayload
 > & {
+    deviceId: string;
     commandId: string;
 };
 
@@ -113,6 +114,7 @@ export type CommandDispatchedEvent = PlatformEventEnvelope<
     'command.dispatched',
     CommandDispatchedPayload
 > & {
+    deviceId: string;
     commandId: string;
 };
 
@@ -120,10 +122,12 @@ export type CommandConfirmedEvent = PlatformEventEnvelope<
     'command.confirmed',
     CommandConfirmedPayload
 > & {
+    deviceId: string;
     commandId: string;
 };
 
 export type CommandFailedEvent = PlatformEventEnvelope<'command.failed', CommandFailedPayload> & {
+    deviceId: string;
     commandId: string;
 };
 
@@ -131,6 +135,7 @@ export type CommandTimedOutEvent = PlatformEventEnvelope<
     'command.timed_out',
     CommandTimedOutPayload
 > & {
+    deviceId: string;
     commandId: string;
 };
 

@@ -8,12 +8,14 @@
     },
     "scripts": {
         "lint": "eslint ../shared --config ../eslint.config.js",
+        "test": "vitest run",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
         "zod": "^4.4.3"
     },
     "devDependencies": {
-        "typescript": "^6.0.3"
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8"
     }
 }

@@ -6,10 +6,20 @@ export type * from './events';
 export type * from './projections';
 export type * from './realtime';
 export {
+    commandConfirmedEventSchema,
+    commandDispatchedEventSchema,
+    commandFailedEventSchema,
+    commandRequestedEventSchema,
+    commandTimedOutEventSchema,
+    deviceHealthChangedEventSchema,
+    deviceStateReportedEventSchema,
     eventProcessingDiagnosticsSnapshotSchema,
+    isoTimestampSchema,
+    platformEventCandidateSchema,
     platformEventEnvelopeSchema,
     roomRealtimeServerMessageSchema,
     roomSnapshotProjectionSchema,
+    telemetryReadingRecordedEventSchema,
     telemetryReadingRecordedPayloadSchema,
     temperatureScenarioActionSchema,
     temperatureScenarioRequestSchema,

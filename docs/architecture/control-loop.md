@@ -43,18 +43,19 @@ The platform is event-driven, but the user experience is command-driven. The use
 2. The UI may show the request as `submitting` while waiting for backend
    acceptance.
 3. The backend accepts or rejects the command request.
-4. After acceptance, the backend records the requested state, marks the command
-   as `pending` and dispatches the command.
-5. A backend adapter translates the platform command into a device-native
+4. After acceptance, the backend records the requested state as `accepted`.
+5. Once it dispatches the command to an adapter, it marks it as `pending`.
+6. A backend adapter translates the platform command into a device-native
    command for the simulator or hardware source.
-6. The device or simulator eventually reports the observed state.
-7. The backend adapter translates the report into a platform event.
-8. The event processor updates the backend read model/projections when a
+7. The device or simulator eventually reports the observed state.
+8. The backend adapter translates the report into a platform event.
+9. The event processor updates the backend read model/projections when a
    matching confirmation arrives.
-9. The realtime API/BFF streams the updated projection to the UI.
+10. The realtime API/BFF streams the updated projection to the UI.
 
-For the first implementation, a device can have only one pending command at a
-time. A new command for a device with an active pending command is rejected as a
+For the first implementation, a device can have only one active command
+(`accepted` or `pending`) at a time. A new command for a device with an active
+command is rejected as a
 visible command failure instead of being silently queued or merged.
 
 ## Requested vs Confirmed State
@@ -64,7 +65,7 @@ Requested state and confirmed state are different facts.
 ```text
 User clicks: turn LED on
 Requested state: LED on
-Command state: pending
+Command state: accepted or pending
 Confirmed state: LED off
 
 Device reports: LED on
@@ -98,3 +99,7 @@ The control loop should make time visible:
 Command lifecycle events are correlated by `commandId`. Device reports remain
 observable facts and confirm commands only when the reported state matches the
 command's configured confirmation rule.
+
+External timestamps may use a UTC offset. Contract validation normalizes every
+accepted timestamp to canonical UTC (`Z`) before it enters the read model or
+diagnostics.

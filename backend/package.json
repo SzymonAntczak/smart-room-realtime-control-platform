@@ -18,6 +18,7 @@
     },
     "dependencies": {
         "@smart-room/contracts": "^0.1.0",
+        "@smart-room/simulator": "^0.1.0",
         "ws": "^8.21.0"
     }
 }

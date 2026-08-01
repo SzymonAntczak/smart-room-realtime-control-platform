@@ -41,7 +41,7 @@ export default tseslint.config(
             'simple-import-sort/imports': [
                 'error',
                 {
-                    groups: [['^\\u0000'], ['^(?:node:|@?\\w)'], ['^\\.\\.(?:/|$)'], ['^\\./']],
+                    groups: [['^\\u0000'], ['^node:'], ['^@?\\w'], ['^\\.\\.(?:/|$)'], ['^\\./']],
                 },
             ],
             'check-file/filename-naming-convention': [

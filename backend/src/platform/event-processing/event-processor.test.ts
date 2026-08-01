@@ -156,6 +156,36 @@ describe('createEventProcessor', () => {
         expect(result.state.recentEvents).toEqual([]);
     });
 
+    it('keeps a structurally valid unsupported event type observable', () => {
+        const processor = createTemperatureProcessor();
+
+        const result = processor.processEvent(
+            createTemperatureEvent({
+                eventType: 'device.unknown',
+            } as unknown as Partial<PlatformEventEnvelope>),
+        );
+
+        expect(result).toMatchObject({
+            status: 'ignored',
+            reason: 'unsupported_event_type',
+        });
+    });
+
+    it('normalizes an offset timestamp before projecting telemetry', () => {
+        const processor = createTemperatureProcessor();
+
+        const result = processor.processEvent(
+            createTemperatureEvent({
+                occurredAt: '2026-06-08T11:30:00+02:00',
+            }),
+        );
+
+        expect(result).toMatchObject({
+            status: 'accepted',
+        });
+        expect(result.state.updatedAt).toBe('2026-06-08T09:30:00Z');
+    });
+
     it('does not update state for malformed temperature payloads', () => {
         const processor = createTemperatureProcessor();
 

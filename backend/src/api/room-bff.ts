@@ -1,3 +1,5 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+
 import {
     type RoomRealtimeServerMessage,
     type RoomSnapshotProjection,
@@ -5,7 +7,6 @@ import {
     temperatureScenarioRequestSchema,
     type TemperatureScenarioResult,
 } from '@smart-room/contracts';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';

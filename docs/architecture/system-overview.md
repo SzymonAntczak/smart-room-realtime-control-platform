@@ -18,7 +18,7 @@ The architecture is organized around the main domain concepts, not around implem
 
 | Domain area | Responsibility                                                                 |
 | ----------- | ------------------------------------------------------------------------------ |
-| Room state  | Current derived view of devices, telemetry, health and pending commands.       |
+| Room state  | Current derived view of devices, telemetry, health and active commands.        |
 | Devices     | Report observable state, receive commands and expose connection health.        |
 | Events      | Facts emitted by backend adapters, backend workflows or user-facing workflows. |
 | Commands    | User or automation requests that may later succeed, fail or time out.          |

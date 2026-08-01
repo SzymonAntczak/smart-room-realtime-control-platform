@@ -1,6 +1,7 @@
-import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+
+import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 

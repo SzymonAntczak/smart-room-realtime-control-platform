@@ -1,5 +1,5 @@
 import type {
-    CommandProjection,
+    ActiveCommandProjection,
     DeviceHealth,
     DeviceProjection,
     DeviceRole,
@@ -38,7 +38,7 @@ export interface ProjectionEvaluationOptions {
 export interface RoomProjection {
     updatedAt: string;
     devices: DeviceProjection[];
-    activeCommands: CommandProjection[];
+    activeCommands: ActiveCommandProjection[];
     recentEvents: EventFeedItemProjection[];
 }
 

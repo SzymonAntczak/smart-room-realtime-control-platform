@@ -16,7 +16,7 @@ when commands are retried, delayed, timed out or sent close together.
 
 The first version also needs a simple policy for concurrent commands. A single
 device receiving multiple overlapping commands is harder to reason about than a
-single pending command, especially before real hardware behavior is known.
+single active command, especially before real hardware behavior is known.
 
 ## Options Considered
 
@@ -25,10 +25,10 @@ single pending command, especially before real hardware behavior is known.
 - Add a broader `correlationId` and `causationId` model from the beginning.
 - Confirm commands with generic equality between requested and reported state.
 - Configure confirmation matching per command type.
-- Allow multiple pending commands per device.
+- Allow multiple active commands per device.
 - Queue commands per device.
 - Reject or block a new command while another command for the same device is
-  pending.
+  active.
 
 ## Decision
 
@@ -52,9 +52,11 @@ equal the reported power state. Future command types may use tolerance windows,
 partial matching or trusted acknowledgement when documented by the device
 model.
 
-For the first implementation, each device may have at most one pending command.
-If a new command targets a device that already has a pending command, the
-backend rejects it with a first-class command failure instead of silently
+For the first implementation, each device may have at most one active command:
+`accepted` after backend acceptance and before adapter dispatch, or `pending`
+after dispatch and before completion. If a new command targets a device that
+already has an active command, the backend rejects it with a first-class command
+failure instead of silently
 overwriting, merging or queueing it.
 
 ## Consequences

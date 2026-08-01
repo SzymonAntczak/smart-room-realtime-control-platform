@@ -165,15 +165,18 @@ sequenceDiagram
 
     UI->>EP: set.power on for led-main
     EP->>Store: command.requested(cmd-1)
+    EP-->>UI: cmd-1 accepted
+    EP->>Store: command.dispatched(cmd-1)
     EP-->>UI: cmd-1 pending
 
     UI->>EP: set.power off for led-main
-    EP->>EP: detect pending command for led-main
-    EP->>Store: command.failed(cmd-2, reason=command_already_pending)
+    EP->>EP: detect active command for led-main
+    EP->>Store: command.failed(cmd-2, reason=command_already_active)
     EP-->>UI: cmd-2 failed, cmd-1 still pending
 ```
 
-The first implementation allows only one pending command per device. Rejecting
+The first implementation allows only one active command (`accepted` or
+`pending`) per device. Rejecting
 overlapping commands keeps confirmation unambiguous and gives the UI a clear
 failure to show.
 

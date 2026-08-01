@@ -1,7 +1,6 @@
 import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts';
+import { createTemperatureSensorSimulator } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
-
-import { createTemperatureSensorSimulator } from '../../../../../simulator/src';
 
 import { createSimulatorTemperatureAdapter } from './temperature-adapter';
 

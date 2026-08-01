@@ -1,6 +1,13 @@
-import type { DeviceState, PowerState } from './devices';
+import type { PowerState } from './devices';
 
-export const commandStatuses = ['idle', 'pending', 'confirmed', 'failed', 'timed_out'] as const;
+export const commandStatuses = [
+    'idle',
+    'accepted',
+    'pending',
+    'confirmed',
+    'failed',
+    'timed_out',
+] as const;
 
 export type CommandStatus = (typeof commandStatuses)[number];
 
@@ -20,17 +27,52 @@ export interface SetPowerCommandRequest {
     };
 }
 
-export interface CommandProjection {
+interface CommandProjectionBase {
     commandId: string;
     deviceId: string;
-    commandType: CommandType;
-    status: CommandStatus;
-    requestedState: DeviceState;
+    commandType: 'set.power';
+    requestedState: { power: PowerState };
     requestedAt: string;
-    dispatchedAt?: string;
-    confirmedAt?: string;
-    failedAt?: string;
-    timedOutAt?: string;
     reason?: string;
     message?: string;
 }
+
+export type AcceptedCommandProjection = CommandProjectionBase & {
+    status: 'accepted';
+};
+
+export type PendingCommandProjection = CommandProjectionBase & {
+    status: 'pending';
+    dispatchedAt: string;
+};
+
+export type ConfirmedCommandProjection = CommandProjectionBase & {
+    status: 'confirmed';
+    dispatchedAt: string;
+    confirmedAt: string;
+};
+
+export type FailedCommandProjection = CommandProjectionBase & {
+    status: 'failed';
+    dispatchedAt?: string;
+    failedAt: string;
+};
+
+export type TimedOutCommandProjection = CommandProjectionBase & {
+    status: 'timed_out';
+    dispatchedAt: string;
+    timedOutAt: string;
+};
+
+export type IdleCommandProjection = CommandProjectionBase & {
+    status: 'idle';
+};
+
+export type ActiveCommandProjection = AcceptedCommandProjection | PendingCommandProjection;
+
+export type CommandProjection =
+    | ActiveCommandProjection
+    | ConfirmedCommandProjection
+    | FailedCommandProjection
+    | TimedOutCommandProjection
+    | IdleCommandProjection;

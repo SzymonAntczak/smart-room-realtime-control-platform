@@ -8,6 +8,7 @@
         "lint": "eslint ../frontend --config ../eslint.config.js",
         "format": "prettier --check .",
         "format:write": "prettier --write .",
+        "build": "tsc --noEmit && vite build",
         "typecheck": "tsc --noEmit",
         "test": "vitest run"
     },

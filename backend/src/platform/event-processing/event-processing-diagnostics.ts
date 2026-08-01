@@ -3,6 +3,7 @@ import type {
     EventProcessingDiagnosticsSnapshot,
     IgnoredEventDiagnostic,
 } from '@smart-room/contracts';
+import { isoTimestampSchema } from '@smart-room/contracts';
 
 import type { EventProcessingResult } from './event-processor';
 
@@ -40,7 +41,7 @@ export function createEventProcessingDiagnostics({
                     deduplicationEvictions.unshift({
                         diagnosticId: `dedupe-${nextDiagnosticNumber}`,
                         evictedEventId,
-                        observedAt: clock.now(),
+                        observedAt: normalizeClockTimestamp(clock.now()),
                     });
                     nextDiagnosticNumber += 1;
                 }
@@ -51,7 +52,7 @@ export function createEventProcessingDiagnostics({
             ignoredEvents.unshift({
                 diagnosticId: `diag-${nextDiagnosticNumber}`,
                 reason: result.reason,
-                observedAt: clock.now(),
+                observedAt: normalizeClockTimestamp(clock.now()),
                 ...toEventMetadata(event),
             });
             nextDiagnosticNumber += 1;
@@ -83,8 +84,28 @@ function toEventMetadata(event: unknown): Partial<IgnoredEventDiagnostic> {
         source: typeof event.source === 'string' ? event.source : undefined,
         deviceId: typeof event.deviceId === 'string' ? event.deviceId : undefined,
         commandId: typeof event.commandId === 'string' ? event.commandId : undefined,
-        occurredAt: typeof event.occurredAt === 'string' ? event.occurredAt : undefined,
+        ...(typeof event.occurredAt === 'string'
+            ? optionalNormalizedTimestamp(event.occurredAt)
+            : {}),
     };
+}
+
+function normalizeClockTimestamp(timestamp: string): string {
+    const parsedTimestamp = isoTimestampSchema.safeParse(timestamp);
+
+    if (!parsedTimestamp.success) {
+        throw new Error('Event processing diagnostics clock returned an invalid ISO timestamp.');
+    }
+
+    return parsedTimestamp.data;
+}
+
+function optionalNormalizedTimestamp(
+    timestamp: string,
+): Pick<IgnoredEventDiagnostic, 'occurredAt'> {
+    const parsedTimestamp = isoTimestampSchema.safeParse(timestamp);
+
+    return parsedTimestamp.success ? { occurredAt: parsedTimestamp.data } : {};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

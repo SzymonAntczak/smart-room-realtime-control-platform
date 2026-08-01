@@ -89,7 +89,7 @@ UI tests should verify user-visible system behavior.
 
 Focus areas:
 
-- pending command is visible
+- accepted and pending command progress is visible
 - confirmed state is not faked from requested state
 - stale and offline states are visible
 - failed and timed-out commands remain understandable

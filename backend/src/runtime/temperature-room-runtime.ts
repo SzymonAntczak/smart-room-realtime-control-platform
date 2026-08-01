@@ -1,18 +1,19 @@
+import { randomUUID } from 'node:crypto';
+import { clearInterval, setInterval } from 'node:timers';
+
 import type {
     RoomSnapshotProjection,
     TemperatureScenarioAction,
     TemperatureScenarioResult,
 } from '@smart-room/contracts';
-import { randomUUID } from 'node:crypto';
-import { clearInterval, setInterval } from 'node:timers';
-
 import {
     type Clock,
     createTemperatureSensorRuntime,
     createTemperatureSensorScenario,
     type TemperatureSensorRuntime,
     type TimerScheduler,
-} from '../../../simulator/src';
+} from '@smart-room/simulator';
+
 import {
     createSimulatorTemperatureAdapter,
     type SimulatorTemperatureAdapter,

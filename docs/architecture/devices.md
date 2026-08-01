@@ -15,7 +15,8 @@
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `idle`       | No active command is waiting for completion.                                                                                                            |
 | `submitting` | The frontend has sent a command request and is waiting for backend acceptance. This is a UI-side transient state, not a persisted device command state. |
-| `pending`    | Command was accepted and dispatched, but not confirmed yet.                                                                                             |
+| `accepted`   | Backend accepted and persisted the command, but has not yet dispatched it to an adapter.                                                                |
+| `pending`    | Command was dispatched, but not confirmed yet.                                                                                                          |
 | `confirmed`  | Device state matches the command, or the device type allows trusted acknowledgement as confirmation.                                                    |
 | `failed`     | Device or backend explicitly rejected the command.                                                                                                      |
 | `timed_out`  | No confirmation arrived within the allowed time.                                                                                                        |
@@ -44,7 +45,8 @@ A useful device state record should separate current observations from user inte
 }
 ```
 
-The first implementation tracks at most one pending command per device. This
+The first implementation tracks at most one active command (`accepted` or
+`pending`) per device. This
 keeps command progress clear in the UI and avoids ambiguous confirmation when
 multiple commands target the same device close together.
 
@@ -87,8 +89,11 @@ Initial state:
 
 User clicks: turn LED on
 - requestedState.power: on
-- command.state: pending
+- command.state: accepted
 - reportedState.power: off
+
+Backend dispatches the command
+- command.state: pending
 
 Device reports: LED on
 - reportedState.power: on

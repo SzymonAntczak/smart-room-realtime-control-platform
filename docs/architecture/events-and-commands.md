@@ -49,6 +49,10 @@ state reports do not include `commandId` by default; they are observed device
 facts and may confirm a pending command only through the processor's matching
 rules.
 
+Timestamps may arrive as ISO-8601 UTC values or with an explicit UTC offset.
+The contract boundary normalizes accepted values to canonical UTC (`Z`) before
+they are stored or used by projections and diagnostics.
+
 ## Initial Event Types
 
 | Event type                   | Purpose                                                                   |
@@ -133,8 +137,8 @@ The first implementation should keep payloads small and explicit.
 
 ```json
 {
-    "reason": "command_already_pending",
-    "message": "Device already has an active pending command."
+    "reason": "command_already_active",
+    "message": "Device already has an active command."
 }
 ```
 
@@ -175,7 +179,7 @@ observable state.
 - Unknown event versions should not update derived state silently.
 - Malformed events should be rejected or stored in a quarantine stream.
 - Duplicate events should not create duplicate history entries.
-- Command lifecycle events without a valid `commandId` should not update command state.
+- Command lifecycle events without a non-empty `commandId` should not update command state.
 - Commands should be idempotent where possible, especially for retries.
 - Events with valid envelopes but invalid payloads should be stored in the
   quarantine stream, not applied to derived state.

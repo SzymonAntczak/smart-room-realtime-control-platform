@@ -148,6 +148,32 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
     });
 
+    it('reports unsupported snapshot versions as invalid messages', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+
+        MockWebSocket.latest().emitMessage({
+            ...createRoomSnapshotMessage(),
+            version: 2,
+        });
+
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('reports snapshots with invalid timestamps as invalid messages', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+
+        MockWebSocket.latest().emitMessage({
+            ...createRoomSnapshotMessage(),
+            sentAt: 'not-a-timestamp',
+        });
+
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onSnapshot).not.toHaveBeenCalled();
+    });
+
     it('reports connection status and reconnects after the stream closes', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket, {

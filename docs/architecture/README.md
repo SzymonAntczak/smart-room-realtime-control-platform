@@ -48,7 +48,8 @@ first implementation step.
   states explicitly.
 - A late device report can update reported state, but it must not turn a
   timed-out command into a confirmed command.
-- The first implementation allows only one pending command per device.
+- The first implementation allows only one active command (`accepted` or
+  `pending`) per device.
 - Failure, stale data and missing data are user-visible states.
 
 ## Related Decisions

@@ -1,7 +1,7 @@
 import type { PlatformEventEnvelope, TelemetryReadingRecordedEvent } from '@smart-room/contracts';
+import { createTemperatureSensorScenario } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
-import { createTemperatureSensorScenario } from '../../../../simulator/src';
 import { createSimulatorTemperatureAdapter } from '../../adapters/simulator/temperature/temperature-adapter';
 import {
     createEventProcessor,

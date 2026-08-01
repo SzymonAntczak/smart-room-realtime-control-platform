@@ -1,8 +1,8 @@
 import {
     type IgnoredEventReason,
-    platformEventEnvelopeSchema,
+    platformEventCandidateSchema,
     type TelemetryReadingRecordedEvent,
-    telemetryReadingRecordedPayloadSchema,
+    telemetryReadingRecordedEventSchema,
 } from '@smart-room/contracts';
 
 import type {
@@ -71,13 +71,13 @@ export function createEventProcessor({
                 state: roomProjector.getProjection(),
             });
 
-            const parsedEnvelope = platformEventEnvelopeSchema.safeParse(candidateEvent);
+            const parsedCandidate = platformEventCandidateSchema.safeParse(candidateEvent);
 
-            if (!parsedEnvelope.success) {
+            if (!parsedCandidate.success) {
                 return ignored('malformed_event');
             }
 
-            const event = parsedEnvelope.data;
+            const event = parsedCandidate.data;
 
             if (deduplicator.has(event.eventId)) {
                 return ignored('duplicate_event');
@@ -101,9 +101,9 @@ export function createEventProcessor({
                 return ignored('unknown_device');
             }
 
-            const parsedPayload = telemetryReadingRecordedPayloadSchema.safeParse(event.payload);
+            const parsedEvent = telemetryReadingRecordedEventSchema.safeParse(event);
 
-            if (!parsedPayload.success) {
+            if (!parsedEvent.success) {
                 return ignored('invalid_payload');
             }
 
@@ -111,13 +111,7 @@ export function createEventProcessor({
                 return ignored('device_metric_mismatch');
             }
 
-            const acceptedEvent: TelemetryReadingRecordedEvent = {
-                ...event,
-                eventType: 'telemetry.reading.recorded',
-                version: 1,
-                deviceId: event.deviceId,
-                payload: parsedPayload.data,
-            };
+            const acceptedEvent: TelemetryReadingRecordedEvent = parsedEvent.data;
 
             const deduplicationEvictedEventIds = deduplicator.remember(event.eventId);
 
