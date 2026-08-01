@@ -84,6 +84,7 @@ export function createTemperatureRoomRuntime({
     const processor = createEventProcessor({
         devices: defaultDevices,
         roomProjector,
+        clock,
         deduplicationRetentionMs,
         deduplicationEntryLimit,
     });

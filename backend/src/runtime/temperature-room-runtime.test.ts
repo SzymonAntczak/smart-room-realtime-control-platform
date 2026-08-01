@@ -97,6 +97,54 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('accepts a repeated event id after the injected deduplication retention expires', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            clock,
+            timer,
+            deduplicationRetentionMs: 1000,
+            generateEventId: createSequenceEventIdGenerator([
+                'evt-temperature-1',
+                'evt-temperature-1',
+                'evt-temperature-1',
+            ]),
+        });
+
+        try {
+            runtime.start();
+
+            clock.advanceBy(999);
+            timer.runLatest();
+
+            expect(runtime.getRoomSnapshot().recentEvents).toHaveLength(1);
+            expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toEqual([
+                expect.objectContaining({
+                    reason: 'duplicate_event',
+                    eventId: 'evt-temperature-1',
+                }),
+            ]);
+
+            clock.advanceBy(2);
+            timer.runLatest();
+
+            const snapshot = runtime.getRoomSnapshot();
+
+            expect(snapshot.devices[0]?.reportedState).toEqual({
+                temperature: 22.4,
+                temperatureUnit: 'celsius',
+            });
+            expect(snapshot.recentEvents.map((event) => event.eventId)).toEqual([
+                'evt-temperature-1',
+                'evt-temperature-1',
+            ]);
+            expect(snapshot.recentEvents).toHaveLength(2);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('notifies snapshot subscribers after accepted temperature readings only', () => {
         const timer = createManualTimer();
         const runtime = createTemperatureRoomRuntime({
@@ -142,6 +190,8 @@ describe('createTemperatureRoomRuntime', () => {
             snapshotBroadcastIntervalMs: 1000,
             clock: createSequenceClock([
                 '2026-06-08T09:29:59Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:02.501Z',
                 '2026-06-08T09:30:10.001Z',
@@ -218,10 +268,16 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:29:59Z',
                 '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:02.501Z',
                 '2026-06-08T09:30:10.001Z',
                 '2026-06-08T09:30:11Z',
                 '2026-06-08T09:30:11Z',
+                '2026-06-08T09:30:11Z',
+                '2026-06-08T09:30:11Z',
+                '2026-06-08T09:30:05Z',
+                '2026-06-08T09:30:05Z',
                 '2026-06-08T09:30:05Z',
                 '2026-06-08T09:30:12Z',
             ]),
@@ -288,6 +344,10 @@ describe('createTemperatureRoomRuntime', () => {
             clock: createSequenceClock([
                 '2026-06-08T09:29:59Z',
                 '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:02Z',
             ]),
@@ -319,6 +379,10 @@ describe('createTemperatureRoomRuntime', () => {
             clock: createSequenceClock([
                 '2026-06-08T09:29:59Z',
                 '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:02Z',
             ]),
@@ -376,6 +440,9 @@ describe('createTemperatureRoomRuntime', () => {
             clock: createSequenceClock([
                 '2026-06-08T09:29:59Z',
                 '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:02Z',
                 '2026-06-08T09:30:02Z',
@@ -401,6 +468,7 @@ describe('createTemperatureRoomRuntime', () => {
                         diagnosticId: 'diag-1',
                         reason: 'duplicate_event',
                         observedAt: '2026-06-08T09:30:02Z',
+                        commandId: undefined,
                         eventId: 'evt-temperature-1',
                         eventType: 'telemetry.reading.recorded',
                         source: 'simulator-adapter',
@@ -466,8 +534,12 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:29:59Z',
                 '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
                 '2026-06-08T09:30:02.501Z',
                 '2026-06-08T09:30:10.001Z',
+                '2026-06-08T09:30:11Z',
+                '2026-06-08T09:30:11Z',
                 '2026-06-08T09:30:11Z',
                 '2026-06-08T09:30:11Z',
                 '2026-06-08T09:30:11Z',
@@ -511,10 +583,15 @@ describe('createTemperatureRoomRuntime', () => {
             clock: createSequenceClock([
                 '2026-06-08T09:29:59Z',
                 '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:00Z',
+                '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:01Z',
                 '2026-06-08T09:30:02Z',
                 '2026-06-08T09:30:03Z',
+                '2026-06-08T09:30:03Z',
                 '2026-06-08T09:30:04Z',
+                '2026-06-08T09:30:05Z',
                 '2026-06-08T09:30:05Z',
                 '2026-06-08T09:30:06Z',
             ]),
@@ -561,16 +638,36 @@ describe('createTemperatureRoomRuntime', () => {
 
 function createSequenceClock(timestamps: string[]): Clock {
     const pendingTimestamps = [...timestamps];
+    const finalTimestamp = pendingTimestamps.at(-1);
 
     return {
         now() {
             const timestamp = pendingTimestamps.shift();
 
-            if (!timestamp) {
+            if (timestamp) {
+                return timestamp;
+            }
+
+            if (!finalTimestamp) {
                 throw new Error('No deterministic timestamp configured.');
             }
 
-            return timestamp;
+            return finalTimestamp;
+        },
+    };
+}
+
+function createMutableClock(
+    initialTimestamp: string,
+): Clock & { advanceBy(milliseconds: number): void } {
+    let currentTimeMs = Date.parse(initialTimestamp);
+
+    return {
+        now() {
+            return new Date(currentTimeMs).toISOString();
+        },
+        advanceBy(milliseconds) {
+            currentTimeMs += milliseconds;
         },
     };
 }

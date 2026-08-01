@@ -12,7 +12,7 @@ behavior.
       adapter boundaries. An adapter instance is bound to one native ID and one
       platform ID; reject unexpected native IDs. Introduce a mapping registry only
       when an adapter consumes a multiplexed native source.
-- [ ] Use one injected clock consistently across runtime, event processing and
+- [x] Use one injected clock consistently across runtime, event processing and
       deduplication. Add a deterministic integration test for deduplication
       retention expiry.
 - [ ] Define and implement a clock-skew policy for future-dated device reports.
