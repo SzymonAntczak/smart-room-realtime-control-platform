@@ -45,9 +45,10 @@ checklist for temperature first. Before the first hardware integration, the
 project should add one narrow simulated LED command slice. This establishes the
 full bidirectional control loop—user intent, command dispatch, observed device
 report and confirmation—under repeatable simulator conditions. The real
-temperature sensor path follows as the first hardware validation; the
-simulated LED slice remains the reference implementation for later controllable
-device hardware.
+temperature sensor path follows after browser-level frontend integration tests
+validate the user-visible control loop against controlled BFF responses; the
+simulated LED slice remains the reference implementation for later
+controllable-device hardware.
 
 This keeps the project from becoming either a broad dashboard with shallow
 behavior or a hardware demo that skips reliability. Each later device should
@@ -83,10 +84,11 @@ signal.
 These roles should not all be implemented in the simulator before hardware work
 begins. The temperature sensor is the first read-only reference implementation.
 After its simulated reliability slice, one simulated LED control slice should
-prove the bidirectional command path before the first hardware integration.
-The real temperature sensor can then validate the read model with physical
-transport and timing. Each later device role should still be proven in the
-simulator before its corresponding hardware validation.
+prove the bidirectional command path before browser-level frontend integration
+tests validate it against a mocked BFF contract. The real temperature sensor
+can then validate the read model with physical transport and timing. Each later
+device role should still be proven in the simulator before its corresponding
+hardware validation.
 
 At the roadmap level, "production ready" means reliability-first for a local
 project slice: clear contracts, explicit uncertainty and failure states,
@@ -103,6 +105,7 @@ deployment posture with cloud operations, fleet management or full monitoring.
 | Stage 2   | Reliable simulated temperature slice      | Temperature shows stale, offline, recovery, history and failure signals |
 | Stage 2.5 | Dev scenario controls                     | Manual simulator controls make reliability scenarios demonstrable       |
 | Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator |
+| Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                 |
 | Stage 4   | Real temperature hardware slice           | A real temperature sensor validates the same read model                 |
 | Stage 5   | Real LED button and output hardware slice | Physical input or UI control affects a real LED through the same model  |
 | Stage 6   | Simulated motion-triggered LED behavior   | Motion telemetry can trigger LED behavior with explainable causality    |
@@ -229,6 +232,36 @@ Expected outcome:
 Stage 3 is complete when the simulated LED command loop is reliable and
 explainable enough to serve as the reference command slice before the first
 hardware integration.
+
+## Stage 3.5 - Frontend Integration Test Reference Suite
+
+Stage 3.5 adds browser-level frontend integration tests after the simulated LED
+reference slice and before the first hardware integration.
+
+The goal is to verify the user-visible control loop against a controlled,
+mocked BFF contract, without coupling tests to simulator or backend internals.
+This stage does not start the production backend or simulator and is not an
+end-to-end test of the full runtime. Its scenarios and user-visible assertions
+should become the reference for a later end-to-end suite against the real
+backend and then hardware-backed adapters. The choice between Playwright and
+Cypress belongs to implementation planning; the durable requirement is
+browser-level verification of the user-facing contract.
+
+Expected outcome:
+
+- the test suite starts the frontend and drives the UI in a real browser,
+- a mocked BFF deterministically supplies initial snapshots, realtime updates
+  and command responses for each test scenario,
+- tests assert requested versus confirmed state, command progress, visible
+  failures and relevant event history through user-visible behavior,
+- the mocked scenarios cover normal, delayed, rejected, timed-out and
+  late-report flows for the LED command loop,
+- tests use the BFF contract boundary rather than simulator-native messages or
+  direct frontend state injection.
+
+Stage 3.5 is complete when the browser suite protects the documented LED
+control-loop behavior with deterministic mocked BFF scenarios. End-to-end
+verification with the real backend is a later, separate stage.
 
 ## Stage 4 - Real Temperature Hardware Slice
 
