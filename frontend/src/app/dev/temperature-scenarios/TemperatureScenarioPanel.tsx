@@ -8,6 +8,7 @@ import {
     StepForward,
     TriangleAlert,
 } from 'lucide-react';
+import { useId } from 'react';
 
 import type {
     TemperatureScenarioAction,
@@ -33,9 +34,13 @@ const controls: readonly ScenarioControl[] = [
 
 interface TemperatureScenarioPanelProps {
     readonly client?: TemperatureScenarioClient;
+    readonly actions?: readonly TemperatureScenarioAction[];
 }
 
-export function TemperatureScenarioPanel({ client }: TemperatureScenarioPanelProps) {
+export function TemperatureScenarioPanel({ client, actions }: TemperatureScenarioPanelProps) {
+    const reactId = useId().replace(/:/g, '');
+    const headingId = `scenario-panel-heading-${reactId}`;
+    const diagnosticsHeadingId = `diagnostics-heading-${reactId}`;
     const {
         activeAction,
         completedAction,
@@ -49,36 +54,38 @@ export function TemperatureScenarioPanel({ client }: TemperatureScenarioPanelPro
     const message = errorMessage ?? toCompletedMessage(completedAction);
 
     return (
-        <section className={styles.panel} aria-labelledby="scenario-panel-heading">
+        <section className={styles.panel} aria-labelledby={headingId}>
             <p className={styles.eyebrow}>Development only</p>
-            <h2 id="scenario-panel-heading">Temperature scenarios</h2>
+            <h2 id={headingId}>Temperature scenarios</h2>
             <p className={styles.description}>
                 Controls operate the local simulator through the backend. Room state still arrives
-                through the realtime snapshot.
+                through the realtime stream: a snapshot baseline followed by device updates.
             </p>
             <div className={styles.controls}>
-                {controls.map((control) => (
-                    <button
-                        key={control.action}
-                        className={styles.button}
-                        type="button"
-                        disabled={activeAction !== undefined}
-                        onClick={() => void runScenario(control.action)}
-                    >
-                        <control.Icon aria-hidden="true" size={16} strokeWidth={1.75} />
-                        {activeAction === control.action ? 'Running...' : control.label}
-                    </button>
-                ))}
+                {controls
+                    .filter((control) => actions?.includes(control.action) ?? true)
+                    .map((control) => (
+                        <button
+                            key={control.action}
+                            className={styles.button}
+                            type="button"
+                            disabled={activeAction !== undefined}
+                            onClick={() => void runScenario(control.action)}
+                        >
+                            <control.Icon aria-hidden="true" size={16} strokeWidth={1.75} />
+                            {activeAction === control.action ? 'Running...' : control.label}
+                        </button>
+                    ))}
             </div>
             {message ? (
                 <p className={styles.message} role="status">
                     {message}
                 </p>
             ) : null}
-            <section className={styles.diagnostics} aria-labelledby="diagnostics-heading">
+            <section className={styles.diagnostics} aria-labelledby={diagnosticsHeadingId}>
                 <div className={styles.diagnosticsHeader}>
                     <div>
-                        <h3 id="diagnostics-heading">Diagnostics</h3>
+                        <h3 id={diagnosticsHeadingId}>Diagnostics</h3>
                         <p>Ignored events: {diagnostics?.ignoredEvents.length ?? 'not loaded'}</p>
                     </div>
                     <button

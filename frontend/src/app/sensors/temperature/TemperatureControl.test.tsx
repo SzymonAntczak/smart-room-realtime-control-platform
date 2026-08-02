@@ -46,22 +46,16 @@ describe('TemperatureControl', () => {
         );
     });
 
-    it('updates the temperature after another realtime snapshot', async () => {
+    it('updates the temperature after a device delta', async () => {
         render(<TemperatureControl />);
 
         await emitLatestMessage(createRoomSnapshotMessage());
         await emitLatestMessage(
-            createRoomSnapshotMessage({
-                devices: [
-                    {
-                        ...createTemperatureDevice(),
-                        reportedState: {
-                            temperature: 22.6,
-                            temperatureUnit: 'celsius',
-                        },
-                        lastSeenAt: '2026-06-08T09:30:01Z',
-                    },
-                ],
+            createDeviceUpdatedMessage({
+                ...createTemperatureDevice(),
+                reportedState: { temperature: 22.6, temperatureUnit: 'celsius' },
+                lastSeenAt: '2026-06-08T09:30:01Z',
+                recentEvents: [],
             }),
         );
 
@@ -123,7 +117,7 @@ describe('TemperatureControl', () => {
 
         expect(screen.getByRole('status')).toHaveTextContent('Online');
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
-        expect(screen.getByText('Realtime room stream sent an invalid snapshot.')).toHaveAttribute(
+        expect(screen.getByText('Realtime room stream sent an invalid update.')).toHaveAttribute(
             'role',
             'alert',
         );
@@ -149,7 +143,7 @@ describe('TemperatureControl', () => {
         );
 
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.6');
-        expect(screen.queryByText('Realtime room stream sent an invalid snapshot.')).toBeNull();
+        expect(screen.queryByText('Realtime room stream sent an invalid update.')).toBeNull();
     });
 
     it('shows the contract error while reconnecting when the first snapshot is malformed', async () => {
@@ -171,7 +165,7 @@ describe('TemperatureControl', () => {
 
         expect(await screen.findByRole('status')).toHaveTextContent('Reconnecting');
         expect(screen.getByRole('alert')).toHaveTextContent(
-            'Realtime room stream sent an invalid snapshot.',
+            'Realtime room stream sent an invalid update.',
         );
     });
 
@@ -187,7 +181,7 @@ describe('TemperatureControl', () => {
         expect(await screen.findByRole('status')).toHaveTextContent('Online');
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
         expect(screen.getByRole('alert')).toHaveTextContent(
-            'Realtime stream is reconnecting. Showing the last temperature snapshot.',
+            'Realtime stream is reconnecting. Showing the last valid temperature update.',
         );
     });
 
@@ -263,7 +257,7 @@ describe('TemperatureControl', () => {
 
         const feed = screen.getByRole('region', { name: 'Recent temperature events' });
 
-        expect(feed.querySelectorAll('li')).toHaveLength(5);
+        expect(feed.querySelectorAll('li')).toHaveLength(6);
         expect(feed).toHaveTextContent('09:30:00 UTC');
         expect(feed).not.toHaveTextContent('Humidity reading recorded');
     });
@@ -291,7 +285,8 @@ function createRoomSnapshotMessage({
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'room.snapshot',
-        version: 1,
+        version: 2,
+        revision: 0,
         sentAt,
         payload: {
             roomName: 'Smart Room',
@@ -301,6 +296,19 @@ function createRoomSnapshotMessage({
             recentCommands: [],
             recentEvents,
         },
+    };
+}
+
+function createDeviceUpdatedMessage(
+    device: RoomSnapshotProjection['devices'][number],
+): RoomRealtimeServerMessage {
+    return {
+        messageType: 'device.updated',
+        version: 2,
+        previousRevision: 0,
+        revision: 1,
+        sentAt: '2026-06-08T09:30:02Z',
+        payload: device,
     };
 }
 

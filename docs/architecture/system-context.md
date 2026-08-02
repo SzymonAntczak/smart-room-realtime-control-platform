@@ -87,10 +87,11 @@ realtime BFF.
 
 The current BFF exposes `ws://localhost:4310/room/realtime` as the frontend
 runtime path. The backend sends an initial `room.snapshot` message when the
-frontend connects and streams later `room.snapshot` messages after accepted
-temperature telemetry updates the read model. It also periodically rereads the
-projection so time-derived health changes such as `stale` and `offline` are
-pushed even when telemetry stops. The frontend does not interpret raw platform
+frontend connects, then streams revision-linked `device.updated` messages after
+projection changes. Each update includes the changed device's latest ten event
+summaries. It periodically rereads the
+projection, but emits only an actual time-derived health change such as
+`stale` or `offline`. The frontend does not interpret raw platform
 events.
 
 The BFF also keeps `GET /room` as a debug/read snapshot endpoint for the latest
@@ -104,8 +105,9 @@ and quarantine storage are still future slices.
 ## Development Scenario Controls
 
 The local development runtime may expose a dev-only HTTP control boundary at
-`POST /dev/scenarios/temperature`. It accepts a named simulator scenario action
-and delegates it to the backend runtime. It is not a product command API, is not
+`GET` and `POST /dev/devices/:deviceId/scenarios`. A device-card dev control
+loads scenarios lazily for its selected device and delegates a named simulator
+scenario action to the backend runtime. It is not a product command API, is not
 part of `room.snapshot`, and must not be enabled in production.
 It is disabled by default and is enabled only when the backend process receives
 `ENABLE_DEV_SCENARIOS=true`. The root `npm run dev` launcher sets this local
@@ -114,7 +116,7 @@ inherit scenario mutation access by default.
 
 The frontend development panel uses this boundary only to request simulator
 behavior. The resulting observations still travel through the simulator adapter,
-event processor, read model and normal realtime `room.snapshot` delivery path.
+event processor, read model and normal realtime snapshot-plus-delta delivery path.
 This preserves the distinction between dev tooling and user-facing room state.
 
 The initial controls pause or resume scheduled telemetry, emit the next native

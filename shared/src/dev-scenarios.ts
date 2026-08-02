@@ -14,6 +14,15 @@ export interface TemperatureScenarioResult {
     readonly status: 'completed';
 }
 
+export interface DeviceScenarioDescriptor {
+    readonly action: TemperatureScenarioAction;
+}
+
+export interface DeviceScenarioList {
+    readonly deviceId: string;
+    readonly scenarios: readonly DeviceScenarioDescriptor[];
+}
+
 export function isTemperatureScenarioAction(value: unknown): value is TemperatureScenarioAction {
     return (
         typeof value === 'string' &&

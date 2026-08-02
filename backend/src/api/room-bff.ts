@@ -1,5 +1,9 @@
 import websocket from '@fastify/websocket';
 import {
+    apiErrorResponseSchema,
+    type DeviceScenarioList,
+    deviceScenarioListSchema,
+    deviceScenarioParamsSchema,
     eventProcessingDiagnosticsSnapshotSchema,
     isRoomRealtimeServerMessage,
     isRoomSnapshotProjection,
@@ -22,7 +26,11 @@ export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
     subscribeRoomSnapshot(listener: (snapshot: RoomSnapshotProjection) => void): () => void;
-    runScenario?: (action: TemperatureScenarioAction) => TemperatureScenarioResult;
+    runDeviceScenario?: (
+        deviceId: string,
+        action: TemperatureScenarioAction,
+    ) => TemperatureScenarioResult;
+    getDeviceScenarios?: (deviceId: string) => DeviceScenarioList | undefined;
     now?: () => string;
 }
 
@@ -30,14 +38,16 @@ export function createRoomBffServer({
     getRoomSnapshot,
     getDiagnosticsSnapshot,
     subscribeRoomSnapshot,
-    runScenario,
+    runDeviceScenario,
+    getDeviceScenarios,
     now = realClock,
 }: RoomBffConfig): FastifyInstance {
     const server = Fastify();
     const handlers: RoomBffHandlers = {
         getRoomSnapshot,
         getDiagnosticsSnapshot,
-        runScenario,
+        runDeviceScenario,
+        getDeviceScenarios,
     };
 
     server.register(websocket);
@@ -51,7 +61,7 @@ export function createRoomBffServer({
     });
 
     server.setErrorHandler((error, request, response) => {
-        if (request.url === '/dev/scenarios/temperature' && isInvalidJsonBodyError(error)) {
+        if (isDeviceScenarioRequest(request) && isInvalidJsonBodyError(error)) {
             writeJson(response, 400, {
                 error: 'invalid_request',
                 message: 'Request body must be valid JSON.',
@@ -59,7 +69,7 @@ export function createRoomBffServer({
             return;
         }
 
-        if (request.url === '/dev/scenarios/temperature' && isInvalidScenarioRequestError(error)) {
+        if (isDeviceScenarioRequest(request) && isInvalidScenarioRequestError(error)) {
             writeJson(response, 400, {
                 error: 'invalid_request',
                 message: 'Request body contains an unsupported scenario action.',
@@ -72,32 +82,72 @@ export function createRoomBffServer({
 
     server.after(() => {
         server.get('/room/realtime', { websocket: true }, (socket) => {
+            let baseline = getRoomSnapshot();
+            let revision = 0;
+            let isBaselineSent = false;
             const unsubscribe = subscribeRoomSnapshot((snapshot) => {
-                sendRoomSnapshot(socket, snapshot, now);
+                if (!isBaselineSent) {
+                    baseline = snapshot;
+                    return;
+                }
+                if (!hasSameDeviceSet(baseline, snapshot)) {
+                    socket.close();
+                    return;
+                }
+                revision = sendRoomDeltas(socket, baseline, snapshot, revision, now);
+                baseline = snapshot;
             });
             const cleanup = once(unsubscribe);
 
             socket.on('close', cleanup);
             socket.on('error', cleanup);
 
-            sendRoomSnapshot(socket, getRoomSnapshot(), now);
+            baseline = getRoomSnapshot();
+            sendRoomSnapshot(socket, baseline, now);
+            isBaselineSent = true;
         });
     });
 
-    server.post(
-        '/dev/scenarios/temperature',
+    server.get(
+        '/dev/devices/:deviceId/scenarios',
         {
             schema: {
+                params: deviceScenarioParamsSchema,
+                response: { 200: deviceScenarioListSchema, 404: apiErrorResponseSchema },
+            },
+        },
+        (request, response) => {
+            const deviceId = (request.params as { deviceId: string }).deviceId;
+            const scenarios = handlers.getDeviceScenarios?.(deviceId);
+
+            if (
+                !scenarios ||
+                !isSchema(deviceScenarioListSchema, scenarios) ||
+                scenarios.deviceId !== deviceId
+            ) {
+                writeJson(response, 404, {
+                    error: 'not_found',
+                    message: 'Device scenarios not found.',
+                });
+                return;
+            }
+
+            writeJson(response, 200, scenarios);
+        },
+    );
+
+    server.post(
+        '/dev/devices/:deviceId/scenarios',
+        {
+            schema: {
+                params: deviceScenarioParamsSchema,
                 body: temperatureScenarioRequestSchema,
                 response: {
                     200: temperatureScenarioResultSchema,
-                    415: {
-                        type: 'object',
-                        properties: {
-                            error: { type: 'string' },
-                            message: { type: 'string' },
-                        },
-                    },
+                    400: apiErrorResponseSchema,
+                    404: apiErrorResponseSchema,
+                    415: apiErrorResponseSchema,
+                    500: apiErrorResponseSchema,
                 },
             },
             onRequest(request, response, done) {
@@ -108,22 +158,42 @@ export function createRoomBffServer({
                     });
                     return;
                 }
-
                 done();
             },
         },
         async (request, response) => {
-            await handleTemperatureScenarioRequest(request, response, handlers.runScenario);
+            const deviceId = (request.params as { deviceId: string }).deviceId;
+            const scenarios = handlers.getDeviceScenarios?.(deviceId);
+            const action = (request.body as { action: TemperatureScenarioAction }).action;
+
+            if (
+                !scenarios ||
+                !isSchema(deviceScenarioListSchema, scenarios) ||
+                scenarios.deviceId !== deviceId
+            ) {
+                writeJson(response, 404, {
+                    error: 'not_found',
+                    message: 'Device scenarios not found.',
+                });
+                return;
+            }
+
+            if (!scenarios.scenarios.some((scenario) => scenario.action === action)) {
+                writeJson(response, 400, {
+                    error: 'invalid_request',
+                    message: 'Request body contains an unsupported scenario action.',
+                });
+                return;
+            }
+
+            await handleDeviceScenarioRequest(
+                deviceId,
+                action,
+                response,
+                handlers.runDeviceScenario,
+            );
         },
     );
-
-    server.route({
-        method: ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        url: '/dev/scenarios/temperature',
-        handler: async (request, response) => {
-            await handleTemperatureScenarioRequest(request, response, handlers.runScenario);
-        },
-    });
 
     server.all(
         '/room',
@@ -154,7 +224,11 @@ export function createRoomBffServer({
 interface RoomBffHandlers {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
-    runScenario?: (action: TemperatureScenarioAction) => TemperatureScenarioResult;
+    runDeviceScenario?: (
+        deviceId: string,
+        action: TemperatureScenarioAction,
+    ) => TemperatureScenarioResult;
+    getDeviceScenarios?: (deviceId: string) => DeviceScenarioList | undefined;
 }
 
 function handleRoomBffRequest(
@@ -193,12 +267,13 @@ function handleRoomBffRequest(
     writeJson(response, 200, snapshot);
 }
 
-async function handleTemperatureScenarioRequest(
-    request: FastifyRequest,
+async function handleDeviceScenarioRequest(
+    deviceId: string,
+    action: TemperatureScenarioAction,
     response: FastifyReply,
-    runScenario: RoomBffHandlers['runScenario'],
+    runDeviceScenario: RoomBffHandlers['runDeviceScenario'],
 ): Promise<void> {
-    if (!runScenario) {
+    if (!runDeviceScenario) {
         writeJson(response, 404, {
             error: 'not_found',
             message: 'Route not found.',
@@ -206,19 +281,8 @@ async function handleTemperatureScenarioRequest(
         return;
     }
 
-    if (request.method !== 'POST') {
-        response.header('Allow', 'POST, OPTIONS');
-        writeJson(response, 405, {
-            error: 'method_not_allowed',
-            message: 'Only POST is supported for this route.',
-        });
-        return;
-    }
-
-    const action = (request.body as { action: TemperatureScenarioAction }).action;
-
     try {
-        const result = runScenario(action);
+        const result = runDeviceScenario(deviceId, action);
 
         if (!isSchema(temperatureScenarioResultSchema, result) || result.action !== action) {
             writeInvalidServerResponse(response);
@@ -264,6 +328,10 @@ function isInvalidScenarioRequestError(error: unknown): boolean {
     return error instanceof Error && 'validation' in error;
 }
 
+function isDeviceScenarioRequest(request: FastifyRequest): boolean {
+    return request.url.startsWith('/dev/devices/') && request.url.endsWith('/scenarios');
+}
+
 function isJsonMediaType(contentType: string | undefined): boolean {
     return contentType?.split(';', 1)[0]?.trim().toLowerCase() === 'application/json';
 }
@@ -286,7 +354,8 @@ function sendRoomSnapshot(
 
     const message: RoomRealtimeServerMessage = {
         messageType: 'room.snapshot',
-        version: 1,
+        version: 2,
+        revision: 0,
         sentAt,
         payload: snapshot,
     };
@@ -305,6 +374,78 @@ function sendRoomSnapshot(
     } catch {
         socket.close();
     }
+}
+
+function sendRoomDeltas(
+    socket: WebSocket,
+    previous: RoomSnapshotProjection,
+    next: RoomSnapshotProjection,
+    revision: number,
+    now: () => string,
+): number {
+    const previousDevices = new Map(previous.devices.map((device) => [device.deviceId, device]));
+
+    for (const device of next.devices) {
+        if (sameJson(previousDevices.get(device.deviceId), device)) continue;
+
+        const sentAt = normalizeIsoTimestamp(now());
+        if (!sentAt) {
+            socket.close();
+            return revision;
+        }
+
+        revision = sendRealtimeMessage(
+            socket,
+            {
+                messageType: 'device.updated',
+                version: 2,
+                previousRevision: revision,
+                revision: revision + 1,
+                sentAt,
+                payload: device,
+            },
+            revision,
+        );
+    }
+
+    return revision;
+}
+
+function sendRealtimeMessage(
+    socket: WebSocket,
+    message: RoomRealtimeServerMessage,
+    previousRevision: number,
+): number {
+    if (socket.readyState !== WebSocket.OPEN || !isRoomRealtimeServerMessage(message)) {
+        socket.close();
+        return previousRevision;
+    }
+
+    try {
+        socket.send(JSON.stringify(message), (error) => {
+            if (error) socket.close();
+        });
+        return message.messageType === 'room.snapshot' ? 0 : message.revision;
+    } catch {
+        socket.close();
+        return previousRevision;
+    }
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function hasSameDeviceSet(previous: RoomSnapshotProjection, next: RoomSnapshotProjection): boolean {
+    if (previous.devices.length !== next.devices.length) return false;
+
+    const previousDeviceIds = new Set(previous.devices.map((device) => device.deviceId));
+    const nextDeviceIds = new Set(next.devices.map((device) => device.deviceId));
+    return (
+        previousDeviceIds.size === previous.devices.length &&
+        nextDeviceIds.size === next.devices.length &&
+        next.devices.every((device) => previousDeviceIds.has(device.deviceId))
+    );
 }
 
 function realClock(): string {

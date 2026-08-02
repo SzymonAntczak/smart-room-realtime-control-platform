@@ -7,19 +7,28 @@ import { TemperatureScenarioDrawer } from './TemperatureScenarioDrawer';
 describe('TemperatureScenarioDrawer', () => {
     it('keeps scenario controls out of the document until the drawer is opened', async () => {
         const user = userEvent.setup();
-        render(<TemperatureScenarioDrawer />);
+        render(
+            <TemperatureScenarioDrawer
+                client={{
+                    runScenario: async () => ({ action: 'pause_telemetry', status: 'completed' }),
+                    getScenarios: () => new Promise(() => undefined),
+                    getDiagnostics: async () => ({ ignoredEvents: [] }),
+                }}
+            />,
+        );
 
         const toggle = screen.getByRole('button', { name: 'Dev scenarios' });
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
         expect(toggle.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
-        expect(
-            screen.queryByRole('heading', { name: 'Temperature scenarios' }),
-        ).not.toBeInTheDocument();
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
         await user.click(toggle);
 
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
-        expect(screen.getByRole('heading', { name: 'Temperature scenarios' })).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent('Loading development scenarios');
+        expect(
+            screen.queryByRole('heading', { name: 'Temperature scenarios' }),
+        ).not.toBeInTheDocument();
         const closeButton = screen.getByRole('button', { name: 'Close panel' });
         expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
         expect(closeButton).toHaveFocus();

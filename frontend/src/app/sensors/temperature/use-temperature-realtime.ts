@@ -67,7 +67,7 @@ export function useTemperatureRealtime(): TemperatureControlState {
             onInvalidMessage() {
                 setControlState((currentState) => ({
                     ...currentState,
-                    contractError: 'Realtime room stream sent an invalid snapshot.',
+                    contractError: 'Realtime room stream sent an invalid update.',
                 }));
             },
         });

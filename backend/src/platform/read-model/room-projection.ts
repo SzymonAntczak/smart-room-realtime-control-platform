@@ -61,6 +61,7 @@ export function createRoomProjector({
     const deviceDefinitions = new Map(devices.map((device) => [device.deviceId, device]));
     const deviceProjections = new Map<string, DeviceProjection>();
     const recentEvents: EventFeedItemProjection[] = [];
+    const recentEventsByDeviceId = new Map<string, EventFeedItemProjection[]>();
     let updatedAt = initialUpdatedAt;
 
     return {
@@ -71,8 +72,13 @@ export function createRoomProjector({
                 throw new Error(`Cannot project telemetry for unknown device: ${event.deviceId}`);
             }
 
-            recentEvents.unshift(toEventFeedItem(event));
+            const eventFeedItem = toEventFeedItem(event);
+            recentEvents.unshift(eventFeedItem);
             recentEvents.splice(recentEventLimit);
+            const deviceRecentEvents = recentEventsByDeviceId.get(event.deviceId) ?? [];
+            deviceRecentEvents.unshift(eventFeedItem);
+            deviceRecentEvents.splice(10);
+            recentEventsByDeviceId.set(event.deviceId, deviceRecentEvents);
 
             const currentDevice = deviceProjections.get(device.deviceId);
 
@@ -116,9 +122,10 @@ export function createRoomProjector({
     }: Required<ProjectionEvaluationOptions>): RoomProjection {
         return {
             updatedAt,
-            devices: [...deviceProjections.values()].map((device) =>
-                applyFreshnessHealth(device, evaluatedAt),
-            ),
+            devices: [...deviceProjections.values()].map((device) => ({
+                ...applyFreshnessHealth(device, evaluatedAt),
+                recentEvents: [...(recentEventsByDeviceId.get(device.deviceId) ?? [])],
+            })),
             activeCommands: [],
             recentCommands: [],
             recentEvents: [...recentEvents],

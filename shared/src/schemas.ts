@@ -146,6 +146,15 @@ const commandAvailabilitySchema = Type.Object({
     policy: Type.Union(commandAvailabilityPolicies.map((policy) => Type.Literal(policy))),
     reason: Type.Optional(Type.String()),
 });
+const recentDeviceEventSchema = Type.Object({
+    eventId: nonEmptyStringSchema,
+    eventType: Type.Union(platformEventTypes.map((eventType) => Type.Literal(eventType))),
+    occurredAt: isoTimestampSchema,
+    source: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
+    deviceId: Type.Optional(nonEmptyStringSchema),
+    commandId: Type.Optional(nonEmptyStringSchema),
+    summary: nonEmptyStringSchema,
+});
 const deviceProjectionSchema = Type.Object({
     deviceId: nonEmptyStringSchema,
     name: nonEmptyStringSchema,
@@ -157,6 +166,7 @@ const deviceProjectionSchema = Type.Object({
     lastSeenAt: Type.Optional(isoTimestampSchema),
     warning: Type.Optional(Type.String()),
     activeCommandId: Type.Optional(nonEmptyStringSchema),
+    recentEvents: Type.Optional(Type.Array(recentDeviceEventSchema, { maxItems: 10 })),
 });
 const activeCommandProjectionBaseShape = {
     commandId: nonEmptyStringSchema,
@@ -231,10 +241,30 @@ export const roomSnapshotProjectionSchema = Type.Object({
 });
 export const roomRealtimeServerMessageSchema = Type.Object({
     messageType: Type.Literal('room.snapshot'),
+    version: Type.Literal(2),
+    revision: Type.Literal(0),
+    sentAt: isoTimestampSchema,
+    payload: roomSnapshotProjectionSchema,
+});
+const roomRealtimeV1ServerMessageSchema = Type.Object({
+    messageType: Type.Literal('room.snapshot'),
     version: Type.Literal(1),
     sentAt: isoTimestampSchema,
     payload: roomSnapshotProjectionSchema,
 });
+export const deviceUpdatedMessageSchema = Type.Object({
+    messageType: Type.Literal('device.updated'),
+    version: Type.Literal(2),
+    previousRevision: Type.Integer({ minimum: 0 }),
+    revision: Type.Integer({ minimum: 1 }),
+    sentAt: isoTimestampSchema,
+    payload: deviceProjectionSchema,
+});
+export const roomRealtimeServerMessageUnionSchema = Type.Union([
+    roomRealtimeServerMessageSchema,
+    roomRealtimeV1ServerMessageSchema,
+    deviceUpdatedMessageSchema,
+]);
 
 export const temperatureScenarioActionSchema = Type.Union(
     temperatureScenarioActions.map((action) => Type.Literal(action)),
@@ -242,9 +272,23 @@ export const temperatureScenarioActionSchema = Type.Union(
 export const temperatureScenarioRequestSchema = Type.Object({
     action: temperatureScenarioActionSchema,
 });
+export const deviceScenarioParamsSchema = Type.Object({
+    deviceId: nonEmptyStringSchema,
+});
+export const deviceScenarioDescriptorSchema = Type.Object({
+    action: temperatureScenarioActionSchema,
+});
+export const deviceScenarioListSchema = Type.Object({
+    deviceId: nonEmptyStringSchema,
+    scenarios: Type.Array(deviceScenarioDescriptorSchema),
+});
 export const temperatureScenarioResultSchema = Type.Object({
     action: temperatureScenarioActionSchema,
     status: Type.Literal('completed'),
+});
+export const apiErrorResponseSchema = Type.Object({
+    error: nonEmptyStringSchema,
+    message: nonEmptyStringSchema,
 });
 
 const ignoredEventDiagnosticSchema = Type.Object({
@@ -287,10 +331,21 @@ export function normalizeIsoTimestamp(value: unknown): string | undefined {
 }
 
 export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealtimeServerMessage {
+    if (
+        !isSchema(roomRealtimeServerMessageUnionSchema, value) ||
+        !isCanonicalUtcTimestamp(value.sentAt)
+    ) {
+        return false;
+    }
+
+    if (value.messageType === 'room.snapshot') return isRoomSnapshotProjection(value.payload);
+
     return (
-        isSchema(roomRealtimeServerMessageSchema, value) &&
-        isRoomSnapshotProjection(value.payload) &&
-        isCanonicalUtcTimestamp(value.sentAt)
+        value.revision === value.previousRevision + 1 &&
+        value.payload.recentEvents !== undefined &&
+        hasCanonicalDeviceTimestamps(value.payload) &&
+        value.payload.recentEvents.length <= 10 &&
+        value.payload.recentEvents.every((event) => event.deviceId === value.payload.deviceId)
     );
 }
 
@@ -304,6 +359,7 @@ export function isRoomSnapshotProjection(value: unknown): boolean {
 
 function hasConsistentCommands(snapshot: Static<typeof roomSnapshotProjectionSchema>): boolean {
     const deviceIds = new Set(snapshot.devices.map((device) => device.deviceId));
+    if (deviceIds.size !== snapshot.devices.length) return false;
     const activeCommandByDeviceId = new Map<string, string>();
     const commandIds = new Set<string>();
 
@@ -333,10 +389,7 @@ function hasCanonicalProjectionTimestamps(
 ): boolean {
     return (
         isCanonicalUtcTimestamp(snapshot.updatedAt) &&
-        snapshot.devices.every(
-            (device) =>
-                device.lastSeenAt === undefined || isCanonicalUtcTimestamp(device.lastSeenAt),
-        ) &&
+        snapshot.devices.every((device) => hasCanonicalDeviceTimestamps(device)) &&
         snapshot.activeCommands.every(
             (command) =>
                 isCanonicalUtcTimestamp(command.requestedAt) &&
@@ -361,6 +414,16 @@ function hasCanonicalProjectionTimestamps(
             }
         }) &&
         snapshot.recentEvents.every((event) => isCanonicalUtcTimestamp(event.occurredAt))
+    );
+}
+
+function hasCanonicalDeviceTimestamps(device: Static<typeof deviceProjectionSchema>): boolean {
+    return (
+        (device.lastSeenAt === undefined || isCanonicalUtcTimestamp(device.lastSeenAt)) &&
+        (device.recentEvents ?? []).every(
+            (event) =>
+                isCanonicalUtcTimestamp(event.occurredAt) && event.deviceId === device.deviceId,
+        )
     );
 }
 

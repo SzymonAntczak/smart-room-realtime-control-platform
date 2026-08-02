@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { clearInterval, setInterval } from 'node:timers';
 
 import type {
+    DeviceScenarioList,
     RoomSnapshotProjection,
     TemperatureScenarioAction,
     TemperatureScenarioResult,
 } from '@smart-room/contracts';
+import { temperatureScenarioActions } from '@smart-room/contracts';
 import {
     type Clock,
     createTemperatureSensorRuntime,
@@ -46,7 +48,11 @@ export interface TemperatureRoomRuntime {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
     subscribeRoomSnapshot(listener: RoomSnapshotListener): () => void;
-    runScenario(action: TemperatureScenarioAction): TemperatureScenarioResult;
+    getDeviceScenarios(deviceId: string): DeviceScenarioList | undefined;
+    runDeviceScenario(
+        deviceId: string,
+        action: TemperatureScenarioAction,
+    ): TemperatureScenarioResult;
 }
 
 export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
@@ -103,6 +109,7 @@ export function createTemperatureRoomRuntime({
     let hasStarted = false;
     let adapter: SimulatorTemperatureAdapter | undefined;
     let snapshotBroadcastTimerHandle: unknown | undefined;
+    let lastPublishedSnapshot: RoomSnapshotProjection | undefined;
 
     return {
         start() {
@@ -114,7 +121,7 @@ export function createTemperatureRoomRuntime({
             adapter = createAdapter();
             sensor.tick(clock.now());
             snapshotBroadcastTimerHandle = snapshotBroadcastTimer.setInterval(() => {
-                notifySnapshotListeners(clock.now());
+                notifyHealthChanges(clock.now());
             }, snapshotBroadcastIntervalMs);
             sensorRuntime.start();
         },
@@ -141,7 +148,18 @@ export function createTemperatureRoomRuntime({
                 snapshotListeners.delete(listener);
             };
         },
-        runScenario(action) {
+        getDeviceScenarios(deviceId) {
+            if (deviceId !== defaultDevices[0].deviceId) return undefined;
+
+            return {
+                deviceId,
+                scenarios: temperatureScenarioActions.map((action) => ({ action })),
+            };
+        },
+        runDeviceScenario(deviceId, action) {
+            if (deviceId !== defaultDevices[0].deviceId) {
+                throw new Error(`No development scenarios are configured for ${deviceId}.`);
+            }
             if (!hasStarted) {
                 throw new Error(
                     'Temperature room runtime must be started before running a scenario.',
@@ -211,6 +229,7 @@ export function createTemperatureRoomRuntime({
 
     function notifySnapshotListeners(evaluatedAt: string): void {
         const snapshot = toRoomSnapshot(roomName, roomProjector, evaluatedAt);
+        lastPublishedSnapshot = snapshot;
 
         for (const listener of snapshotListeners) {
             try {
@@ -219,6 +238,26 @@ export function createTemperatureRoomRuntime({
                 // A failed realtime client must not block event ingestion or other clients.
             }
         }
+    }
+
+    function notifyHealthChanges(evaluatedAt: string): void {
+        const snapshot = toRoomSnapshot(roomName, roomProjector, evaluatedAt);
+        const previousSnapshot = lastPublishedSnapshot;
+
+        if (
+            previousSnapshot &&
+            snapshot.devices.every((device) => {
+                const previous = previousSnapshot.devices.find(
+                    (candidate) => candidate.deviceId === device.deviceId,
+                );
+
+                return previous?.health === device.health;
+            })
+        ) {
+            return;
+        }
+
+        notifySnapshotListeners(evaluatedAt);
     }
 }
 

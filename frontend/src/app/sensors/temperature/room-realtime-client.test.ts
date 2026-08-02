@@ -1,4 +1,4 @@
-import type { RoomRealtimeServerMessage } from '@smart-room/contracts';
+import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { connectTemperatureRealtime } from './room-realtime-client';
@@ -105,6 +105,7 @@ describe('connectTemperatureRealtime', () => {
                         expect.objectContaining({ eventId: 'evt-temperature-4' }),
                         expect.objectContaining({ eventId: 'evt-temperature-3' }),
                         expect.objectContaining({ eventId: 'evt-temperature-2' }),
+                        expect.objectContaining({ eventId: 'evt-temperature-1' }),
                     ],
                 }),
             }),
@@ -196,7 +197,7 @@ describe('connectTemperatureRealtime', () => {
 
         MockWebSocket.latest().emitMessage({
             ...createRoomSnapshotMessage(),
-            version: 2,
+            version: 3,
         });
 
         expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
@@ -216,6 +217,83 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
     });
 
+    it('applies a contiguous device delta with its device-local history', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage(
+            createDeviceUpdatedMessage({
+                reportedState: { temperature: 23.1, temperatureUnit: 'celsius' },
+                recentEvents: [createEventFeedItem({ eventId: 'evt-temperature-3' })],
+            }),
+        );
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                reading: expect.objectContaining({
+                    value: 23.1,
+                    recentEvents: [expect.objectContaining({ eventId: 'evt-temperature-3' })],
+                }),
+            }),
+        );
+    });
+
+    it('preserves the valid view and reconnects after a revision gap', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage(
+            createDeviceUpdatedMessage({ previousRevision: 1, revision: 2 }),
+        );
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+    });
+
+    it('rejects a delta for an unknown device without replacing the valid view', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage(createDeviceUpdatedMessage({ deviceId: 'temp-window' }));
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+    });
+
+    it('rejects an unexpected snapshot after the baseline instead of resetting the revision', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+    });
+
+    it('continues to accept repeated snapshots in a legacy v1 session', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(createLegacyRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage(
+            createLegacyRoomSnapshotMessage({
+                devices: [
+                    {
+                        ...createTemperatureDevice(),
+                        reportedState: { temperature: 22.8, temperatureUnit: 'celsius' },
+                    },
+                ],
+            }),
+        );
+
+        expect(handlers.onInvalidMessage).not.toHaveBeenCalled();
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({ reading: expect.objectContaining({ value: 22.8 }) }),
+        );
+    });
+
     it('reports connection status and reconnects after the stream closes', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket, {
@@ -225,7 +303,7 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onConnectionStatus).toHaveBeenCalledWith('connecting');
 
         MockWebSocket.latest().emitOpen();
-        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('connected');
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('connecting');
 
         MockWebSocket.latest().emitClose();
         expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
@@ -289,7 +367,8 @@ function createRoomSnapshotMessage({
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'room.snapshot',
-        version: 1,
+        version: 2,
+        revision: 0,
         sentAt: '2026-06-08T09:30:01Z',
         payload: {
             roomName: 'Smart Room',
@@ -302,7 +381,50 @@ function createRoomSnapshotMessage({
     };
 }
 
-function createTemperatureDevice() {
+function createDeviceUpdatedMessage({
+    previousRevision = 0,
+    revision = 1,
+    deviceId = 'temp-desk',
+    reportedState = { temperature: 22.8, temperatureUnit: 'celsius' },
+    recentEvents = [createEventFeedItem({ eventId: 'evt-temperature-3', deviceId })],
+}: {
+    previousRevision?: number;
+    revision?: number;
+    deviceId?: string;
+    reportedState?: { temperature: number; temperatureUnit: 'celsius' };
+    recentEvents?: ReturnType<typeof createEventFeedItem>[];
+} = {}): RoomRealtimeServerMessage {
+    return {
+        messageType: 'device.updated',
+        version: 2,
+        previousRevision,
+        revision,
+        sentAt: '2026-06-08T09:30:02Z',
+        payload: { ...createTemperatureDevice(), deviceId, reportedState, recentEvents },
+    };
+}
+
+function createLegacyRoomSnapshotMessage({
+    devices = [createTemperatureDevice()],
+}: {
+    devices?: ReturnType<typeof createTemperatureDevice>[];
+} = {}) {
+    return {
+        messageType: 'room.snapshot',
+        version: 1,
+        sentAt: '2026-06-08T09:30:01Z',
+        payload: {
+            roomName: 'Smart Room',
+            updatedAt: '2026-06-08T09:30:00Z',
+            devices,
+            activeCommands: [],
+            recentCommands: [],
+            recentEvents: [],
+        },
+    };
+}
+
+function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
     return {
         deviceId: 'temp-desk',
         name: 'Desk Temperature',
@@ -317,7 +439,7 @@ function createTemperatureDevice() {
             reason: 'read_only_device',
         },
         lastSeenAt: '2026-06-08T09:30:00Z',
-    } as const;
+    };
 }
 
 function createEventFeedItem({

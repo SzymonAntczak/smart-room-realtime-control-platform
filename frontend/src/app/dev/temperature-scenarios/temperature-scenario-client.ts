@@ -1,4 +1,6 @@
 import {
+    type DeviceScenarioList,
+    deviceScenarioListSchema,
     type EventProcessingDiagnosticsSnapshot,
     eventProcessingDiagnosticsSnapshotSchema,
     isSchema,
@@ -9,18 +11,18 @@ import {
 
 export type { TemperatureScenarioAction } from '@smart-room/contracts';
 
-const defaultScenarioControlUrl = 'http://localhost:4310/dev/scenarios/temperature';
-const defaultDiagnosticsUrl = 'http://localhost:4310/diagnostics';
+const defaultBffUrl = 'http://localhost:4310';
 
 export interface TemperatureScenarioClient {
     runScenario(action: TemperatureScenarioAction): Promise<TemperatureScenarioResult>;
+    getScenarios?(): Promise<DeviceScenarioList>;
     getDiagnostics(): Promise<EventProcessingDiagnosticsSnapshot>;
 }
 
 export function createTemperatureScenarioClient(
     fetchImplementation: typeof fetch = fetch,
-    scenarioControlUrl = getScenarioControlUrl(),
-    diagnosticsUrl = getDiagnosticsUrl(),
+    scenarioControlUrl = `${getBffUrl()}/dev/devices/temp-desk/scenarios`,
+    diagnosticsUrl = `${getBffUrl()}/diagnostics`,
 ): TemperatureScenarioClient {
     return {
         async runScenario(action) {
@@ -48,6 +50,20 @@ export function createTemperatureScenarioClient(
 
             return result as TemperatureScenarioResult;
         },
+        async getScenarios() {
+            const response = await fetchImplementation(scenarioControlUrl);
+
+            if (!response.ok) {
+                throw new Error(`Scenario discovery request failed (${response.status}).`);
+            }
+
+            const result: unknown = await response.json();
+            if (!isSchema(deviceScenarioListSchema, result)) {
+                throw new Error('Scenario discovery returned an invalid response.');
+            }
+
+            return result as DeviceScenarioList;
+        },
         async getDiagnostics() {
             const response = await fetchImplementation(diagnosticsUrl);
 
@@ -68,10 +84,31 @@ export function createTemperatureScenarioClient(
 
 export const temperatureScenarioClient = createTemperatureScenarioClient();
 
-function getScenarioControlUrl(): string {
-    return import.meta.env.VITE_TEMPERATURE_SCENARIO_CONTROL_URL ?? defaultScenarioControlUrl;
+export function createDeviceScenarioClient(
+    deviceId: string,
+    fetchImplementation: typeof fetch = fetch,
+): TemperatureScenarioClient {
+    const baseUrl = getBffUrl();
+    const client = createTemperatureScenarioClient(
+        fetchImplementation,
+        `${baseUrl}/dev/devices/${encodeURIComponent(deviceId)}/scenarios`,
+        `${baseUrl}/diagnostics`,
+    );
+
+    return {
+        ...client,
+        async getScenarios() {
+            const scenarios = await client.getScenarios!();
+
+            if (scenarios.deviceId !== deviceId) {
+                throw new Error('Scenario discovery returned scenarios for a different device.');
+            }
+
+            return scenarios;
+        },
+    };
 }
 
-function getDiagnosticsUrl(): string {
-    return import.meta.env.VITE_DIAGNOSTICS_URL ?? defaultDiagnosticsUrl;
+function getBffUrl(): string {
+    return (import.meta.env.VITE_BFF_URL ?? defaultBffUrl).replace(/\/+$/u, '');
 }

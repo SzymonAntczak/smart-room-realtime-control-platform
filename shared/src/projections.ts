@@ -13,6 +13,7 @@ export interface DeviceProjection {
     lastSeenAt?: string;
     warning?: string;
     activeCommandId?: string;
+    recentEvents?: EventFeedItemProjection[];
 }
 
 export interface EventFeedItemProjection {
@@ -31,5 +32,6 @@ export interface RoomSnapshotProjection {
     devices: DeviceProjection[];
     activeCommands: ActiveCommandProjection[];
     recentCommands?: TerminalCommandProjection[];
+    /** @deprecated Dashboard cards use DeviceProjection.recentEvents. */
     recentEvents: EventFeedItemProjection[];
 }

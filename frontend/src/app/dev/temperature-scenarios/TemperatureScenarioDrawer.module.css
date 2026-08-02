@@ -12,12 +12,19 @@
 }
 
 .toggle {
-    position: fixed;
-    inset-block-start: var(--space-5);
-    inset-inline-end: var(--space-5);
-    z-index: 1;
-    padding: var(--space-3) var(--space-4);
-    box-shadow: var(--shadow-panel);
+    justify-content: center;
+    inline-size: 2rem;
+    block-size: 2rem;
+    padding: 0;
+}
+
+.toggleLabel {
+    position: absolute;
+    inline-size: 0.0625rem;
+    block-size: 0.0625rem;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
 .drawer {
@@ -54,11 +61,6 @@
 }
 
 @media (max-width: 32.5rem) {
-    .toggle {
-        inset-block-start: var(--space-3);
-        inset-inline-end: var(--space-3);
-    }
-
     .drawer {
         padding: var(--space-5);
     }

@@ -5,6 +5,7 @@ import {
     isRoomRealtimeServerMessage,
     type PlatformEventSource,
     type RoomRealtimeServerMessage,
+    type RoomSnapshotProjection,
 } from '@smart-room/contracts';
 
 const defaultRoomRealtimeUrl = 'ws://localhost:4310/room/realtime';
@@ -69,6 +70,8 @@ export function connectTemperatureRealtime(
     let isClosed = false;
     let activeSocket: RealtimeWebSocket | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let roomSnapshot: RoomSnapshotProjection | undefined;
+    let revision: number | undefined;
 
     connectSocket('connecting');
 
@@ -93,16 +96,13 @@ export function connectTemperatureRealtime(
             return;
         }
 
+        roomSnapshot = undefined;
+        revision = undefined;
         handlers.onConnectionStatus(status);
 
         const socket = new WebSocketImplementation(getRoomRealtimeUrl());
         activeSocket = socket;
 
-        socket.addEventListener('open', () => {
-            if (!isClosed && activeSocket === socket) {
-                handlers.onConnectionStatus('connected');
-            }
-        });
         socket.addEventListener('error', () => {
             scheduleReconnect(socket);
         });
@@ -115,9 +115,9 @@ export function connectTemperatureRealtime(
             }
 
             try {
-                handlers.onSnapshot(
-                    toTemperatureSnapshotResult(parseRoomRealtimeMessage(event.data)),
-                );
+                const message = parseRoomRealtimeMessage(event.data);
+                const result = applyRealtimeMessage(message);
+                handlers.onSnapshot(toTemperatureSnapshotResult(result.snapshot, result.sentAt));
             } catch {
                 handlers.onInvalidMessage();
                 scheduleReconnect(socket);
@@ -143,6 +143,45 @@ export function connectTemperatureRealtime(
             connectSocket('reconnecting');
         }, reconnectDelayMs);
     }
+
+    function applyRealtimeMessage(message: RoomRealtimeServerMessage): {
+        snapshot: RoomSnapshotProjection;
+        sentAt: string;
+    } {
+        if (message.messageType === 'room.snapshot') {
+            const isLegacySnapshotSession = roomSnapshot !== undefined && revision === undefined;
+            if (
+                (roomSnapshot || revision !== undefined) &&
+                !(message.version === 1 && isLegacySnapshotSession)
+            ) {
+                throw new Error('Realtime room stream sent an unexpected snapshot baseline.');
+            }
+            roomSnapshot = message.payload;
+            revision = message.version === 2 ? message.revision : undefined;
+            return { snapshot: roomSnapshot, sentAt: message.sentAt };
+        }
+
+        if (!roomSnapshot || revision === undefined || message.previousRevision !== revision) {
+            throw new Error('Realtime room stream has a revision gap.');
+        }
+
+        switch (message.messageType) {
+            case 'device.updated': {
+                const deviceIndex = roomSnapshot.devices.findIndex(
+                    (device) => device.deviceId === message.payload.deviceId,
+                );
+                if (deviceIndex === -1)
+                    throw new Error('Realtime update references an unknown device.');
+                const devices = [...roomSnapshot.devices];
+                devices[deviceIndex] = message.payload;
+                roomSnapshot = { ...roomSnapshot, devices };
+                break;
+            }
+        }
+
+        revision = message.revision;
+        return { snapshot: roomSnapshot, sentAt: message.sentAt };
+    }
 }
 
 function getRoomRealtimeUrl(): string {
@@ -164,9 +203,10 @@ function parseRoomRealtimeMessage(data: unknown): RoomRealtimeServerMessage {
 }
 
 function toTemperatureSnapshotResult(
-    message: RoomRealtimeServerMessage,
+    snapshot: RoomSnapshotProjection,
+    sentAt: string,
 ): TemperatureSnapshotResult {
-    const temperatureDevice = message.payload.devices.find(
+    const temperatureDevice = snapshot.devices.find(
         (device) => device.role === 'temperature-sensor',
     );
 
@@ -189,10 +229,14 @@ function toTemperatureSnapshotResult(
             unit: temperatureDevice.reportedState.temperatureUnit,
             recordedAt: temperatureDevice.lastSeenAt,
             health: temperatureDevice.health,
-            snapshotSentAt: message.sentAt,
-            recentEvents: message.payload.recentEvents
-                .filter((event) => event.deviceId === temperatureDevice.deviceId)
-                .slice(0, 5)
+            snapshotSentAt: sentAt,
+            recentEvents: (
+                temperatureDevice.recentEvents ??
+                snapshot.recentEvents.filter(
+                    (event) => event.deviceId === temperatureDevice.deviceId,
+                )
+            )
+                .slice(0, 10)
                 .map(toTemperatureEventFeedItem),
         },
     };

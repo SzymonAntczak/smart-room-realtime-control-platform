@@ -1,5 +1,6 @@
 import { CircleCheck, Clock3, Thermometer, TriangleAlert, WifiOff } from 'lucide-react';
 
+import { TemperatureScenarioDrawer } from '../../dev/temperature-scenarios/TemperatureScenarioDrawer';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
 import {
@@ -9,14 +10,25 @@ import {
 import styles from './TemperatureControl.module.css';
 import { type TemperatureControlState, useTemperatureRealtime } from './use-temperature-realtime';
 
-export function TemperatureControl() {
-    return <TemperatureControlView state={useTemperatureRealtime()} />;
+export function TemperatureControl({
+    showDevScenarioPanel = import.meta.env.DEV,
+}: {
+    showDevScenarioPanel?: boolean;
+}) {
+    return (
+        <TemperatureControlView
+            state={useTemperatureRealtime()}
+            showDevScenarioPanel={showDevScenarioPanel}
+        />
+    );
 }
 
 export function TemperatureControlView({
     state: controlState,
+    showDevScenarioPanel,
 }: {
     state: TemperatureControlState;
+    showDevScenarioPanel?: boolean;
 }) {
     if (controlState.status === 'connecting') {
         return (
@@ -57,7 +69,7 @@ export function TemperatureControlView({
                 ) : null}
                 {controlState.connectionStatus === 'reconnecting' ? (
                     <p className={styles.warning} role="alert">
-                        Realtime stream is reconnecting. Waiting for the first room snapshot.
+                        Realtime stream is reconnecting. Waiting for the room baseline.
                     </p>
                 ) : null}
                 <p className={styles.message}>No temperature reading is available yet.</p>
@@ -75,13 +87,18 @@ export function TemperatureControlView({
             statusIcon={getHealthIcon(reading.health)}
             statusTone={toHealthTone(reading.health)}
             titleId="sensor-heading"
+            headerAction={
+                showDevScenarioPanel ? (
+                    <TemperatureScenarioDrawer deviceId={reading.sensorId} />
+                ) : undefined
+            }
         >
             {controlState.contractError ? (
                 <ContractErrorAlert message={controlState.contractError} />
             ) : null}
             {controlState.connectionStatus === 'reconnecting' ? (
                 <p className={styles.warning} role="alert">
-                    Realtime stream is reconnecting. Showing the last temperature snapshot.
+                    Realtime stream is reconnecting. Showing the last valid temperature update.
                 </p>
             ) : null}
             {getHealthWarning(reading) ? (

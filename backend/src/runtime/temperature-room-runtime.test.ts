@@ -511,9 +511,9 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            runtime.runScenario('emit_invalid_reading');
-            runtime.runScenario('replay_last_reading');
-            runtime.runScenario('reset');
+            runtime.runDeviceScenario('temp-desk', 'emit_invalid_reading');
+            runtime.runDeviceScenario('temp-desk', 'replay_last_reading');
+            runtime.runDeviceScenario('temp-desk', 'reset');
 
             expect(runtime.getRoomSnapshot().devices[0]?.reportedState).toEqual({
                 temperature: 22,
@@ -567,10 +567,10 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            runtime.runScenario('pause_telemetry');
+            runtime.runDeviceScenario('temp-desk', 'pause_telemetry');
             timer.run(1);
             timer.run(1);
-            runtime.runScenario('resume_telemetry');
+            runtime.runDeviceScenario('temp-desk', 'resume_telemetry');
             timer.run(3);
 
             expect(healthSnapshots).toEqual(['online', 'stale', 'offline', 'online']);

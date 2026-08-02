@@ -39,6 +39,7 @@ describe('temperature read path integration', () => {
                             reason: 'read_only_device',
                         },
                         lastSeenAt: '2026-06-08T09:30:00Z',
+                        recentEvents: expect.any(Array),
                     },
                 ],
                 activeCommands: [],

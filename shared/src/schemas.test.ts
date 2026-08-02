@@ -112,6 +112,69 @@ describe('platform event schemas', () => {
 });
 
 describe('realtime schemas', () => {
+    it('accepts only a contiguous device update with matching canonical device history', () => {
+        const update = createDeviceUpdatedMessage();
+
+        expect(isRoomRealtimeServerMessage(update)).toBe(true);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                revision: 2,
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    recentEvents: [
+                        {
+                            ...update.payload.recentEvents[0],
+                            deviceId: 'other-device',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    recentEvents: [
+                        {
+                            ...update.payload.recentEvents[0],
+                            occurredAt: '2026-06-08T11:30:00+02:00',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+    });
+
+    it('rejects a snapshot whose deprecated root event history has a noncanonical timestamp', () => {
+        const snapshot = createSnapshotWithActiveCommands([]);
+        snapshot.payload.recentEvents = [
+            {
+                eventId: 'evt-1',
+                eventType: 'telemetry.reading.recorded',
+                occurredAt: '2026-06-08T11:30:00+02:00',
+                source: 'simulator-adapter',
+                deviceId: 'temp-desk',
+                summary: 'Temperature reading recorded',
+            },
+        ];
+
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
+    });
+
+    it('rejects duplicate device identifiers in a room snapshot', () => {
+        const snapshot = createSnapshotWithActiveCommands([]);
+        snapshot.payload.devices = [createLedDevice(), createLedDevice()];
+
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
+    });
+
     it('requires dispatchedAt for a pending command', () => {
         expect(
             isRoomRealtimeServerMessage({
@@ -370,6 +433,35 @@ function createLedDevice(activeCommandId?: string) {
         reportedState: { power: 'off' },
         commandAvailability: { policy: 'allow' },
         ...(activeCommandId ? { activeCommandId } : {}),
+    };
+}
+
+function createDeviceUpdatedMessage() {
+    return {
+        messageType: 'device.updated' as const,
+        version: 2 as const,
+        previousRevision: 0,
+        revision: 1,
+        sentAt: '2026-06-08T09:30:01Z',
+        payload: {
+            deviceId: 'temp-desk',
+            name: 'Desk Temperature',
+            role: 'temperature-sensor' as const,
+            health: 'online' as const,
+            reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
+            commandAvailability: { policy: 'block' as const, reason: 'read_only_device' },
+            lastSeenAt: '2026-06-08T09:30:00Z',
+            recentEvents: [
+                {
+                    eventId: 'evt-temperature-1',
+                    eventType: 'telemetry.reading.recorded' as const,
+                    occurredAt: '2026-06-08T09:30:00Z',
+                    source: 'simulator-adapter' as const,
+                    deviceId: 'temp-desk',
+                    summary: 'Temperature reading recorded',
+                },
+            ],
+        },
     };
 }
 

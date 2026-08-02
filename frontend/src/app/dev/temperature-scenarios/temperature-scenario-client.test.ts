@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createTemperatureScenarioClient } from './temperature-scenario-client';
+import {
+    createDeviceScenarioClient,
+    createTemperatureScenarioClient,
+} from './temperature-scenario-client';
 
 describe('createTemperatureScenarioClient', () => {
     it('posts a scenario action and returns the validated result', async () => {
@@ -102,5 +105,40 @@ describe('createTemperatureScenarioClient', () => {
         await expect(client.getDiagnostics()).rejects.toThrow(
             'Diagnostics returned an invalid response.',
         );
+    });
+
+    it('uses the same encoded device resource for discovery and scenario execution', async () => {
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify({ deviceId: 'temp desk/1', scenarios: [] }), {
+                    status: 200,
+                }),
+            )
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify({ action: 'pause_telemetry', status: 'completed' }), {
+                    status: 200,
+                }),
+            );
+        const client = createDeviceScenarioClient('temp desk/1', fetchMock);
+
+        await client.getScenarios!();
+        await client.runScenario('pause_telemetry');
+
+        expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+            'http://localhost:4310/dev/devices/temp%20desk%2F1/scenarios',
+            'http://localhost:4310/dev/devices/temp%20desk%2F1/scenarios',
+        ]);
+    });
+
+    it('rejects discovery for a different device', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(JSON.stringify({ deviceId: 'other-device', scenarios: [] }), {
+                status: 200,
+            }),
+        );
+        const client = createDeviceScenarioClient('temp-desk', fetchMock);
+
+        await expect(client.getScenarios!()).rejects.toThrow('different device');
     });
 });

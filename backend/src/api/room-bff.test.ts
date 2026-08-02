@@ -1,6 +1,10 @@
 import type { AddressInfo } from 'node:net';
 
-import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
+import type {
+    RoomRealtimeServerMessage,
+    RoomSnapshotProjection,
+    TemperatureScenarioAction,
+} from '@smart-room/contracts';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -123,31 +127,26 @@ describe('createRoomBffServer', () => {
         });
     });
 
-    it('runs a validated development temperature scenario', async () => {
-        const actions: string[] = [];
-        const server = await listen(
-            createRoomBffServer({
-                ...createRoomBffConfig(),
-                runScenario(action) {
-                    actions.push(action);
-                    return { action, status: 'completed' };
-                },
-            }),
-        );
+    it('discovers and runs a validated scenario for the requested device', async () => {
+        const actions: Array<{ deviceId: string; action: string }> = [];
+        const server = await listen(createRoomBffServer(createScenarioBffConfig(actions)));
         openServers.push(server);
 
-        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+        const discovery = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`);
+        const response = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'pause_telemetry' }),
         });
 
+        expect(discovery.status).toBe(200);
+        await expect(discovery.json()).resolves.toMatchObject({ deviceId: 'temp-desk' });
         expect(response.status).toBe(200);
         await expect(response.json()).resolves.toEqual({
             action: 'pause_telemetry',
             status: 'completed',
         });
-        expect(actions).toEqual(['pause_telemetry']);
+        expect(actions).toEqual([{ deviceId: 'temp-desk', action: 'pause_telemetry' }]);
     });
 
     it('routes a development scenario through the real runtime and room projection', async () => {
@@ -160,17 +159,21 @@ describe('createRoomBffServer', () => {
                 getRoomSnapshot: runtime.getRoomSnapshot,
                 getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
                 subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
-                runScenario: runtime.runScenario,
+                runDeviceScenario: runtime.runDeviceScenario,
+                getDeviceScenarios: runtime.getDeviceScenarios,
             }),
         );
         openServers.push(server);
 
         try {
-            const actionResponse = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'emit_next_reading' }),
-            });
+            const actionResponse = await fetch(
+                `${serverUrl(server)}/dev/devices/temp-desk/scenarios`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'emit_next_reading' }),
+                },
+            );
             const roomResponse = await fetch(`${serverUrl(server)}/room`);
 
             expect(actionResponse.status).toBe(200);
@@ -193,7 +196,7 @@ describe('createRoomBffServer', () => {
         const server = await listen(createRoomBffServer(createRoomBffConfig()));
         openServers.push(server);
 
-        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+        const response = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'pause_telemetry' }),
@@ -202,18 +205,34 @@ describe('createRoomBffServer', () => {
         expect(response.status).toBe(404);
     });
 
-    it('rejects unsupported development scenario actions', async () => {
+    it('rejects discovery responses that belong to a different device and leaves the legacy URL unavailable', async () => {
         const server = await listen(
             createRoomBffServer({
                 ...createRoomBffConfig(),
-                runScenario(action) {
-                    return { action, status: 'completed' };
+                getDeviceScenarios() {
+                    return {
+                        deviceId: 'other-device',
+                        scenarios: [{ action: 'pause_telemetry' }],
+                    };
                 },
             }),
         );
         openServers.push(server);
 
-        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+        const mismatch = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`);
+        const legacy = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+            method: 'POST',
+        });
+
+        expect(mismatch.status).toBe(404);
+        expect(legacy.status).toBe(404);
+    });
+
+    it('rejects unsupported development scenario actions', async () => {
+        const server = await listen(createRoomBffServer(createScenarioBffConfig([])));
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'delete_room' }),
@@ -226,17 +245,10 @@ describe('createRoomBffServer', () => {
     });
 
     it('rejects development scenario requests without application/json', async () => {
-        const server = await listen(
-            createRoomBffServer({
-                ...createRoomBffConfig(),
-                runScenario(action) {
-                    return { action, status: 'completed' };
-                },
-            }),
-        );
+        const server = await listen(createRoomBffServer(createScenarioBffConfig([])));
         openServers.push(server);
 
-        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+        const response = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify({ action: 'pause_telemetry' }),
@@ -246,17 +258,10 @@ describe('createRoomBffServer', () => {
     });
 
     it('reports malformed development scenario JSON as an invalid request', async () => {
-        const server = await listen(
-            createRoomBffServer({
-                ...createRoomBffConfig(),
-                runScenario(action) {
-                    return { action, status: 'completed' };
-                },
-            }),
-        );
+        const server = await listen(createRoomBffServer(createScenarioBffConfig([])));
         openServers.push(server);
 
-        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+        const response = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: '{invalid',
@@ -272,15 +277,15 @@ describe('createRoomBffServer', () => {
     it('reports scenario execution failures without treating them as invalid requests', async () => {
         const server = await listen(
             createRoomBffServer({
-                ...createRoomBffConfig(),
-                runScenario() {
+                ...createScenarioBffConfig([]),
+                runDeviceScenario() {
                     throw new Error('Simulator unavailable.');
                 },
             }),
         );
         openServers.push(server);
 
-        const response = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+        const response = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'pause_telemetry' }),
@@ -326,9 +331,10 @@ describe('createRoomBffServer', () => {
 
         await expect(readRealtimeMessage(socket)).resolves.toEqual({
             messageType: 'room.snapshot',
-            version: 1,
+            version: 2,
+            revision: 0,
             sentAt: '2026-06-08T09:30:01Z',
-            payload: createRoomSnapshot(),
+            payload: expect.objectContaining(createRoomSnapshot()),
         });
     });
 
@@ -369,7 +375,7 @@ describe('createRoomBffServer', () => {
         });
     });
 
-    it('streams room snapshot updates over the realtime WebSocket', async () => {
+    it('streams a device delta after the initial room snapshot', async () => {
         const harness = createRoomBffHarness({
             sentAt: ['2026-06-08T09:30:01Z', '2026-06-08T09:30:02Z'],
         });
@@ -388,19 +394,16 @@ describe('createRoomBffServer', () => {
         );
 
         await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
-            messageType: 'room.snapshot',
-            version: 1,
+            messageType: 'device.updated',
+            version: 2,
+            previousRevision: 0,
+            revision: 1,
             sentAt: '2026-06-08T09:30:02Z',
             payload: {
-                updatedAt: '2026-06-08T09:30:02Z',
-                devices: [
-                    expect.objectContaining({
-                        reportedState: {
-                            temperature: 22.4,
-                            temperatureUnit: 'celsius',
-                        },
-                    }),
-                ],
+                reportedState: {
+                    temperature: 22.4,
+                    temperatureUnit: 'celsius',
+                },
             },
         });
     });
@@ -446,6 +449,21 @@ function createRoomBffConfig({
         },
         subscribeRoomSnapshot() {
             return () => undefined;
+        },
+    };
+}
+
+function createScenarioBffConfig(actions: Array<{ deviceId: string; action: string }>) {
+    return {
+        ...createRoomBffConfig(),
+        getDeviceScenarios(deviceId: string) {
+            return deviceId === 'temp-desk'
+                ? { deviceId, scenarios: [{ action: 'pause_telemetry' as const }] }
+                : undefined;
+        },
+        runDeviceScenario(deviceId: string, action: TemperatureScenarioAction) {
+            actions.push({ deviceId, action });
+            return { action, status: 'completed' } as const;
         },
     };
 }
@@ -532,6 +550,17 @@ function createRoomSnapshot({
                     reason: 'read_only_device',
                 },
                 lastSeenAt: '2026-06-08T09:30:00Z',
+                recentEvents: [
+                    {
+                        eventId: 'evt-temperature-1',
+                        eventType: 'telemetry.reading.recorded',
+                        occurredAt: '2026-06-08T09:30:00Z',
+                        source: 'simulator-adapter',
+                        deviceId: 'temp-desk',
+                        commandId: undefined,
+                        summary: 'Temperature reading recorded',
+                    },
+                ],
             },
         ],
         activeCommands: [],
