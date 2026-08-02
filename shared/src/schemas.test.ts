@@ -250,6 +250,30 @@ describe('realtime schemas', () => {
                 ]).payload,
             ),
         ).toBe(false);
+
+        expect(
+            isRoomRealtimeServerMessage({
+                ...createSnapshotWithActiveCommands([]),
+                payload: {
+                    ...createSnapshotWithActiveCommands([]).payload,
+                    devices: [
+                        createLedDevice('cmd-duplicate'),
+                        {
+                            ...createLedDevice('cmd-duplicate'),
+                            deviceId: 'led-secondary',
+                            name: 'Secondary LED',
+                        },
+                    ],
+                    activeCommands: [
+                        activeCommand,
+                        {
+                            ...activeCommand,
+                            deviceId: 'led-secondary',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
         expect(
             isRoomRealtimeServerMessage({
                 ...createSnapshotWithActiveCommands([activeCommand]),
@@ -288,6 +312,13 @@ describe('realtime schemas', () => {
         ];
 
         expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
+
+        snapshot.payload.recentCommands[0] = {
+            ...snapshot.payload.recentCommands[0],
+            dispatchedAt: '2026-06-08T09:30:00.500Z',
+        };
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
+
         expect(
             isRoomRealtimeServerMessage({
                 ...snapshot,

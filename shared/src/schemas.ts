@@ -196,6 +196,7 @@ const terminalCommandProjectionSchema = Type.Union([
         {
             ...activeCommandProjectionBaseShape,
             status: Type.Literal('failed'),
+            dispatchedAt: Type.Optional(isoTimestampSchema),
             failedAt: isoTimestampSchema,
             reason: nonEmptyStringSchema,
             message: nonEmptyStringSchema,
@@ -341,7 +342,11 @@ function hasConsistentCommands(snapshot: Static<typeof roomSnapshotProjectionSch
     const commandIds = new Set<string>();
 
     for (const command of snapshot.activeCommands) {
-        if (!deviceIds.has(command.deviceId) || activeCommandByDeviceId.has(command.deviceId)) {
+        if (
+            !deviceIds.has(command.deviceId) ||
+            activeCommandByDeviceId.has(command.deviceId) ||
+            commandIds.has(command.commandId)
+        ) {
             return false;
         }
 

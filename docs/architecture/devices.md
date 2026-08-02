@@ -23,25 +23,32 @@
 
 ## State Fields
 
-A useful device state record should separate current observations from user intent.
+A room snapshot should separate current device observations from active and terminal command
+projections. A device links to its one active command by `activeCommandId`; command details live
+in the top-level `activeCommands` and `recentCommands` collections.
 
 ```json
 {
-    "deviceId": "led-main",
-    "type": "light",
-    "health": "online",
-    "reportedState": {
-        "power": "off"
-    },
-    "requestedState": {
-        "power": "on"
-    },
-    "command": {
-        "id": "cmd-123",
-        "state": "pending",
-        "requestedAt": "2026-05-21T07:10:00Z"
-    },
-    "lastSeenAt": "2026-05-21T07:10:01Z"
+    "devices": [
+        {
+            "deviceId": "led-main",
+            "health": "online",
+            "reportedState": { "power": "off" },
+            "activeCommandId": "cmd-123",
+            "lastSeenAt": "2026-05-21T07:10:01Z"
+        }
+    ],
+    "activeCommands": [
+        {
+            "commandId": "cmd-123",
+            "deviceId": "led-main",
+            "status": "pending",
+            "requestedState": { "power": "on" },
+            "requestedAt": "2026-05-21T07:10:00Z",
+            "dispatchedAt": "2026-05-21T07:10:00Z"
+        }
+    ],
+    "recentCommands": []
 }
 ```
 
@@ -97,16 +104,17 @@ Initial state:
 - command.state: idle
 
 User clicks: turn LED on
-- requestedState.power: on
-- command.state: accepted
+- activeCommands includes an accepted command with requestedState.power: on
+- device.activeCommandId references that command
 - reportedState.power: off
 
 Backend dispatches the command
-- command.state: pending
+- activeCommands contains the pending command with dispatchedAt
 
 Device reports: LED on
 - reportedState.power: on
-- command.state: confirmed
+- activeCommands no longer contains the command
+- recentCommands contains the confirmed command
 ```
 
 ## Device Model Rules

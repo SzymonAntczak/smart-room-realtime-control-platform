@@ -170,7 +170,7 @@ Expected outcome:
 - delayed or missing temperature updates are part of the system model,
 - duplicate and invalid temperature telemetry do not corrupt current state,
 - recovery after stale or offline periods is visible and tested,
-- recent temperature events can explain how the current reading was reached,
+- development diagnostics make ignored duplicate and invalid telemetry explainable,
 - a manual acceptance checklist exists for the temperature slice.
 
 Stage 2 is complete when the temperature slice can demonstrate normal,
@@ -196,8 +196,8 @@ Expected outcome:
   the last reading, emitting an invalid reading, emitting the next reading and
   resetting the scenario,
 - each action flows through backend scenario control, simulator behavior,
-  adapter translation, event processing, projection updates and `room.snapshot`
-  delivery,
+  adapter translation, event processing, projection updates and realtime delivery
+  through the connection snapshot baseline or revision-linked device updates,
 - the UI can manually demonstrate normal, stale, offline, recovery, duplicate,
   invalid and reconnect behavior without changing the product model,
 - the dev controls are clearly separated from the user-facing smart-room

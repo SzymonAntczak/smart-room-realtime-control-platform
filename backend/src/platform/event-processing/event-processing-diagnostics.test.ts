@@ -19,6 +19,35 @@ describe('createEventProcessingDiagnostics', () => {
         });
     });
 
+    it('records deduplication evictions from accepted processing results', () => {
+        const diagnostics = createDiagnostics({
+            observedAt: ['2026-06-08T09:30:01Z', '2026-06-08T09:30:02Z'],
+        });
+
+        diagnostics.recordProcessingResult(createEvent(), {
+            status: 'accepted',
+            evaluatedAt: '2026-06-08T09:30:00Z',
+            state: createEmptyState(),
+            deduplicationEvictedEventIds: ['evt-1', 'evt-2'],
+        });
+
+        expect(diagnostics.getSnapshot()).toEqual({
+            ignoredEvents: [],
+            deduplicationEvictions: [
+                {
+                    diagnosticId: 'dedupe-2',
+                    evictedEventId: 'evt-2',
+                    observedAt: '2026-06-08T09:30:02Z',
+                },
+                {
+                    diagnosticId: 'dedupe-1',
+                    evictedEventId: 'evt-1',
+                    observedAt: '2026-06-08T09:30:01Z',
+                },
+            ],
+        });
+    });
+
     it('records representative ignored reasons with event metadata', () => {
         const diagnostics = createDiagnostics({
             observedAt: ['2026-06-08T09:30:01Z', '2026-06-08T09:30:02Z'],

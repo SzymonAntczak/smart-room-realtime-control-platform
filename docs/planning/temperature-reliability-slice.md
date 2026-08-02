@@ -9,15 +9,15 @@ The slice remains read-only. It does not add temperature commands.
 
 - Normal telemetry is visible in realtime with sensor name, value, unit and
   last reading time.
-- The UI shows recent temperature events so the current reading can be traced.
+- Development diagnostics expose ignored duplicate and invalid telemetry without changing the
+  current reading.
 - When telemetry stops long enough to become `stale`, the UI keeps the last
   known reading visible and labels it as stale.
 - When telemetry remains absent long enough to become `offline`, the UI keeps
   the last known reading visible and labels the sensor as offline.
 - A fresh reading after stale or offline state returns the sensor to `online`
   and replaces the stale value with the fresh value.
-- Duplicate platform events do not update current state or create duplicate
-  recent event history.
+- Duplicate platform events do not update current state.
 - Invalid telemetry payloads do not update current state.
 - Replayed or out-of-order device-like readings do not regress the current
   value.
@@ -45,19 +45,19 @@ Run the backend and frontend locally with `npm run dev`. The development panel
 is intentionally separate from the temperature control surface and is available
 only in the local development build.
 
-1. Confirm that normal telemetry shows an `Online` reading and recent events.
+1. Confirm that normal telemetry shows an `Online` reading and its last-reading time.
 2. Choose **Pause telemetry**; wait for the reading to become `Stale`, then
    `Offline`, while its last value remains visible.
 3. Choose **Resume telemetry** and **Emit next reading**; confirm the fresh
    observation restores `Online` health.
-4. Choose **Replay last reading**; confirm the current reading and event feed
-   do not change, then use **Refresh diagnostics** in the dev panel to confirm
+4. Choose **Replay last reading**; confirm the current reading does not change,
+   then use **Refresh diagnostics** in the dev panel to confirm
    `duplicate_event`.
 5. Choose **Emit invalid reading**; confirm the current reading does not change,
    then use **Refresh diagnostics** to confirm `invalid_payload`.
 6. Choose **Reset scenario**; confirm scheduled telemetry resumes from the
-   deterministic first simulator value. Existing recent-event and diagnostics
-   history remains available for inspection.
+   deterministic first simulator value. Existing diagnostics remain available
+   for inspection.
 7. Stop and restart the local backend to confirm the frontend shows reconnecting
    state without erasing its last valid snapshot.
 
@@ -69,4 +69,6 @@ flows without hiding uncertainty from the user.
 
 ## Acceptance Record
 
-The local manual checklist was completed successfully on 2026-08-01.
+The local manual checklist was completed successfully on 2026-08-01 against the
+current read-only projection model. Event-history UI is deliberately deferred
+to a dedicated future slice by the realtime synchronization ADR.
