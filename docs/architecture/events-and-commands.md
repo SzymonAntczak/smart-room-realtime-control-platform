@@ -21,7 +21,6 @@ Every stored event should include a stable envelope.
 {
     "eventId": "evt-123",
     "eventType": "device.state.reported",
-    "version": 1,
     "occurredAt": "2026-05-21T07:10:01Z",
     "source": "simulator-adapter",
     "deviceId": "led-main",
@@ -33,7 +32,6 @@ Required envelope fields:
 
 - `eventId`: unique event identifier for deduplication
 - `eventType`: stable event name
-- `version`: contract version
 - `occurredAt`: time when the fact happened
 - `source`: producer name, for example `simulator-adapter`, `hardware-adapter`
   or `backend`
@@ -183,8 +181,9 @@ observable state.
 
 ## Validation Rules
 
-- Unknown event versions should not update derived state silently.
 - Malformed events should be rejected or stored in a quarantine stream.
+- Event consumers may ignore additional envelope fields after validating the
+  required current shape and event payload.
 - Duplicate events should not create duplicate history entries.
 - Command lifecycle events without a non-empty `commandId` should not update command state.
 - Commands should be idempotent where possible, especially for retries.

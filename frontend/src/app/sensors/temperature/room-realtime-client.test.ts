@@ -81,7 +81,6 @@ describe('connectTemperatureRealtime', () => {
 
         MockWebSocket.latest().emitMessage({
             messageType: 'room.snapshot',
-            version: 1,
             sentAt: '2026-06-08T09:30:00Z',
             payload: {
                 roomName: 'Smart Room',
@@ -92,7 +91,7 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
     });
 
-    it('rejects a v2 snapshot carrying removed history fields', () => {
+    it('rejects a snapshot carrying removed history fields', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
 
@@ -115,7 +114,6 @@ describe('connectTemperatureRealtime', () => {
         MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
         MockWebSocket.latest().emitMessage({
             messageType: 'room.snapshot',
-            version: 1,
             sentAt: '2026-06-08T09:30:01Z',
             payload: {
                 roomName: 'Smart Room',
@@ -141,7 +139,6 @@ describe('connectTemperatureRealtime', () => {
 
         MockWebSocket.latest().emitMessage({
             messageType: 'room.error',
-            version: 1,
             sentAt: '2026-06-08T09:30:00Z',
             payload: {
                 reason: 'internal_error',
@@ -153,17 +150,31 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
     });
 
-    it('reports unsupported snapshot versions as invalid messages', () => {
+    it('rejects a snapshot carrying a removed contract field', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
 
         MockWebSocket.latest().emitMessage({
             ...createRoomSnapshotMessage(),
-            version: 3,
+            version: 1,
         });
 
         expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('rejects a delta carrying a removed contract field without replacing the valid view', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage({
+            ...createDeviceUpdatedMessage(),
+            version: 1,
+        });
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
     });
 
     it('reports snapshots with invalid timestamps as invalid messages', () => {
@@ -249,27 +260,6 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
     });
 
-    it('continues to accept repeated snapshots in a legacy v1 session', () => {
-        const handlers = createHandlers();
-        connectTemperatureRealtime(handlers, MockWebSocket);
-        MockWebSocket.latest().emitMessage(createLegacyRoomSnapshotMessage());
-        MockWebSocket.latest().emitMessage(
-            createLegacyRoomSnapshotMessage({
-                devices: [
-                    {
-                        ...createLegacyTemperatureDevice(),
-                        reportedState: { temperature: 22.8, temperatureUnit: 'celsius' },
-                    },
-                ],
-            }),
-        );
-
-        expect(handlers.onInvalidMessage).not.toHaveBeenCalled();
-        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
-            expect.objectContaining({ reading: expect.objectContaining({ value: 22.8 }) }),
-        );
-    });
-
     it('reports connection status and reconnects after the stream closes', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket, {
@@ -328,7 +318,6 @@ function createRoomSnapshotMessage({
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'room.snapshot',
-        version: 2,
         revision: 0,
         sentAt: '2026-06-08T09:30:01Z',
         payload: {
@@ -356,7 +345,6 @@ function createDeviceUpdatedMessage({
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'device.updated',
-        version: 2,
         previousRevision,
         revision,
         sentAt: '2026-06-08T09:30:02Z',
@@ -365,26 +353,6 @@ function createDeviceUpdatedMessage({
             deviceId,
             ...(health ? { health } : {}),
             reportedState,
-        },
-    };
-}
-
-function createLegacyRoomSnapshotMessage({
-    devices = [createLegacyTemperatureDevice()],
-}: {
-    devices?: ReturnType<typeof createLegacyTemperatureDevice>[];
-} = {}) {
-    return {
-        messageType: 'room.snapshot',
-        version: 1,
-        sentAt: '2026-06-08T09:30:01Z',
-        payload: {
-            roomName: 'Smart Room',
-            updatedAt: '2026-06-08T09:30:00Z',
-            devices,
-            activeCommands: [],
-            recentCommands: [],
-            recentEvents: [createLegacyEventFeedItem()],
         },
     };
 }
@@ -404,24 +372,6 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
             reason: 'read_only_device',
         },
         lastSeenAt: '2026-06-08T09:30:00Z',
-    };
-}
-
-function createLegacyTemperatureDevice() {
-    return {
-        ...createTemperatureDevice(),
-        recentEvents: [createLegacyEventFeedItem()],
-    };
-}
-
-function createLegacyEventFeedItem() {
-    return {
-        eventId: 'evt-temperature-1',
-        eventType: 'telemetry.reading.recorded' as const,
-        occurredAt: '2026-06-08T09:30:00Z',
-        source: 'simulator-adapter' as const,
-        deviceId: 'temp-desk',
-        summary: 'Temperature reading recorded',
     };
 }
 

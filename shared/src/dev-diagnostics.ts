@@ -2,7 +2,6 @@ export const ignoredEventReasons = [
     'duplicate_event',
     'malformed_event',
     'unsupported_event_type',
-    'unsupported_event_version',
     'unknown_device',
     'invalid_payload',
     'device_metric_mismatch',

@@ -14,7 +14,7 @@ Without explicit correlation rules, a device state report may accidentally be
 treated as confirmation for the wrong command. This becomes especially risky
 when commands are retried, delayed, timed out or sent close together.
 
-The first version also needs a simple policy for concurrent commands. A single
+The initial scope also needs a simple policy for concurrent commands. A single
 device receiving multiple overlapping commands is harder to reason about than a
 single active command, especially before real hardware behavior is known.
 
@@ -73,7 +73,7 @@ they avoid hard-coding equality rules that will fail for dimmers, thermostats
 or devices that report rounded values.
 
 Blocking overlapping commands keeps the first control loop simple and makes the
-UI easier to explain. Later versions can introduce queues or superseding
+UI easier to explain. A later extension can introduce queues or superseding
 commands when there is a concrete workflow that needs them.
 
 Rejecting an overlapping command should still be recorded as an auditable

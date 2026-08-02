@@ -263,7 +263,6 @@ function createInvalidTemperatureEvent(
     return {
         eventId: 'evt-temperature-invalid',
         eventType: 'telemetry.reading.recorded',
-        version: 1,
         occurredAt: '2026-06-08T09:30:01Z',
         source: 'simulator-adapter',
         deviceId: 'temp-desk',

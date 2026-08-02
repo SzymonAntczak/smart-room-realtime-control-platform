@@ -80,7 +80,6 @@ describe('platform event schemas', () => {
         const candidate = {
             ...createEvent('telemetry.reading.recorded'),
             eventType: 'device.unknown',
-            version: 2,
             occurredAt: '2026-06-08T11:30:00+02:00',
         };
 
@@ -133,44 +132,16 @@ describe('realtime schemas', () => {
         ).toBe(false);
     });
 
-    it('rejects a v2 snapshot containing removed root event history', () => {
+    it('rejects a snapshot containing removed root event history', () => {
         const snapshot = createSnapshotWithActiveCommands([]);
-        snapshot.version = 2;
         snapshot.revision = 0;
-        snapshot.payload.recentEvents = [];
 
-        expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
-    });
-
-    it('accepts a frozen v1 snapshot containing historical event fields', () => {
-        const snapshot = createSnapshotWithActiveCommands([]);
-        snapshot.payload.devices = [
-            {
-                ...createLedDevice(),
-                recentEvents: [
-                    {
-                        eventId: 'evt-led-1',
-                        eventType: 'device.state.reported',
-                        occurredAt: '2026-06-08T09:30:00Z',
-                        source: 'simulator-adapter',
-                        deviceId: 'led-main',
-                        summary: 'LED reported off',
-                    },
-                ],
-            },
-        ];
-        snapshot.payload.recentEvents = [
-            {
-                eventId: 'evt-led-1',
-                eventType: 'device.state.reported',
-                occurredAt: '2026-06-08T09:30:00Z',
-                source: 'simulator-adapter',
-                deviceId: 'led-main',
-                summary: 'LED reported off',
-            },
-        ];
-
-        expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...snapshot,
+                payload: { ...snapshot.payload, recentEvents: [] },
+            }),
+        ).toBe(false);
     });
 
     it('rejects duplicate device identifiers in a room snapshot', () => {
@@ -184,7 +155,7 @@ describe('realtime schemas', () => {
         expect(
             isRoomRealtimeServerMessage({
                 messageType: 'room.snapshot',
-                version: 1,
+                revision: 0,
                 sentAt: '2026-06-08T09:30:01Z',
                 payload: {
                     roomName: 'Smart Room',
@@ -347,18 +318,15 @@ describe('realtime schemas', () => {
         ).toBe(false);
     });
 
-    it('accepts an earlier v1 snapshot without command history', () => {
+    it('requires command history in every snapshot', () => {
         const snapshot = createSnapshotWithActiveCommands([]);
-        const legacyPayload = Object.fromEntries(
+        const payloadWithoutHistory = Object.fromEntries(
             Object.entries(snapshot.payload).filter(([key]) => key !== 'recentCommands'),
         );
 
-        expect(
-            isRoomRealtimeServerMessage({
-                ...snapshot,
-                payload: legacyPayload,
-            }),
-        ).toBe(true);
+        expect(isRoomRealtimeServerMessage({ ...snapshot, payload: payloadWithoutHistory })).toBe(
+            false,
+        );
     });
 
     it('requires failure detail for failed and timed-out command history', () => {
@@ -400,8 +368,7 @@ describe('realtime schemas', () => {
 
 function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
     messageType: string;
-    version: number;
-    revision?: number;
+    revision: number;
     sentAt: string;
     payload: {
         roomName: string;
@@ -409,14 +376,13 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
         devices: Record<string, unknown>[];
         activeCommands: unknown[];
         recentCommands: Record<string, unknown>[];
-        recentEvents: unknown[];
     };
 } {
     const firstCommand = activeCommands[0] as { commandId?: string } | undefined;
 
     return {
         messageType: 'room.snapshot',
-        version: 1,
+        revision: 0,
         sentAt: '2026-06-08T09:30:01Z',
         payload: {
             roomName: 'Smart Room',
@@ -424,7 +390,6 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
             devices: activeCommands.length > 0 ? [createLedDevice(firstCommand?.commandId)] : [],
             activeCommands,
             recentCommands: [],
-            recentEvents: [],
         },
     };
 }
@@ -444,7 +409,6 @@ function createLedDevice(activeCommandId?: string) {
 function createDeviceUpdatedMessage() {
     return {
         messageType: 'device.updated' as const,
-        version: 2 as const,
         previousRevision: 0,
         revision: 1,
         sentAt: '2026-06-08T09:30:01Z',
@@ -463,7 +427,6 @@ function createDeviceUpdatedMessage() {
 function createEvent(eventType: string) {
     const base = {
         eventId: 'evt-1',
-        version: 1,
         occurredAt: '2026-06-08T09:30:00Z',
         source: 'backend',
         deviceId: 'led-main',

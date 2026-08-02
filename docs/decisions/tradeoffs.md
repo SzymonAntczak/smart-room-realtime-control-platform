@@ -41,7 +41,7 @@ Status: promoted to [ADR: Event Simulator Before Real Devices](adr-event-simulat
 
 ## Local-First Before Cloud
 
-Decision: the first version should run locally without cloud infrastructure.
+Decision: the initial platform scope should run locally without cloud infrastructure.
 
 Reason: remote access, authentication, synchronization and deployment topology
 would add noise before the core control loop is understood.

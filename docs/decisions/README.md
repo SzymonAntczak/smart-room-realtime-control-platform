@@ -21,4 +21,8 @@ Keep current system behavior in [architecture](../architecture/). Promote a trad
 - [Command Correlation, Confirmation and Concurrency](adr-command-correlation-confirmation-and-concurrency.md)
 - [JSON Schema Transport Contracts](adr-json-schema-transport-contracts.md)
 - [Command History and Terminal Projections](adr-command-history-and-terminal-projections.md)
+- [Room Realtime Synchronization](adr-room-realtime-synchronization.md)
+
+## Superseded ADRs
+
 - [Versioned Room Realtime Synchronization](adr-versioned-room-realtime-sync.md)

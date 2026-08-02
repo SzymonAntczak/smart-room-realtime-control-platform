@@ -2,7 +2,6 @@ import {
     type DeviceProjection,
     type DeviceState,
     isRoomRealtimeServerMessage,
-    type LegacyRoomSnapshotProjection,
     type RoomRealtimeServerMessage,
     type RoomSnapshotProjection,
 } from '@smart-room/contracts';
@@ -135,16 +134,11 @@ export function connectTemperatureRealtime(
 
     function applyRealtimeMessage(message: RoomRealtimeServerMessage): RoomSnapshotProjection {
         if (message.messageType === 'room.snapshot') {
-            const isLegacySnapshotSession = roomSnapshot !== undefined && revision === undefined;
-            if (
-                (roomSnapshot || revision !== undefined) &&
-                !(message.version === 1 && isLegacySnapshotSession)
-            ) {
+            if (roomSnapshot || revision !== undefined) {
                 throw new Error('Realtime room stream sent an unexpected snapshot baseline.');
             }
-            roomSnapshot =
-                message.version === 1 ? toCurrentRoomSnapshot(message.payload) : message.payload;
-            revision = message.version === 2 ? message.revision : undefined;
+            roomSnapshot = message.payload;
+            revision = message.revision;
             return roomSnapshot;
         }
 
@@ -169,24 +163,6 @@ export function connectTemperatureRealtime(
         revision = message.revision;
         return roomSnapshot;
     }
-}
-
-function toCurrentRoomSnapshot(snapshot: LegacyRoomSnapshotProjection): RoomSnapshotProjection {
-    return {
-        roomName: snapshot.roomName,
-        updatedAt: snapshot.updatedAt,
-        devices: snapshot.devices.map(toCurrentDeviceProjection),
-        activeCommands: snapshot.activeCommands,
-        ...(snapshot.recentCommands ? { recentCommands: snapshot.recentCommands } : {}),
-    };
-}
-
-function toCurrentDeviceProjection({
-    recentEvents,
-    ...device
-}: LegacyRoomSnapshotProjection['devices'][number]): DeviceProjection {
-    void recentEvents;
-    return device;
 }
 
 function getRoomRealtimeUrl(): string {

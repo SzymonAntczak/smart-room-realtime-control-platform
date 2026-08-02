@@ -12,8 +12,8 @@ the frontend validates received WebSocket messages independently. This makes
 the JSON contract consumed by HTTP and realtime boundaries less explicit and
 prevents Fastify from using its native validation and response serialization.
 
-The platform must preserve the documented event envelope, BFF projections and
-version-1 `room.snapshot` behavior. Timestamp values with UTC offsets must
+The platform must preserve the documented event envelope and BFF projections.
+Timestamp values with UTC offsets must
 still be normalized to canonical UTC before events reach projections or
 diagnostics.
 

@@ -18,8 +18,6 @@ export const platformEventSources = ['simulator-adapter', 'hardware-adapter', 'b
 
 export type PlatformEventSource = (typeof platformEventSources)[number];
 
-export type PlatformEventVersion = 1;
-
 export type TelemetryMetric = 'temperature';
 
 export type TemperatureUnit = 'celsius';
@@ -30,7 +28,6 @@ export interface PlatformEventEnvelope<
 > {
     eventId: string;
     eventType: TEventType;
-    version: PlatformEventVersion;
     occurredAt: string;
     source: PlatformEventSource;
     deviceId?: string;

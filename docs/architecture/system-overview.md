@@ -103,7 +103,7 @@ Consumes platform events and applies backend processing rules.
 
 Expected responsibilities:
 
-- validate event shape and version
+- validate event shape
 - reject malformed or unsupported events
 - route invalid events to a quarantine stream when the storage/quarantine slice
   exists
@@ -178,7 +178,7 @@ This boundary is BFF-like because it is shaped for the realtime frontend. In the
 target local runtime it belongs to the local Node.js backend together with the
 event processor, read model/projections and in-memory storage.
 
-The current realtime read contract sends a version-2 `room.snapshot` over
+The current realtime read contract sends a `room.snapshot` over
 WebSocket only when the frontend connects or reconnects. It is followed by
 named, revision-linked `device.updated` messages. A device projection contains
 only current device state and health; a future dedicated history slice will
@@ -186,12 +186,11 @@ define event retention and details access. A client reconnects for a new
 snapshot when a delta is malformed or has a revision gap.
 
 - `messageType: "room.snapshot"`
-- `version: 2`
 - `sentAt`: backend send timestamp
 - `payload`: the current `RoomSnapshotProjection`
 
-Unsupported message types, unsupported versions and malformed payloads are not
-renderable frontend state. Accepted events and time-derived health changes such
+Unsupported message types and malformed payloads are not renderable frontend
+state. Accepted events and time-derived health changes such
 as `stale` and `offline` reach connected clients through `device.updated`.
 
 ### Device Adapters

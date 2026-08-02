@@ -108,7 +108,6 @@ describe('TemperatureControl', () => {
         await emitLatestMessage(createRoomSnapshotMessage());
         await emitLatestMessage({
             messageType: 'room.snapshot',
-            version: 1,
             sentAt: '2026-06-08T09:30:01Z',
             payload: {
                 roomName: 'Smart Room',
@@ -250,7 +249,6 @@ function createRoomSnapshotMessage({
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'room.snapshot',
-        version: 2,
         revision: 0,
         sentAt,
         payload: {
@@ -268,7 +266,6 @@ function createDeviceUpdatedMessage(
 ): RoomRealtimeServerMessage {
     return {
         messageType: 'device.updated',
-        version: 2,
         previousRevision: 0,
         revision: 1,
         sentAt: '2026-06-08T09:30:02Z',

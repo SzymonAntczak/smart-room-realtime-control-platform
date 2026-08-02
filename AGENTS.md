@@ -103,7 +103,7 @@ explicitly.
 - Prefer tests that exercise documented behavior, domain invariants, failure
   modes and user-visible reliability risks.
 - Cover important negative and boundary cases when they affect the touched
-  behavior, such as malformed events, duplicate events, unsupported versions,
+  behavior, such as malformed events, duplicate events, unsupported event types,
   lifecycle cleanup, ordering, limits, stale/offline state, timeouts and late
   confirmations.
 - Avoid tests that pass trivially because assertions are too broad, only mirror

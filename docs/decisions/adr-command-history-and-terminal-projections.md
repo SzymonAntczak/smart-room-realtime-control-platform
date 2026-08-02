@@ -23,9 +23,9 @@ device state. The local reference runtime has no durable storage yet.
 
 `activeCommands` contains only `accepted` and `pending` command projections.
 The backend emits `recentCommands`: a bounded, newest-first in-memory list of
-terminal `confirmed`, `failed` and `timed_out` projections. Consumers of
-`room.snapshot` version 1 treat an omitted field as an empty history, preserving
-compatibility with earlier v1 snapshots.
+terminal `confirmed`, `failed` and `timed_out` projections. Every
+`room.snapshot` includes this collection, using an empty list when there are no
+terminal outcomes.
 
 Each terminal projection contains the command and device identifiers, command
 type, requested state, request timestamp, its terminal timestamp, and any
@@ -39,9 +39,6 @@ command type. A matching report can confirm only a still-pending command after
 dispatch. A late matching report updates observed device state and event
 history, but leaves a timed-out command terminal.
 
-This is an additive, controlled extension of the local v1 snapshot contract.
-A future incompatible change to an existing v1 field requires a new message
-version.
 It does not introduce persistence, a command endpoint or a command runtime.
 
 ## Consequences

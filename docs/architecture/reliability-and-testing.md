@@ -59,7 +59,6 @@ Contract tests should verify that events and commands match the documented schem
 Focus areas:
 
 - required envelope fields
-- supported event versions
 - unknown or malformed events
 - idempotency for duplicate events
 

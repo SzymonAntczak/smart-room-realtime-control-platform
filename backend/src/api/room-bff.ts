@@ -354,7 +354,6 @@ function sendRoomSnapshot(
 
     const message: RoomRealtimeServerMessage = {
         messageType: 'room.snapshot',
-        version: 2,
         revision: 0,
         sentAt,
         payload: snapshot,
@@ -398,7 +397,6 @@ function sendRoomDeltas(
             socket,
             {
                 messageType: 'device.updated',
-                version: 2,
                 previousRevision: revision,
                 revision: revision + 1,
                 sentAt,

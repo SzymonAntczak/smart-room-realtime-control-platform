@@ -198,7 +198,7 @@ describe('createRoomBffServer', () => {
         expect(response.status).toBe(404);
     });
 
-    it('rejects discovery responses that belong to a different device and leaves the legacy URL unavailable', async () => {
+    it('rejects discovery responses that belong to a different device and leaves the old URL unavailable', async () => {
         const server = await listen(
             createRoomBffServer({
                 ...createRoomBffConfig(),
@@ -213,12 +213,12 @@ describe('createRoomBffServer', () => {
         openServers.push(server);
 
         const mismatch = await fetch(`${serverUrl(server)}/dev/devices/temp-desk/scenarios`);
-        const legacy = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
+        const removedRoute = await fetch(`${serverUrl(server)}/dev/scenarios/temperature`, {
             method: 'POST',
         });
 
         expect(mismatch.status).toBe(404);
-        expect(legacy.status).toBe(404);
+        expect(removedRoute.status).toBe(404);
     });
 
     it('rejects unsupported development scenario actions', async () => {
@@ -324,7 +324,6 @@ describe('createRoomBffServer', () => {
 
         await expect(readRealtimeMessage(socket)).resolves.toEqual({
             messageType: 'room.snapshot',
-            version: 2,
             revision: 0,
             sentAt: '2026-06-08T09:30:01Z',
             payload: expect.objectContaining(createRoomSnapshot()),
@@ -388,7 +387,6 @@ describe('createRoomBffServer', () => {
 
         await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
             messageType: 'device.updated',
-            version: 2,
             previousRevision: 0,
             revision: 1,
             sentAt: '2026-06-08T09:30:02Z',

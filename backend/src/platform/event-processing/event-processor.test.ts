@@ -68,7 +68,6 @@ describe('createEventProcessor', () => {
 
         const result = processor.processEvent({
             eventType: 'telemetry.reading.recorded',
-            version: 1,
             occurredAt: '2026-06-08T09:30:00Z',
             source: 'simulator-adapter',
             deviceId: 'temp-desk',
@@ -124,22 +123,6 @@ describe('createEventProcessor', () => {
             temperature: 22.5,
             temperatureUnit: 'celsius',
         });
-    });
-
-    it('does not update state for unsupported event versions', () => {
-        const processor = createTemperatureProcessor();
-
-        const result = processor.processEvent(
-            createTemperatureEvent({
-                version: 2,
-            } as unknown as Partial<PlatformEventEnvelope>),
-        );
-
-        expect(result).toMatchObject({
-            status: 'ignored',
-            reason: 'unsupported_event_version',
-        });
-        expect(result.state.devices).toEqual([]);
     });
 
     it('keeps a structurally valid unsupported event type observable', () => {
@@ -322,7 +305,6 @@ function createTemperatureEvent(
     return {
         eventId: 'evt-temperature-1',
         eventType: 'telemetry.reading.recorded',
-        version: 1,
         occurredAt: '2026-06-08T09:30:00Z',
         source: 'simulator-adapter',
         deviceId: 'temp-desk',

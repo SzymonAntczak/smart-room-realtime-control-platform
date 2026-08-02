@@ -31,7 +31,6 @@ describe('createSimulatorTemperatureAdapter', () => {
             {
                 eventId: 'evt-temperature-1',
                 eventType: 'telemetry.reading.recorded',
-                version: 1,
                 occurredAt: '2026-06-08T09:30:00Z',
                 source: 'simulator-adapter',
                 deviceId: 'temp-desk',

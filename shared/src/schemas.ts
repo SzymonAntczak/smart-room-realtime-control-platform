@@ -6,7 +6,6 @@ import { ignoredEventReasons } from './dev-diagnostics';
 import { temperatureScenarioActions } from './dev-scenarios';
 import { commandAvailabilityPolicies, deviceHealthStates, deviceRoles } from './devices';
 import { platformEventSources } from './events';
-import { platformEventTypes } from './events';
 import type { RoomRealtimeServerMessage } from './realtime';
 
 if (!FormatRegistry.Has('date-time')) {
@@ -28,7 +27,6 @@ export const canonicalUtcTimestampSchema = Type.String({
 const platformEventCandidateShape = {
     eventId: nonEmptyStringSchema,
     eventType: Type.String(),
-    version: Type.Number(),
     occurredAt: isoTimestampSchema,
     source: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
     deviceId: Type.Optional(nonEmptyStringSchema),
@@ -77,7 +75,6 @@ const commandTimedOutPayloadSchema = Type.Object({
 
 const platformEventBaseShape = {
     eventId: nonEmptyStringSchema,
-    version: Type.Literal(1),
     occurredAt: isoTimestampSchema,
     source: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
 };
@@ -162,36 +159,6 @@ const deviceProjectionSchema = Type.Object(
     },
     { additionalProperties: false },
 );
-const legacyEventFeedItemProjectionSchema = Type.Object(
-    {
-        eventId: nonEmptyStringSchema,
-        eventType: Type.Union(platformEventTypes.map((eventType) => Type.Literal(eventType))),
-        occurredAt: isoTimestampSchema,
-        source: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
-        deviceId: Type.Optional(nonEmptyStringSchema),
-        commandId: Type.Optional(nonEmptyStringSchema),
-        summary: nonEmptyStringSchema,
-    },
-    { additionalProperties: false },
-);
-const legacyDeviceProjectionSchema = Type.Object(
-    {
-        deviceId: nonEmptyStringSchema,
-        name: nonEmptyStringSchema,
-        role: Type.Union(deviceRoles.map((role) => Type.Literal(role))),
-        health: Type.Union(deviceHealthStates.map((health) => Type.Literal(health))),
-        reportedState: deviceStateSchema,
-        requestedState: Type.Optional(deviceStateSchema),
-        commandAvailability: commandAvailabilitySchema,
-        lastSeenAt: Type.Optional(isoTimestampSchema),
-        warning: Type.Optional(Type.String()),
-        activeCommandId: Type.Optional(nonEmptyStringSchema),
-        recentEvents: Type.Optional(
-            Type.Array(legacyEventFeedItemProjectionSchema, { maxItems: 10 }),
-        ),
-    },
-    { additionalProperties: false },
-);
 const activeCommandProjectionBaseShape = {
     commandId: nonEmptyStringSchema,
     deviceId: nonEmptyStringSchema,
@@ -252,45 +219,31 @@ export const roomSnapshotProjectionSchema = Type.Object(
         updatedAt: isoTimestampSchema,
         devices: Type.Array(deviceProjectionSchema),
         activeCommands: Type.Array(activeCommandProjectionSchema),
-        recentCommands: Type.Optional(Type.Array(terminalCommandProjectionSchema)),
+        recentCommands: Type.Array(terminalCommandProjectionSchema),
     },
     { additionalProperties: false },
 );
-const roomSnapshotV1ProjectionSchema = Type.Object(
+export const roomRealtimeServerMessageSchema = Type.Object(
     {
-        roomName: nonEmptyStringSchema,
-        updatedAt: isoTimestampSchema,
-        devices: Type.Array(legacyDeviceProjectionSchema),
-        activeCommands: Type.Array(activeCommandProjectionSchema),
-        recentCommands: Type.Optional(Type.Array(terminalCommandProjectionSchema)),
-        recentEvents: Type.Array(legacyEventFeedItemProjectionSchema),
+        messageType: Type.Literal('room.snapshot'),
+        revision: Type.Literal(0),
+        sentAt: isoTimestampSchema,
+        payload: roomSnapshotProjectionSchema,
     },
     { additionalProperties: false },
 );
-export const roomRealtimeServerMessageSchema = Type.Object({
-    messageType: Type.Literal('room.snapshot'),
-    version: Type.Literal(2),
-    revision: Type.Literal(0),
-    sentAt: isoTimestampSchema,
-    payload: roomSnapshotProjectionSchema,
-});
-const roomRealtimeV1ServerMessageSchema = Type.Object({
-    messageType: Type.Literal('room.snapshot'),
-    version: Type.Literal(1),
-    sentAt: isoTimestampSchema,
-    payload: roomSnapshotV1ProjectionSchema,
-});
-export const deviceUpdatedMessageSchema = Type.Object({
-    messageType: Type.Literal('device.updated'),
-    version: Type.Literal(2),
-    previousRevision: Type.Integer({ minimum: 0 }),
-    revision: Type.Integer({ minimum: 1 }),
-    sentAt: isoTimestampSchema,
-    payload: deviceProjectionSchema,
-});
+export const deviceUpdatedMessageSchema = Type.Object(
+    {
+        messageType: Type.Literal('device.updated'),
+        previousRevision: Type.Integer({ minimum: 0 }),
+        revision: Type.Integer({ minimum: 1 }),
+        sentAt: isoTimestampSchema,
+        payload: deviceProjectionSchema,
+    },
+    { additionalProperties: false },
+);
 export const roomRealtimeServerMessageUnionSchema = Type.Union([
     roomRealtimeServerMessageSchema,
-    roomRealtimeV1ServerMessageSchema,
     deviceUpdatedMessageSchema,
 ]);
 
@@ -366,11 +319,7 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
         return false;
     }
 
-    if (value.messageType === 'room.snapshot') {
-        return value.version === 1
-            ? isRoomSnapshotV1Projection(value.payload)
-            : isRoomSnapshotProjection(value.payload);
-    }
+    if (value.messageType === 'room.snapshot') return isRoomSnapshotProjection(value.payload);
 
     return (
         value.revision === value.previousRevision + 1 && hasCanonicalDeviceTimestamps(value.payload)
@@ -400,7 +349,7 @@ function hasConsistentCommands(snapshot: Static<typeof roomSnapshotProjectionSch
         commandIds.add(command.commandId);
     }
 
-    for (const command of snapshot.recentCommands ?? []) {
+    for (const command of snapshot.recentCommands) {
         if (!deviceIds.has(command.deviceId) || commandIds.has(command.commandId)) return false;
         commandIds.add(command.commandId);
     }
@@ -423,7 +372,7 @@ function hasCanonicalProjectionTimestamps(
                 isCanonicalUtcTimestamp(command.requestedAt) &&
                 (command.status !== 'pending' || isCanonicalUtcTimestamp(command.dispatchedAt)),
         ) &&
-        (snapshot.recentCommands ?? []).every((command) => {
+        snapshot.recentCommands.every((command) => {
             if (!isCanonicalUtcTimestamp(command.requestedAt)) return false;
 
             switch (command.status) {
@@ -446,25 +395,6 @@ function hasCanonicalProjectionTimestamps(
 
 function hasCanonicalDeviceTimestamps(device: Static<typeof deviceProjectionSchema>): boolean {
     return device.lastSeenAt === undefined || isCanonicalUtcTimestamp(device.lastSeenAt);
-}
-
-function isRoomSnapshotV1Projection(value: unknown): boolean {
-    if (!isSchema(roomSnapshotV1ProjectionSchema, value)) return false;
-
-    return (
-        hasConsistentCommands(value) &&
-        isCanonicalUtcTimestamp(value.updatedAt) &&
-        value.devices.every(
-            (device) =>
-                hasCanonicalDeviceTimestamps(device) &&
-                (device.recentEvents ?? []).every(
-                    (event) =>
-                        isCanonicalUtcTimestamp(event.occurredAt) &&
-                        event.deviceId === device.deviceId,
-                ),
-        ) &&
-        value.recentEvents.every((event) => isCanonicalUtcTimestamp(event.occurredAt))
-    );
 }
 
 function isCanonicalUtcTimestamp(value: string): boolean {

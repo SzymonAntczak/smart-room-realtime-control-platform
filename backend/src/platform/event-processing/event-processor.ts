@@ -41,7 +41,6 @@ export type EventProcessingResult =
               | 'duplicate_event'
               | 'malformed_event'
               | 'unsupported_event_type'
-              | 'unsupported_event_version'
               | 'unknown_device'
               | 'invalid_payload'
               | 'device_metric_mismatch'
@@ -87,10 +86,6 @@ export function createEventProcessor({
 
             if (deduplicationCheck.isDuplicate) {
                 return ignored('duplicate_event');
-            }
-
-            if (event.version !== 1) {
-                return ignored('unsupported_event_version');
             }
 
             if (event.eventType !== 'telemetry.reading.recorded') {

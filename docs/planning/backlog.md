@@ -4,9 +4,8 @@ This list records deliberately deferred implementation work. It does not define
 binding system behavior; promote a durable rule to architecture documentation or
 an ADR as part of the related change.
 
-- [ ] Remove legacy code and compatibility paths that are no longer needed by
-      the supported realtime and development-scenario contracts. Keep only
-      explicitly documented compatibility where it remains intentional.
+- [x] Remove obsolete code and compatibility paths. The supported realtime and
+      development-scenario contracts describe only the current behavior.
 
 - [x] Remove short event history from realtime projections and dashboard cards.
       The dashboard shows only current device values. Event history and a

@@ -38,7 +38,6 @@ export function createSimulatorTemperatureAdapter({
         const event: TelemetryReadingRecordedEvent = {
             eventId: generateEventId(),
             eventType: 'telemetry.reading.recorded',
-            version: 1,
             occurredAt: reading.recordedAt,
             source: 'simulator-adapter',
             deviceId: platformDeviceId,

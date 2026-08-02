@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The first version of the platform should make the realtime room control loop
+The initial platform scope should make the realtime room control loop
 easy to understand, run and debug. Cloud features introduce additional concerns
 such as authentication, remote access, synchronization, deployment topology and
 external service failure modes.
@@ -22,7 +22,7 @@ introduced too early.
 
 ## Decision
 
-Keep the first version local-first.
+Keep the initial platform scope local-first.
 
 The core control loop should be usable without external infrastructure. Cloud
 integration can be added later as an adapter or deployment option rather than as
