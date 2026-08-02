@@ -38,18 +38,8 @@ describe('createTemperatureRoomRuntime', () => {
                 }),
             ]);
             expect(snapshot.activeCommands).toEqual([]);
-            expect(snapshot.recentEvents).toEqual([
-                expect.objectContaining({
-                    eventId: 'evt-temperature-1',
-                    eventType: 'telemetry.reading.recorded',
-                    source: 'simulator-adapter',
-                    deviceId: 'temp-desk',
-                    summary: 'Temperature reading recorded',
-                }),
-            ]);
             expect(snapshot.updatedAt).toBe('2026-06-08T09:30:00Z');
             expect(snapshot.devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:00Z');
-            expect(snapshot.recentEvents[0]?.occurredAt).toBe('2026-06-08T09:30:00Z');
             expect(runtime.getDiagnosticsSnapshot()).toEqual({
                 ignoredEvents: [],
             });
@@ -86,10 +76,6 @@ describe('createTemperatureRoomRuntime', () => {
                 temperature: 22.2,
                 temperatureUnit: 'celsius',
             });
-            expect(snapshot.recentEvents.map((event) => event.eventId)).toEqual([
-                'evt-temperature-2',
-                'evt-temperature-1',
-            ]);
             expect(timer.intervals).toEqual([1000, 1000]);
         } finally {
             runtime.stop();
@@ -117,7 +103,6 @@ describe('createTemperatureRoomRuntime', () => {
             clock.advanceBy(999);
             timer.runLatest();
 
-            expect(runtime.getRoomSnapshot().recentEvents).toHaveLength(1);
             expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toEqual([
                 expect.objectContaining({
                     reason: 'duplicate_event',
@@ -134,11 +119,6 @@ describe('createTemperatureRoomRuntime', () => {
                 temperature: 22.4,
                 temperatureUnit: 'celsius',
             });
-            expect(snapshot.recentEvents.map((event) => event.eventId)).toEqual([
-                'evt-temperature-1',
-                'evt-temperature-1',
-            ]);
-            expect(snapshot.recentEvents).toHaveLength(2);
         } finally {
             runtime.stop();
         }
@@ -221,13 +201,6 @@ describe('createTemperatureRoomRuntime', () => {
                 '2026-06-08T09:30:00Z',
             ]);
             expect(snapshots.at(-1)?.devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:00Z');
-            expect(snapshots.at(-1)?.recentEvents).toEqual([
-                expect.objectContaining({
-                    eventId: 'evt-temperature-1',
-                    eventType: 'telemetry.reading.recorded',
-                    occurredAt: '2026-06-08T09:30:00Z',
-                }),
-            ]);
         } finally {
             runtime.stop();
         }
@@ -311,10 +284,6 @@ describe('createTemperatureRoomRuntime', () => {
                 }),
             );
             expect(recoveredSnapshot.updatedAt).toBe('2026-06-08T09:30:11Z');
-            expect(recoveredSnapshot.recentEvents.map((event) => event.eventId)).toEqual([
-                'evt-temperature-2',
-                'evt-temperature-1',
-            ]);
 
             timer.runLatest();
 
@@ -333,11 +302,6 @@ describe('createTemperatureRoomRuntime', () => {
                 }),
             );
             expect(snapshotAfterLateTelemetry.updatedAt).toBe('2026-06-08T09:30:11Z');
-            expect(snapshotAfterLateTelemetry.recentEvents.map((event) => event.eventId)).toEqual([
-                'evt-temperature-late',
-                'evt-temperature-2',
-                'evt-temperature-1',
-            ]);
         } finally {
             runtime.stop();
         }
@@ -372,9 +336,6 @@ describe('createTemperatureRoomRuntime', () => {
         const snapshotAfterStop = runtime.getRoomSnapshot();
 
         expect(snapshotAfterStop.updatedAt).toBe('2026-06-08T09:30:00Z');
-        expect(snapshotAfterStop.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-1',
-        ]);
         expect(timer.clearedHandles).toEqual([2, 1]);
     });
 
@@ -407,10 +368,6 @@ describe('createTemperatureRoomRuntime', () => {
             const snapshot = runtime.getRoomSnapshot();
 
             expect(snapshot.updatedAt).toBe('2026-06-08T09:30:01Z');
-            expect(snapshot.recentEvents.map((event) => event.eventId)).toEqual([
-                'evt-temperature-2',
-                'evt-temperature-1',
-            ]);
         } finally {
             runtime.stop();
         }
@@ -429,11 +386,7 @@ describe('createTemperatureRoomRuntime', () => {
         try {
             runtime.start();
 
-            const eventId = runtime.getRoomSnapshot().recentEvents[0]?.eventId;
-
-            expect(eventId).toMatch(
-                /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-            );
+            expect(runtime.getRoomSnapshot().devices[0]?.deviceId).toBe('temp-desk');
         } finally {
             runtime.stop();
         }
@@ -465,9 +418,6 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.start();
             timer.runLatest();
 
-            expect(runtime.getRoomSnapshot().recentEvents.map((event) => event.eventId)).toEqual([
-                'evt-temperature-1',
-            ]);
             expect(runtime.getDiagnosticsSnapshot()).toEqual({
                 ignoredEvents: [
                     {
@@ -522,10 +472,6 @@ describe('createTemperatureRoomRuntime', () => {
             expect(
                 runtime.getDiagnosticsSnapshot().ignoredEvents.map((event) => event.reason),
             ).toEqual(['duplicate_event', 'invalid_payload']);
-            expect(runtime.getRoomSnapshot().recentEvents.map((event) => event.eventId)).toEqual([
-                'evt-temperature-reset',
-                'evt-temperature-1',
-            ]);
         } finally {
             runtime.stop();
         }

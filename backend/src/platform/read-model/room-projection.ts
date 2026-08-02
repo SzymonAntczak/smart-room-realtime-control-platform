@@ -4,9 +4,6 @@ import type {
     DeviceProjection,
     DeviceRole,
     DeviceState,
-    EventFeedItemProjection,
-    PlatformEventEnvelope,
-    PlatformEventType,
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
     TerminalCommandProjection,
@@ -28,7 +25,6 @@ export type FreshnessThresholdsByRole = Partial<Record<DeviceRole, DeviceFreshne
 export interface RoomProjectionConfig {
     devices: DeviceDefinition[];
     initialUpdatedAt: string;
-    recentEventLimit?: number;
     freshnessThresholdsByRole?: FreshnessThresholdsByRole;
 }
 
@@ -41,7 +37,6 @@ export interface RoomProjection {
     devices: DeviceProjection[];
     activeCommands: ActiveCommandProjection[];
     recentCommands: TerminalCommandProjection[];
-    recentEvents: EventFeedItemProjection[];
 }
 
 export interface RoomProjector {
@@ -55,13 +50,10 @@ export interface RoomProjector {
 export function createRoomProjector({
     devices,
     initialUpdatedAt,
-    recentEventLimit = 50,
     freshnessThresholdsByRole = defaultFreshnessThresholdsByRole,
 }: RoomProjectionConfig): RoomProjector {
     const deviceDefinitions = new Map(devices.map((device) => [device.deviceId, device]));
     const deviceProjections = new Map<string, DeviceProjection>();
-    const recentEvents: EventFeedItemProjection[] = [];
-    const recentEventsByDeviceId = new Map<string, EventFeedItemProjection[]>();
     let updatedAt = initialUpdatedAt;
 
     return {
@@ -71,14 +63,6 @@ export function createRoomProjector({
             if (!device) {
                 throw new Error(`Cannot project telemetry for unknown device: ${event.deviceId}`);
             }
-
-            const eventFeedItem = toEventFeedItem(event);
-            recentEvents.unshift(eventFeedItem);
-            recentEvents.splice(recentEventLimit);
-            const deviceRecentEvents = recentEventsByDeviceId.get(event.deviceId) ?? [];
-            deviceRecentEvents.unshift(eventFeedItem);
-            deviceRecentEvents.splice(10);
-            recentEventsByDeviceId.set(event.deviceId, deviceRecentEvents);
 
             const currentDevice = deviceProjections.get(device.deviceId);
 
@@ -122,13 +106,11 @@ export function createRoomProjector({
     }: Required<ProjectionEvaluationOptions>): RoomProjection {
         return {
             updatedAt,
-            devices: [...deviceProjections.values()].map((device) => ({
-                ...applyFreshnessHealth(device, evaluatedAt),
-                recentEvents: [...(recentEventsByDeviceId.get(device.deviceId) ?? [])],
-            })),
+            devices: [...deviceProjections.values()].map((device) =>
+                applyFreshnessHealth(device, evaluatedAt),
+            ),
             activeCommands: [],
             recentCommands: [],
-            recentEvents: [...recentEvents],
         };
     }
 
@@ -201,17 +183,5 @@ function toTemperatureReportedState(payload: TelemetryReadingRecordedPayload): D
     return {
         temperature: payload.value,
         temperatureUnit: payload.unit,
-    };
-}
-
-function toEventFeedItem(event: PlatformEventEnvelope<PlatformEventType>): EventFeedItemProjection {
-    return {
-        eventId: event.eventId,
-        eventType: event.eventType,
-        occurredAt: event.occurredAt,
-        source: event.source,
-        deviceId: event.deviceId,
-        commandId: event.commandId,
-        summary: 'Temperature reading recorded',
     };
 }

@@ -32,26 +32,14 @@ describe('createEventProcessor', () => {
                         reason: 'read_only_device',
                     },
                     lastSeenAt: '2026-06-08T09:30:00Z',
-                    recentEvents: expect.any(Array),
                 },
             ],
             activeCommands: [],
             recentCommands: [],
-            recentEvents: [
-                {
-                    eventId: 'evt-temperature-1',
-                    eventType: 'telemetry.reading.recorded',
-                    occurredAt: '2026-06-08T09:30:00Z',
-                    source: 'simulator-adapter',
-                    deviceId: 'temp-desk',
-                    commandId: undefined,
-                    summary: 'Temperature reading recorded',
-                },
-            ],
         });
     });
 
-    it('updates the latest temperature reading and keeps recent event history', () => {
+    it('updates the latest temperature reading', () => {
         const processor = createTemperatureProcessor();
 
         processor.processEvent(createTemperatureEvent());
@@ -73,10 +61,6 @@ describe('createEventProcessor', () => {
             temperature: 22.7,
             temperatureUnit: 'celsius',
         });
-        expect(result.state.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-2',
-            'evt-temperature-1',
-        ]);
     });
 
     it('ignores malformed events without updating derived state', () => {
@@ -100,7 +84,6 @@ describe('createEventProcessor', () => {
             reason: 'malformed_event',
         });
         expect(result.state.devices).toEqual([]);
-        expect(result.state.recentEvents).toEqual([]);
     });
 
     it('ignores events with invalid envelope field types', () => {
@@ -119,7 +102,7 @@ describe('createEventProcessor', () => {
         expect(result.state.devices).toEqual([]);
     });
 
-    it('ignores duplicate event ids without adding duplicate history', () => {
+    it('ignores duplicate event ids without changing current state', () => {
         const processor = createTemperatureProcessor();
 
         processor.processEvent(createTemperatureEvent());
@@ -141,7 +124,6 @@ describe('createEventProcessor', () => {
             temperature: 22.5,
             temperatureUnit: 'celsius',
         });
-        expect(result.state.recentEvents).toHaveLength(1);
     });
 
     it('does not update state for unsupported event versions', () => {
@@ -158,7 +140,6 @@ describe('createEventProcessor', () => {
             reason: 'unsupported_event_version',
         });
         expect(result.state.devices).toEqual([]);
-        expect(result.state.recentEvents).toEqual([]);
     });
 
     it('keeps a structurally valid unsupported event type observable', () => {
@@ -222,7 +203,6 @@ describe('createEventProcessor', () => {
             reason: 'future_dated_report',
         });
         expect(ignored.state.devices).toEqual([]);
-        expect(ignored.state.recentEvents).toEqual([]);
 
         now.value = '2026-06-08T09:30:00.001Z';
         const retried = processor.processEvent(futureEvent);
@@ -254,10 +234,6 @@ describe('createEventProcessor', () => {
                 lastSeenAt: '2026-06-08T09:30:00Z',
             }),
         );
-        expect(result.state.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-late',
-            'evt-temperature-1',
-        ]);
     });
 
     it('does not update state for malformed temperature payloads', () => {

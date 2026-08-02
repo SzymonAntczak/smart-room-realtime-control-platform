@@ -92,8 +92,8 @@ waiting for confirmation.
 `activeCommands` contains only `accepted` and `pending` work. Terminal
 `confirmed`, `failed` and `timed_out` outcomes are exposed separately as a
 bounded, newest-first `recentCommands` projection with their requested state,
-relevant timestamps and failure detail. This UI-oriented history complements,
-but does not replace, the fact-oriented recent event feed. The full rule is in
+relevant timestamps and failure detail. This UI-oriented history remains
+separate from the future fact-oriented event-history slice. The full rule is in
 [ADR: Command History and Terminal Projections](../decisions/adr-command-history-and-terminal-projections.md).
 Consumers must treat an omitted `recentCommands` field in a version-1 snapshot
 as an empty history.

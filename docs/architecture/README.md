@@ -38,8 +38,9 @@ behavior:
 
 The completed Stage 2/2.5 implementation is a read-only simulated temperature
 reference slice. It uses the backend adapter, event processor, read-model
-projection and realtime BFF; the UI exposes current telemetry, recent events,
-reconnect feedback and `stale`/`offline` health. Development-only controls
+projection and realtime BFF; the UI exposes current telemetry, reconnect
+feedback and `stale`/`offline` health. Event history is a later dedicated
+slice. Development-only controls
 exercise normal and failure scenarios through that same backend-owned path.
 The broader command rules below remain the target model for the later LED
 control slice.

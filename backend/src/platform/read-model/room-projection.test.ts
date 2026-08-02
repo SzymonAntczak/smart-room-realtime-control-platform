@@ -12,11 +12,10 @@ describe('createRoomProjector', () => {
             devices: [],
             activeCommands: [],
             recentCommands: [],
-            recentEvents: [],
         });
     });
 
-    it('projects accepted temperature telemetry into device state and event history', () => {
+    it('projects accepted temperature telemetry into current device state', () => {
         const projector = createTemperatureProjector();
 
         const projection = projector.applyTelemetryReadingRecorded(createTemperatureEvent());
@@ -38,22 +37,10 @@ describe('createRoomProjector', () => {
                         reason: 'read_only_device',
                     },
                     lastSeenAt: '2026-06-08T09:30:00Z',
-                    recentEvents: expect.any(Array),
                 },
             ],
             activeCommands: [],
             recentCommands: [],
-            recentEvents: [
-                {
-                    eventId: 'evt-temperature-1',
-                    eventType: 'telemetry.reading.recorded',
-                    occurredAt: '2026-06-08T09:30:00Z',
-                    source: 'simulator-adapter',
-                    deviceId: 'temp-desk',
-                    commandId: undefined,
-                    summary: 'Temperature reading recorded',
-                },
-            ],
         });
     });
 
@@ -68,9 +55,6 @@ describe('createRoomProjector', () => {
 
         expect(projection.devices[0]?.health).toBe('stale');
         expect(projection.updatedAt).toBe('2026-06-08T09:30:00Z');
-        expect(projection.recentEvents.map((event) => event.eventType)).toEqual([
-            'telemetry.reading.recorded',
-        ]);
     });
 
     it('keeps temperature online at the exact stale threshold', () => {
@@ -96,7 +80,6 @@ describe('createRoomProjector', () => {
 
         expect(projection.devices[0]?.health).toBe('offline');
         expect(projection.updatedAt).toBe('2026-06-08T09:30:00Z');
-        expect(projection.recentEvents).toHaveLength(1);
     });
 
     it('keeps temperature stale at the exact offline threshold measured from last seen time', () => {
@@ -147,13 +130,9 @@ describe('createRoomProjector', () => {
                 },
             }),
         );
-        expect(projection.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-2',
-            'evt-temperature-1',
-        ]);
     });
 
-    it('keeps out-of-order temperature telemetry in history without regressing current state', () => {
+    it('does not let out-of-order temperature telemetry regress current state', () => {
         const projector = createTemperatureProjector();
 
         projector.applyTelemetryReadingRecorded(
@@ -191,10 +170,6 @@ describe('createRoomProjector', () => {
                 },
             }),
         );
-        expect(projection.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-late',
-            'evt-temperature-1',
-        ]);
     });
 
     it('does not recover offline health from an out-of-order report evaluated later', () => {
@@ -215,13 +190,9 @@ describe('createRoomProjector', () => {
                 lastSeenAt: '2026-06-08T09:30:00Z',
             }),
         );
-        expect(projection.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-late',
-            'evt-temperature-1',
-        ]);
     });
 
-    it('keeps equal-timestamp temperature telemetry in history without regressing current state', () => {
+    it('does not let equal-timestamp temperature telemetry regress current state', () => {
         const projector = createTemperatureProjector();
 
         projector.applyTelemetryReadingRecorded(createTemperatureEvent());
@@ -247,10 +218,6 @@ describe('createRoomProjector', () => {
                 },
             }),
         );
-        expect(projection.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-same-time',
-            'evt-temperature-1',
-        ]);
     });
 
     it('rejects invalid freshness evaluation timestamps', () => {
@@ -277,64 +244,11 @@ describe('createRoomProjector', () => {
         ).toThrow('Cannot project telemetry for unknown device: unknown-temp');
         expect(projector.getProjection().devices).toEqual([]);
     });
-
-    it('keeps the newest events first in recent history', () => {
-        const projector = createTemperatureProjector();
-
-        projector.applyTelemetryReadingRecorded(
-            createTemperatureEvent({
-                eventId: 'evt-temperature-1',
-                occurredAt: '2026-06-08T09:30:00Z',
-            }),
-        );
-        projector.applyTelemetryReadingRecorded(
-            createTemperatureEvent({
-                eventId: 'evt-temperature-2',
-                occurredAt: '2026-06-08T09:30:01Z',
-            }),
-        );
-
-        expect(projector.getProjection().recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-2',
-            'evt-temperature-1',
-        ]);
-    });
-
-    it('limits recent event history when configured', () => {
-        const projector = createTemperatureProjector({
-            recentEventLimit: 2,
-        });
-
-        projector.applyTelemetryReadingRecorded(
-            createTemperatureEvent({
-                eventId: 'evt-temperature-1',
-                occurredAt: '2026-06-08T09:30:00Z',
-            }),
-        );
-        projector.applyTelemetryReadingRecorded(
-            createTemperatureEvent({
-                eventId: 'evt-temperature-2',
-                occurredAt: '2026-06-08T09:30:01Z',
-            }),
-        );
-        projector.applyTelemetryReadingRecorded(
-            createTemperatureEvent({
-                eventId: 'evt-temperature-3',
-                occurredAt: '2026-06-08T09:30:02Z',
-            }),
-        );
-
-        expect(projector.getProjection().recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-3',
-            'evt-temperature-2',
-        ]);
-    });
 });
 
-function createTemperatureProjector({ recentEventLimit }: { recentEventLimit?: number } = {}) {
+function createTemperatureProjector() {
     return createRoomProjector({
         initialUpdatedAt: '2026-06-08T09:29:59Z',
-        recentEventLimit,
         devices: [
             {
                 deviceId: 'temp-desk',

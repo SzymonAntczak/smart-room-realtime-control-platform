@@ -22,13 +22,13 @@ export function createSimulatorTemperatureAdapter({
     generateEventId,
     emitEvent,
 }: SimulatorTemperatureAdapterConfig): SimulatorTemperatureAdapter {
-    const recentEventsBySequence = new Map<number, TelemetryReadingRecordedEvent>();
+    const replayableEventsBySequence = new Map<number, TelemetryReadingRecordedEvent>();
     const unsubscribe = sensor.onReading((reading) => {
         if (reading.sensorId !== nativeSensorId) {
             return;
         }
 
-        const replayedEvent = recentEventsBySequence.get(reading.sequence);
+        const replayedEvent = replayableEventsBySequence.get(reading.sequence);
 
         if (replayedEvent) {
             emitEvent(replayedEvent);
@@ -49,8 +49,8 @@ export function createSimulatorTemperatureAdapter({
             },
         };
 
-        recentEventsBySequence.set(reading.sequence, event);
-        trimRecentEvents(recentEventsBySequence);
+        replayableEventsBySequence.set(reading.sequence, event);
+        trimReplayableEvents(replayableEventsBySequence);
         emitEvent(event);
     });
 
@@ -61,7 +61,7 @@ export function createSimulatorTemperatureAdapter({
     };
 }
 
-function trimRecentEvents(eventsBySequence: Map<number, TelemetryReadingRecordedEvent>): void {
+function trimReplayableEvents(eventsBySequence: Map<number, TelemetryReadingRecordedEvent>): void {
     const replayEventLimit = 2;
 
     while (eventsBySequence.size > replayEventLimit) {

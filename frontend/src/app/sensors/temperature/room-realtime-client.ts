@@ -1,9 +1,8 @@
 import {
     type DeviceProjection,
     type DeviceState,
-    type EventFeedItemProjection,
     isRoomRealtimeServerMessage,
-    type PlatformEventSource,
+    type LegacyRoomSnapshotProjection,
     type RoomRealtimeServerMessage,
     type RoomSnapshotProjection,
 } from '@smart-room/contracts';
@@ -33,15 +32,6 @@ export interface TemperatureSensorReading {
     unit: 'celsius';
     recordedAt: string;
     health: DeviceProjection['health'];
-    snapshotSentAt: string;
-    recentEvents: TemperatureEventFeedItem[];
-}
-
-export interface TemperatureEventFeedItem {
-    eventId: string;
-    summary: string;
-    occurredAt: string;
-    source: PlatformEventSource;
 }
 
 export interface TemperatureRealtimeClientHandlers {
@@ -116,8 +106,7 @@ export function connectTemperatureRealtime(
 
             try {
                 const message = parseRoomRealtimeMessage(event.data);
-                const result = applyRealtimeMessage(message);
-                handlers.onSnapshot(toTemperatureSnapshotResult(result.snapshot, result.sentAt));
+                handlers.onSnapshot(toTemperatureSnapshotResult(applyRealtimeMessage(message)));
             } catch {
                 handlers.onInvalidMessage();
                 scheduleReconnect(socket);
@@ -144,10 +133,7 @@ export function connectTemperatureRealtime(
         }, reconnectDelayMs);
     }
 
-    function applyRealtimeMessage(message: RoomRealtimeServerMessage): {
-        snapshot: RoomSnapshotProjection;
-        sentAt: string;
-    } {
+    function applyRealtimeMessage(message: RoomRealtimeServerMessage): RoomSnapshotProjection {
         if (message.messageType === 'room.snapshot') {
             const isLegacySnapshotSession = roomSnapshot !== undefined && revision === undefined;
             if (
@@ -156,9 +142,10 @@ export function connectTemperatureRealtime(
             ) {
                 throw new Error('Realtime room stream sent an unexpected snapshot baseline.');
             }
-            roomSnapshot = message.payload;
+            roomSnapshot =
+                message.version === 1 ? toCurrentRoomSnapshot(message.payload) : message.payload;
             revision = message.version === 2 ? message.revision : undefined;
-            return { snapshot: roomSnapshot, sentAt: message.sentAt };
+            return roomSnapshot;
         }
 
         if (!roomSnapshot || revision === undefined || message.previousRevision !== revision) {
@@ -180,8 +167,26 @@ export function connectTemperatureRealtime(
         }
 
         revision = message.revision;
-        return { snapshot: roomSnapshot, sentAt: message.sentAt };
+        return roomSnapshot;
     }
+}
+
+function toCurrentRoomSnapshot(snapshot: LegacyRoomSnapshotProjection): RoomSnapshotProjection {
+    return {
+        roomName: snapshot.roomName,
+        updatedAt: snapshot.updatedAt,
+        devices: snapshot.devices.map(toCurrentDeviceProjection),
+        activeCommands: snapshot.activeCommands,
+        ...(snapshot.recentCommands ? { recentCommands: snapshot.recentCommands } : {}),
+    };
+}
+
+function toCurrentDeviceProjection({
+    recentEvents,
+    ...device
+}: LegacyRoomSnapshotProjection['devices'][number]): DeviceProjection {
+    void recentEvents;
+    return device;
 }
 
 function getRoomRealtimeUrl(): string {
@@ -202,10 +207,7 @@ function parseRoomRealtimeMessage(data: unknown): RoomRealtimeServerMessage {
     return body;
 }
 
-function toTemperatureSnapshotResult(
-    snapshot: RoomSnapshotProjection,
-    sentAt: string,
-): TemperatureSnapshotResult {
+function toTemperatureSnapshotResult(snapshot: RoomSnapshotProjection): TemperatureSnapshotResult {
     const temperatureDevice = snapshot.devices.find(
         (device) => device.role === 'temperature-sensor',
     );
@@ -229,15 +231,6 @@ function toTemperatureSnapshotResult(
             unit: temperatureDevice.reportedState.temperatureUnit,
             recordedAt: temperatureDevice.lastSeenAt,
             health: temperatureDevice.health,
-            snapshotSentAt: sentAt,
-            recentEvents: (
-                temperatureDevice.recentEvents ??
-                snapshot.recentEvents.filter(
-                    (event) => event.deviceId === temperatureDevice.deviceId,
-                )
-            )
-                .slice(0, 10)
-                .map(toTemperatureEventFeedItem),
         },
     };
 }
@@ -254,13 +247,4 @@ function isRenderableTemperatureDevice(device: DeviceProjection): device is Devi
         device.reportedState.temperatureUnit === 'celsius' &&
         typeof device.lastSeenAt === 'string'
     );
-}
-
-function toTemperatureEventFeedItem(event: EventFeedItemProjection): TemperatureEventFeedItem {
-    return {
-        eventId: event.eventId,
-        summary: event.summary,
-        occurredAt: event.occurredAt,
-        source: event.source,
-    };
 }

@@ -43,21 +43,6 @@ describe('connectTemperatureRealtime', () => {
                 unit: 'celsius',
                 recordedAt: '2026-06-08T09:30:00Z',
                 health: 'online',
-                snapshotSentAt: '2026-06-08T09:30:01Z',
-                recentEvents: [
-                    {
-                        eventId: 'evt-temperature-2',
-                        summary: 'Temperature reading recorded',
-                        occurredAt: '2026-06-08T09:30:01Z',
-                        source: 'simulator-adapter',
-                    },
-                    {
-                        eventId: 'evt-temperature-1',
-                        summary: 'Temperature reading recorded',
-                        occurredAt: '2026-06-08T09:30:00Z',
-                        source: 'simulator-adapter',
-                    },
-                ],
             },
         });
     });
@@ -73,43 +58,6 @@ describe('connectTemperatureRealtime', () => {
 
         expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
-    });
-
-    it('limits the renderable temperature event feed to recent events for the sensor', () => {
-        const handlers = createHandlers();
-        connectTemperatureRealtime(handlers, MockWebSocket);
-
-        MockWebSocket.latest().emitMessage(
-            createRoomSnapshotMessage({
-                recentEvents: [
-                    createEventFeedItem({ eventId: 'evt-temperature-6' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-5' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-4' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-3' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-2' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-1' }),
-                    createEventFeedItem({
-                        eventId: 'evt-humidity-1',
-                        deviceId: 'humidity-desk',
-                    }),
-                ],
-            }),
-        );
-
-        expect(handlers.onSnapshot).toHaveBeenCalledWith(
-            expect.objectContaining({
-                reading: expect.objectContaining({
-                    recentEvents: [
-                        expect.objectContaining({ eventId: 'evt-temperature-6' }),
-                        expect.objectContaining({ eventId: 'evt-temperature-5' }),
-                        expect.objectContaining({ eventId: 'evt-temperature-4' }),
-                        expect.objectContaining({ eventId: 'evt-temperature-3' }),
-                        expect.objectContaining({ eventId: 'evt-temperature-2' }),
-                        expect.objectContaining({ eventId: 'evt-temperature-1' }),
-                    ],
-                }),
-            }),
-        );
     });
 
     it('emits empty when the room snapshot has no temperature sensor', () => {
@@ -142,6 +90,20 @@ describe('connectTemperatureRealtime', () => {
 
         expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('rejects a v2 snapshot carrying removed history fields', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+
+        MockWebSocket.latest().emitMessage({
+            ...createRoomSnapshotMessage(),
+            payload: { ...createRoomSnapshotMessage().payload, recentEvents: [] },
+        });
+
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onSnapshot).not.toHaveBeenCalled();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
     });
 
     it('reconnects after an invalid snapshot and accepts a later valid snapshot', () => {
@@ -217,14 +179,14 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
     });
 
-    it('applies a contiguous device delta with its device-local history', () => {
+    it('applies a contiguous device delta with current state and health', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
         MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
         MockWebSocket.latest().emitMessage(
             createDeviceUpdatedMessage({
                 reportedState: { temperature: 23.1, temperatureUnit: 'celsius' },
-                recentEvents: [createEventFeedItem({ eventId: 'evt-temperature-3' })],
+                health: 'stale',
             }),
         );
 
@@ -232,10 +194,24 @@ describe('connectTemperatureRealtime', () => {
             expect.objectContaining({
                 reading: expect.objectContaining({
                     value: 23.1,
-                    recentEvents: [expect.objectContaining({ eventId: 'evt-temperature-3' })],
+                    health: 'stale',
                 }),
             }),
         );
+    });
+
+    it('rejects removed history fields without replacing the valid view', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage({
+            ...createDeviceUpdatedMessage(),
+            payload: { ...createTemperatureDevice(), recentEvents: [] },
+        });
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
     });
 
     it('preserves the valid view and reconnects after a revision gap', () => {
@@ -281,7 +257,7 @@ describe('connectTemperatureRealtime', () => {
             createLegacyRoomSnapshotMessage({
                 devices: [
                     {
-                        ...createTemperatureDevice(),
+                        ...createLegacyTemperatureDevice(),
                         reportedState: { temperature: 22.8, temperatureUnit: 'celsius' },
                     },
                 ],
@@ -343,25 +319,10 @@ function createHandlers() {
 
 function createRoomSnapshotMessage({
     devices = [createTemperatureDevice()],
-    recentEvents = [
-        createEventFeedItem({
-            eventId: 'evt-temperature-2',
-            occurredAt: '2026-06-08T09:30:01Z',
-        }),
-        createEventFeedItem({
-            eventId: 'evt-temperature-1',
-            occurredAt: '2026-06-08T09:30:00Z',
-        }),
-    ],
 }: {
     devices?: RoomRealtimeServerMessage extends { payload: infer Payload }
         ? Payload extends { devices: infer Devices }
             ? Devices
-            : never
-        : never;
-    recentEvents?: RoomRealtimeServerMessage extends { payload: infer Payload }
-        ? Payload extends { recentEvents: infer RecentEvents }
-            ? RecentEvents
             : never
         : never;
 } = {}): RoomRealtimeServerMessage {
@@ -376,7 +337,6 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands: [],
             recentCommands: [],
-            recentEvents,
         },
     };
 }
@@ -385,14 +345,14 @@ function createDeviceUpdatedMessage({
     previousRevision = 0,
     revision = 1,
     deviceId = 'temp-desk',
+    health,
     reportedState = { temperature: 22.8, temperatureUnit: 'celsius' },
-    recentEvents = [createEventFeedItem({ eventId: 'evt-temperature-3', deviceId })],
 }: {
     previousRevision?: number;
     revision?: number;
     deviceId?: string;
+    health?: RoomSnapshotProjection['devices'][number]['health'];
     reportedState?: { temperature: number; temperatureUnit: 'celsius' };
-    recentEvents?: ReturnType<typeof createEventFeedItem>[];
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'device.updated',
@@ -400,14 +360,19 @@ function createDeviceUpdatedMessage({
         previousRevision,
         revision,
         sentAt: '2026-06-08T09:30:02Z',
-        payload: { ...createTemperatureDevice(), deviceId, reportedState, recentEvents },
+        payload: {
+            ...createTemperatureDevice(),
+            deviceId,
+            ...(health ? { health } : {}),
+            reportedState,
+        },
     };
 }
 
 function createLegacyRoomSnapshotMessage({
-    devices = [createTemperatureDevice()],
+    devices = [createLegacyTemperatureDevice()],
 }: {
-    devices?: ReturnType<typeof createTemperatureDevice>[];
+    devices?: ReturnType<typeof createLegacyTemperatureDevice>[];
 } = {}) {
     return {
         messageType: 'room.snapshot',
@@ -419,7 +384,7 @@ function createLegacyRoomSnapshotMessage({
             devices,
             activeCommands: [],
             recentCommands: [],
-            recentEvents: [],
+            recentEvents: [createLegacyEventFeedItem()],
         },
     };
 }
@@ -442,24 +407,22 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
     };
 }
 
-function createEventFeedItem({
-    eventId,
-    deviceId = 'temp-desk',
-    occurredAt = '2026-06-08T09:30:00Z',
-}: {
-    eventId: string;
-    deviceId?: string;
-    occurredAt?: string;
-}) {
+function createLegacyTemperatureDevice() {
     return {
-        eventId,
-        eventType: 'telemetry.reading.recorded',
-        occurredAt,
-        source: 'simulator-adapter',
-        deviceId,
-        commandId: undefined,
+        ...createTemperatureDevice(),
+        recentEvents: [createLegacyEventFeedItem()],
+    };
+}
+
+function createLegacyEventFeedItem() {
+    return {
+        eventId: 'evt-temperature-1',
+        eventType: 'telemetry.reading.recorded' as const,
+        occurredAt: '2026-06-08T09:30:00Z',
+        source: 'simulator-adapter' as const,
+        deviceId: 'temp-desk',
         summary: 'Temperature reading recorded',
-    } as const;
+    };
 }
 
 class MockWebSocket extends EventTarget {

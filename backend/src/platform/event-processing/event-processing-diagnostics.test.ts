@@ -256,7 +256,6 @@ function createEmptyState() {
         devices: [],
         activeCommands: [],
         recentCommands: [],
-        recentEvents: [],
     };
 }
 

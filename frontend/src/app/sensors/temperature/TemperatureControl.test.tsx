@@ -40,10 +40,10 @@ describe('TemperatureControl', () => {
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('celsius');
         expect(screen.getAllByText('09:30:00 UTC').length).toBeGreaterThan(0);
-        expect(screen.getByText(/Last reading/)).toHaveTextContent('1s old');
-        expect(screen.getByRole('region', { name: 'Recent temperature events' })).toHaveTextContent(
-            'Temperature reading recorded',
-        );
+        expect(screen.getByText(/Last reading/)).toHaveTextContent('Last reading 09:30:00 UTC');
+        expect(
+            screen.queryByRole('region', { name: 'Recent temperature events' }),
+        ).not.toBeInTheDocument();
     });
 
     it('updates the temperature after a device delta', async () => {
@@ -55,7 +55,6 @@ describe('TemperatureControl', () => {
                 ...createTemperatureDevice(),
                 reportedState: { temperature: 22.6, temperatureUnit: 'celsius' },
                 lastSeenAt: '2026-06-08T09:30:01Z',
-                recentEvents: [],
             }),
         );
 
@@ -99,6 +98,7 @@ describe('TemperatureControl', () => {
         expect(await screen.findByRole('status')).toHaveTextContent('Reconnecting');
         expect(screen.getByRole('status')).toHaveAttribute('data-tone', 'warning');
         expect(screen.getByText('Reconnecting to realtime room stream...')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Dev scenarios' })).toBeInTheDocument();
     });
 
     it('preserves the last reading and recovers after an invalid realtime snapshot', async () => {
@@ -190,19 +190,19 @@ describe('TemperatureControl', () => {
             'stale',
             'Stale',
             'warning',
-            'Temperature telemetry is stale. Showing the last known reading from 09:30:00 UTC (6s old).',
+            'Temperature telemetry is stale. Showing the last known reading from 09:30:00 UTC.',
         ],
         [
             'offline',
             'Offline',
             'danger',
-            'Temperature sensor is offline. Showing the last known reading from 09:30:00 UTC (6s old).',
+            'Temperature sensor is offline. Showing the last known reading from 09:30:00 UTC.',
         ],
         [
             'degraded',
             'Degraded',
             'warning',
-            'Temperature sensor is degraded. Showing the latest reported reading from 09:30:00 UTC (6s old).',
+            'Temperature sensor is degraded. Showing the latest reported reading from 09:30:00 UTC.',
         ],
     ] as const)(
         'keeps the last temperature visible when the device is %s',
@@ -233,34 +233,6 @@ describe('TemperatureControl', () => {
             expect(screen.getByRole('alert')).toHaveTextContent(warning);
         },
     );
-
-    it('renders at most the recent temperature events from the realtime snapshot', async () => {
-        render(<TemperatureControl />);
-
-        await emitLatestMessage(
-            createRoomSnapshotMessage({
-                recentEvents: [
-                    createEventFeedItem({ eventId: 'evt-temperature-6' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-5' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-4' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-3' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-2' }),
-                    createEventFeedItem({ eventId: 'evt-temperature-1' }),
-                    createEventFeedItem({
-                        eventId: 'evt-humidity-1',
-                        deviceId: 'humidity-desk',
-                        summary: 'Humidity reading recorded',
-                    }),
-                ],
-            }),
-        );
-
-        const feed = screen.getByRole('region', { name: 'Recent temperature events' });
-
-        expect(feed.querySelectorAll('li')).toHaveLength(6);
-        expect(feed).toHaveTextContent('09:30:00 UTC');
-        expect(feed).not.toHaveTextContent('Humidity reading recorded');
-    });
 });
 
 async function emitLatestMessage(message: unknown): Promise<void> {
@@ -272,16 +244,9 @@ async function emitLatestMessage(message: unknown): Promise<void> {
 function createRoomSnapshotMessage({
     sentAt = '2026-06-08T09:30:01Z',
     devices = [createTemperatureDevice()],
-    recentEvents = [
-        createEventFeedItem({
-            eventId: 'evt-temperature-1',
-            occurredAt: '2026-06-08T09:30:00Z',
-        }),
-    ],
 }: {
     sentAt?: string;
     devices?: RoomSnapshotProjection['devices'];
-    recentEvents?: RoomSnapshotProjection['recentEvents'];
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'room.snapshot',
@@ -294,7 +259,6 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands: [],
             recentCommands: [],
-            recentEvents,
         },
     };
 }
@@ -327,28 +291,6 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
             reason: 'read_only_device',
         },
         lastSeenAt: '2026-06-08T09:30:00Z',
-    };
-}
-
-function createEventFeedItem({
-    eventId,
-    deviceId = 'temp-desk',
-    occurredAt = '2026-06-08T09:30:00Z',
-    summary = 'Temperature reading recorded',
-}: {
-    eventId: string;
-    deviceId?: string;
-    occurredAt?: string;
-    summary?: string;
-}): RoomSnapshotProjection['recentEvents'][number] {
-    return {
-        eventId,
-        eventType: 'telemetry.reading.recorded',
-        occurredAt,
-        source: 'simulator-adapter',
-        deviceId,
-        commandId: undefined,
-        summary,
     };
 }
 

@@ -8,11 +8,11 @@ an ADR as part of the related change.
       the supported realtime and development-scenario contracts. Keep only
       explicitly documented compatibility where it remains intentional.
 
-- [ ] Remove short event history from `device.updated` and dashboard cards.
-      The dashboard should show only current device values. Add a per-sensor
-      details entry point; history becomes available only in that future details
-      view. Update the realtime contract, projections, frontend and binding
-      architecture/ADR documentation together.
+- [x] Remove short event history from realtime projections and dashboard cards.
+      The dashboard shows only current device values. Event history and a
+      per-sensor details entry point are deferred to a dedicated future slice.
+      The realtime contract, projections, frontend and binding architecture/ADR
+      documentation are aligned.
 
 - [ ] Add a second simulated temperature sensor and cover two simultaneous
       temperature sensors end-to-end. Verify independent cadences, health,

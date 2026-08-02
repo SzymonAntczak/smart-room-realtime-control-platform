@@ -47,7 +47,8 @@ It does not introduce persistence, a command endpoint or a command runtime.
 ## Consequences
 
 The frontend receives a UI-oriented command history with the context needed to
-explain outcomes, while raw recent events remain the audit-oriented fact feed.
+explain outcomes. A future dedicated history slice must define an audit-oriented
+fact feed separately.
 The in-memory limit is intentionally not a durability guarantee; a later
 storage decision must define retention and rebuilding semantics.
 

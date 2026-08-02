@@ -62,8 +62,8 @@ hardware sources are both handled behind backend-owned adapters.
 The event processor owns validation, deduplication and command lifecycle rules.
 It accepts, ignores or routes events to quarantine according to the platform
 event contract and available storage capabilities. Accepted events update the
-backend read model/projections: materialized views of current device state,
-active command state and recent event history. The realtime API/BFF reads those
+backend read model/projections: materialized views of current device and active
+command state. The realtime API/BFF reads those
 projections and streams UI-oriented snapshots or updates to the frontend; it
 does not reinterpret raw device-native messages.
 
@@ -88,8 +88,8 @@ realtime BFF.
 The current BFF exposes `ws://localhost:4310/room/realtime` as the frontend
 runtime path. The backend sends an initial `room.snapshot` message when the
 frontend connects, then streams revision-linked `device.updated` messages after
-projection changes. Each update includes the changed device's latest ten event
-summaries. It periodically rereads the
+projection changes. Snapshots and updates contain only current device state and
+health; event history is deferred to a dedicated future slice. It periodically rereads the
 projection, but emits only an actual time-derived health change such as
 `stale` or `offline`. The frontend does not interpret raw platform
 events.
@@ -122,8 +122,8 @@ This preserves the distinction between dev tooling and user-facing room state.
 The initial controls pause or resume scheduled telemetry, emit the next native
 reading, replay the last native reading, emit a deliberately invalid reading,
 and reset the simulator sequence. Reset restarts simulated telemetry and emits
-a new first reading; it does not clear the backend's event history, deduplication
-memory or diagnostics. Replaying a reading preserves its adapter-created
+a new first reading; it does not clear the backend's deduplication memory or
+diagnostics. Replaying a reading preserves its adapter-created
 platform event identity, so it exercises platform-event deduplication. An
 invalid reading reaches platform validation and is visible through diagnostics
 without changing the room projection.

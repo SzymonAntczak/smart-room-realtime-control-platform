@@ -5,7 +5,7 @@
 - The UI must distinguish requested state from confirmed state.
 - Offline devices must not be silently treated as healthy.
 - Stale data must be visible when it is still shown.
-- Every important user action should be visible in event history.
+- A future dedicated history slice should make important user actions traceable.
 - Command failures and timeouts should be first-class states, not generic errors.
 - Terminal command outcomes should remain available through bounded command
   history with their reason and timing metadata.
@@ -101,7 +101,7 @@ Focus areas:
 - confirmed state is not faked from requested state
 - stale and offline states are visible
 - failed and timed-out commands remain understandable
-- event history contains important user actions
+- future history work has an explicit traceability acceptance criterion
 
 ## Manual Acceptance Checklist
 
@@ -111,5 +111,5 @@ Before treating a milestone as done, verify:
 - a user can send a command
 - the UI shows the command as pending before confirmation
 - the UI updates after a device report
-- the event history explains what happened
+- command outcome and failure state remain visible
 - at least one failure scenario is visible, not hidden

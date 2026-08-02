@@ -112,7 +112,7 @@ describe('platform event schemas', () => {
 });
 
 describe('realtime schemas', () => {
-    it('accepts only a contiguous device update with matching canonical device history', () => {
+    it('accepts only a contiguous device update without event history', () => {
         const update = createDeviceUpdatedMessage();
 
         expect(isRoomRealtimeServerMessage(update)).toBe(true);
@@ -127,45 +127,50 @@ describe('realtime schemas', () => {
                 ...update,
                 payload: {
                     ...update.payload,
-                    recentEvents: [
-                        {
-                            ...update.payload.recentEvents[0],
-                            deviceId: 'other-device',
-                        },
-                    ],
-                },
-            }),
-        ).toBe(false);
-        expect(
-            isRoomRealtimeServerMessage({
-                ...update,
-                payload: {
-                    ...update.payload,
-                    recentEvents: [
-                        {
-                            ...update.payload.recentEvents[0],
-                            occurredAt: '2026-06-08T11:30:00+02:00',
-                        },
-                    ],
+                    recentEvents: [],
                 },
             }),
         ).toBe(false);
     });
 
-    it('rejects a snapshot whose deprecated root event history has a noncanonical timestamp', () => {
+    it('rejects a v2 snapshot containing removed root event history', () => {
         const snapshot = createSnapshotWithActiveCommands([]);
+        snapshot.version = 2;
+        snapshot.revision = 0;
+        snapshot.payload.recentEvents = [];
+
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
+    });
+
+    it('accepts a frozen v1 snapshot containing historical event fields', () => {
+        const snapshot = createSnapshotWithActiveCommands([]);
+        snapshot.payload.devices = [
+            {
+                ...createLedDevice(),
+                recentEvents: [
+                    {
+                        eventId: 'evt-led-1',
+                        eventType: 'device.state.reported',
+                        occurredAt: '2026-06-08T09:30:00Z',
+                        source: 'simulator-adapter',
+                        deviceId: 'led-main',
+                        summary: 'LED reported off',
+                    },
+                ],
+            },
+        ];
         snapshot.payload.recentEvents = [
             {
-                eventId: 'evt-1',
-                eventType: 'telemetry.reading.recorded',
-                occurredAt: '2026-06-08T11:30:00+02:00',
+                eventId: 'evt-led-1',
+                eventType: 'device.state.reported',
+                occurredAt: '2026-06-08T09:30:00Z',
                 source: 'simulator-adapter',
-                deviceId: 'temp-desk',
-                summary: 'Temperature reading recorded',
+                deviceId: 'led-main',
+                summary: 'LED reported off',
             },
         ];
 
-        expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
     });
 
     it('rejects duplicate device identifiers in a room snapshot', () => {
@@ -196,7 +201,6 @@ describe('realtime schemas', () => {
                         },
                     ],
                     recentCommands: [],
-                    recentEvents: [],
                 },
             }),
         ).toBe(false);
@@ -397,6 +401,7 @@ describe('realtime schemas', () => {
 function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
     messageType: string;
     version: number;
+    revision?: number;
     sentAt: string;
     payload: {
         roomName: string;
@@ -451,16 +456,6 @@ function createDeviceUpdatedMessage() {
             reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
             commandAvailability: { policy: 'block' as const, reason: 'read_only_device' },
             lastSeenAt: '2026-06-08T09:30:00Z',
-            recentEvents: [
-                {
-                    eventId: 'evt-temperature-1',
-                    eventType: 'telemetry.reading.recorded' as const,
-                    occurredAt: '2026-06-08T09:30:00Z',
-                    source: 'simulator-adapter' as const,
-                    deviceId: 'temp-desk',
-                    summary: 'Temperature reading recorded',
-                },
-            ],
         },
     };
 }

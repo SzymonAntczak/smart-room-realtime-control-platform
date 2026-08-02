@@ -13,10 +13,21 @@ export interface DeviceProjection {
     lastSeenAt?: string;
     warning?: string;
     activeCommandId?: string;
-    recentEvents?: EventFeedItemProjection[];
 }
 
-export interface EventFeedItemProjection {
+export interface RoomSnapshotProjection {
+    roomName: string;
+    updatedAt: string;
+    devices: DeviceProjection[];
+    activeCommands: ActiveCommandProjection[];
+    recentCommands?: TerminalCommandProjection[];
+}
+
+/**
+ * Frozen v1 transport shape retained only so existing clients can reconnect.
+ * New projections and all v2 transport intentionally omit event history.
+ */
+export interface LegacyEventFeedItemProjection {
     eventId: string;
     eventType: PlatformEventType;
     occurredAt: string;
@@ -26,12 +37,15 @@ export interface EventFeedItemProjection {
     summary: string;
 }
 
-export interface RoomSnapshotProjection {
+export interface LegacyDeviceProjection extends DeviceProjection {
+    recentEvents?: LegacyEventFeedItemProjection[];
+}
+
+export interface LegacyRoomSnapshotProjection {
     roomName: string;
     updatedAt: string;
-    devices: DeviceProjection[];
+    devices: LegacyDeviceProjection[];
     activeCommands: ActiveCommandProjection[];
     recentCommands?: TerminalCommandProjection[];
-    /** @deprecated Dashboard cards use DeviceProjection.recentEvents. */
-    recentEvents: EventFeedItemProjection[];
+    recentEvents: LegacyEventFeedItemProjection[];
 }

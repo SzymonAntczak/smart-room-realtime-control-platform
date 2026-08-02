@@ -291,6 +291,5 @@ function toRoomSnapshot(
         devices: projection.devices,
         activeCommands: projection.activeCommands,
         recentCommands: projection.recentCommands,
-        recentEvents: projection.recentEvents,
     };
 }

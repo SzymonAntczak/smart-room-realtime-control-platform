@@ -39,27 +39,15 @@ describe('temperature read path integration', () => {
                             reason: 'read_only_device',
                         },
                         lastSeenAt: '2026-06-08T09:30:00Z',
-                        recentEvents: expect.any(Array),
                     },
                 ],
                 activeCommands: [],
                 recentCommands: [],
-                recentEvents: [
-                    {
-                        eventId: 'evt-temperature-1',
-                        eventType: 'telemetry.reading.recorded',
-                        occurredAt: '2026-06-08T09:30:00Z',
-                        source: 'simulator-adapter',
-                        deviceId: 'temp-desk',
-                        commandId: undefined,
-                        summary: 'Temperature reading recorded',
-                    },
-                ],
             },
         });
     });
 
-    it('updates projection and event history for multiple simulator readings', () => {
+    it('updates the current projection for multiple simulator readings', () => {
         const readPath = createTemperatureReadPath({
             eventIds: ['evt-temperature-1', 'evt-temperature-2'],
             readingPattern: [0.5, 0.7],
@@ -76,10 +64,6 @@ describe('temperature read path integration', () => {
             temperature: 22.7,
             temperatureUnit: 'celsius',
         });
-        expect(result.state.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-2',
-            'evt-temperature-1',
-        ]);
     });
 
     it('ignores duplicate event ids across the integrated pipeline', () => {
@@ -101,10 +85,9 @@ describe('temperature read path integration', () => {
             temperature: 22.5,
             temperatureUnit: 'celsius',
         });
-        expect(result.state.recentEvents).toHaveLength(1);
     });
 
-    it('keeps event history visible when telemetry stops and health becomes stale or offline', () => {
+    it('keeps the latest reading visible when telemetry becomes stale or offline', () => {
         const readPath = createTemperatureReadPath({
             eventIds: ['evt-temperature-1'],
             readingPattern: [0.5],
@@ -122,9 +105,6 @@ describe('temperature read path integration', () => {
             temperature: 22.5,
             temperatureUnit: 'celsius',
         });
-        expect(offlineProjection.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-1',
-        ]);
     });
 
     it('recovers from stale or offline health after a fresh scenario reading', () => {
@@ -152,10 +132,6 @@ describe('temperature read path integration', () => {
                 },
             }),
         );
-        expect(recoveredProjection.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-2',
-            'evt-temperature-1',
-        ]);
     });
 
     it('rejects replayed native readings as duplicate platform events', () => {
@@ -177,9 +153,6 @@ describe('temperature read path integration', () => {
             temperature: 22.5,
             temperatureUnit: 'celsius',
         });
-        expect(result.state.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-1',
-        ]);
     });
 
     it('ignores invalid telemetry without changing the last accepted state', () => {
@@ -205,9 +178,6 @@ describe('temperature read path integration', () => {
             temperature: 22.5,
             temperatureUnit: 'celsius',
         });
-        expect(result.state.recentEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-1',
-        ]);
     });
 });
 

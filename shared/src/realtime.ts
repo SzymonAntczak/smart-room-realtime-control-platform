@@ -1,4 +1,8 @@
-import type { DeviceProjection, RoomSnapshotProjection } from './projections';
+import type {
+    DeviceProjection,
+    LegacyRoomSnapshotProjection,
+    RoomSnapshotProjection,
+} from './projections';
 
 export type RoomRealtimeServerMessage = RoomSnapshotMessage | DeviceUpdatedMessage;
 
@@ -6,7 +10,7 @@ export interface RoomSnapshotV1Message {
     messageType: 'room.snapshot';
     version: 1;
     sentAt: string;
-    payload: RoomSnapshotProjection;
+    payload: LegacyRoomSnapshotProjection;
 }
 
 export interface RoomSnapshotV2Message {

@@ -178,14 +178,7 @@ describe('createRoomBffServer', () => {
 
             expect(actionResponse.status).toBe(200);
             await expect(roomResponse.json()).resolves.toMatchObject({
-                recentEvents: [
-                    expect.objectContaining({
-                        eventType: 'telemetry.reading.recorded',
-                    }),
-                    expect.objectContaining({
-                        eventType: 'telemetry.reading.recorded',
-                    }),
-                ],
+                devices: [expect.objectContaining({ deviceId: 'temp-desk' })],
             });
         } finally {
             runtime.stop();
@@ -550,32 +543,10 @@ function createRoomSnapshot({
                     reason: 'read_only_device',
                 },
                 lastSeenAt: '2026-06-08T09:30:00Z',
-                recentEvents: [
-                    {
-                        eventId: 'evt-temperature-1',
-                        eventType: 'telemetry.reading.recorded',
-                        occurredAt: '2026-06-08T09:30:00Z',
-                        source: 'simulator-adapter',
-                        deviceId: 'temp-desk',
-                        commandId: undefined,
-                        summary: 'Temperature reading recorded',
-                    },
-                ],
             },
         ],
         activeCommands: [],
         recentCommands: [],
-        recentEvents: [
-            {
-                eventId: 'evt-temperature-1',
-                eventType: 'telemetry.reading.recorded',
-                occurredAt: '2026-06-08T09:30:00Z',
-                source: 'simulator-adapter',
-                deviceId: 'temp-desk',
-                commandId: undefined,
-                summary: 'Temperature reading recorded',
-            },
-        ],
     };
 }
 

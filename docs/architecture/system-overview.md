@@ -42,7 +42,7 @@ A minimal read path should show:
 - that the value is coming from simulated realtime updates
 
 This read-only slice does not define the long-term command topology. It already
-includes backend adapters, event processing, recent event history and
+includes backend adapters, event processing and
 stale/offline handling; later command slices must preserve the same platform
 model.
 
@@ -122,7 +122,8 @@ Expected responsibilities:
 - keep the current room and device state used by realtime reads
 - expose active command state, requested state, confirmed reported state and
   device health as derived projections
-- keep recent event history for UI troubleshooting and audit-oriented views
+- defer event-history storage and UI until a dedicated history slice defines
+  retention and access semantics
 - provide UI-friendly read data to the realtime API/BFF without requiring the
   frontend to interpret raw events
 - remain rebuildable from accepted events when the storage slice supports that
@@ -138,7 +139,7 @@ Expected responsibilities:
 - show confirmed device state separately from requested state
 - show pending, failed and timed-out commands
 - surface offline, stale and degraded devices clearly
-- expose event history for troubleshooting
+- defer event-history troubleshooting views to a dedicated history slice
 
 ### Telemetry Storage
 
@@ -179,9 +180,10 @@ event processor, read model/projections and in-memory storage.
 
 The current realtime read contract sends a version-2 `room.snapshot` over
 WebSocket only when the frontend connects or reconnects. It is followed by
-named, revision-linked `device.updated` messages. A device projection includes
-its latest ten event summaries for the device card; a client reconnects for a new snapshot when a
-delta is malformed or has a revision gap.
+named, revision-linked `device.updated` messages. A device projection contains
+only current device state and health; a future dedicated history slice will
+define event retention and details access. A client reconnects for a new
+snapshot when a delta is malformed or has a revision gap.
 
 - `messageType: "room.snapshot"`
 - `version: 2`
@@ -231,9 +233,9 @@ projection for `telemetry.reading.recorded` events. The frontend receives
 an initial UI-oriented `room.snapshot` baseline followed by per-device deltas over WebSocket
 from the local backend BFF. The backend evaluates freshness periodically, but
 sends a delta only when a time-derived `stale` or `offline` health change
-actually occurs. The projection retains recent
-accepted temperature events; ignored duplicate and invalid events are exposed
-only through bounded development diagnostics. `GET /room` remains available as
+actually occurs. The projection retains current device state; ignored duplicate
+and invalid events are exposed only through bounded development diagnostics.
+`GET /room` remains available as
 a debug/read snapshot endpoint, but it is not the frontend fallback path.
 
 The local development runtime also provides scenario controls for pause,
