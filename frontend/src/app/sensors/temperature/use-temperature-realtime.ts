@@ -1,10 +1,9 @@
+import type { DeviceProjection, RoomSnapshotProjection } from '@smart-room/contracts';
 import { useEffect, useState } from 'react';
 
 import {
     connectTemperatureRealtime,
     type TemperatureRealtimeConnectionStatus,
-    type TemperatureSensorReading,
-    type TemperatureSnapshotResult,
 } from './room-realtime-client';
 
 export type TemperatureControlState =
@@ -18,7 +17,7 @@ export type TemperatureControlState =
       }
     | {
           status: 'ready';
-          reading: TemperatureSensorReading;
+          devices: readonly DeviceProjection[];
           connectionStatus: Extract<
               TemperatureRealtimeConnectionStatus,
               'connected' | 'reconnecting'
@@ -77,8 +76,10 @@ export function useTemperatureRealtime(): TemperatureControlState {
     return controlState;
 }
 
-function toControlState(snapshot: TemperatureSnapshotResult): TemperatureControlState {
-    return snapshot.status === 'empty'
+function toControlState(snapshot: RoomSnapshotProjection): TemperatureControlState {
+    const devices = snapshot.devices.filter((device) => device.role === 'temperature-sensor');
+
+    return devices.length === 0
         ? { status: 'empty', connectionStatus: 'connected' }
-        : { status: 'ready', reading: snapshot.reading, connectionStatus: 'connected' };
+        : { status: 'ready', devices, connectionStatus: 'connected' };
 }

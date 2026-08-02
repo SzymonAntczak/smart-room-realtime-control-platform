@@ -1,9 +1,11 @@
+import type { DeviceProjection } from '@smart-room/contracts';
 import { CircleCheck, Clock3, Thermometer, TriangleAlert, WifiOff } from 'lucide-react';
+import { memo } from 'react';
 
 import { TemperatureScenarioDrawer } from '../../dev/temperature-scenarios/TemperatureScenarioDrawer';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
-import { type TemperatureSensorReading } from './room-realtime-client';
+import { type TemperatureSensorReading, toTemperatureSensorReading } from './room-realtime-client';
 import styles from './TemperatureControl.module.css';
 import { type TemperatureControlState, useTemperatureRealtime } from './use-temperature-realtime';
 
@@ -84,22 +86,8 @@ export function TemperatureControlView({
         );
     }
 
-    const { reading } = controlState;
-
     return (
-        <ControlCard
-            eyebrow="Realtime room stream"
-            title={reading.sensorName}
-            status={formatHealth(reading.health)}
-            statusIcon={getHealthIcon(reading.health)}
-            statusTone={toHealthTone(reading.health)}
-            titleId="sensor-heading"
-            headerAction={
-                showDevScenarioPanel ? (
-                    <TemperatureScenarioDrawer deviceId={reading.sensorId} />
-                ) : undefined
-            }
-        >
+        <>
             {controlState.contractError ? (
                 <ContractErrorAlert message={controlState.contractError} />
             ) : null}
@@ -108,6 +96,42 @@ export function TemperatureControlView({
                     Realtime stream is reconnecting. Showing the last valid temperature update.
                 </p>
             ) : null}
+            <div className={styles.cards}>
+                {controlState.devices.map((device) => (
+                    <TemperatureCard
+                        key={device.deviceId}
+                        device={device}
+                        showDevScenarioPanel={showDevScenarioPanel}
+                    />
+                ))}
+            </div>
+        </>
+    );
+}
+
+const TemperatureCard = memo(function TemperatureCard({
+    device,
+    showDevScenarioPanel,
+}: {
+    device: DeviceProjection;
+    showDevScenarioPanel?: boolean;
+}) {
+    const reading = toTemperatureSensorReading(device);
+
+    return (
+        <ControlCard
+            eyebrow="Realtime room stream"
+            title={reading.sensorName}
+            status={formatHealth(reading.health)}
+            statusIcon={getHealthIcon(reading.health)}
+            statusTone={toHealthTone(reading.health)}
+            titleId={`sensor-heading-${reading.sensorId}`}
+            headerAction={
+                showDevScenarioPanel ? (
+                    <TemperatureScenarioDrawer deviceId={reading.sensorId} />
+                ) : undefined
+            }
+        >
             {getHealthWarning(reading) ? (
                 <p className={styles.warning} role="alert">
                     {getHealthWarning(reading)}
@@ -123,14 +147,13 @@ export function TemperatureControlView({
                 <span className={styles.value}>{reading.value.toFixed(1)}</span>
                 <span className={styles.unit}>{reading.unit}</span>
             </div>
-
             <p className={styles.updated}>
                 Last reading{' '}
                 <time dateTime={reading.recordedAt}>{formatReadingTime(reading.recordedAt)}</time>
             </p>
         </ControlCard>
     );
-}
+});
 
 function ContractErrorAlert({ message }: { message: string }) {
     return (

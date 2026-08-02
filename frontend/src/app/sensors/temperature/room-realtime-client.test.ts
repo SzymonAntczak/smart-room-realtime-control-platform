@@ -28,23 +28,13 @@ describe('connectTemperatureRealtime', () => {
         expect(MockWebSocket.instances[0]?.url).toBe('ws://127.0.0.1:4999/room/realtime');
     });
 
-    it('emits a renderable temperature snapshot from a room snapshot message', () => {
+    it('emits the full room snapshot from a room snapshot message', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
 
         MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
 
-        expect(handlers.onSnapshot).toHaveBeenCalledWith({
-            status: 'ready',
-            reading: {
-                sensorId: 'temp-desk',
-                sensorName: 'Desk Temperature',
-                value: 22.4,
-                unit: 'celsius',
-                recordedAt: '2026-06-08T09:30:00Z',
-                health: 'online',
-            },
-        });
+        expect(handlers.onSnapshot).toHaveBeenCalledWith(createRoomSnapshotMessage().payload);
     });
 
     it('rejects a realtime snapshot whose timestamp is not canonical UTC', () => {
@@ -60,7 +50,7 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
     });
 
-    it('emits empty when the room snapshot has no temperature sensor', () => {
+    it('keeps an empty device collection in the room snapshot', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
 
@@ -70,9 +60,7 @@ describe('connectTemperatureRealtime', () => {
             }),
         );
 
-        expect(handlers.onSnapshot).toHaveBeenCalledWith({
-            status: 'empty',
-        });
+        expect(handlers.onSnapshot).toHaveBeenCalledWith(expect.objectContaining({ devices: [] }));
     });
 
     it('reports invalid messages without rendering them', () => {
@@ -203,10 +191,50 @@ describe('connectTemperatureRealtime', () => {
 
         expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
             expect.objectContaining({
-                reading: expect.objectContaining({
-                    value: 23.1,
-                    health: 'stale',
-                }),
+                devices: [
+                    expect.objectContaining({
+                        reportedState: { temperature: 23.1, temperatureUnit: 'celsius' },
+                        health: 'stale',
+                    }),
+                ],
+            }),
+        );
+    });
+
+    it('replaces only the matching device in a multi-device room snapshot', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({
+                devices: [
+                    createTemperatureDevice(),
+                    {
+                        ...createTemperatureDevice(),
+                        deviceId: 'temp-window',
+                        name: 'Window Temperature',
+                    },
+                ],
+            }),
+        );
+        MockWebSocket.latest().emitMessage(
+            createDeviceUpdatedMessage({
+                deviceId: 'temp-window',
+                reportedState: { temperature: 19.4, temperatureUnit: 'celsius' },
+            }),
+        );
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                devices: [
+                    expect.objectContaining({
+                        deviceId: 'temp-desk',
+                        reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
+                    }),
+                    expect.objectContaining({
+                        deviceId: 'temp-window',
+                        reportedState: { temperature: 19.4, temperatureUnit: 'celsius' },
+                    }),
+                ],
             }),
         );
     });

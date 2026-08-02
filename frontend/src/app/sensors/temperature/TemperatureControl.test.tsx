@@ -62,6 +62,38 @@ describe('TemperatureControl', () => {
         expect(screen.getByText('09:30:01 UTC')).toBeInTheDocument();
     });
 
+    it('renders both temperature cards and updates only the targeted card', async () => {
+        render(<TemperatureControl />);
+
+        await emitLatestMessage(
+            createRoomSnapshotMessage({
+                devices: [
+                    createTemperatureDevice(),
+                    {
+                        ...createTemperatureDevice(),
+                        deviceId: 'temp-window',
+                        name: 'Window Temperature',
+                    },
+                ],
+            }),
+        );
+        await emitLatestMessage(
+            createDeviceUpdatedMessage({
+                ...createTemperatureDevice(),
+                deviceId: 'temp-window',
+                name: 'Window Temperature',
+                reportedState: { temperature: 19.4, temperatureUnit: 'celsius' },
+            }),
+        );
+
+        expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Window Temperature' })).toBeInTheDocument();
+        expect(screen.getAllByLabelText('Current temperature')).toHaveLength(2);
+        expect(screen.getAllByLabelText('Current temperature')[0]).toHaveTextContent('22.4');
+        expect(screen.getAllByLabelText('Current temperature')[1]).toHaveTextContent('19.4');
+        expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
     it('shows an empty state when no devices are available', async () => {
         render(<TemperatureControl />);
 

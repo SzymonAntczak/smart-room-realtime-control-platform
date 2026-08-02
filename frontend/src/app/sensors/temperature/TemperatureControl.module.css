@@ -1,3 +1,10 @@
+.cards {
+    display: grid;
+    inline-size: min(100%, 66rem);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-5);
+}
+
 .reading {
     display: flex;
     align-items: baseline;
@@ -43,6 +50,12 @@
     font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-bold);
     line-height: var(--line-height-relaxed);
+}
+
+@media (max-width: 52rem) {
+    .cards {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 @media (max-width: 32.5rem) {

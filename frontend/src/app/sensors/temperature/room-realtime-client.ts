@@ -15,15 +15,6 @@ export type TemperatureRealtimeConnectionStatus =
     | 'reconnecting'
     | 'disconnected';
 
-export type TemperatureSnapshotResult =
-    | {
-          status: 'ready';
-          reading: TemperatureSensorReading;
-      }
-    | {
-          status: 'empty';
-      };
-
 export interface TemperatureSensorReading {
     sensorId: string;
     sensorName: string;
@@ -35,7 +26,7 @@ export interface TemperatureSensorReading {
 
 export interface TemperatureRealtimeClientHandlers {
     onConnectionStatus(status: TemperatureRealtimeConnectionStatus): void;
-    onSnapshot(snapshot: TemperatureSnapshotResult): void;
+    onSnapshot(snapshot: RoomSnapshotProjection): void;
     onInvalidMessage(): void;
 }
 
@@ -105,7 +96,9 @@ export function connectTemperatureRealtime(
 
             try {
                 const message = parseRoomRealtimeMessage(event.data);
-                handlers.onSnapshot(toTemperatureSnapshotResult(applyRealtimeMessage(message)));
+                const snapshot = applyRealtimeMessage(message);
+                validateTemperatureDevices(snapshot);
+                handlers.onSnapshot(snapshot);
             } catch {
                 handlers.onInvalidMessage();
                 scheduleReconnect(socket);
@@ -183,32 +176,27 @@ function parseRoomRealtimeMessage(data: unknown): RoomRealtimeServerMessage {
     return body;
 }
 
-function toTemperatureSnapshotResult(snapshot: RoomSnapshotProjection): TemperatureSnapshotResult {
-    const temperatureDevice = snapshot.devices.find(
-        (device) => device.role === 'temperature-sensor',
-    );
-
-    if (!temperatureDevice) {
-        return {
-            status: 'empty',
-        };
-    }
-
-    if (!isRenderableTemperatureDevice(temperatureDevice)) {
+export function toTemperatureSensorReading(device: DeviceProjection): TemperatureSensorReading {
+    if (!isRenderableTemperatureDevice(device)) {
         throw new Error('Temperature sensor data did not match the expected contract.');
     }
 
     return {
-        status: 'ready',
-        reading: {
-            sensorId: temperatureDevice.deviceId,
-            sensorName: temperatureDevice.name,
-            value: temperatureDevice.reportedState.temperature,
-            unit: temperatureDevice.reportedState.temperatureUnit,
-            recordedAt: temperatureDevice.lastSeenAt,
-            health: temperatureDevice.health,
-        },
+        sensorId: device.deviceId,
+        sensorName: device.name,
+        value: device.reportedState.temperature,
+        unit: device.reportedState.temperatureUnit,
+        recordedAt: device.lastSeenAt,
+        health: device.health,
     };
+}
+
+function validateTemperatureDevices(snapshot: RoomSnapshotProjection): void {
+    for (const device of snapshot.devices) {
+        if (device.role === 'temperature-sensor') {
+            toTemperatureSensorReading(device);
+        }
+    }
 }
 
 function isRenderableTemperatureDevice(device: DeviceProjection): device is DeviceProjection & {

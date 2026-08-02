@@ -178,7 +178,9 @@ describe('createRoomBffServer', () => {
 
             expect(actionResponse.status).toBe(200);
             await expect(roomResponse.json()).resolves.toMatchObject({
-                devices: [expect.objectContaining({ deviceId: 'temp-desk' })],
+                devices: expect.arrayContaining([
+                    expect.objectContaining({ deviceId: 'temp-desk' }),
+                ]),
             });
         } finally {
             runtime.stop();
@@ -397,6 +399,47 @@ describe('createRoomBffServer', () => {
                 },
             },
         });
+    });
+
+    it('streams only the changed device delta from the two-sensor runtime', async () => {
+        const runtime = createTemperatureRoomRuntime({ intervalMs: 10_000 });
+        runtime.start();
+        const server = await listen(
+            createRoomBffServer({
+                getRoomSnapshot: runtime.getRoomSnapshot,
+                getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
+                subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
+            }),
+        );
+        openServers.push(server);
+        const socket = connectWebSocket(server);
+        openSockets.push(socket);
+
+        try {
+            await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+                messageType: 'room.snapshot',
+                payload: {
+                    devices: expect.arrayContaining([
+                        expect.objectContaining({ deviceId: 'temp-desk' }),
+                        expect.objectContaining({ deviceId: 'temp-window' }),
+                    ]),
+                },
+            });
+
+            runtime.runDeviceScenario('temp-window', 'emit_next_reading');
+
+            await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+                messageType: 'device.updated',
+                previousRevision: 0,
+                revision: 1,
+                payload: {
+                    deviceId: 'temp-window',
+                    reportedState: { temperature: 20.2, temperatureUnit: 'celsius' },
+                },
+            });
+        } finally {
+            runtime.stop();
+        }
     });
 
     it('removes realtime snapshot subscriptions when the WebSocket closes', async () => {

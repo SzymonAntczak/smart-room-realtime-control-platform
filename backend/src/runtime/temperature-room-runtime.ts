@@ -42,6 +42,12 @@ export interface TemperatureRoomRuntimeConfig {
     deduplicationEntryLimit?: number;
 }
 
+interface TemperatureSensorDefinition extends DeviceDefinition {
+    nativeSensorId: string;
+    baseTemperature: number;
+    intervalMsMultiplier: number;
+}
+
 export interface TemperatureRoomRuntime {
     start(): void;
     stop(): void;
@@ -57,11 +63,22 @@ export interface TemperatureRoomRuntime {
 
 export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
 
-const defaultDevices: DeviceDefinition[] = [
+const defaultSensors: readonly TemperatureSensorDefinition[] = [
     {
         deviceId: 'temp-desk',
         name: 'Desk Temperature',
         role: 'temperature-sensor',
+        nativeSensorId: 'temp-desk-native',
+        baseTemperature: 22,
+        intervalMsMultiplier: 1,
+    },
+    {
+        deviceId: 'temp-window',
+        name: 'Window Temperature',
+        role: 'temperature-sensor',
+        nativeSensorId: 'temp-window-native',
+        baseTemperature: 20,
+        intervalMsMultiplier: 2,
     },
 ];
 
@@ -78,17 +95,27 @@ export function createTemperatureRoomRuntime({
     deduplicationRetentionMs,
     deduplicationEntryLimit,
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
-    const sensor = createTemperatureSensorScenario({
-        sensorId: 'temp-desk-native',
-        baseTemperature: 22,
-        readingPattern,
-    });
+    const sensors = defaultSensors.map((definition) => ({
+        definition,
+        sensor: createTemperatureSensorScenario({
+            sensorId: definition.nativeSensorId,
+            baseTemperature: definition.baseTemperature,
+            readingPattern,
+        }),
+        runtime: undefined as TemperatureSensorRuntime | undefined,
+        adapter: undefined as SimulatorTemperatureAdapter | undefined,
+    }));
+    const devices: DeviceDefinition[] = defaultSensors.map(({ deviceId, name, role }) => ({
+        deviceId,
+        name,
+        role,
+    }));
     const roomProjector = createRoomProjector({
-        devices: defaultDevices,
+        devices,
         initialUpdatedAt: clock.now(),
     });
     const processor = createEventProcessor({
-        devices: defaultDevices,
+        devices,
         roomProjector,
         clock,
         deduplicationRetentionMs,
@@ -98,16 +125,17 @@ export function createTemperatureRoomRuntime({
         clock,
         diagnosticEventLimit,
     });
-    const sensorRuntime: TemperatureSensorRuntime = createTemperatureSensorRuntime({
-        sensor,
-        intervalMs,
-        clock,
-        timer,
-    });
+    for (const sensorEntry of sensors) {
+        sensorEntry.runtime = createTemperatureSensorRuntime({
+            sensor: sensorEntry.sensor,
+            intervalMs: intervalMs * sensorEntry.definition.intervalMsMultiplier,
+            clock,
+            timer,
+        });
+    }
     const snapshotBroadcastTimer = timer ?? (realTimer as TimerScheduler);
     const snapshotListeners = new Set<RoomSnapshotListener>();
     let hasStarted = false;
-    let adapter: SimulatorTemperatureAdapter | undefined;
     let snapshotBroadcastTimerHandle: unknown | undefined;
     let lastPublishedSnapshot: RoomSnapshotProjection | undefined;
 
@@ -118,21 +146,29 @@ export function createTemperatureRoomRuntime({
             }
 
             hasStarted = true;
-            adapter = createAdapter();
-            sensor.tick(clock.now());
+            for (const sensorEntry of sensors) {
+                sensorEntry.adapter = createAdapter(sensorEntry);
+                sensorEntry.sensor.tick(clock.now());
+            }
             snapshotBroadcastTimerHandle = snapshotBroadcastTimer.setInterval(() => {
                 notifyHealthChanges(clock.now());
             }, snapshotBroadcastIntervalMs);
-            sensorRuntime.start();
+            for (const sensorEntry of sensors) {
+                sensorEntry.runtime?.start();
+            }
         },
         stop() {
-            sensorRuntime.stop();
+            for (const sensorEntry of sensors) {
+                sensorEntry.runtime?.stop();
+            }
             if (snapshotBroadcastTimerHandle !== undefined) {
                 snapshotBroadcastTimer.clearInterval(snapshotBroadcastTimerHandle);
                 snapshotBroadcastTimerHandle = undefined;
             }
-            adapter?.stop();
-            adapter = undefined;
+            for (const sensorEntry of sensors) {
+                sensorEntry.adapter?.stop();
+                sensorEntry.adapter = undefined;
+            }
             hasStarted = false;
         },
         getRoomSnapshot() {
@@ -149,7 +185,7 @@ export function createTemperatureRoomRuntime({
             };
         },
         getDeviceScenarios(deviceId) {
-            if (deviceId !== defaultDevices[0].deviceId) return undefined;
+            if (!findSensor(deviceId)) return undefined;
 
             return {
                 deviceId,
@@ -157,7 +193,8 @@ export function createTemperatureRoomRuntime({
             };
         },
         runDeviceScenario(deviceId, action) {
-            if (deviceId !== defaultDevices[0].deviceId) {
+            const sensorEntry = findSensor(deviceId);
+            if (!sensorEntry) {
                 throw new Error(`No development scenarios are configured for ${deviceId}.`);
             }
             if (!hasStarted) {
@@ -168,7 +205,7 @@ export function createTemperatureRoomRuntime({
 
             const observedAt = clock.now();
 
-            runScenarioAction(action, observedAt);
+            runScenarioAction(sensorEntry, action, observedAt);
 
             return {
                 action,
@@ -177,43 +214,47 @@ export function createTemperatureRoomRuntime({
         },
     };
 
-    function runScenarioAction(action: TemperatureScenarioAction, observedAt: string): void {
+    function runScenarioAction(
+        sensorEntry: (typeof sensors)[number],
+        action: TemperatureScenarioAction,
+        observedAt: string,
+    ): void {
         const scenarioHandlers = {
             pause_telemetry(observedAt: string) {
-                sensorRuntime.stop();
-                sensor.pauseTelemetry(observedAt);
+                sensorEntry.runtime?.stop();
+                sensorEntry.sensor.pauseTelemetry(observedAt);
             },
             resume_telemetry(observedAt: string) {
-                sensor.resumeTelemetry(observedAt);
-                sensorRuntime.start();
+                sensorEntry.sensor.resumeTelemetry(observedAt);
+                sensorEntry.runtime?.start();
             },
             replay_last_reading() {
-                sensor.replayLastReading();
+                sensorEntry.sensor.replayLastReading();
             },
             emit_invalid_reading(observedAt: string) {
-                sensor.emitInvalidReading(observedAt);
+                sensorEntry.sensor.emitInvalidReading(observedAt);
             },
             emit_next_reading(observedAt: string) {
-                sensor.tick(observedAt);
+                sensorEntry.sensor.tick(observedAt);
             },
             reset(observedAt: string) {
-                sensorRuntime.stop();
-                adapter?.stop();
-                sensor.reset();
-                adapter = createAdapter();
-                sensor.tick(observedAt);
-                sensorRuntime.start();
+                sensorEntry.runtime?.stop();
+                sensorEntry.adapter?.stop();
+                sensorEntry.sensor.reset();
+                sensorEntry.adapter = createAdapter(sensorEntry);
+                sensorEntry.sensor.tick(observedAt);
+                sensorEntry.runtime?.start();
             },
         } satisfies Record<TemperatureScenarioAction, (observedAt: string) => void>;
 
         scenarioHandlers[action](observedAt);
     }
 
-    function createAdapter(): SimulatorTemperatureAdapter {
+    function createAdapter(sensorEntry: (typeof sensors)[number]): SimulatorTemperatureAdapter {
         return createSimulatorTemperatureAdapter({
-            sensor,
-            nativeSensorId: 'temp-desk-native',
-            platformDeviceId: 'temp-desk',
+            sensor: sensorEntry.sensor,
+            nativeSensorId: sensorEntry.definition.nativeSensorId,
+            platformDeviceId: sensorEntry.definition.deviceId,
             generateEventId,
             emitEvent(event) {
                 const result = processor.processEvent(event);
@@ -225,6 +266,10 @@ export function createTemperatureRoomRuntime({
                 }
             },
         });
+    }
+
+    function findSensor(deviceId: string): (typeof sensors)[number] | undefined {
+        return sensors.find((sensorEntry) => sensorEntry.definition.deviceId === deviceId);
     }
 
     function notifySnapshotListeners(evaluatedAt: string): void {

@@ -28,8 +28,8 @@ The architecture is organized around the main domain concepts, not around implem
 ## Incremental Read Path
 
 The architecture is built in smaller slices before the full smart-room model
-exists. The completed first reference slice is a read-only realtime view of one
-simulated temperature sensor, implemented through backend transport, adapter
+exists. The completed temperature reference slice is a read-only realtime view of two
+simulated temperature sensors, implemented through backend transport, adapter
 translation, event processing and a derived room projection. Command handling
 and durable storage remain later responsibilities.
 
@@ -226,7 +226,7 @@ This keeps the architecture easier to reason about and makes failures more expli
 ## Current Implementation Status
 
 The completed Stage 2/2.5 backend-backed reference slice is the read-only
-telemetry path for a simulated temperature sensor. It includes a simulator
+telemetry path for two simulated temperature sensors. It includes simulator
 adapter, event processor with validation and deduplication, and a read-model
 projection for `telemetry.reading.recorded` events. The frontend receives
 an initial UI-oriented `room.snapshot` baseline followed by per-device deltas over WebSocket

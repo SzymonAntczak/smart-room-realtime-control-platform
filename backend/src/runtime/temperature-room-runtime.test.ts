@@ -4,471 +4,177 @@ import { describe, expect, it } from 'vitest';
 import { createTemperatureRoomRuntime } from './temperature-room-runtime';
 
 describe('createTemperatureRoomRuntime', () => {
-    it('starts with an immediate temperature reading from the injected clock', () => {
+    it('starts with two independently configured temperature projections', () => {
         const runtime = createTemperatureRoomRuntime({
-            intervalMs: 10_000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator(['evt-temperature-1']),
+            clock: createMutableClock('2026-06-08T09:30:00Z'),
+            generateEventId: createEventIdGenerator(),
         });
 
         try {
             runtime.start();
 
-            const snapshot = runtime.getRoomSnapshot();
-
-            expect(snapshot.roomName).toBe('Smart Room');
-            expect(snapshot.devices).toEqual([
+            expect(runtime.getRoomSnapshot().devices).toEqual([
                 expect.objectContaining({
                     deviceId: 'temp-desk',
-                    name: 'Desk Temperature',
-                    role: 'temperature-sensor',
-                    health: 'online',
-                    reportedState: {
-                        temperature: 22,
-                        temperatureUnit: 'celsius',
-                    },
-                    commandAvailability: {
-                        policy: 'block',
-                        reason: 'read_only_device',
-                    },
+                    reportedState: { temperature: 22, temperatureUnit: 'celsius' },
+                }),
+                expect.objectContaining({
+                    deviceId: 'temp-window',
+                    reportedState: { temperature: 20, temperatureUnit: 'celsius' },
                 }),
             ]);
-            expect(snapshot.activeCommands).toEqual([]);
-            expect(snapshot.updatedAt).toBe('2026-06-08T09:30:00Z');
-            expect(snapshot.devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:00Z');
-            expect(runtime.getDiagnosticsSnapshot()).toEqual({
-                ignoredEvents: [],
-            });
+            expect(runtime.getDeviceScenarios('temp-desk')?.deviceId).toBe('temp-desk');
+            expect(runtime.getDeviceScenarios('temp-window')?.deviceId).toBe('temp-window');
         } finally {
             runtime.stop();
         }
     });
 
-    it('uses the injected timer for scheduled temperature readings', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 1000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:01Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-2',
-            ]),
-            timer,
-        });
-        try {
-            runtime.start();
-
-            timer.runLatest();
-
-            const snapshot = runtime.getRoomSnapshot();
-
-            expect(snapshot.updatedAt).toBe('2026-06-08T09:30:01Z');
-            expect(snapshot.devices[0]?.reportedState).toEqual({
-                temperature: 22.2,
-                temperatureUnit: 'celsius',
-            });
-            expect(timer.intervals).toEqual([1000, 1000]);
-        } finally {
-            runtime.stop();
-        }
-    });
-
-    it('accepts a repeated event id after the injected deduplication retention expires', () => {
+    it('uses separate cadence timers and updates only the sensor whose timer runs', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
         const runtime = createTemperatureRoomRuntime({
             intervalMs: 1000,
             clock,
             timer,
-            deduplicationRetentionMs: 1000,
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-1',
-                'evt-temperature-1',
-            ]),
+            generateEventId: createEventIdGenerator(),
         });
 
         try {
             runtime.start();
+            const initialWindow = runtime.getRoomSnapshot().devices[1]?.reportedState;
 
-            clock.advanceBy(999);
-            timer.runLatest();
+            clock.advanceBy(1000);
+            timer.run(2);
 
-            expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toEqual([
-                expect.objectContaining({
-                    reason: 'duplicate_event',
-                    eventId: 'evt-temperature-1',
-                }),
-            ]);
-
-            clock.advanceBy(2);
-            timer.runLatest();
-
-            const snapshot = runtime.getRoomSnapshot();
-
-            expect(snapshot.devices[0]?.reportedState).toEqual({
-                temperature: 22.4,
+            expect(timer.intervals).toEqual([1000, 1000, 2000]);
+            expect(runtime.getRoomSnapshot().devices[0]?.reportedState).toEqual({
+                temperature: 22.2,
                 temperatureUnit: 'celsius',
             });
+            expect(runtime.getRoomSnapshot().devices[1]?.reportedState).toEqual(initialWindow);
         } finally {
             runtime.stop();
         }
     });
 
-    it('notifies snapshot subscribers after accepted temperature readings only', () => {
+    it('scopes pause and resume scenarios to their selected device', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
         const runtime = createTemperatureRoomRuntime({
             intervalMs: 1000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:02Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-1',
-            ]),
+            clock,
             timer,
-        });
-        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
-        const unsubscribe = runtime.subscribeRoomSnapshot((snapshot) => {
-            snapshots.push(snapshot);
+            generateEventId: createEventIdGenerator(),
         });
 
         try {
             runtime.start();
-            timer.runLatest();
-
-            expect(snapshots.map((snapshot) => snapshot.updatedAt)).toEqual([
-                '2026-06-08T09:30:00Z',
-            ]);
-            expect(snapshots[0]?.devices[0]?.reportedState).toEqual({
-                temperature: 22,
-                temperatureUnit: 'celsius',
-            });
-        } finally {
-            unsubscribe();
-            runtime.stop();
-        }
-    });
-
-    it('broadcasts stale and offline snapshots when temperature telemetry stops', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 10_000,
-            snapshotBroadcastIntervalMs: 1000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:02.501Z',
-                '2026-06-08T09:30:10.001Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator(['evt-temperature-1']),
-            timer,
-        });
-        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
-
-        runtime.subscribeRoomSnapshot((snapshot) => {
-            snapshots.push(snapshot);
-        });
-
-        try {
-            runtime.start();
-
-            timer.run(1);
-            timer.run(1);
-
-            expect(snapshots.map((snapshot) => snapshot.devices[0]?.health)).toEqual([
-                'online',
-                'stale',
-                'offline',
-            ]);
-            expect(snapshots.map((snapshot) => snapshot.updatedAt)).toEqual([
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-            ]);
-            expect(snapshots.at(-1)?.devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:00Z');
-        } finally {
-            runtime.stop();
-        }
-    });
-
-    it('keeps notifying subscribers when another snapshot subscriber throws', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 1000,
-            clock: createSequenceClock(['2026-06-08T09:29:59Z', '2026-06-08T09:30:00Z']),
-            generateEventId: createSequenceEventIdGenerator(['evt-temperature-1']),
-            timer,
-        });
-        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
-
-        runtime.subscribeRoomSnapshot(() => {
-            throw new Error('Subscriber failed.');
-        });
-        runtime.subscribeRoomSnapshot((snapshot) => {
-            snapshots.push(snapshot);
-        });
-
-        try {
-            expect(() => runtime.start()).not.toThrow();
-            expect(snapshots).toHaveLength(1);
-            expect(snapshots[0]?.updatedAt).toBe('2026-06-08T09:30:00Z');
-        } finally {
-            runtime.stop();
-        }
-    });
-
-    it('derives stale and offline health when temperature telemetry stops, then recovers on a fresh reading', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 1000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:02.501Z',
-                '2026-06-08T09:30:10.001Z',
-                '2026-06-08T09:30:11Z',
-                '2026-06-08T09:30:11Z',
-                '2026-06-08T09:30:11Z',
-                '2026-06-08T09:30:11Z',
-                '2026-06-08T09:30:05Z',
-                '2026-06-08T09:30:21.001Z',
-                '2026-06-08T09:30:21.001Z',
-                '2026-06-08T09:30:12Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-2',
-                'evt-temperature-late',
-            ]),
-            timer,
-        });
-        const publishedSnapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
-
-        runtime.subscribeRoomSnapshot((snapshot) => {
-            publishedSnapshots.push(snapshot);
-        });
-
-        try {
-            runtime.start();
-
-            expect(runtime.getRoomSnapshot().devices[0]?.health).toBe('online');
-            expect(runtime.getRoomSnapshot().devices[0]?.health).toBe('stale');
-            expect(runtime.getRoomSnapshot().devices[0]?.health).toBe('offline');
-
-            timer.runLatest();
-
-            const recoveredSnapshot = runtime.getRoomSnapshot();
-
-            expect(recoveredSnapshot.devices[0]).toEqual(
-                expect.objectContaining({
-                    health: 'online',
-                    lastSeenAt: '2026-06-08T09:30:11Z',
-                }),
-            );
-            expect(recoveredSnapshot.updatedAt).toBe('2026-06-08T09:30:11Z');
-
-            timer.runLatest();
-
-            const snapshotAfterLateTelemetry = runtime.getRoomSnapshot();
-
-            expect(publishedSnapshots.at(-1)?.devices[0]?.health).toBe('offline');
-
-            expect(snapshotAfterLateTelemetry.devices[0]).toEqual(
-                expect.objectContaining({
-                    health: 'online',
-                    lastSeenAt: '2026-06-08T09:30:11Z',
-                    reportedState: {
-                        temperature: 22.2,
-                        temperatureUnit: 'celsius',
-                    },
-                }),
-            );
-            expect(snapshotAfterLateTelemetry.updatedAt).toBe('2026-06-08T09:30:11Z');
-        } finally {
-            runtime.stop();
-        }
-    });
-
-    it('stops scheduled readings and adapter subscription', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 1000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:02Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-2',
-            ]),
-            timer,
-        });
-
-        runtime.start();
-        runtime.stop();
-
-        timer.runLatest();
-
-        const snapshotAfterStop = runtime.getRoomSnapshot();
-
-        expect(snapshotAfterStop.updatedAt).toBe('2026-06-08T09:30:00Z');
-        expect(timer.clearedHandles).toEqual([2, 1]);
-    });
-
-    it('can restart without creating duplicate adapter subscriptions', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 1000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:02Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-2',
-            ]),
-            timer,
-        });
-
-        try {
-            runtime.start();
-            runtime.stop();
-            runtime.start();
-
-            const snapshot = runtime.getRoomSnapshot();
-
-            expect(snapshot.updatedAt).toBe('2026-06-08T09:30:01Z');
-        } finally {
-            runtime.stop();
-        }
-    });
-
-    it('uses crypto UUID event ids by default', () => {
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 10_000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-            ]),
-        });
-
-        try {
-            runtime.start();
-
-            expect(runtime.getRoomSnapshot().devices[0]?.deviceId).toBe('temp-desk');
-        } finally {
-            runtime.stop();
-        }
-    });
-
-    it('records ignored duplicate events in diagnostics without updating recent events', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 1000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:02Z',
-                '2026-06-08T09:30:02Z',
-                '2026-06-08T09:30:03Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-1',
-            ]),
-            timer,
-        });
-
-        try {
-            runtime.start();
-            timer.runLatest();
-
-            expect(runtime.getDiagnosticsSnapshot()).toEqual({
-                ignoredEvents: [
-                    {
-                        diagnosticId: 'diag-1',
-                        reason: 'duplicate_event',
-                        observedAt: '2026-06-08T09:30:02Z',
-                        commandId: undefined,
-                        eventId: 'evt-temperature-1',
-                        eventType: 'telemetry.reading.recorded',
-                        source: 'simulator-adapter',
-                        deviceId: 'temp-desk',
-                        occurredAt: '2026-06-08T09:30:01Z',
-                    },
-                ],
-            });
-        } finally {
-            runtime.stop();
-        }
-    });
-
-    it('runs invalid and replay scenarios through diagnostics without changing confirmed state', () => {
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 10_000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:02Z',
-                '2026-06-08T09:30:02Z',
-                '2026-06-08T09:30:03Z',
-                '2026-06-08T09:30:04Z',
-                '2026-06-08T09:30:05Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-invalid',
-                'evt-temperature-reset',
-            ]),
-        });
-
-        try {
-            runtime.start();
-            runtime.runDeviceScenario('temp-desk', 'emit_invalid_reading');
-            runtime.runDeviceScenario('temp-desk', 'replay_last_reading');
-            runtime.runDeviceScenario('temp-desk', 'reset');
+            runtime.runDeviceScenario('temp-window', 'pause_telemetry');
+            clock.advanceBy(1000);
+            timer.run(2);
+            timer.run(3);
 
             expect(runtime.getRoomSnapshot().devices[0]?.reportedState).toEqual({
-                temperature: 22,
+                temperature: 22.2,
                 temperatureUnit: 'celsius',
             });
+            expect(runtime.getRoomSnapshot().devices[1]?.reportedState).toEqual({
+                temperature: 20,
+                temperatureUnit: 'celsius',
+            });
+
+            runtime.runDeviceScenario('temp-window', 'resume_telemetry');
+            timer.runLatest();
+
+            expect(runtime.getRoomSnapshot().devices[1]?.reportedState).toEqual({
+                temperature: 20.2,
+                temperatureUnit: 'celsius',
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('publishes health changes for the affected device without changing the other projection', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            snapshotBroadcastIntervalMs: 1000,
+            clock,
+            timer,
+            generateEventId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            runtime.runDeviceScenario('temp-window', 'pause_telemetry');
+            clock.advanceBy(1000);
+            timer.run(2);
+            clock.advanceBy(1501);
+            timer.run(1);
+
+            expect(snapshots.at(-1)?.devices).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ deviceId: 'temp-desk', health: 'online' }),
+                    expect.objectContaining({ deviceId: 'temp-window', health: 'stale' }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('takes one paused sensor offline and restores only that sensor on fresh telemetry', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            snapshotBroadcastIntervalMs: 1000,
+            clock,
+            timer,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            runtime.runDeviceScenario('temp-window', 'pause_telemetry');
+            clock.advanceBy(10_001);
+            timer.run(1);
+
+            expect(device(runtime, 'temp-window')?.health).toBe('offline');
+
+            runtime.runDeviceScenario('temp-window', 'resume_telemetry');
+            clock.advanceBy(1);
+            timer.runLatest();
+
+            expect(device(runtime, 'temp-window')).toEqual(
+                expect.objectContaining({
+                    health: 'online',
+                    reportedState: { temperature: 20.2, temperatureUnit: 'celsius' },
+                }),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('records invalid and duplicate scenarios without changing the other sensor projection', () => {
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-06-08T09:30:00Z'),
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            const deskBefore = device(runtime, 'temp-desk')?.reportedState;
+            runtime.runDeviceScenario('temp-window', 'emit_invalid_reading');
+            runtime.runDeviceScenario('temp-window', 'replay_last_reading');
+
+            expect(device(runtime, 'temp-desk')?.reportedState).toEqual(deskBefore);
             expect(
                 runtime.getDiagnosticsSnapshot().ignoredEvents.map((event) => event.reason),
             ).toEqual(['duplicate_event', 'invalid_payload']);
@@ -476,199 +182,53 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.stop();
         }
     });
-
-    it('pauses telemetry through stale and offline health, then recovers with one resumed timer', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 1000,
-            snapshotBroadcastIntervalMs: 1000,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:02.501Z',
-                '2026-06-08T09:30:10.001Z',
-                '2026-06-08T09:30:11Z',
-                '2026-06-08T09:30:11Z',
-                '2026-06-08T09:30:11Z',
-                '2026-06-08T09:30:11Z',
-                '2026-06-08T09:30:11Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-2',
-            ]),
-            timer,
-        });
-        const healthSnapshots: string[] = [];
-        runtime.subscribeRoomSnapshot((snapshot) => {
-            const health = snapshot.devices[0]?.health;
-
-            if (health) {
-                healthSnapshots.push(health);
-            }
-        });
-
-        try {
-            runtime.start();
-            runtime.runDeviceScenario('temp-desk', 'pause_telemetry');
-            timer.run(1);
-            timer.run(1);
-            runtime.runDeviceScenario('temp-desk', 'resume_telemetry');
-            timer.run(3);
-
-            expect(healthSnapshots).toEqual(['online', 'stale', 'offline', 'online']);
-            expect(runtime.getRoomSnapshot().devices[0]?.lastSeenAt).toBe('2026-06-08T09:30:11Z');
-            expect(timer.intervals).toEqual([1000, 1000, 1000]);
-        } finally {
-            runtime.stop();
-        }
-    });
-
-    it('keeps ignored diagnostics newest-first and applies the diagnostics limit', () => {
-        const timer = createManualTimer();
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 1000,
-            diagnosticEventLimit: 2,
-            clock: createSequenceClock([
-                '2026-06-08T09:29:59Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:00Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:02Z',
-                '2026-06-08T09:30:03Z',
-                '2026-06-08T09:30:03Z',
-                '2026-06-08T09:30:04Z',
-                '2026-06-08T09:30:05Z',
-                '2026-06-08T09:30:05Z',
-                '2026-06-08T09:30:06Z',
-            ]),
-            generateEventId: createSequenceEventIdGenerator([
-                'evt-temperature-1',
-                'evt-temperature-1',
-                'evt-temperature-1',
-                'evt-temperature-1',
-            ]),
-            timer,
-        });
-
-        try {
-            runtime.start();
-            timer.runLatest();
-            timer.runLatest();
-            timer.runLatest();
-
-            expect(
-                runtime
-                    .getDiagnosticsSnapshot()
-                    .ignoredEvents.map((diagnostic) => diagnostic.diagnosticId),
-            ).toEqual(['diag-3', 'diag-2']);
-            expect(
-                runtime.getDiagnosticsSnapshot().ignoredEvents.map((diagnostic) => ({
-                    observedAt: diagnostic.observedAt,
-                    occurredAt: diagnostic.occurredAt,
-                })),
-            ).toEqual([
-                {
-                    observedAt: '2026-06-08T09:30:06Z',
-                    occurredAt: '2026-06-08T09:30:05Z',
-                },
-                {
-                    observedAt: '2026-06-08T09:30:04Z',
-                    occurredAt: '2026-06-08T09:30:03Z',
-                },
-            ]);
-        } finally {
-            runtime.stop();
-        }
-    });
 });
 
-function createSequenceClock(timestamps: string[]): Clock {
-    const pendingTimestamps = [...timestamps];
-    const finalTimestamp = pendingTimestamps.at(-1);
+function device(runtime: ReturnType<typeof createTemperatureRoomRuntime>, deviceId: string) {
+    return runtime.getRoomSnapshot().devices.find((candidate) => candidate.deviceId === deviceId);
+}
 
-    return {
-        now() {
-            const timestamp = pendingTimestamps.shift();
-
-            if (timestamp) {
-                return timestamp;
-            }
-
-            if (!finalTimestamp) {
-                throw new Error('No deterministic timestamp configured.');
-            }
-
-            return finalTimestamp;
-        },
-    };
+function createEventIdGenerator(): () => string {
+    let index = 0;
+    return () => `evt-temperature-${++index}`;
 }
 
 function createMutableClock(
     initialTimestamp: string,
 ): Clock & { advanceBy(milliseconds: number): void } {
     let currentTimeMs = Date.parse(initialTimestamp);
-
     return {
-        now() {
-            return new Date(currentTimeMs).toISOString();
-        },
+        now: () => new Date(currentTimeMs).toISOString(),
         advanceBy(milliseconds) {
             currentTimeMs += milliseconds;
         },
     };
 }
 
-function createSequenceEventIdGenerator(eventIds: string[]): () => string {
-    const pendingEventIds = [...eventIds];
-
-    return () => {
-        const eventId = pendingEventIds.shift();
-
-        if (!eventId) {
-            throw new Error('No deterministic event id configured.');
-        }
-
-        return eventId;
-    };
-}
-
 function createManualTimer(): TimerScheduler<number> & {
     intervals: number[];
-    clearedHandles: number[];
     run(handle: number): void;
     runLatest(): void;
 } {
     const callbacks = new Map<number, () => void>();
     const intervals: number[] = [];
-    const clearedHandles: number[] = [];
     let nextHandle = 1;
-
     return {
         intervals,
-        clearedHandles,
         setInterval(callback, intervalMs) {
-            const handle = nextHandle;
-            nextHandle += 1;
+            const handle = nextHandle++;
             callbacks.set(handle, callback);
             intervals.push(intervalMs);
             return handle;
         },
-        clearInterval(timerHandle) {
-            callbacks.delete(timerHandle);
-            clearedHandles.push(timerHandle);
+        clearInterval(handle) {
+            callbacks.delete(handle);
         },
         run(handle) {
             callbacks.get(handle)?.();
         },
         runLatest() {
-            const latestHandle = nextHandle - 1;
-            callbacks.get(latestHandle)?.();
+            callbacks.get(nextHandle - 1)?.();
         },
     };
 }

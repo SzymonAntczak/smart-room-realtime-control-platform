@@ -11,7 +11,12 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: var(--space-6);
+}
+
+.header > :first-child {
+    min-inline-size: 0;
 }
 
 .eyebrow {
@@ -48,6 +53,8 @@
 .headerActions {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: var(--space-2);
     flex: 0 0 auto;
 }
