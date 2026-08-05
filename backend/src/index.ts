@@ -1,4 +1,11 @@
 export {
+    createSimulatorLedAdapter,
+    type LedCommandTransport,
+    type PlatformSetPowerCommand,
+    type SimulatorLedAdapter,
+    type SimulatorLedAdapterConfig,
+} from './adapters/simulator/led/led-adapter';
+export {
     createSimulatorTemperatureAdapter,
     type SimulatorTemperatureAdapter,
     type SimulatorTemperatureAdapterConfig,

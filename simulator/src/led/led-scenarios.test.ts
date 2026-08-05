@@ -15,6 +15,7 @@ describe('createLedScenario', () => {
             {
                 messageType: 'led.state.reported',
                 deviceId: 'led-main-native',
+                sequence: 1,
                 reportedState: { power: 'on' },
                 reportedAt: '2026-08-05T10:00:00.000Z',
             },
@@ -35,6 +36,7 @@ describe('createLedScenario', () => {
             {
                 messageType: 'led.state.reported',
                 deviceId: 'led-main-native',
+                sequence: 1,
                 reportedState: { power: 'on' },
                 reportedAt: '2026-08-05T10:00:02.000Z',
             },
@@ -76,10 +78,21 @@ describe('createLedScenario', () => {
             {
                 messageType: 'led.state.reported',
                 deviceId: 'led-main-native',
+                sequence: 1,
                 reportedState: { power: 'off' },
                 reportedAt: '2026-08-05T10:00:06.000Z',
             },
         ]);
+    });
+    it('cancels delayed reports and removes the command handler when stopped', () => {
+        const { scenario, reports, timer } = createTestScenario('confirm_delayed');
+
+        scenario.receive(command());
+        scenario.stop();
+        timer.advanceBy(2_000);
+        scenario.receive(command('off'));
+
+        expect(reports).toEqual([]);
     });
 });
 
@@ -124,6 +137,10 @@ function createFakeScheduler() {
         setTimeout(callback: () => void, delayMs: number) {
             scheduled.push({ dueAt: now + delayMs, callback });
             return scheduled.length;
+        },
+        clearTimeout(handle: number) {
+            const scheduledTimer = scheduled[handle - 1];
+            if (scheduledTimer) scheduled.splice(handle - 1, 1);
         },
         isoNow() {
             return new Date(Date.parse('2026-08-05T10:00:00Z') + now).toISOString();

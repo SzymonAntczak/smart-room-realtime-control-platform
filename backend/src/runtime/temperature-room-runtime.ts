@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { clearInterval, setInterval } from 'node:timers';
+import { clearInterval, setInterval, setTimeout } from 'node:timers';
 
 import type {
     DeviceScenarioList,
@@ -10,12 +10,20 @@ import type {
 import { temperatureScenarioActions } from '@smart-room/contracts';
 import {
     type Clock,
+    createLedScenario,
     createTemperatureSensorRuntime,
     createTemperatureSensorScenario,
+    type LedScenarioName,
+    type LedScenarioScheduler,
     type TemperatureSensorRuntime,
     type TimerScheduler,
 } from '@smart-room/simulator';
 
+import {
+    createSimulatorLedAdapter,
+    type PlatformSetPowerCommand,
+    type SimulatorLedAdapter,
+} from '../adapters/simulator/led/led-adapter';
 import {
     createSimulatorTemperatureAdapter,
     type SimulatorTemperatureAdapter,
@@ -40,6 +48,8 @@ export interface TemperatureRoomRuntimeConfig {
     diagnosticEventLimit?: number;
     deduplicationRetentionMs?: number;
     deduplicationEntryLimit?: number;
+    ledScenario?: LedScenarioName;
+    ledScenarioScheduler?: LedScenarioScheduler;
 }
 
 interface TemperatureSensorDefinition extends DeviceDefinition {
@@ -59,6 +69,7 @@ export interface TemperatureRoomRuntime {
         deviceId: string,
         action: TemperatureScenarioAction,
     ): TemperatureScenarioResult;
+    dispatchLedCommand(command: PlatformSetPowerCommand): void;
 }
 
 export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
@@ -94,6 +105,8 @@ export function createTemperatureRoomRuntime({
     diagnosticEventLimit,
     deduplicationRetentionMs,
     deduplicationEntryLimit,
+    ledScenario = 'confirm_immediately',
+    ledScenarioScheduler = realLedScenarioScheduler,
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
     const sensors = defaultSensors.map((definition) => ({
         definition,
@@ -110,6 +123,9 @@ export function createTemperatureRoomRuntime({
         name,
         role,
     }));
+    devices.push({ deviceId: 'led-main', name: 'Main LED', role: 'led-output' });
+    let led: ReturnType<typeof createLedScenario> | undefined;
+    let ledAdapter: SimulatorLedAdapter | undefined;
     const roomProjector = createRoomProjector({
         devices,
         initialUpdatedAt: clock.now(),
@@ -146,6 +162,26 @@ export function createTemperatureRoomRuntime({
             }
 
             hasStarted = true;
+            led = createLedScenario({
+                deviceId: 'led-main-native',
+                initialPower: 'off',
+                scenario: ledScenario,
+                clock,
+                scheduler: ledScenarioScheduler,
+            });
+            ledAdapter = createSimulatorLedAdapter({
+                led,
+                nativeLedId: 'led-main-native',
+                platformDeviceId: 'led-main',
+                generateEventId,
+                emitEvent(event) {
+                    const result = processor.processEvent(event);
+                    diagnostics.recordProcessingResult(event, result);
+                    if (result.status === 'accepted') {
+                        notifySnapshotListeners(result.evaluatedAt);
+                    }
+                },
+            });
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter = createAdapter(sensorEntry);
                 sensorEntry.sensor.tick(clock.now());
@@ -169,6 +205,10 @@ export function createTemperatureRoomRuntime({
                 sensorEntry.adapter?.stop();
                 sensorEntry.adapter = undefined;
             }
+            ledAdapter?.stop();
+            ledAdapter = undefined;
+            led?.stop();
+            led = undefined;
             hasStarted = false;
         },
         getRoomSnapshot() {
@@ -211,6 +251,13 @@ export function createTemperatureRoomRuntime({
                 action,
                 status: 'completed',
             };
+        },
+        dispatchLedCommand(command) {
+            if (!hasStarted || !ledAdapter) {
+                throw new Error('Temperature room runtime must be started before dispatching LED commands.');
+            }
+
+            ledAdapter.dispatch(command);
         },
     };
 
@@ -312,6 +359,15 @@ const realTimer: TimerScheduler<ReturnType<typeof setInterval>> = {
     },
     clearInterval(timerHandle) {
         clearInterval(timerHandle);
+    },
+};
+
+const realLedScenarioScheduler = {
+    setTimeout(callback: () => void, delayMs: number) {
+        return setTimeout(callback, delayMs);
+    },
+    clearTimeout(timerHandle: ReturnType<typeof setTimeout>) {
+        clearTimeout(timerHandle);
     },
 };
 

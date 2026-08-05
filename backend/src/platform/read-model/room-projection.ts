@@ -4,6 +4,7 @@ import type {
     DeviceProjection,
     DeviceRole,
     DeviceState,
+    DeviceStateReportedEvent,
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
     TerminalCommandProjection,
@@ -40,6 +41,10 @@ export interface RoomProjection {
 }
 
 export interface RoomProjector {
+    applyDeviceStateReported(
+        event: DeviceStateReportedEvent,
+        options?: ProjectionEvaluationOptions,
+    ): RoomProjection;
     applyTelemetryReadingRecorded(
         event: TelemetryReadingRecordedEvent,
         options?: ProjectionEvaluationOptions,
@@ -57,6 +62,34 @@ export function createRoomProjector({
     let updatedAt = initialUpdatedAt;
 
     return {
+        applyDeviceStateReported(event, options = {}) {
+            const device = deviceDefinitions.get(event.deviceId);
+            if (!device) {
+                throw new Error(`Cannot project device state for unknown device: ${event.deviceId}`);
+            }
+
+            const currentDevice = deviceProjections.get(device.deviceId);
+            if (
+                currentDevice?.lastSeenAt &&
+                parseTimestamp(event.occurredAt, 'event.occurredAt') <=
+                    parseTimestamp(currentDevice.lastSeenAt, 'device.lastSeenAt')
+            ) {
+                return buildProjection({ evaluatedAt: options.evaluatedAt ?? event.occurredAt });
+            }
+
+            updatedAt = event.occurredAt;
+            deviceProjections.set(device.deviceId, {
+                deviceId: device.deviceId,
+                name: device.name,
+                role: device.role,
+                health: 'online',
+                reportedState: event.payload.reportedState,
+                commandAvailability: { policy: 'allow' },
+                lastSeenAt: event.occurredAt,
+            });
+
+            return buildProjection({ evaluatedAt: options.evaluatedAt ?? event.occurredAt });
+        },
         applyTelemetryReadingRecorded(event, options = {}) {
             const device = deviceDefinitions.get(event.deviceId);
 

@@ -36,7 +36,7 @@ rules already documented in architecture and accepted ADRs.
     commands and scenario timing; the simulator remains device-like and does
     not own platform command lifecycle rules.
 
-- [ ] **S3.3 — Add the backend LED adapter and command dispatch path**
+- [x] **S3.3 — Add the backend LED adapter and command dispatch path**
   - Scope: Translate platform `set.power` commands to simulator-native
     commands and LED reports to `device.state.reported`; compose the adapter in
     the local runtime without exposing simulator protocol details to platform

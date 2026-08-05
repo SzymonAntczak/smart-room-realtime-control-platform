@@ -1,4 +1,6 @@
 import {
+    type DeviceStateReportedEvent,
+    deviceStateReportedEventSchema,
     type IgnoredEventReason,
     isSchema,
     normalizeIsoTimestamp,
@@ -88,10 +90,6 @@ export function createEventProcessor({
                 return ignored('duplicate_event');
             }
 
-            if (event.eventType !== 'telemetry.reading.recorded') {
-                return ignored('unsupported_event_type');
-            }
-
             if (!event.deviceId) {
                 return ignored('unknown_device');
             }
@@ -102,38 +100,62 @@ export function createEventProcessor({
                 return ignored('unknown_device');
             }
 
-            if (!isSchema(telemetryReadingRecordedEventSchema, event)) {
-                return ignored('invalid_payload');
+            if (event.eventType === 'device.state.reported') {
+                if (!isSchema(deviceStateReportedEventSchema, event)) {
+                    return ignored('invalid_payload');
+                }
+                if (device.role !== 'led-output') {
+                    return ignored('device_metric_mismatch');
+                }
+
+                return acceptEvent(event as DeviceStateReportedEvent, (acceptedEvent) =>
+                    roomProjector.applyDeviceStateReported(acceptedEvent, {
+                        evaluatedAt: deduplicationCheck.checkedAt,
+                    }),
+                );
             }
 
-            if (device.role !== 'temperature-sensor') {
-                return ignored('device_metric_mismatch');
+            if (event.eventType === 'telemetry.reading.recorded') {
+                if (!isSchema(telemetryReadingRecordedEventSchema, event)) {
+                    return ignored('invalid_payload');
+                }
+                if (device.role !== 'temperature-sensor') {
+                    return ignored('device_metric_mismatch');
+                }
+
+                return acceptEvent(event as TelemetryReadingRecordedEvent, (acceptedEvent) =>
+                    roomProjector.applyTelemetryReadingRecorded(acceptedEvent, {
+                        evaluatedAt: deduplicationCheck.checkedAt,
+                    }),
+                );
             }
 
-            const acceptedEvent = event as TelemetryReadingRecordedEvent;
+            return ignored('unsupported_event_type');
 
-            if (
-                isFutureDatedBeyondTolerance(
-                    acceptedEvent.occurredAt,
-                    deduplicationCheck.checkedAt,
-                    maxFutureReportSkewMs,
-                )
-            ) {
-                return ignored('future_dated_report');
-            }
+            function acceptEvent<TEvent extends TelemetryReadingRecordedEvent | DeviceStateReportedEvent>(
+                acceptedEvent: TEvent,
+                apply: (event: TEvent) => EventProcessorState,
+            ): EventProcessingResult {
+                if (
+                    isFutureDatedBeyondTolerance(
+                        acceptedEvent.occurredAt,
+                        deduplicationCheck.checkedAt,
+                        maxFutureReportSkewMs,
+                    )
+                ) {
+                    return ignored('future_dated_report');
+                }
 
-            const deduplicationEvictedEventIds = deduplicator.remember(event.eventId);
-
-            return {
-                status: 'accepted',
-                evaluatedAt: deduplicationCheck.checkedAt,
-                state: roomProjector.applyTelemetryReadingRecorded(acceptedEvent, {
+                const deduplicationEvictedEventIds = deduplicator.remember(acceptedEvent.eventId);
+                return {
+                    status: 'accepted',
                     evaluatedAt: deduplicationCheck.checkedAt,
-                }),
-                ...(deduplicationEvictedEventIds.length > 0
-                    ? { deduplicationEvictedEventIds }
-                    : {}),
-            };
+                    state: apply(acceptedEvent),
+                    ...(deduplicationEvictedEventIds.length > 0
+                        ? { deduplicationEvictedEventIds }
+                        : {}),
+                };
+            }
         },
     };
 }

@@ -37,6 +37,7 @@ describe('createLedSimulator', () => {
             {
                 messageType: 'led.state.reported',
                 deviceId: 'led-main-native',
+                sequence: 1,
                 reportedState: { power: 'on' },
                 reportedAt: '2026-08-05T10:00:00Z',
             },

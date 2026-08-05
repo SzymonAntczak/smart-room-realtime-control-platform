@@ -182,6 +182,72 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.stop();
         }
     });
+
+    it('dispatches an LED command through the composed runtime and publishes its reported state', () => {
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-08-05T10:00:00Z'),
+            generateEventId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+
+            runtime.dispatchLedCommand({
+                commandId: 'cmd-led-1',
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+
+            expect(device(runtime, 'led-main')).toEqual(
+                expect.objectContaining({
+                    reportedState: { power: 'on' },
+                    commandAvailability: { policy: 'allow' },
+                }),
+            );
+            expect(snapshots).toHaveLength(1);
+            expect(snapshots[0]?.devices).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        deviceId: 'led-main',
+                        reportedState: { power: 'on' },
+                    }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('cancels a delayed LED report when the runtime stops before restarting', () => {
+        const scheduler = createLedScheduler();
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-08-05T10:00:00Z'),
+            generateEventId: createEventIdGenerator(),
+            ledScenario: 'confirm_delayed',
+            ledScenarioScheduler: scheduler,
+        });
+
+        runtime.start();
+        runtime.dispatchLedCommand({
+            commandId: 'cmd-led-1',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            requestedState: { power: 'on' },
+        });
+        runtime.stop();
+        scheduler.runAll();
+        runtime.start();
+
+        try {
+            expect(device(runtime, 'led-main')).toBeUndefined();
+        } finally {
+            runtime.stop();
+        }
+    });
 });
 
 function device(runtime: ReturnType<typeof createTemperatureRoomRuntime>, deviceId: string) {
@@ -229,6 +295,26 @@ function createManualTimer(): TimerScheduler<number> & {
         },
         runLatest() {
             callbacks.get(nextHandle - 1)?.();
+        },
+    };
+}
+
+function createLedScheduler() {
+    const callbacks = new Map<number, () => void>();
+    let nextHandle = 1;
+
+    return {
+        setTimeout(callback: () => void) {
+            const handle = nextHandle++;
+            callbacks.set(handle, callback);
+            return handle;
+        },
+        clearTimeout(timerHandle: unknown) {
+            if (typeof timerHandle === 'number') callbacks.delete(timerHandle);
+        },
+        runAll() {
+            for (const callback of callbacks.values()) callback();
+            callbacks.clear();
         },
     };
 }

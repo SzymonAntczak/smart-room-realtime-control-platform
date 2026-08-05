@@ -13,6 +13,7 @@ export interface LedSetPowerCommand {
 export interface LedStateReport {
     readonly messageType: 'led.state.reported';
     readonly deviceId: string;
+    readonly sequence: number;
     readonly reportedState: {
         readonly power: LedPower;
     };
@@ -54,6 +55,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
     const reportListeners = new Set<LedStateReportListener>();
     const rejectionListeners = new Set<LedCommandRejectionListener>();
     let observedPower = config.initialPower;
+    let stateReportSequence = 0;
 
     return {
         onCommand(listener) {
@@ -80,6 +82,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
             const report: LedStateReport = {
                 messageType: 'led.state.reported',
                 deviceId: config.deviceId,
+                sequence: ++stateReportSequence,
                 reportedState: { power },
                 reportedAt,
             };

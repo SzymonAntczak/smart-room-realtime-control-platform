@@ -21,6 +21,7 @@ export interface LedScenarioClock {
 
 export interface LedScenarioScheduler<TimerHandle = unknown> {
     setTimeout(callback: () => void, delayMs: number): TimerHandle;
+    clearTimeout(timerHandle: TimerHandle): void;
 }
 
 export interface LedScenarioConfig<TimerHandle = unknown> extends LedSimulatorConfig {
@@ -34,6 +35,7 @@ export interface LedScenario extends Pick<LedSimulator, 'getObservedPower'> {
     onStateReport(listener: LedStateReportListener): () => void;
     onCommandRejection(listener: LedCommandRejectionListener): () => void;
     receive(command: LedSetPowerCommand): void;
+    stop(): void;
 }
 
 export function createLedScenario<TimerHandle = unknown>({
@@ -45,7 +47,8 @@ export function createLedScenario<TimerHandle = unknown>({
     assertScenario(scenario);
     const simulator = createLedSimulator(simulatorConfig);
 
-    simulator.onCommand((command) => {
+    const scheduledTimers = new Set<TimerHandle>();
+    const unsubscribeFromCommands = simulator.onCommand((command) => {
         switch (scenario) {
             case 'confirm_immediately':
                 simulator.reportState(command.requestedState.power, clock.now());
@@ -64,12 +67,23 @@ export function createLedScenario<TimerHandle = unknown>({
         }
     });
 
-    return simulator;
+    return {
+        ...simulator,
+        stop() {
+            unsubscribeFromCommands();
+            for (const timerHandle of scheduledTimers) {
+                scheduler.clearTimeout(timerHandle);
+            }
+            scheduledTimers.clear();
+        },
+    };
 
     function scheduleReport(command: LedSetPowerCommand, delayMs: number): void {
-        scheduler.setTimeout(() => {
+        const timerHandle = scheduler.setTimeout(() => {
+            scheduledTimers.delete(timerHandle);
             simulator.reportState(command.requestedState.power, clock.now());
         }, delayMs);
+        scheduledTimers.add(timerHandle);
     }
 }
 
