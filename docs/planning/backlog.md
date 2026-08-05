@@ -27,7 +27,7 @@ rules already documented in architecture and accepted ADRs.
   - Done when: Contract tests accept valid command and realtime messages and
     reject malformed or semantically inconsistent shapes.
 
-- [ ] **S3.2 — Add the simulator-native LED model and repeatable scenarios**
+- [x] **S3.2 — Add the simulator-native LED model and repeatable scenarios**
   - Scope: Add an LED state report and `set.power` behavior to the simulator,
     including normal confirmation, delayed confirmation, explicit rejection,
     timeout/no confirmation and late-report scenarios.

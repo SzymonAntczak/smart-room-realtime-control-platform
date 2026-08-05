@@ -18,3 +18,23 @@ export {
     type TemperatureSensorRuntimeConfig,
     type TimerScheduler,
 } from './temperature/temperature-sensor-runtime';
+export {
+    createLedSimulator,
+    type LedCommandListener,
+    type LedCommandRejection,
+    type LedCommandRejectionListener,
+    type LedPower,
+    type LedSetPowerCommand,
+    type LedSimulator,
+    type LedSimulatorConfig,
+    type LedStateReport,
+    type LedStateReportListener,
+} from './led/led-simulator';
+export {
+    createLedScenario,
+    type LedScenario,
+    type LedScenarioClock,
+    type LedScenarioConfig,
+    type LedScenarioName,
+    type LedScenarioScheduler,
+} from './led/led-scenarios';
