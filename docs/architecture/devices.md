@@ -125,6 +125,10 @@ confirmation.
 
 Confirmation matching is configured per command type. The initial `set.power`
 command uses exact matching between the requested and reported `power` value.
+That match records that the requested observable state was reached; it does not
+attribute its cause when a physical device input can change the same state.
+Physical state reports always update observed state, including when a frontend
+command is active.
 
 Freshness thresholds are configured per device type by default. Individual
 devices may override these values when there is a specific reason.
@@ -147,3 +151,5 @@ Initial command policies:
 
 Decision context and trade-offs are documented in
 [ADR: Device Command Confirmation and Health Policy](../decisions/adr-device-command-confirmation-and-health-policy.md).
+Physical-actuation behavior is documented in
+[ADR: External Actuation and Command Outcomes](../decisions/adr-external-actuation-and-command-outcomes.md).

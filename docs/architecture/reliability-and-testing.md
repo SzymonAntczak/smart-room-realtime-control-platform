@@ -81,10 +81,12 @@ Simulator scenarios should be repeatable and named after real failure modes.
 
 Initial scenarios:
 
-- normal command confirmation
-- delayed command confirmation
-- command rejected by device
-- late confirmation after timeout
+- `confirm_immediately`: matching LED state report immediately after the native command
+- `confirm_delayed`: matching LED state report 2000 ms after the native command
+- `reject_command`: explicit LED command rejection without a state report
+- `omit_confirmation`: no LED state report, so the command times out after 5000 ms
+- `report_after_timeout`: matching LED state report after 6000 ms; it updates
+  observed state but does not reconfirm the timed-out command
 - telemetry stops and device becomes stale
 - stale device becomes offline
 - device reconnects and reports fresh state
@@ -101,6 +103,9 @@ Focus areas:
 - stale and offline states are visible
 - failed and timed-out commands remain understandable
 - future history work has an explicit traceability acceptance criterion
+
+The LED scenario timing and transport defaults are defined in
+[ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
 
 ## Manual Acceptance Checklist
 

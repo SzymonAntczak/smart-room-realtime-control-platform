@@ -10,7 +10,7 @@ These are deliberately small, ordered implementation tasks for the first
 controllable-device reference slice. They do not change the binding command
 rules already documented in architecture and accepted ADRs.
 
-- [ ] **S3.0 — Decide the command transport and operational LED defaults**
+- [x] **S3.0 — Decide the command transport and operational LED defaults**
   - Scope: Decide the frontend-to-BFF command boundary (HTTP request or a new
     WebSocket direction), the `set.power` timeout, `recentCommands` bound and
     the names and expected behavior of LED simulator scenarios. Promote any
@@ -97,6 +97,25 @@ specific roadmap stage.
       temperature sensors end-to-end. Verify independent cadences, health,
       device-scoped scenario controls and per-device realtime updates without
       unnecessary updates to the other sensor card.
+
+- [ ] Migrate the server-to-client realtime BFF stream from WebSocket to SSE.
+      First record and accept an ADR that confirms SSE is the intended durable
+      transport. Preserve the room snapshot baseline, revision-linked updates,
+      boundary validation and visible reconnect behavior; keep all frontend
+      command requests on explicit HTTP boundaries.
+      Done when: the BFF, shared transport contracts, frontend realtime client,
+      architecture documentation and focused reconnect/contract tests use SSE,
+      and no application command ingress is accepted through the realtime
+      stream.
+
+- [ ] Implement physical LED actuation according to the external-actuation ADR
+      before Stage 5 hardware acceptance. A physical state report must update
+      observed state even during a Dashboard command; a matching report confirms
+      the requested outcome without asserting causal attribution, while a
+      non-matching report leaves the command pending.
+      Done when: simulator or hardware-adapter tests and UI tests cover physical
+      actuation with no active command, matching and non-matching active
+      commands, and a matching report after timeout.
 
 - [ ] Define runtime device-membership behavior for devices added or removed
       while a frontend realtime connection is active. The current slice assumes

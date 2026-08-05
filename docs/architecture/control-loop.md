@@ -58,6 +58,16 @@ For the first implementation, a device can have only one active command
 command is rejected as a
 visible command failure instead of being silently queued or merged.
 
+## External Physical Actuation
+
+A physical input may change a controllable device while a frontend command is
+active. Its accepted state report always updates observed device state. A fresh
+report that exactly matches a pending `set.power` request confirms that the
+requested state was reached, but it does not prove that the frontend request
+caused the change. A non-matching report leaves the command pending until its
+normal failure or timeout outcome. Physical actuation never changes a timed-out
+command back to `confirmed`.
+
 ## Requested vs Confirmed State
 
 Requested state and confirmed state are different facts.
@@ -108,6 +118,10 @@ The control loop should make time visible:
 Command lifecycle events are correlated by `commandId`. Device reports remain
 observable facts and confirm commands only when the reported state matches the
 command's configured confirmation rule.
+
+The first physical-input model deliberately does not require device reports to
+carry `commandId` or a cross-boundary actuation-origin field. Its full trade-off
+is recorded in [ADR: External Actuation and Command Outcomes](../decisions/adr-external-actuation-and-command-outcomes.md).
 
 External timestamps may use a UTC offset. Contract validation normalizes every
 accepted timestamp to canonical UTC (`Z`) before it enters the read model or

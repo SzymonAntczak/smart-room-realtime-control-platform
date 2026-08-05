@@ -45,7 +45,8 @@ flowchart LR
     hardwareAdapter -->|platform events| processor
 
     readModel -->|snapshots / updates| api
-    api <-->|WebSocket| ui
+    api -->|server-to-client WebSocket projections| ui
+    ui -->|HTTP command requests| api
     ui <--> user
 
     api -->|command requests| processor
@@ -67,10 +68,11 @@ command state. The realtime API/BFF reads those
 projections and streams UI-oriented snapshots or updates to the frontend; it
 does not reinterpret raw device-native messages.
 
-The realtime API/BFF also accepts command requests from the UI. Backend platform
-code records and interprets command lifecycle facts, while adapters translate
-platform commands into simulator-native, hardware-native or external-system
-commands.
+The realtime API/BFF accepts command requests from the UI through explicit HTTP
+boundaries. Its WebSocket stream is server-to-client only and delivers
+UI-oriented snapshots and updates. Backend platform code records and interprets
+command lifecycle facts, while adapters translate platform commands into
+simulator-native, hardware-native or external-system commands.
 
 When backend and simulator slices are introduced, the realtime API, event
 processor, read model/projections and in-memory storage belong to the local

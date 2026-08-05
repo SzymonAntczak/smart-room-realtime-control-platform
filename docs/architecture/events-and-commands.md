@@ -45,7 +45,9 @@ Optional envelope fields:
 Command lifecycle events must include the `commandId` they describe. Device
 state reports do not include `commandId` by default; they are observed device
 facts and may confirm a pending command only through the processor's matching
-rules.
+rules. A physical device input is one such observed source: its report updates
+device state and a matching pending command records an outcome, not proof that
+the command caused the change.
 
 Timestamps may arrive as ISO-8601 UTC values or with an explicit UTC offset.
 The contract boundary normalizes accepted values to canonical UTC (`Z`) before
@@ -156,6 +158,23 @@ The first implementation should keep payloads small and explicit.
 }
 ```
 
+## Initial LED Command Boundary and Defaults
+
+The initial LED command slice uses `POST /room/commands` for frontend-to-BFF
+`set.power` requests. The HTTP response communicates backend acceptance or
+rejection only; device confirmation remains a later outcome derived from a
+matching `device.state.reported` event and delivered through the server-to-client
+realtime stream. The realtime WebSocket accepts no application command messages.
+
+For `led` `set.power`, the backend starts a 5000 ms timeout after dispatch. It
+retains at most 20 terminal command projections in `recentCommands`, newest
+first, evicting the oldest after the bound is exceeded. The `5000` value in the
+`command.timed_out` example above is therefore the initial LED default, not a
+global command timeout.
+
+The full transport, retention and simulator-scenario decision is documented in
+[ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
+
 ## Command Request Example
 
 A command request captures the desired action. It is intent, not proof that the
@@ -210,3 +229,5 @@ Command correlation, confirmation matching and overlapping command behavior are
 documented in [ADR: Command Correlation, Confirmation and Concurrency](../decisions/adr-command-correlation-confirmation-and-concurrency.md).
 Terminal command projection and history rules are documented in
 [ADR: Command History and Terminal Projections](../decisions/adr-command-history-and-terminal-projections.md).
+Physical actuation and its effect on command outcomes are documented in
+[ADR: External Actuation and Command Outcomes](../decisions/adr-external-actuation-and-command-outcomes.md).
