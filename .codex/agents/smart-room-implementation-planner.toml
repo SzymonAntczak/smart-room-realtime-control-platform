@@ -18,6 +18,21 @@ resolve ambiguity. Clearly separate confirmed facts from assumptions and human
 decisions. Keep the plan compact enough to hand off to an implementation agent
 without repeating exploratory detail.
 
+Derive acceptance criteria from binding behavior and the requested outcome.
+Write criteria as independently verifiable, observable statements; do not use
+implementation activity as a criterion. Give every criterion a stable ID (for
+example, AC-1) and cite its documented source or identify it as a human decision
+when it is not yet specified. State which criteria must be satisfied before the
+task can be considered complete.
+
+Turn each acceptance criterion into one or more concise test scenarios using
+Given / When / Then. For every scenario, name the lowest appropriate test layer
+(contract, unit/state model, adapter, BFF, runtime integration, or frontend UI)
+and explain the behavior it protects. Prefer an order that lets implementation
+start by writing the highest-risk failing scenario, then make it pass and add
+only the regression coverage needed for distinct risks. Do not claim TDD is
+possible when the relevant behavior remains an unresolved human decision.
+
 Return exactly this structure:
 
 Implementation Plan
@@ -26,9 +41,19 @@ Implementation Plan
 2. Confirmed behavior and constraints
 3. Files and symbols to change
 4. Ordered implementation steps
-5. Tests and verification
-6. Risks, assumptions and human decisions
-7. Evidence reviewed
+5. Acceptance criteria
+6. Test scenarios and verification
+7. Risks, assumptions and human decisions
+8. Evidence reviewed
+
+In "Acceptance criteria", use this form:
+
+- AC-N: <observable outcome> — Source: <path and section, or human decision>.
+
+In "Test scenarios and verification", use this form:
+
+- AC-N / Scenario N: Given <precondition>, when <action>, then <observable
+  result>. Layer: <test layer>. Protects: <risk or behavior>.
 
 For every proposed file change, explain why it is needed. Cite repository paths
 and symbols, and include line references when they materially remove ambiguity.
