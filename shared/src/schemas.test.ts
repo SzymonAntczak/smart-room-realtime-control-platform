@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    acceptedCommandResponseSchema,
     commandConfirmedEventSchema,
     commandDispatchedEventSchema,
     commandFailedEventSchema,
@@ -14,8 +15,66 @@ import {
     normalizeIsoTimestamp,
     platformEventCandidateSchema,
     platformEventEnvelopeSchema,
+    rejectedCommandResponseSchema,
+    setPowerCommandRequestSchema,
     telemetryReadingRecordedEventSchema,
 } from './contracts';
+
+describe('set.power HTTP contracts', () => {
+    const request = {
+        deviceId: 'led-main',
+        commandType: 'set.power',
+        requestedState: { power: 'on' },
+    } as const;
+
+    it('accepts a valid request and rejects malformed or undocumented input', () => {
+        expect(isSchema(setPowerCommandRequestSchema, request)).toBe(true);
+        expect(
+            isSchema(setPowerCommandRequestSchema, {
+                ...request,
+                requestedState: { power: 'dim' },
+            }),
+        ).toBe(false);
+        expect(
+            isSchema(setPowerCommandRequestSchema, {
+                ...request,
+                requestedState: { power: 'on', brightness: 50 },
+            }),
+        ).toBe(false);
+        expect(isSchema(setPowerCommandRequestSchema, { ...request, deviceId: '' })).toBe(false);
+        expect(
+            isSchema(setPowerCommandRequestSchema, { ...request, commandType: 'set.level' }),
+        ).toBe(false);
+        expect(isSchema(setPowerCommandRequestSchema, { ...request, confirmed: true })).toBe(false);
+    });
+
+    it('distinguishes backend acceptance from rejection without a confirmation field', () => {
+        expect(
+            isSchema(acceptedCommandResponseSchema, { commandId: 'cmd-1', status: 'accepted' }),
+        ).toBe(true);
+        expect(
+            isSchema(acceptedCommandResponseSchema, {
+                commandId: 'cmd-1',
+                status: 'confirmed',
+            }),
+        ).toBe(false);
+        expect(
+            isSchema(rejectedCommandResponseSchema, {
+                commandId: 'cmd-2',
+                status: 'rejected',
+                reason: 'command_already_active',
+                message: 'The device already has an active command.',
+            }),
+        ).toBe(true);
+        expect(
+            isSchema(rejectedCommandResponseSchema, {
+                status: 'rejected',
+                reason: 'command_already_active',
+                message: 'The device already has an active command.',
+            }),
+        ).toBe(false);
+    });
+});
 
 describe('platform event schemas', () => {
     it.each([
@@ -111,6 +170,164 @@ describe('platform event schemas', () => {
 });
 
 describe('realtime schemas', () => {
+    it('accepts an atomic command update and rejects an inconsistent projection', () => {
+        const update = createCommandsUpdatedMessage();
+        const terminalCommand = {
+            commandId: 'cmd-terminal',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            status: 'confirmed',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-06-08T09:30:00Z',
+            dispatchedAt: '2026-06-08T09:30:01Z',
+            confirmedAt: '2026-06-08T09:30:02Z',
+        } as const;
+
+        expect(isRoomRealtimeServerMessage(update)).toBe(true);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                revision: 2,
+            }),
+        ).toBe(false);
+
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    device: createLedDevice(),
+                    activeCommands: [],
+                    recentCommands: [
+                        {
+                            ...terminalCommand,
+                            commandId: 'cmd-older',
+                            confirmedAt: '2026-06-08T09:30:01Z',
+                        },
+                        {
+                            ...terminalCommand,
+                            commandId: 'cmd-newer',
+                            confirmedAt: '2026-06-08T09:30:02Z',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    device: { ...update.payload.device, activeCommandId: 'cmd-other' },
+                },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    recentCommands: [
+                        {
+                            commandId: 'cmd-1',
+                            deviceId: 'led-main',
+                            commandType: 'set.power',
+                            status: 'failed',
+                            requestedState: { power: 'on' },
+                            requestedAt: '2026-06-08T09:30:00Z',
+                            failedAt: '2026-06-08T09:30:02Z',
+                            reason: 'adapter_rejected',
+                            message: 'The adapter rejected the command.',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+    });
+
+    it('rejects commands for read-only devices and terminal histories outside their bounds', () => {
+        const update = createCommandsUpdatedMessage();
+
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    device: {
+                        ...update.payload.device,
+                        role: 'temperature-sensor',
+                        commandAvailability: { policy: 'block', reason: 'read_only_device' },
+                    },
+                },
+            }),
+        ).toBe(false);
+
+        const terminalCommand = {
+            commandId: 'cmd-terminal',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            status: 'confirmed',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-06-08T09:30:00Z',
+            dispatchedAt: '2026-06-08T09:30:01Z',
+            confirmedAt: '2026-06-08T09:30:02Z',
+        } as const;
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    device: createLedDevice(),
+                    activeCommands: [],
+                    recentCommands: Array.from({ length: 21 }, (_, index) => ({
+                        ...terminalCommand,
+                        commandId: `cmd-${index}`,
+                    })),
+                },
+            }),
+        ).toBe(false);
+    });
+
+    it('rejects non-canonical or impossible command lifecycle timing', () => {
+        const update = createCommandsUpdatedMessage();
+
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    activeCommands: [
+                        {
+                            ...update.payload.activeCommands[0],
+                            dispatchedAt: '2026-06-08T09:30:01+02:00',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    device: createLedDevice(),
+                    activeCommands: [],
+                    recentCommands: [
+                        {
+                            commandId: 'cmd-failed',
+                            deviceId: 'led-main',
+                            commandType: 'set.power',
+                            status: 'failed',
+                            requestedState: { power: 'on' },
+                            requestedAt: '2026-06-08T09:30:02Z',
+                            dispatchedAt: '2026-06-08T09:30:01Z',
+                            failedAt: '2026-06-08T09:30:03Z',
+                            reason: 'adapter_rejected',
+                            message: 'The adapter rejected the command.',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+    });
+
     it('accepts only a contiguous device update without event history', () => {
         const update = createDeviceUpdatedMessage();
 
@@ -451,6 +668,30 @@ function createDeviceUpdatedMessage() {
             reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
             commandAvailability: { policy: 'block' as const, reason: 'read_only_device' },
             lastSeenAt: '2026-06-08T09:30:00Z',
+        },
+    };
+}
+
+function createCommandsUpdatedMessage() {
+    return {
+        messageType: 'commands.updated' as const,
+        previousRevision: 4,
+        revision: 5,
+        sentAt: '2026-06-08T09:30:01Z',
+        payload: {
+            device: createLedDevice('cmd-1'),
+            activeCommands: [
+                {
+                    commandId: 'cmd-1',
+                    deviceId: 'led-main',
+                    commandType: 'set.power' as const,
+                    status: 'pending' as const,
+                    requestedState: { power: 'on' as const },
+                    requestedAt: '2026-06-08T09:30:00Z',
+                    dispatchedAt: '2026-06-08T09:30:01Z',
+                },
+            ],
+            recentCommands: [],
         },
     };
 }

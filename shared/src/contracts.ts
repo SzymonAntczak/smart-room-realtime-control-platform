@@ -7,12 +7,14 @@ export type * from './events';
 export type * from './projections';
 export type * from './realtime';
 export {
+    acceptedCommandResponseSchema,
     commandConfirmedEventSchema,
     commandDispatchedEventSchema,
     commandFailedEventSchema,
     commandRequestedEventSchema,
     commandTimedOutEventSchema,
     canonicalUtcTimestampSchema,
+    commandsUpdatedMessageSchema,
     deviceHealthChangedEventSchema,
     deviceStateReportedEventSchema,
     eventProcessingDiagnosticsSnapshotSchema,
@@ -27,6 +29,8 @@ export {
     roomRealtimeServerMessageUnionSchema,
     deviceUpdatedMessageSchema,
     roomSnapshotProjectionSchema,
+    rejectedCommandResponseSchema,
+    setPowerCommandRequestSchema,
     telemetryReadingRecordedEventSchema,
     telemetryReadingRecordedPayloadSchema,
     temperatureScenarioActionSchema,

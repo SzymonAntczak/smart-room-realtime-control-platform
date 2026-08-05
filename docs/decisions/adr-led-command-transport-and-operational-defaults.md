@@ -31,6 +31,14 @@ validates the request at the HTTP boundary and returns the accepted or rejected
 command outcome synchronously; a successful response means only that the
 backend accepted the command. It is not confirmation that the LED changed.
 
+An accepted request returns `202 Accepted` with `{ commandId, status: "accepted" }`.
+Malformed transport input returns `400`; a structurally valid but unsupported
+device or command request returns `422`; and a request that conflicts with an
+active command returns `409`. Rejected outcomes contain `{ commandId, status:
+"rejected", reason, message }`. An active-command conflict creates a terminal
+`failed` command lifecycle fact and projection so it remains auditable; the
+response `commandId` correlates that outcome without implying device confirmation.
+
 `/room/realtime` remains server-to-client only. The BFF does not accept
 application command messages on that WebSocket. Accepted, pending and terminal
 command projections reach the frontend through the existing validated realtime
@@ -45,13 +53,13 @@ history.
 
 The LED simulator provides these deterministic device-native scenarios:
 
-| Scenario | Simulator behavior | Expected platform outcome |
-| --- | --- | --- |
-| `confirm_immediately` | Emits the matching state report immediately after receiving the native command. | `confirmed` |
-| `confirm_delayed` | Emits the matching state report 2000 ms after receiving the native command. | `confirmed` before timeout |
-| `reject_command` | Explicitly rejects the native command without reporting a state change. | `failed` |
-| `omit_confirmation` | Does not report a state change. | `timed_out` after 5000 ms |
-| `report_after_timeout` | Emits the matching state report 6000 ms after receiving the native command. | The command remains `timed_out`; reported device state updates. |
+| Scenario               | Simulator behavior                                                              | Expected platform outcome                                       |
+| ---------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `confirm_immediately`  | Emits the matching state report immediately after receiving the native command. | `confirmed`                                                     |
+| `confirm_delayed`      | Emits the matching state report 2000 ms after receiving the native command.     | `confirmed` before timeout                                      |
+| `reject_command`       | Explicitly rejects the native command without reporting a state change.         | `failed`                                                        |
+| `omit_confirmation`    | Does not report a state change.                                                 | `timed_out` after 5000 ms                                       |
+| `report_after_timeout` | Emits the matching state report 6000 ms after receiving the native command.     | The command remains `timed_out`; reported device state updates. |
 
 The simulator owns only its native command response and report timing. The
 backend owns command acceptance, dispatch, timeout, confirmation matching and
@@ -70,6 +78,8 @@ terminal projections.
   supply audit retention.
 - Migrating the realtime stream to SSE remains a separate architectural change;
   it must not silently alter the command boundary or realtime semantics.
+- HTTP clients can distinguish malformed input, unsupported intent and active-command
+  conflicts without treating any synchronous response as device confirmation.
 
 ## Verification
 

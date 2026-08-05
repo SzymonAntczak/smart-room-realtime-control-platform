@@ -19,7 +19,7 @@ rules already documented in architecture and accepted ADRs.
   - Done when: An implementer has documented transport, timeout, retention and
     scenario choices without having to infer system rules.
 
-- [ ] **S3.1 — Extend shared command and realtime contracts**
+- [x] **S3.1 — Extend shared command and realtime contracts**
   - Scope: Define TypeBox contracts for the chosen command transport and for
     active and terminal command projection updates, while preserving the
     existing `set.power`, `activeCommands` and `recentCommands` invariants.

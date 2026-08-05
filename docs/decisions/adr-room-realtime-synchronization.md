@@ -76,9 +76,13 @@ message as a replacement room. The protocol adds revision and delta tests, but
 avoids a generic JSON-patch contract whose semantics would be harder to
 validate and explain.
 
-Future command slices add named deltas for active and terminal command
-collections before they stream those changes. Device removal requires either a
-named removal delta or an explicit static-device rule.
+Command slices use a named `commands.updated` delta for command lifecycle
+changes. Its payload contains the affected device together with the complete
+`activeCommands` and `recentCommands` collections, applied atomically at the
+next contiguous revision. In the initial LED slice, all command projections
+refer to that affected controllable device; this lets the boundary validate its
+`activeCommandId` relation without relying on a partially applied client cache.
+Device removal requires either a named removal delta or an explicit static-device rule.
 
 This makes development-time breaking changes explicit and inexpensive, but it
 means an older local producer or consumer must be updated together with the
@@ -94,3 +98,6 @@ versioning decision and its rollout plan are complete.
 - Retired or undocumented fields in snapshots and deltas are rejected before
   they update renderable UI state.
 - A device card loads only its own dev scenarios when its control is opened.
+- Command deltas reject a non-contiguous revision, a dangling command-device
+  reference, duplicate command IDs, overlapping active commands, or a mismatch
+  between the affected device's `activeCommandId` and `activeCommands`.

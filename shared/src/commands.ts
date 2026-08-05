@@ -27,6 +27,18 @@ export interface SetPowerCommandRequest {
     };
 }
 
+export interface AcceptedCommandResponse {
+    commandId: string;
+    status: 'accepted';
+}
+
+export interface RejectedCommandResponse {
+    commandId: string;
+    status: 'rejected';
+    reason: string;
+    message: string;
+}
+
 interface CommandProjectionBase {
     commandId: string;
     deviceId: string;
