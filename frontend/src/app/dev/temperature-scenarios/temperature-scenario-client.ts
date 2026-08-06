@@ -3,13 +3,13 @@ import {
     deviceScenarioListSchema,
     type EventProcessingDiagnosticsSnapshot,
     eventProcessingDiagnosticsSnapshotSchema,
-    isSchema,
     type TemperatureScenarioAction,
     type TemperatureScenarioResult,
     temperatureScenarioResultSchema,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/development';
+import { isSchema } from '@smart-room/contracts/validation';
 
-export type { TemperatureScenarioAction } from '@smart-room/contracts';
+export type { TemperatureScenarioAction } from '@smart-room/contracts/development';
 
 const defaultBffUrl = 'http://localhost:4310';
 

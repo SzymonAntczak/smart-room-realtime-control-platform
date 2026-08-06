@@ -1,4 +1,4 @@
-import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts';
+import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts/events';
 import {
     createTemperatureSensorSimulator,
     type TemperatureReadingMessage,

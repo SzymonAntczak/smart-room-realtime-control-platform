@@ -1,4 +1,4 @@
-import type { EventProcessingDiagnosticsSnapshot } from '@smart-room/contracts';
+import type { EventProcessingDiagnosticsSnapshot } from '@smart-room/contracts/development';
 import { useRef, useState } from 'react';
 
 import {

@@ -1,4 +1,4 @@
-import type { DeviceProjection, RoomSnapshotProjection } from '@smart-room/contracts';
+import type { DeviceProjection, RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { useEffect, useState } from 'react';
 
 import {

@@ -2,15 +2,15 @@ import type {
     DeduplicationEvictionDiagnostic,
     EventProcessingDiagnosticsSnapshot,
     IgnoredEventDiagnostic,
-} from '@smart-room/contracts';
-import { normalizeIsoTimestamp } from '@smart-room/contracts';
+} from '@smart-room/contracts/development';
+import { normalizeIsoTimestamp } from '@smart-room/contracts/validation';
 
 import type { EventProcessingResult } from './event-processor';
 
 export type {
     EventProcessingDiagnosticsSnapshot,
     IgnoredEventDiagnostic,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/development';
 
 export interface EventProcessingDiagnosticsClock {
     now(): string;

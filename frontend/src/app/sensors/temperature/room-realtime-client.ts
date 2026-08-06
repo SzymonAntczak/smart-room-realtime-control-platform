@@ -1,10 +1,12 @@
+import type { DeviceState } from '@smart-room/contracts/devices';
 import {
     type DeviceProjection,
-    type DeviceState,
+    type RoomSnapshotProjection,
+} from '@smart-room/contracts/projections';
+import {
     isRoomRealtimeServerMessage,
     type RoomRealtimeServerMessage,
-    type RoomSnapshotProjection,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/realtime';
 
 const defaultRoomRealtimeUrl = 'ws://localhost:4310/room/realtime';
 const defaultReconnectDelayMs = 1000;

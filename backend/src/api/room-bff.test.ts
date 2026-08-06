@@ -1,10 +1,8 @@
 import type { AddressInfo } from 'node:net';
 
-import type {
-    RoomRealtimeServerMessage,
-    RoomSnapshotProjection,
-    TemperatureScenarioAction,
-} from '@smart-room/contracts';
+import type { TemperatureScenarioAction } from '@smart-room/contracts/development';
+import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
+import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';

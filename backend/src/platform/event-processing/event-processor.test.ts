@@ -1,4 +1,4 @@
-import type { PlatformEventEnvelope } from '@smart-room/contracts';
+import type { PlatformEventEnvelope } from '@smart-room/contracts/events';
 import { describe, expect, it } from 'vitest';
 
 import { createRoomProjector } from '../read-model/room-projection';

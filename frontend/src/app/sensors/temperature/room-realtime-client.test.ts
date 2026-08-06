@@ -1,4 +1,5 @@
-import type { RoomRealtimeServerMessage, RoomSnapshotProjection } from '@smart-room/contracts';
+import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
+import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { connectTemperatureRealtime } from './room-realtime-client';

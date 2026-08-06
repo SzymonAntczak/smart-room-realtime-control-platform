@@ -1,4 +1,4 @@
-import type { PlatformEvent } from '@smart-room/contracts';
+import type { PlatformEvent } from '@smart-room/contracts/events';
 
 export type EventIdGenerator = () => string;
 

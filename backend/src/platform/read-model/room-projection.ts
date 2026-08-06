@@ -1,18 +1,18 @@
 import type {
     ActiveCommandProjection,
+    TerminalCommandProjection,
+} from '@smart-room/contracts/commands';
+import type { DeviceHealth, DeviceRole, DeviceState } from '@smart-room/contracts/devices';
+import type {
     CommandDispatchedEvent,
     CommandFailedEvent,
     CommandRequestedEvent,
     CommandTimedOutEvent,
-    DeviceHealth,
-    DeviceProjection,
-    DeviceRole,
-    DeviceState,
     DeviceStateReportedEvent,
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
-    TerminalCommandProjection,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/events';
+import type { DeviceProjection } from '@smart-room/contracts/projections';
 
 export interface DeviceDefinition {
     deviceId: string;

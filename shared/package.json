@@ -4,7 +4,13 @@
     "version": "0.1.0",
     "type": "module",
     "exports": {
-        ".": "./src/contracts.ts"
+        "./commands": "./src/commands/index.ts",
+        "./development": "./src/development/index.ts",
+        "./devices": "./src/devices/index.ts",
+        "./events": "./src/events/index.ts",
+        "./projections": "./src/projections/index.ts",
+        "./realtime": "./src/realtime/index.ts",
+        "./validation": "./src/validation/index.ts"
     },
     "scripts": {
         "lint": "eslint ../shared --config ../eslint.config.js",

@@ -1,4 +1,5 @@
-import { eventProcessingDiagnosticsSnapshotSchema, isSchema } from '@smart-room/contracts';
+import { eventProcessingDiagnosticsSnapshotSchema } from '@smart-room/contracts/development';
+import { isSchema } from '@smart-room/contracts/validation';
 import { describe, expect, it } from 'vitest';
 
 import { createEventProcessingDiagnostics } from './event-processing-diagnostics';

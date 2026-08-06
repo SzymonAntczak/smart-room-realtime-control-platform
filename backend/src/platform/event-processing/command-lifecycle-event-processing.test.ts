@@ -2,7 +2,7 @@ import type {
     CommandDispatchedEvent,
     CommandRequestedEvent,
     DeviceStateReportedEvent,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/events';
 import { describe, expect, it } from 'vitest';
 
 import { createRoomProjector } from '../read-model/room-projection';

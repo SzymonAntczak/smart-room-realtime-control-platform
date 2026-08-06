@@ -1,8 +1,5 @@
-import type {
-    CommandFailedEvent,
-    DeviceStateReportedEvent,
-    SetPowerCommandRequest,
-} from '@smart-room/contracts';
+import type { SetPowerCommandRequest } from '@smart-room/contracts/commands';
+import type { CommandFailedEvent, DeviceStateReportedEvent } from '@smart-room/contracts/events';
 import type {
     LedCommandRejectionListener,
     LedSetPowerCommand,

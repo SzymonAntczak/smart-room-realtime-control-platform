@@ -1,4 +1,4 @@
-import type { DeviceStateReportedEvent, PlatformEvent } from '@smart-room/contracts';
+import type { DeviceStateReportedEvent, PlatformEvent } from '@smart-room/contracts/events';
 import {
     createLedSimulator,
     type LedCommandRejection,

@@ -1,3 +1,4 @@
+import type { IgnoredEventReason } from '@smart-room/contracts/development';
 import {
     type CommandDispatchedEvent,
     commandDispatchedEventSchema,
@@ -9,13 +10,11 @@ import {
     commandTimedOutEventSchema,
     type DeviceStateReportedEvent,
     deviceStateReportedEventSchema,
-    type IgnoredEventReason,
-    isSchema,
-    normalizeIsoTimestamp,
     platformEventCandidateSchema,
     type TelemetryReadingRecordedEvent,
     telemetryReadingRecordedEventSchema,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/events';
+import { isSchema, normalizeIsoTimestamp } from '@smart-room/contracts/validation';
 
 import type {
     DeviceDefinition,
@@ -57,7 +56,7 @@ export type EventProcessingResult =
               | 'future_dated_report';
           state: EventProcessorState;
       };
-export type { IgnoredEventReason } from '@smart-room/contracts';
+export type { IgnoredEventReason } from '@smart-room/contracts/development';
 
 export interface EventProcessor {
     processEvent(event: unknown): EventProcessingResult;

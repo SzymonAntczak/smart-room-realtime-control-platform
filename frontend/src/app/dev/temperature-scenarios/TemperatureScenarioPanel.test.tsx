@@ -1,7 +1,7 @@
 import type {
     EventProcessingDiagnosticsSnapshot,
     TemperatureScenarioResult,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/development';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';

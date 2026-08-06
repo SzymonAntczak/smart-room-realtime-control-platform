@@ -1,4 +1,4 @@
-import type { DeviceProjection } from '@smart-room/contracts';
+import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { CircleCheck, Clock3, Thermometer, TriangleAlert, WifiOff } from 'lucide-react';
 import { memo } from 'react';
 

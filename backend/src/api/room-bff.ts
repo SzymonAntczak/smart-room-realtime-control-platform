@@ -5,18 +5,21 @@ import {
     deviceScenarioListSchema,
     deviceScenarioParamsSchema,
     eventProcessingDiagnosticsSnapshotSchema,
-    isRoomRealtimeServerMessage,
-    isRoomSnapshotProjection,
-    isSchema,
-    normalizeIsoTimestamp,
-    type RoomRealtimeServerMessage,
-    type RoomSnapshotProjection,
-    roomSnapshotProjectionSchema,
     type TemperatureScenarioAction,
     temperatureScenarioRequestSchema,
     type TemperatureScenarioResult,
     temperatureScenarioResultSchema,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/development';
+import {
+    type RoomSnapshotProjection,
+    roomSnapshotProjectionSchema,
+} from '@smart-room/contracts/projections';
+import {
+    isRoomRealtimeServerMessage,
+    isRoomSnapshotProjection,
+    type RoomRealtimeServerMessage,
+} from '@smart-room/contracts/realtime';
+import { isSchema, normalizeIsoTimestamp } from '@smart-room/contracts/validation';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket } from 'ws';
 

@@ -3,11 +3,11 @@ import { clearInterval, setInterval, setTimeout } from 'node:timers';
 
 import type {
     DeviceScenarioList,
-    RoomSnapshotProjection,
     TemperatureScenarioAction,
     TemperatureScenarioResult,
-} from '@smart-room/contracts';
-import { temperatureScenarioActions } from '@smart-room/contracts';
+} from '@smart-room/contracts/development';
+import { temperatureScenarioActions } from '@smart-room/contracts/development';
+import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     type Clock,
     createLedScenario,
@@ -254,7 +254,9 @@ export function createTemperatureRoomRuntime({
         },
         dispatchLedCommand(command) {
             if (!hasStarted || !ledAdapter) {
-                throw new Error('Temperature room runtime must be started before dispatching LED commands.');
+                throw new Error(
+                    'Temperature room runtime must be started before dispatching LED commands.',
+                );
             }
 
             ledAdapter.dispatch(command);

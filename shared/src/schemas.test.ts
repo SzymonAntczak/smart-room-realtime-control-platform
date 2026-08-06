@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
     acceptedCommandResponseSchema,
+    rejectedCommandResponseSchema,
+    setPowerCommandRequestSchema,
+} from './commands';
+import {
     commandConfirmedEventSchema,
     commandDispatchedEventSchema,
     commandFailedEventSchema,
@@ -9,16 +13,19 @@ import {
     commandTimedOutEventSchema,
     deviceHealthChangedEventSchema,
     deviceStateReportedEventSchema,
-    isRoomRealtimeServerMessage,
-    isRoomSnapshotProjection,
-    isSchema,
-    normalizeIsoTimestamp,
+    platformEventCandidateSchema,
+    platformEventEnvelopeSchema,
+    telemetryReadingRecordedEventSchema,
+} from './events';
+import { isRoomRealtimeServerMessage, isRoomSnapshotProjection } from './realtime';
+import { isSchema, normalizeIsoTimestamp } from './validation';
+/*
     platformEventCandidateSchema,
     platformEventEnvelopeSchema,
     rejectedCommandResponseSchema,
     setPowerCommandRequestSchema,
     telemetryReadingRecordedEventSchema,
-} from './contracts';
+*/
 
 describe('set.power HTTP contracts', () => {
     const request = {

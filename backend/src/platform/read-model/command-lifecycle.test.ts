@@ -4,7 +4,7 @@ import type {
     CommandRequestedEvent,
     CommandTimedOutEvent,
     DeviceStateReportedEvent,
-} from '@smart-room/contracts';
+} from '@smart-room/contracts/events';
 import { describe, expect, it } from 'vitest';
 
 import { createRoomProjector, ledSetPowerTimeoutMs } from './room-projection';
