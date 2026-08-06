@@ -13,7 +13,8 @@ describe('createTemperatureRoomRuntime', () => {
         try {
             runtime.start();
 
-            expect(runtime.getRoomSnapshot().devices).toEqual([
+            expect(runtime.getRoomSnapshot().devices).toEqual(
+                expect.arrayContaining([
                 expect.objectContaining({
                     deviceId: 'temp-desk',
                     reportedState: { temperature: 22, temperatureUnit: 'celsius' },
@@ -22,7 +23,12 @@ describe('createTemperatureRoomRuntime', () => {
                     deviceId: 'temp-window',
                     reportedState: { temperature: 20, temperatureUnit: 'celsius' },
                 }),
-            ]);
+                expect.objectContaining({
+                    deviceId: 'led-main',
+                    reportedState: { power: 'off' },
+                }),
+            ]),
+            );
             expect(runtime.getDeviceScenarios('temp-desk')?.deviceId).toBe('temp-desk');
             expect(runtime.getDeviceScenarios('temp-window')?.deviceId).toBe('temp-window');
         } finally {
@@ -42,17 +48,17 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            const initialWindow = runtime.getRoomSnapshot().devices[1]?.reportedState;
+            const initialWindow = device(runtime, 'temp-window')?.reportedState;
 
             clock.advanceBy(1000);
             timer.run(2);
 
             expect(timer.intervals).toEqual([1000, 1000, 2000]);
-            expect(runtime.getRoomSnapshot().devices[0]?.reportedState).toEqual({
+            expect(device(runtime, 'temp-desk')?.reportedState).toEqual({
                 temperature: 22.2,
                 temperatureUnit: 'celsius',
             });
-            expect(runtime.getRoomSnapshot().devices[1]?.reportedState).toEqual(initialWindow);
+            expect(device(runtime, 'temp-window')?.reportedState).toEqual(initialWindow);
         } finally {
             runtime.stop();
         }
@@ -75,11 +81,11 @@ describe('createTemperatureRoomRuntime', () => {
             timer.run(2);
             timer.run(3);
 
-            expect(runtime.getRoomSnapshot().devices[0]?.reportedState).toEqual({
+            expect(device(runtime, 'temp-desk')?.reportedState).toEqual({
                 temperature: 22.2,
                 temperatureUnit: 'celsius',
             });
-            expect(runtime.getRoomSnapshot().devices[1]?.reportedState).toEqual({
+            expect(device(runtime, 'temp-window')?.reportedState).toEqual({
                 temperature: 20,
                 temperatureUnit: 'celsius',
             });
@@ -87,7 +93,7 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.runDeviceScenario('temp-window', 'resume_telemetry');
             timer.runLatest();
 
-            expect(runtime.getRoomSnapshot().devices[1]?.reportedState).toEqual({
+            expect(device(runtime, 'temp-window')?.reportedState).toEqual({
                 temperature: 20.2,
                 temperatureUnit: 'celsius',
             });
@@ -184,8 +190,9 @@ describe('createTemperatureRoomRuntime', () => {
     });
 
     it('dispatches an LED command through the composed runtime and publishes its reported state', () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
         const runtime = createTemperatureRoomRuntime({
-            clock: createMutableClock('2026-08-05T10:00:00Z'),
+            clock,
             generateEventId: createEventIdGenerator(),
         });
         const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
@@ -194,6 +201,7 @@ describe('createTemperatureRoomRuntime', () => {
         try {
             runtime.start();
             snapshots.length = 0;
+            clock.advanceBy(1);
 
             runtime.dispatchLedCommand({
                 commandId: 'cmd-led-1',
@@ -222,6 +230,169 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('accepts an LED command through the platform boundary and projects its outcome', () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(1);
+
+            const result = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+
+            expect(result).toEqual(expect.objectContaining({ status: 'accepted' }));
+            expect(device(runtime, 'led-main')).toEqual(
+                expect.objectContaining({ reportedState: { power: 'on' } }),
+            );
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ commandId: result.commandId, status: 'confirmed' }),
+            ]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('cancels the timeout when a delayed matching report confirms the command', () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const ledScheduler = createLedScheduler();
+        const commandTimer = createCommandTimer();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            generateEventId: createEventIdGenerator(),
+            ledScenario: 'confirm_delayed',
+            ledScenarioScheduler: ledScheduler,
+            commandTimer,
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(1);
+            runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            expect(runtime.getRoomSnapshot().activeCommands).toHaveLength(1);
+
+            clock.advanceBy(2_000);
+            ledScheduler.runAll();
+
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ status: 'confirmed' }),
+            ]);
+            expect(commandTimer.size()).toBe(0);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('projects simulator rejection, timeout and late report as distinct terminal outcomes', () => {
+        const scenarios = [
+            ['reject_command', 'failed'],
+            ['omit_confirmation', 'timed_out'],
+            ['report_after_timeout', 'timed_out'],
+        ] as const;
+
+        for (const [scenario, expectedStatus] of scenarios) {
+            const clock = createMutableClock('2026-08-05T10:00:00Z');
+            const ledScheduler = createLedScheduler();
+            const commandTimer = createCommandTimer();
+            const runtime = createTemperatureRoomRuntime({
+                clock,
+                generateEventId: createEventIdGenerator(),
+                ledScenario: scenario,
+                ledScenarioScheduler: ledScheduler,
+                commandTimer,
+            });
+
+            try {
+                runtime.start();
+                clock.advanceBy(1);
+                runtime.requestCommand({
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                });
+                if (scenario !== 'reject_command') {
+                    clock.advanceBy(5_000);
+                    commandTimer.runAll();
+                }
+                if (scenario === 'report_after_timeout') {
+                    clock.advanceBy(1_000);
+                    ledScheduler.runAll();
+                    expect(device(runtime, 'led-main')?.reportedState).toEqual({ power: 'on' });
+                }
+
+                expect(runtime.getRoomSnapshot().activeCommands).toEqual([]);
+                expect(runtime.getRoomSnapshot().recentCommands).toEqual([
+                    expect.objectContaining({ status: expectedStatus }),
+                ]);
+            } finally {
+                runtime.stop();
+            }
+        }
+    });
+
+    it('returns the documented read-only rejection reason for a temperature sensor', () => {
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-08-05T10:00:00Z'),
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+
+            expect(
+                runtime.requestCommand({
+                    deviceId: 'temp-desk',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                }),
+            ).toEqual(expect.objectContaining({ status: 'rejected', reason: 'read_only_device' }));
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('reschedules a pending command timeout after a runtime restart', () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const commandTimer = createCommandTimer();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            generateEventId: createEventIdGenerator(),
+            ledScenario: 'omit_confirmation',
+            commandTimer,
+        });
+
+        runtime.start();
+        clock.advanceBy(1);
+        runtime.requestCommand({
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            requestedState: { power: 'on' },
+        });
+        runtime.stop();
+        clock.advanceBy(5_000);
+        runtime.start();
+
+        try {
+            commandTimer.runAll();
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ status: 'timed_out' }),
+            ]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('cancels a delayed LED report when the runtime stops before restarting', () => {
         const scheduler = createLedScheduler();
         const runtime = createTemperatureRoomRuntime({
@@ -243,7 +414,9 @@ describe('createTemperatureRoomRuntime', () => {
         runtime.start();
 
         try {
-            expect(device(runtime, 'led-main')).toBeUndefined();
+            expect(device(runtime, 'led-main')).toEqual(
+                expect.objectContaining({ reportedState: { power: 'off' } }),
+            );
         } finally {
             runtime.stop();
         }
@@ -315,6 +488,29 @@ function createLedScheduler() {
         runAll() {
             for (const callback of callbacks.values()) callback();
             callbacks.clear();
+        },
+    };
+}
+
+function createCommandTimer() {
+    const callbacks = new Map<number, () => void>();
+    let nextHandle = 1;
+
+    return {
+        setTimeout(callback: () => void) {
+            const handle = nextHandle++;
+            callbacks.set(handle, callback);
+            return handle;
+        },
+        clearTimeout(timerHandle: unknown) {
+            if (typeof timerHandle === 'number') callbacks.delete(timerHandle);
+        },
+        runAll() {
+            for (const callback of callbacks.values()) callback();
+            callbacks.clear();
+        },
+        size() {
+            return callbacks.size;
         },
     };
 }

@@ -11,6 +11,7 @@ const server = createRoomBffServer({
     getRoomSnapshot: runtime.getRoomSnapshot,
     getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
     subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
+    requestCommand: runtime.requestCommand,
     runDeviceScenario: enableDevScenarioControls ? runtime.runDeviceScenario : undefined,
     getDeviceScenarios: enableDevScenarioControls ? runtime.getDeviceScenarios : undefined,
 });

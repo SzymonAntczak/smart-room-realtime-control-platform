@@ -55,7 +55,7 @@ rules already documented in architecture and accepted ADRs.
     conflict, timeout and late report without turning a timed-out command back
     into a confirmed command.
 
-- [ ] **S3.5 — Expose command handling and command projections through the BFF**
+- [x] **S3.5 — Expose command handling and command projections through the BFF**
   - Scope: Implement the selected BFF command boundary, validation and dispatch
     to the platform, plus documented realtime snapshot and delta delivery for
     active and terminal command projections.

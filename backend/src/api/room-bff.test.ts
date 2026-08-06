@@ -87,6 +87,86 @@ describe('createRoomBffServer', () => {
         });
     });
 
+    it('accepts a valid command request without treating it as device confirmation', async () => {
+        const requests: unknown[] = [];
+        const server = await listen(
+            createRoomBffServer({
+                ...createRoomBffConfig(),
+                requestCommand(request) {
+                    requests.push(request);
+                    return { commandId: 'cmd-led-1', status: 'accepted' } as const;
+                },
+            }),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/room/commands`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            }),
+        });
+
+        expect(response.status).toBe(202);
+        await expect(response.json()).resolves.toEqual({ commandId: 'cmd-led-1', status: 'accepted' });
+        expect(requests).toEqual([
+            { deviceId: 'led-main', commandType: 'set.power', requestedState: { power: 'on' } },
+        ]);
+    });
+
+    it('rejects malformed or unsupported command requests at the HTTP boundary', async () => {
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
+        openServers.push(server);
+
+        const malformed = await fetch(`${serverUrl(server)}/room/commands`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId: 'led-main', commandType: 'set.level' }),
+        });
+        const nonJson = await fetch(`${serverUrl(server)}/room/commands`, {
+            method: 'POST',
+            body: JSON.stringify({ deviceId: 'led-main' }),
+        });
+
+        expect(malformed.status).toBe(400);
+        await expect(malformed.json()).resolves.toMatchObject({ error: 'invalid_request' });
+        expect(nonJson.status).toBe(415);
+        await expect(nonJson.json()).resolves.toMatchObject({ error: 'unsupported_media_type' });
+    });
+
+    it('maps active-command rejection to 409', async () => {
+        const server = await listen(
+            createRoomBffServer({
+                ...createRoomBffConfig(),
+                requestCommand() {
+                    return {
+                        commandId: 'cmd-led-2',
+                        status: 'rejected',
+                        reason: 'command_already_active',
+                        message: 'Device already has an active command.',
+                    } as const;
+                },
+            }),
+        );
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/room/commands`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            }),
+        });
+
+        expect(response.status).toBe(409);
+        await expect(response.json()).resolves.toMatchObject({ status: 'rejected' });
+    });
+
     it('handles CORS preflight requests', async () => {
         const server = await listen(createRoomBffServer(createRoomBffConfig()));
         openServers.push(server);
@@ -399,6 +479,38 @@ describe('createRoomBffServer', () => {
         });
     });
 
+    it('streams sequential command projection deltas for the affected device', async () => {
+        const harness = createRoomBffHarness({
+            roomSnapshot: createLedRoomSnapshot(),
+            sentAt: [
+                '2026-06-08T09:30:01Z',
+                '2026-06-08T09:30:02Z',
+                '2026-06-08T09:30:03Z',
+            ],
+        });
+        const server = await listen(createRoomBffServer(harness.config));
+        openServers.push(server);
+        const socket = connectWebSocket(server);
+        openSockets.push(socket);
+        await readRealtimeMessage(socket);
+
+        harness.publishRoomSnapshot(createLedRoomSnapshot({ status: 'accepted' }));
+        await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+            messageType: 'commands.updated',
+            previousRevision: 0,
+            revision: 1,
+            payload: { activeCommands: [expect.objectContaining({ status: 'accepted' })] },
+        });
+
+        harness.publishRoomSnapshot(createLedRoomSnapshot({ status: 'confirmed' }));
+        await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+            messageType: 'commands.updated',
+            previousRevision: 1,
+            revision: 2,
+            payload: { recentCommands: [expect.objectContaining({ status: 'confirmed' })] },
+        });
+    });
+
     it('streams only the changed device delta from the two-sensor runtime', async () => {
         const runtime = createTemperatureRoomRuntime({ intervalMs: 10_000 });
         runtime.start();
@@ -586,6 +698,48 @@ function createRoomSnapshot({
         ],
         activeCommands: [],
         recentCommands: [],
+    };
+}
+
+function createLedRoomSnapshot({
+    status,
+}: {
+    status?: 'accepted' | 'confirmed';
+} = {}): RoomSnapshotProjection {
+    const command = {
+        commandId: 'cmd-led-1',
+        deviceId: 'led-main',
+        commandType: 'set.power' as const,
+        requestedState: { power: 'on' as const },
+        requestedAt: '2026-06-08T09:30:00Z',
+    };
+    return {
+        roomName: 'Smart Room',
+        updatedAt: status ? '2026-06-08T09:30:02Z' : '2026-06-08T09:30:00Z',
+        devices: [
+            {
+                deviceId: 'led-main',
+                name: 'Main LED',
+                role: 'led-output',
+                health: 'online',
+                reportedState: { power: status === 'confirmed' ? 'on' : 'off' },
+                commandAvailability: { policy: 'allow' },
+                lastSeenAt: '2026-06-08T09:30:00Z',
+                ...(status === 'accepted' ? { activeCommandId: command.commandId } : {}),
+            },
+        ],
+        activeCommands: status === 'accepted' ? [{ ...command, status: 'accepted' }] : [],
+        recentCommands:
+            status === 'confirmed'
+                ? [
+                      {
+                          ...command,
+                          status: 'confirmed',
+                          dispatchedAt: '2026-06-08T09:30:01Z',
+                          confirmedAt: '2026-06-08T09:30:02Z',
+                      },
+                  ]
+                : [],
     };
 }
 

@@ -2,11 +2,20 @@ import { randomUUID } from 'node:crypto';
 import { clearInterval, setInterval, setTimeout } from 'node:timers';
 
 import type {
+    AcceptedCommandResponse,
+    RejectedCommandResponse,
+    SetPowerCommandRequest,
+} from '@smart-room/contracts/commands';
+import type {
     DeviceScenarioList,
     TemperatureScenarioAction,
     TemperatureScenarioResult,
 } from '@smart-room/contracts/development';
 import { temperatureScenarioActions } from '@smart-room/contracts/development';
+import type {
+    CommandFailedEvent,
+    PlatformEvent,
+} from '@smart-room/contracts/events';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     type Clock,
@@ -50,6 +59,12 @@ export interface TemperatureRoomRuntimeConfig {
     deduplicationEntryLimit?: number;
     ledScenario?: LedScenarioName;
     ledScenarioScheduler?: LedScenarioScheduler;
+    commandTimer?: CommandTimer;
+}
+
+export interface CommandTimer {
+    setTimeout(callback: () => void, delayMs: number): unknown;
+    clearTimeout(timerHandle: unknown): void;
 }
 
 interface TemperatureSensorDefinition extends DeviceDefinition {
@@ -69,6 +84,7 @@ export interface TemperatureRoomRuntime {
         deviceId: string,
         action: TemperatureScenarioAction,
     ): TemperatureScenarioResult;
+    requestCommand(request: SetPowerCommandRequest): AcceptedCommandResponse | RejectedCommandResponse;
     dispatchLedCommand(command: PlatformSetPowerCommand): void;
 }
 
@@ -107,6 +123,7 @@ export function createTemperatureRoomRuntime({
     deduplicationEntryLimit,
     ledScenario = 'confirm_immediately',
     ledScenarioScheduler = realLedScenarioScheduler,
+    commandTimer = realCommandTimer,
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
     const sensors = defaultSensors.map((definition) => ({
         definition,
@@ -154,6 +171,7 @@ export function createTemperatureRoomRuntime({
     let hasStarted = false;
     let snapshotBroadcastTimerHandle: unknown | undefined;
     let lastPublishedSnapshot: RoomSnapshotProjection | undefined;
+    const commandTimeoutHandles = new Map<string, unknown>();
 
     return {
         start() {
@@ -175,13 +193,21 @@ export function createTemperatureRoomRuntime({
                 platformDeviceId: 'led-main',
                 generateEventId,
                 emitEvent(event) {
-                    const result = processor.processEvent(event);
-                    diagnostics.recordProcessingResult(event, result);
-                    if (result.status === 'accepted') {
-                        notifySnapshotListeners(result.evaluatedAt);
-                    }
+                    processPlatformEvent(event);
                 },
             });
+            processPlatformEvent({
+                eventId: generateEventId(),
+                eventType: 'device.state.reported',
+                occurredAt: clock.now(),
+                source: 'simulator-adapter',
+                deviceId: 'led-main',
+                payload: {
+                    reportedState: { power: led.getObservedPower() },
+                    reportedAt: clock.now(),
+                },
+            });
+            reschedulePendingCommands();
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter = createAdapter(sensorEntry);
                 sensorEntry.sensor.tick(clock.now());
@@ -209,6 +235,10 @@ export function createTemperatureRoomRuntime({
             ledAdapter = undefined;
             led?.stop();
             led = undefined;
+            for (const timerHandle of commandTimeoutHandles.values()) {
+                commandTimer.clearTimeout(timerHandle);
+            }
+            commandTimeoutHandles.clear();
             hasStarted = false;
         },
         getRoomSnapshot() {
@@ -251,6 +281,76 @@ export function createTemperatureRoomRuntime({
                 action,
                 status: 'completed',
             };
+        },
+        requestCommand(request) {
+            const commandId = randomUUID();
+            const snapshot = getCurrentRoomSnapshot();
+            const device = snapshot.devices.find((candidate) => candidate.deviceId === request.deviceId);
+
+            if (!hasStarted || !ledAdapter || !device) {
+                return rejected(commandId, 'unsupported_command', 'Device does not support this command.');
+            }
+            if (device.commandAvailability.policy === 'block') {
+                return rejected(
+                    commandId,
+                    device.commandAvailability.reason ?? 'command_unavailable',
+                    'Commands are not available for this device.',
+                );
+            }
+            if (request.deviceId !== 'led-main') {
+                return rejected(commandId, 'unsupported_command', 'Device does not support this command.');
+            }
+            if (snapshot.activeCommands.some((command) => command.deviceId === request.deviceId)) {
+                processPlatformEvent(rejectedCommandEvent(commandId, request, clock.now()));
+                return rejected(
+                    commandId,
+                    'command_already_active',
+                    'Device already has an active command.',
+                );
+            }
+
+            const requestedAt = clock.now();
+            processPlatformEvent({
+                eventId: generateEventId(),
+                eventType: 'command.requested',
+                occurredAt: requestedAt,
+                source: 'backend',
+                deviceId: request.deviceId,
+                commandId,
+                payload: {
+                    commandType: request.commandType,
+                    requestedState: request.requestedState,
+                    requestedBy: 'user',
+                },
+            });
+            processPlatformEvent({
+                eventId: generateEventId(),
+                eventType: 'command.dispatched',
+                occurredAt: clock.now(),
+                source: 'backend',
+                deviceId: request.deviceId,
+                commandId,
+                payload: { commandType: request.commandType, target: 'simulator-adapter' },
+            });
+            try {
+                ledAdapter.dispatch({ ...request, commandId });
+            } catch {
+                processPlatformEvent({
+                    eventId: generateEventId(),
+                    eventType: 'command.failed',
+                    occurredAt: clock.now(),
+                    source: 'backend',
+                    deviceId: request.deviceId,
+                    commandId,
+                    payload: {
+                        reason: 'dispatch_failed',
+                        message: 'The command could not be dispatched to the device adapter.',
+                    },
+                });
+                throw new Error('Command dispatch failed.');
+            }
+            scheduleTimeout(commandId, request.deviceId);
+            return { commandId, status: 'accepted' };
         },
         dispatchLedCommand(command) {
             if (!hasStarted || !ledAdapter) {
@@ -306,13 +406,7 @@ export function createTemperatureRoomRuntime({
             platformDeviceId: sensorEntry.definition.deviceId,
             generateEventId,
             emitEvent(event) {
-                const result = processor.processEvent(event);
-
-                diagnostics.recordProcessingResult(event, result);
-
-                if (result.status === 'accepted') {
-                    notifySnapshotListeners(result.evaluatedAt);
-                }
+                processPlatformEvent(event);
             },
         });
     }
@@ -353,6 +447,99 @@ export function createTemperatureRoomRuntime({
 
         notifySnapshotListeners(evaluatedAt);
     }
+
+    function processPlatformEvent(event: PlatformEvent): void {
+        const activeCommandIdBeforeEvent = event.deviceId
+            ? roomProjector
+                  .getProjection()
+                  .activeCommands.find((command) => command.deviceId === event.deviceId)?.commandId
+            : undefined;
+        const result = processor.processEvent(event);
+        diagnostics.recordProcessingResult(event, result);
+        if (result.status === 'accepted') {
+            clearCompletedCommandTimeout(activeCommandIdBeforeEvent, result.state.activeCommands);
+            clearCompletedCommandTimeout(event.commandId, result.state.activeCommands);
+            notifySnapshotListeners(result.evaluatedAt);
+        }
+    }
+
+    function scheduleTimeout(commandId: string, deviceId: string): void {
+        const active = getCurrentRoomSnapshot().activeCommands.find(
+            (command) => command.commandId === commandId && command.status === 'pending',
+        );
+        if (!active || active.status !== 'pending') return;
+        const remainingMs = Math.max(
+            0,
+            5_000 - (Date.parse(clock.now()) - Date.parse(active.dispatchedAt)),
+        );
+        commandTimeoutHandles.set(
+            commandId,
+            commandTimer.setTimeout(() => {
+                commandTimeoutHandles.delete(commandId);
+                processPlatformEvent({
+                    eventId: generateEventId(),
+                    eventType: 'command.timed_out',
+                    occurredAt: clock.now(),
+                    source: 'backend',
+                    deviceId,
+                    commandId,
+                    payload: { timeoutMs: 5_000, reason: 'confirmation_not_received' },
+                });
+            }, remainingMs),
+        );
+    }
+
+    function reschedulePendingCommands(): void {
+        for (const command of getCurrentRoomSnapshot().activeCommands) {
+            if (command.status === 'pending') {
+                scheduleTimeout(command.commandId, command.deviceId);
+            }
+        }
+    }
+
+    function clearCompletedCommandTimeout(
+        commandId: string | undefined,
+        activeCommands: RoomSnapshotProjection['activeCommands'],
+    ): void {
+        if (!commandId || activeCommands.some((command) => command.commandId === commandId)) return;
+        const timerHandle = commandTimeoutHandles.get(commandId);
+        if (timerHandle !== undefined) commandTimer.clearTimeout(timerHandle);
+        commandTimeoutHandles.delete(commandId);
+    }
+
+    function getCurrentRoomSnapshot(): RoomSnapshotProjection {
+        return toRoomSnapshot(roomName, roomProjector, clock.now());
+    }
+}
+
+function rejected(
+    commandId: string,
+    reason: string,
+    message: string,
+): RejectedCommandResponse {
+    return { commandId, status: 'rejected', reason, message };
+}
+
+function rejectedCommandEvent(
+    commandId: string,
+    request: SetPowerCommandRequest,
+    occurredAt: string,
+): CommandFailedEvent {
+    return {
+        eventId: randomUUID(),
+        eventType: 'command.failed',
+        occurredAt,
+        source: 'backend',
+        deviceId: request.deviceId,
+        commandId,
+        payload: {
+            reason: 'command_already_active',
+            message: 'Device already has an active command.',
+            commandType: request.commandType,
+            requestedState: request.requestedState,
+            requestedAt: occurredAt,
+        },
+    };
 }
 
 const realTimer: TimerScheduler<ReturnType<typeof setInterval>> = {
@@ -370,6 +557,15 @@ const realLedScenarioScheduler = {
     },
     clearTimeout(timerHandle: ReturnType<typeof setTimeout>) {
         clearTimeout(timerHandle);
+    },
+};
+
+const realCommandTimer: CommandTimer = {
+    setTimeout(callback, delayMs) {
+        return setTimeout(callback, delayMs);
+    },
+    clearTimeout(timerHandle) {
+        clearTimeout(timerHandle as ReturnType<typeof setTimeout>);
     },
 };
 
