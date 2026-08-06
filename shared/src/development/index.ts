@@ -10,13 +10,28 @@ export const temperatureScenarioActions = [
     'emit_next_reading',
     'reset',
 ] as const;
-export type TemperatureScenarioAction = (typeof temperatureScenarioActions)[number];
-export interface TemperatureScenarioResult {
-    readonly action: TemperatureScenarioAction;
+export const ledScenarioActions = [
+    'confirm_immediately',
+    'confirm_delayed',
+    'reject_command',
+    'omit_confirmation',
+    'report_after_timeout',
+] as const;
+export const deviceScenarioActions = [
+    ...temperatureScenarioActions,
+    ...ledScenarioActions,
+] as const;
+export type DeviceScenarioAction = (typeof deviceScenarioActions)[number];
+/** @deprecated Use DeviceScenarioAction for device-scoped dev controls. */
+export type TemperatureScenarioAction = DeviceScenarioAction;
+export interface DeviceScenarioResult {
+    readonly action: DeviceScenarioAction;
     readonly status: 'completed';
 }
+/** @deprecated Use DeviceScenarioResult for device-scoped dev controls. */
+export type TemperatureScenarioResult = DeviceScenarioResult;
 export interface DeviceScenarioDescriptor {
-    readonly action: TemperatureScenarioAction;
+    readonly action: DeviceScenarioAction;
 }
 export interface DeviceScenarioList {
     readonly deviceId: string;
@@ -55,24 +70,28 @@ export interface EventProcessingDiagnosticsSnapshot {
 export function isIgnoredEventReason(value: unknown): value is IgnoredEventReason {
     return typeof value === 'string' && ignoredEventReasons.some((reason) => reason === value);
 }
-export const temperatureScenarioActionSchema = Type.Union(
-    temperatureScenarioActions.map((action) => Type.Literal(action)),
+export const deviceScenarioActionSchema = Type.Union(
+    deviceScenarioActions.map((action) => Type.Literal(action)),
 );
-export const temperatureScenarioRequestSchema = Type.Object({
-    action: temperatureScenarioActionSchema,
+export const deviceScenarioRequestSchema = Type.Object({
+    action: deviceScenarioActionSchema,
 });
 export const deviceScenarioParamsSchema = Type.Object({ deviceId: nonEmptyStringSchema });
 export const deviceScenarioDescriptorSchema = Type.Object({
-    action: temperatureScenarioActionSchema,
+    action: deviceScenarioActionSchema,
 });
 export const deviceScenarioListSchema = Type.Object({
     deviceId: nonEmptyStringSchema,
     scenarios: Type.Array(deviceScenarioDescriptorSchema),
 });
-export const temperatureScenarioResultSchema = Type.Object({
-    action: temperatureScenarioActionSchema,
+export const deviceScenarioResultSchema = Type.Object({
+    action: deviceScenarioActionSchema,
     status: Type.Literal('completed'),
 });
+/** @deprecated Use deviceScenarioRequestSchema. */
+export const temperatureScenarioRequestSchema = deviceScenarioRequestSchema;
+/** @deprecated Use deviceScenarioResultSchema. */
+export const temperatureScenarioResultSchema = deviceScenarioResultSchema;
 export const apiErrorResponseSchema = Type.Object({
     error: nonEmptyStringSchema,
     message: nonEmptyStringSchema,

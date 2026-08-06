@@ -9,14 +9,14 @@ import {
 } from '@smart-room/contracts/commands';
 import {
     apiErrorResponseSchema,
+    type DeviceScenarioAction,
     type DeviceScenarioList,
     deviceScenarioListSchema,
     deviceScenarioParamsSchema,
+    deviceScenarioRequestSchema,
+    type DeviceScenarioResult,
+    deviceScenarioResultSchema,
     eventProcessingDiagnosticsSnapshotSchema,
-    type TemperatureScenarioAction,
-    temperatureScenarioRequestSchema,
-    type TemperatureScenarioResult,
-    temperatureScenarioResultSchema,
 } from '@smart-room/contracts/development';
 import {
     type RoomSnapshotProjection,
@@ -38,10 +38,7 @@ export interface RoomBffConfig {
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
     subscribeRoomSnapshot(listener: (snapshot: RoomSnapshotProjection) => void): () => void;
     requestCommand?: (request: SetPowerCommandRequest) => CommandRequestResult;
-    runDeviceScenario?: (
-        deviceId: string,
-        action: TemperatureScenarioAction,
-    ) => TemperatureScenarioResult;
+    runDeviceScenario?: (deviceId: string, action: DeviceScenarioAction) => DeviceScenarioResult;
     getDeviceScenarios?: (deviceId: string) => DeviceScenarioList | undefined;
     now?: () => string;
 }
@@ -75,7 +72,10 @@ export function createRoomBffServer({
     });
 
     server.setErrorHandler((error, request, response) => {
-        if ((isDeviceScenarioRequest(request) || isCommandRequest(request)) && isInvalidJsonBodyError(error)) {
+        if (
+            (isDeviceScenarioRequest(request) || isCommandRequest(request)) &&
+            isInvalidJsonBodyError(error)
+        ) {
             writeJson(response, 400, {
                 error: 'invalid_request',
                 message: 'Request body must be valid JSON.',
@@ -199,7 +199,11 @@ export function createRoomBffServer({
                 writeInvalidServerResponse(response);
                 return;
             }
-            writeJson(response, result.status === 'accepted' ? 202 : commandRejectionStatus(result), result);
+            writeJson(
+                response,
+                result.status === 'accepted' ? 202 : commandRejectionStatus(result),
+                result,
+            );
         },
     );
 
@@ -208,10 +212,11 @@ export function createRoomBffServer({
         {
             schema: {
                 params: deviceScenarioParamsSchema,
-                body: temperatureScenarioRequestSchema,
+                body: deviceScenarioRequestSchema,
                 response: {
-                    200: temperatureScenarioResultSchema,
+                    200: deviceScenarioResultSchema,
                     400: apiErrorResponseSchema,
+                    409: apiErrorResponseSchema,
                     404: apiErrorResponseSchema,
                     415: apiErrorResponseSchema,
                     500: apiErrorResponseSchema,
@@ -231,7 +236,7 @@ export function createRoomBffServer({
         async (request, response) => {
             const deviceId = (request.params as { deviceId: string }).deviceId;
             const scenarios = handlers.getDeviceScenarios?.(deviceId);
-            const action = (request.body as { action: TemperatureScenarioAction }).action;
+            const action = (request.body as { action: DeviceScenarioAction }).action;
 
             if (
                 !scenarios ||
@@ -292,10 +297,7 @@ interface RoomBffHandlers {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
     requestCommand?: (request: SetPowerCommandRequest) => CommandRequestResult;
-    runDeviceScenario?: (
-        deviceId: string,
-        action: TemperatureScenarioAction,
-    ) => TemperatureScenarioResult;
+    runDeviceScenario?: (deviceId: string, action: DeviceScenarioAction) => DeviceScenarioResult;
     getDeviceScenarios?: (deviceId: string) => DeviceScenarioList | undefined;
 }
 
@@ -339,7 +341,7 @@ function handleRoomBffRequest(
 
 async function handleDeviceScenarioRequest(
     deviceId: string,
-    action: TemperatureScenarioAction,
+    action: DeviceScenarioAction,
     response: FastifyReply,
     runDeviceScenario: RoomBffHandlers['runDeviceScenario'],
 ): Promise<void> {
@@ -354,18 +356,29 @@ async function handleDeviceScenarioRequest(
     try {
         const result = runDeviceScenario(deviceId, action);
 
-        if (!isSchema(temperatureScenarioResultSchema, result) || result.action !== action) {
+        if (!isSchema(deviceScenarioResultSchema, result) || result.action !== action) {
             writeInvalidServerResponse(response);
             return;
         }
 
         writeJson(response, 200, result);
-    } catch {
+    } catch (error) {
+        if (isScenarioConflictError(error)) {
+            writeJson(response, 409, {
+                error: 'scenario_conflict',
+                message: error.message,
+            });
+            return;
+        }
         writeJson(response, 500, {
             error: 'scenario_failed',
             message: 'Scenario could not be executed.',
         });
     }
+}
+
+function isScenarioConflictError(error: unknown): error is Error & { code: 'scenario_conflict' } {
+    return error instanceof Error && 'code' in error && error.code === 'scenario_conflict';
 }
 
 function setCorsHeaders(response: FastifyReply): void {
@@ -407,7 +420,10 @@ function isCommandRequest(request: FastifyRequest): boolean {
 }
 
 function isCommandRequestResult(value: unknown): value is CommandRequestResult {
-    return isSchema(acceptedCommandResponseSchema, value) || isSchema(rejectedCommandResponseSchema, value);
+    return (
+        isSchema(acceptedCommandResponseSchema, value) ||
+        isSchema(rejectedCommandResponseSchema, value)
+    );
 }
 
 function commandRejectionStatus(result: RejectedCommandResponse): 409 | 422 {

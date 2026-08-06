@@ -65,6 +65,16 @@ The simulator owns only its native command response and report timing. The
 backend owns command acceptance, dispatch, timeout, confirmation matching and
 terminal projections.
 
+Development scenario controls discover the five LED scenario names through the
+device-scoped dev boundary. Selecting a scenario configures the behavior of the
+**next** `set.power` command for `led-main`; it neither dispatches a command nor
+changes reported LED state. The simulator consumes that selection when it
+receives the command and returns to its configured default behavior. The runtime
+rejects selection while that device has an `accepted` or `pending` command with
+`409 scenario_conflict`; an already scheduled report or rejection is therefore
+never cancelled. The scenario selection itself is dev-only, ephemeral runtime
+configuration and is not included in room projections.
+
 ## Consequences
 
 - HTTP provides a simple request/response boundary for BFF acceptance while
@@ -80,6 +90,11 @@ terminal projections.
   it must not silently alter the command boundary or realtime semantics.
 - HTTP clients can distinguish malformed input, unsupported intent and active-command
   conflicts without treating any synchronous response as device confirmation.
+- Dev tooling can demonstrate each command outcome without adding simulator
+  behavior to the product command API or allowing the frontend to synthesize
+  device state.
+- A scenario must be selected before sending the LED command; it cannot alter
+  the behavior of an in-flight command.
 
 ## Verification
 
@@ -94,6 +109,8 @@ terminal projections.
   timings without assigning platform lifecycle outcomes to the simulator.
 - Frontend tests prove that a requested LED state is not rendered as confirmed
   before a matching report-derived realtime projection arrives.
+- Runtime tests prove that selecting a LED scenario affects the next command
+  only and rejects selection while an LED command remains active.
 
 ## Links
 

@@ -14,6 +14,16 @@ describe('LedControl', () => {
         expect(screen.getByRole('status')).toHaveTextContent('Pending');
         expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
     });
+
+    it('renders the dev-only scenario control only when enabled', () => {
+        const { rerender } = render(<LedControl device={createLed()} />);
+
+        expect(screen.queryByRole('button', { name: 'Dev scenarios' })).not.toBeInTheDocument();
+
+        rerender(<LedControl device={createLed()} showDevScenarioPanel />);
+
+        expect(screen.getByRole('button', { name: 'Dev scenarios' })).toBeInTheDocument();
+    });
 });
 
 function createLed(): DeviceProjection {

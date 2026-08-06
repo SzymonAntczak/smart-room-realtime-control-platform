@@ -1,4 +1,7 @@
-import type { ActiveCommandProjection } from '@smart-room/contracts/commands';
+import type {
+    ActiveCommandProjection,
+    TerminalCommandProjection,
+} from '@smart-room/contracts/commands';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { Lightbulb, LightbulbOff, Power, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
@@ -7,17 +10,23 @@ import { ControlCard } from '../../shared/ui/ControlCard';
 
 import { submitLedPowerCommand } from './led-command-client';
 import styles from './LedControl.module.css';
+import { LedScenarioDrawer } from './LedScenarioDrawer';
 
 export function LedControl({
     device,
     activeCommand,
+    recentCommand,
+    showDevScenarioPanel = false,
     realtimeUncertain = false,
 }: {
     device?: DeviceProjection;
     activeCommand?: ActiveCommandProjection;
+    recentCommand?: TerminalCommandProjection;
+    showDevScenarioPanel?: boolean;
     realtimeUncertain?: boolean;
 }) {
     const [submitting, setSubmitting] = useState(false);
+    const [selectingScenario, setSelectingScenario] = useState(false);
     const [transportError, setTransportError] = useState<string>();
 
     if (!device) {
@@ -32,7 +41,7 @@ export function LedControl({
     if (!isLed) return null;
 
     const isBlocked = device.commandAvailability.policy === 'block' || realtimeUncertain;
-    const isBusy = submitting || activeCommand !== undefined;
+    const isBusy = submitting || selectingScenario || activeCommand !== undefined;
     const deviceId = device.deviceId;
     const confirmedPower = device.reportedState.power;
     const isOn = confirmedPower === 'on';
@@ -68,6 +77,15 @@ export function LedControl({
             eyebrow="Realtime room stream"
             title={device.name}
             titleId={`led-heading-${device.deviceId}`}
+            headerAction={
+                showDevScenarioPanel ? (
+                    <LedScenarioDrawer
+                        deviceId={device.deviceId}
+                        isCommandActive={activeCommand !== undefined}
+                        onRequestChange={setSelectingScenario}
+                    />
+                ) : undefined
+            }
             status={status}
             statusTone={
                 isBlocked || device.health === 'offline'
@@ -104,11 +122,6 @@ export function LedControl({
                     Confirmed: <strong>{isOn ? 'On' : 'Off'}</strong>
                 </span>
             </div>
-            {requestedPower ? (
-                <p className={styles.requested}>
-                    Requested: {requestedPower === 'on' ? 'On' : 'Off'} — awaiting device report.
-                </p>
-            ) : null}
             <div className={styles.actions} aria-label="LED power controls">
                 <button
                     type="button"
@@ -121,6 +134,30 @@ export function LedControl({
                     <Power aria-hidden="true" size={20} />
                 </button>
             </div>
+            <div className={styles.commandMessages}>
+                {recentCommand ? (
+                    <p
+                        className={
+                            recentCommand.status === 'confirmed' ? styles.message : styles.error
+                        }
+                        role="status"
+                    >
+                        Latest command: {recentCommand.status.replace('_', ' ')} at{' '}
+                        <time dateTime={terminalTimestamp(recentCommand)}>
+                            {terminalTimestamp(recentCommand).slice(11, 19)} UTC
+                        </time>
+                        {' — '}
+                        {recentCommand.status === 'failed'
+                            ? recentCommand.message
+                            : (recentCommand.reason ?? 'completed')}
+                    </p>
+                ) : null}
+                <p className={styles.requested} aria-hidden={requestedPower === undefined}>
+                    {requestedPower
+                        ? `Requested: ${requestedPower === 'on' ? 'On' : 'Off'} — awaiting device report.`
+                        : null}
+                </p>
+            </div>
         </ControlCard>
     );
 }
@@ -131,4 +168,10 @@ function isPowerState(value: unknown): value is 'on' | 'off' {
 
 function formatHealth(health: DeviceProjection['health']): string {
     return health[0]?.toUpperCase() + health.slice(1);
+}
+
+function terminalTimestamp(command: TerminalCommandProjection): string {
+    if (command.status === 'confirmed') return command.confirmedAt;
+    if (command.status === 'failed') return command.failedAt;
+    return command.timedOutAt;
 }

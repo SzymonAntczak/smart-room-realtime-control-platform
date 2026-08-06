@@ -35,20 +35,24 @@ export interface LedScenario extends Pick<LedSimulator, 'getObservedPower'> {
     onStateReport(listener: LedStateReportListener): () => void;
     onCommandRejection(listener: LedCommandRejectionListener): () => void;
     receive(command: LedSetPowerCommand): void;
+    setNextCommandScenario(scenario: LedScenarioName): void;
     stop(): void;
 }
 
 export function createLedScenario<TimerHandle = unknown>({
-    scenario,
+    scenario: defaultScenario,
     clock,
     scheduler,
     ...simulatorConfig
 }: LedScenarioConfig<TimerHandle>): LedScenario {
-    assertScenario(scenario);
+    assertScenario(defaultScenario);
     const simulator = createLedSimulator(simulatorConfig);
+    let nextScenario = defaultScenario;
 
     const scheduledTimers = new Set<TimerHandle>();
     const unsubscribeFromCommands = simulator.onCommand((command) => {
+        const scenario = nextScenario;
+        nextScenario = defaultScenario;
         switch (scenario) {
             case 'confirm_immediately':
                 simulator.reportState(command.requestedState.power, clock.now());
@@ -69,6 +73,10 @@ export function createLedScenario<TimerHandle = unknown>({
 
     return {
         ...simulator,
+        setNextCommandScenario(scenario) {
+            assertScenario(scenario);
+            nextScenario = scenario;
+        },
         stop() {
             unsubscribeFromCommands();
             for (const timerHandle of scheduledTimers) {

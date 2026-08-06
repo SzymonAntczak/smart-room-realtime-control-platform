@@ -15,19 +15,19 @@ describe('createTemperatureRoomRuntime', () => {
 
             expect(runtime.getRoomSnapshot().devices).toEqual(
                 expect.arrayContaining([
-                expect.objectContaining({
-                    deviceId: 'temp-desk',
-                    reportedState: { temperature: 22, temperatureUnit: 'celsius' },
-                }),
-                expect.objectContaining({
-                    deviceId: 'temp-window',
-                    reportedState: { temperature: 20, temperatureUnit: 'celsius' },
-                }),
-                expect.objectContaining({
-                    deviceId: 'led-main',
-                    reportedState: { power: 'off' },
-                }),
-            ]),
+                    expect.objectContaining({
+                        deviceId: 'temp-desk',
+                        reportedState: { temperature: 22, temperatureUnit: 'celsius' },
+                    }),
+                    expect.objectContaining({
+                        deviceId: 'temp-window',
+                        reportedState: { temperature: 20, temperatureUnit: 'celsius' },
+                    }),
+                    expect.objectContaining({
+                        deviceId: 'led-main',
+                        reportedState: { power: 'off' },
+                    }),
+                ]),
             );
             expect(runtime.getDeviceScenarios('temp-desk')?.deviceId).toBe('temp-desk');
             expect(runtime.getDeviceScenarios('temp-window')?.deviceId).toBe('temp-window');
@@ -224,6 +224,48 @@ describe('createTemperatureRoomRuntime', () => {
                         reportedState: { power: 'on' },
                     }),
                 ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('configures the next LED command scenario without changing reported LED state', () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const commandTimer = createCommandTimer();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            commandTimer,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            expect(runtime.getDeviceScenarios('led-main')?.scenarios).toEqual(
+                expect.arrayContaining([{ action: 'omit_confirmation' }]),
+            );
+            runtime.runDeviceScenario('led-main', 'omit_confirmation');
+            expect(device(runtime, 'led-main')?.reportedState).toEqual({ power: 'off' });
+
+            runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            clock.advanceBy(5_000);
+            commandTimer.runAll();
+
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ status: 'timed_out' }),
+            ]);
+
+            runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual(
+                expect.arrayContaining([expect.objectContaining({ status: 'confirmed' })]),
             );
         } finally {
             runtime.stop();

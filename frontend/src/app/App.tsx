@@ -17,6 +17,10 @@ export function App({ showDevScenarioPanel = import.meta.env.DEV }: AppProps) {
         led && room.status === 'ready'
             ? room.snapshot.activeCommands.find((command) => command.deviceId === led.deviceId)
             : undefined;
+    const recentLedCommand =
+        led && room.status === 'ready'
+            ? room.snapshot.recentCommands.find((command) => command.deviceId === led.deviceId)
+            : undefined;
     const realtimeUncertain =
         room.connectionStatus === 'reconnecting' || room.contractError !== undefined;
 
@@ -32,6 +36,8 @@ export function App({ showDevScenarioPanel = import.meta.env.DEV }: AppProps) {
                 <LedControl
                     device={led}
                     activeCommand={activeLedCommand}
+                    recentCommand={recentLedCommand}
+                    showDevScenarioPanel={showDevScenarioPanel}
                     realtimeUncertain={realtimeUncertain}
                 />
             </div>

@@ -12,6 +12,22 @@
     color: var(--color-text-muted);
 }
 
+.commandMessages {
+    display: grid;
+    grid-template-rows: repeat(2, calc(var(--font-size-body-sm) * var(--line-height-relaxed)));
+    gap: var(--space-1);
+    min-block-size: calc(
+        (var(--font-size-body-sm) * var(--line-height-relaxed) * 2) + var(--space-1)
+    );
+    margin-block-start: var(--space-5);
+}
+
+.commandMessages .message,
+.commandMessages .requested,
+.commandMessages .error {
+    margin: 0;
+}
+
 .warning {
     display: flex;
     align-items: center;

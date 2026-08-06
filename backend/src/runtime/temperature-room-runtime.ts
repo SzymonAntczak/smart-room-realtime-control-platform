@@ -7,15 +7,12 @@ import type {
     SetPowerCommandRequest,
 } from '@smart-room/contracts/commands';
 import type {
+    DeviceScenarioAction,
     DeviceScenarioList,
-    TemperatureScenarioAction,
-    TemperatureScenarioResult,
+    DeviceScenarioResult,
 } from '@smart-room/contracts/development';
-import { temperatureScenarioActions } from '@smart-room/contracts/development';
-import type {
-    CommandFailedEvent,
-    PlatformEvent,
-} from '@smart-room/contracts/events';
+import { ledScenarioActions, temperatureScenarioActions } from '@smart-room/contracts/development';
+import type { CommandFailedEvent, PlatformEvent } from '@smart-room/contracts/events';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     type Clock,
@@ -80,11 +77,10 @@ export interface TemperatureRoomRuntime {
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
     subscribeRoomSnapshot(listener: RoomSnapshotListener): () => void;
     getDeviceScenarios(deviceId: string): DeviceScenarioList | undefined;
-    runDeviceScenario(
-        deviceId: string,
-        action: TemperatureScenarioAction,
-    ): TemperatureScenarioResult;
-    requestCommand(request: SetPowerCommandRequest): AcceptedCommandResponse | RejectedCommandResponse;
+    runDeviceScenario(deviceId: string, action: DeviceScenarioAction): DeviceScenarioResult;
+    requestCommand(
+        request: SetPowerCommandRequest,
+    ): AcceptedCommandResponse | RejectedCommandResponse;
     dispatchLedCommand(command: PlatformSetPowerCommand): void;
 }
 
@@ -110,6 +106,16 @@ const defaultSensors: readonly TemperatureSensorDefinition[] = [
 ];
 
 const readingPattern = [0, 0.2, 0.4, 0.1, -0.1, -0.3] as const;
+
+function isTemperatureScenarioAction(
+    action: DeviceScenarioAction,
+): action is (typeof temperatureScenarioActions)[number] {
+    return temperatureScenarioActions.some((candidate) => candidate === action);
+}
+
+function isLedScenarioAction(action: DeviceScenarioAction): action is LedScenarioName {
+    return ledScenarioActions.some((candidate) => candidate === action);
+}
 
 export function createTemperatureRoomRuntime({
     roomName = 'Smart Room',
@@ -180,22 +186,7 @@ export function createTemperatureRoomRuntime({
             }
 
             hasStarted = true;
-            led = createLedScenario({
-                deviceId: 'led-main-native',
-                initialPower: 'off',
-                scenario: ledScenario,
-                clock,
-                scheduler: ledScenarioScheduler,
-            });
-            ledAdapter = createSimulatorLedAdapter({
-                led,
-                nativeLedId: 'led-main-native',
-                platformDeviceId: 'led-main',
-                generateEventId,
-                emitEvent(event) {
-                    processPlatformEvent(event);
-                },
-            });
+            const startedLed = attachLedScenario('off');
             processPlatformEvent({
                 eventId: generateEventId(),
                 eventType: 'device.state.reported',
@@ -203,7 +194,7 @@ export function createTemperatureRoomRuntime({
                 source: 'simulator-adapter',
                 deviceId: 'led-main',
                 payload: {
-                    reportedState: { power: led.getObservedPower() },
+                    reportedState: { power: startedLed.getObservedPower() },
                     reportedAt: clock.now(),
                 },
             });
@@ -255,6 +246,9 @@ export function createTemperatureRoomRuntime({
             };
         },
         getDeviceScenarios(deviceId) {
+            if (deviceId === 'led-main') {
+                return { deviceId, scenarios: ledScenarioActions.map((action) => ({ action })) };
+            }
             if (!findSensor(deviceId)) return undefined;
 
             return {
@@ -263,14 +257,35 @@ export function createTemperatureRoomRuntime({
             };
         },
         runDeviceScenario(deviceId, action) {
-            const sensorEntry = findSensor(deviceId);
-            if (!sensorEntry) {
-                throw new Error(`No development scenarios are configured for ${deviceId}.`);
-            }
             if (!hasStarted) {
                 throw new Error(
                     'Temperature room runtime must be started before running a scenario.',
                 );
+            }
+
+            if (deviceId === 'led-main') {
+                if (!isLedScenarioAction(action)) {
+                    throw new Error(`No development scenarios are configured for ${deviceId}.`);
+                }
+                if (
+                    getCurrentRoomSnapshot().activeCommands.some(
+                        (command) => command.deviceId === deviceId,
+                    )
+                ) {
+                    throw Object.assign(
+                        new Error(
+                            'Wait for the active LED command before selecting another scenario.',
+                        ),
+                        { code: 'scenario_conflict' },
+                    );
+                }
+                led?.setNextCommandScenario(action);
+                return { action, status: 'completed' };
+            }
+
+            const sensorEntry = findSensor(deviceId);
+            if (!sensorEntry || !isTemperatureScenarioAction(action)) {
+                throw new Error(`No development scenarios are configured for ${deviceId}.`);
             }
 
             const observedAt = clock.now();
@@ -285,10 +300,16 @@ export function createTemperatureRoomRuntime({
         requestCommand(request) {
             const commandId = randomUUID();
             const snapshot = getCurrentRoomSnapshot();
-            const device = snapshot.devices.find((candidate) => candidate.deviceId === request.deviceId);
+            const device = snapshot.devices.find(
+                (candidate) => candidate.deviceId === request.deviceId,
+            );
 
             if (!hasStarted || !ledAdapter || !device) {
-                return rejected(commandId, 'unsupported_command', 'Device does not support this command.');
+                return rejected(
+                    commandId,
+                    'unsupported_command',
+                    'Device does not support this command.',
+                );
             }
             if (device.commandAvailability.policy === 'block') {
                 return rejected(
@@ -298,7 +319,11 @@ export function createTemperatureRoomRuntime({
                 );
             }
             if (request.deviceId !== 'led-main') {
-                return rejected(commandId, 'unsupported_command', 'Device does not support this command.');
+                return rejected(
+                    commandId,
+                    'unsupported_command',
+                    'Device does not support this command.',
+                );
             }
             if (snapshot.activeCommands.some((command) => command.deviceId === request.deviceId)) {
                 processPlatformEvent(rejectedCommandEvent(commandId, request, clock.now()));
@@ -365,7 +390,7 @@ export function createTemperatureRoomRuntime({
 
     function runScenarioAction(
         sensorEntry: (typeof sensors)[number],
-        action: TemperatureScenarioAction,
+        action: (typeof temperatureScenarioActions)[number],
         observedAt: string,
     ): void {
         const scenarioHandlers = {
@@ -394,7 +419,10 @@ export function createTemperatureRoomRuntime({
                 sensorEntry.sensor.tick(observedAt);
                 sensorEntry.runtime?.start();
             },
-        } satisfies Record<TemperatureScenarioAction, (observedAt: string) => void>;
+        } satisfies Record<
+            (typeof temperatureScenarioActions)[number],
+            (observedAt: string) => void
+        >;
 
         scenarioHandlers[action](observedAt);
     }
@@ -409,6 +437,26 @@ export function createTemperatureRoomRuntime({
                 processPlatformEvent(event);
             },
         });
+    }
+
+    function attachLedScenario(initialPower: 'on' | 'off'): ReturnType<typeof createLedScenario> {
+        led = createLedScenario({
+            deviceId: 'led-main-native',
+            initialPower,
+            scenario: ledScenario,
+            clock,
+            scheduler: ledScenarioScheduler,
+        });
+        ledAdapter = createSimulatorLedAdapter({
+            led,
+            nativeLedId: 'led-main-native',
+            platformDeviceId: 'led-main',
+            generateEventId,
+            emitEvent(event) {
+                processPlatformEvent(event);
+            },
+        });
+        return led;
     }
 
     function findSensor(deviceId: string): (typeof sensors)[number] | undefined {
@@ -512,11 +560,7 @@ export function createTemperatureRoomRuntime({
     }
 }
 
-function rejected(
-    commandId: string,
-    reason: string,
-    message: string,
-): RejectedCommandResponse {
+function rejected(commandId: string, reason: string, message: string): RejectedCommandResponse {
     return { commandId, status: 'rejected', reason, message };
 }
 
