@@ -2,9 +2,11 @@ import type { DeviceProjection, RoomSnapshotProjection } from '@smart-room/contr
 import { useEffect, useState } from 'react';
 
 import {
-    connectTemperatureRealtime,
-    type TemperatureRealtimeConnectionStatus,
-} from './room-realtime-client';
+    connectRoomRealtime as connectTemperatureRealtime,
+    type RoomRealtimeConnectionStatus as TemperatureRealtimeConnectionStatus,
+} from '../../room/realtime/room-realtime-client';
+
+import { toTemperatureSensorReading } from './temperature-reading';
 
 export type TemperatureControlState =
     | {
@@ -61,6 +63,9 @@ export function useTemperatureRealtime(): TemperatureControlState {
                 });
             },
             onSnapshot(snapshot) {
+                for (const device of snapshot.devices) {
+                    if (device.role === 'temperature-sensor') toTemperatureSensorReading(device);
+                }
                 setControlState(toControlState(snapshot));
             },
             onInvalidMessage() {

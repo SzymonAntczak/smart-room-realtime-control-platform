@@ -180,9 +180,10 @@ event processor, read model/projections and in-memory storage.
 
 The current realtime read contract sends a `room.snapshot` over
 WebSocket only when the frontend connects or reconnects. It is followed by
-named, revision-linked `device.updated` messages. A device projection contains
-only current device state and health; a future dedicated history slice will
-define event retention and details access. A client reconnects for a new
+named, revision-linked `device.updated` and `commands.updated` messages. A device projection contains
+current device state and health; command updates atomically carry the changed
+device plus active and terminal command projections. A future dedicated history
+slice will define durable event retention and details access. A client reconnects for a new
 snapshot when a delta is malformed or has a revision gap.
 
 - `messageType: "room.snapshot"`
@@ -243,7 +244,6 @@ the simulator through the normal adapter and event-processing path rather than
 mutating frontend state. They are not product controls and remain disabled
 unless the development scenario flag is set.
 
-Command lifecycle processing, confirmation matching, command projections,
-persistence and quarantine storage remain target responsibilities for later
-slices. Until command lifecycle events are implemented, the backend read model
-may expose empty command collections.
+Command lifecycle processing, confirmation matching and command projections are
+implemented for the simulated LED reference slice. Persistence and quarantine
+storage remain target responsibilities for later slices.

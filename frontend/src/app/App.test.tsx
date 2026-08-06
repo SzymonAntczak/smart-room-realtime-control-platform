@@ -15,12 +15,11 @@ describe('App', () => {
     it('renders the temperature control surface', () => {
         render(<App />);
 
-        expect(screen.getByRole('heading', { name: 'Smart Room', level: 1 })).toBeInTheDocument();
         expect(
             screen.getByRole('heading', { name: 'Desk Temperature', level: 2 }),
         ).toBeInTheDocument();
-        expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-        expect(screen.getByText('Realtime room stream')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+        expect(screen.getAllByText('Realtime room stream')).toHaveLength(2);
         expect(screen.getByText('Connecting to realtime room stream...')).toBeInTheDocument();
     });
 

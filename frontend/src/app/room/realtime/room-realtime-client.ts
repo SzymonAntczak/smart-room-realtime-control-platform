@@ -1,8 +1,4 @@
-import type { DeviceState } from '@smart-room/contracts/devices';
-import {
-    type DeviceProjection,
-    type RoomSnapshotProjection,
-} from '@smart-room/contracts/projections';
+import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     isRoomRealtimeServerMessage,
     type RoomRealtimeServerMessage,
@@ -11,43 +7,34 @@ import {
 const defaultRoomRealtimeUrl = 'ws://localhost:4310/room/realtime';
 const defaultReconnectDelayMs = 1000;
 
-export type TemperatureRealtimeConnectionStatus =
+export type RoomRealtimeConnectionStatus =
     | 'connecting'
     | 'connected'
     | 'reconnecting'
     | 'disconnected';
 
-export interface TemperatureSensorReading {
-    sensorId: string;
-    sensorName: string;
-    value: number;
-    unit: 'celsius';
-    recordedAt: string;
-    health: DeviceProjection['health'];
-}
-
-export interface TemperatureRealtimeClientHandlers {
-    onConnectionStatus(status: TemperatureRealtimeConnectionStatus): void;
+export interface RoomRealtimeClientHandlers {
+    onConnectionStatus(status: RoomRealtimeConnectionStatus): void;
     onSnapshot(snapshot: RoomSnapshotProjection): void;
     onInvalidMessage(): void;
 }
 
-export interface TemperatureRealtimeConnection {
+export interface RoomRealtimeConnection {
     close(): void;
 }
 
-export interface TemperatureRealtimeClientOptions {
+export interface RoomRealtimeClientOptions {
     reconnectDelayMs?: number;
 }
 
 type RealtimeWebSocket = Pick<WebSocket, 'addEventListener' | 'close'>;
 type WebSocketConstructor = new (url: string) => RealtimeWebSocket;
 
-export function connectTemperatureRealtime(
-    handlers: TemperatureRealtimeClientHandlers,
+export function connectRoomRealtime(
+    handlers: RoomRealtimeClientHandlers,
     WebSocketImplementation: WebSocketConstructor = WebSocket,
-    options: TemperatureRealtimeClientOptions = {},
-): TemperatureRealtimeConnection {
+    options: RoomRealtimeClientOptions = {},
+): RoomRealtimeConnection {
     const reconnectDelayMs = options.reconnectDelayMs ?? defaultReconnectDelayMs;
     let isClosed = false;
     let activeSocket: RealtimeWebSocket | undefined;
@@ -72,7 +59,7 @@ export function connectTemperatureRealtime(
     };
 
     function connectSocket(
-        status: Extract<TemperatureRealtimeConnectionStatus, 'connecting' | 'reconnecting'>,
+        status: Extract<RoomRealtimeConnectionStatus, 'connecting' | 'reconnecting'>,
     ): void {
         if (isClosed) {
             return;
@@ -99,7 +86,7 @@ export function connectTemperatureRealtime(
             try {
                 const message = parseRoomRealtimeMessage(event.data);
                 const snapshot = applyRealtimeMessage(message);
-                validateTemperatureDevices(snapshot);
+                validateRenderableDevices(snapshot);
                 handlers.onSnapshot(snapshot);
             } catch {
                 handlers.onInvalidMessage();
@@ -153,10 +140,46 @@ export function connectTemperatureRealtime(
                 roomSnapshot = { ...roomSnapshot, devices };
                 break;
             }
+            case 'commands.updated': {
+                const deviceIndex = roomSnapshot.devices.findIndex(
+                    (device) => device.deviceId === message.payload.device.deviceId,
+                );
+                if (deviceIndex === -1)
+                    throw new Error('Realtime update references an unknown device.');
+                const devices = [...roomSnapshot.devices];
+                devices[deviceIndex] = message.payload.device;
+                roomSnapshot = {
+                    ...roomSnapshot,
+                    devices,
+                    activeCommands: message.payload.activeCommands,
+                    recentCommands: message.payload.recentCommands,
+                };
+                break;
+            }
         }
 
         revision = message.revision;
         return roomSnapshot;
+    }
+}
+
+function validateRenderableDevices(snapshot: RoomSnapshotProjection): void {
+    for (const device of snapshot.devices) {
+        if (
+            device.role === 'led-output' &&
+            device.reportedState.power !== 'on' &&
+            device.reportedState.power !== 'off'
+        ) {
+            throw new Error('LED data did not match the expected contract.');
+        }
+        if (
+            device.role === 'temperature-sensor' &&
+            (typeof device.reportedState.temperature !== 'number' ||
+                device.reportedState.temperatureUnit !== 'celsius' ||
+                typeof device.lastSeenAt !== 'string')
+        ) {
+            throw new Error('Temperature sensor data did not match the expected contract.');
+        }
     }
 }
 
@@ -176,41 +199,4 @@ function parseRoomRealtimeMessage(data: unknown): RoomRealtimeServerMessage {
     }
 
     return body;
-}
-
-export function toTemperatureSensorReading(device: DeviceProjection): TemperatureSensorReading {
-    if (!isRenderableTemperatureDevice(device)) {
-        throw new Error('Temperature sensor data did not match the expected contract.');
-    }
-
-    return {
-        sensorId: device.deviceId,
-        sensorName: device.name,
-        value: device.reportedState.temperature,
-        unit: device.reportedState.temperatureUnit,
-        recordedAt: device.lastSeenAt,
-        health: device.health,
-    };
-}
-
-function validateTemperatureDevices(snapshot: RoomSnapshotProjection): void {
-    for (const device of snapshot.devices) {
-        if (device.role === 'temperature-sensor') {
-            toTemperatureSensorReading(device);
-        }
-    }
-}
-
-function isRenderableTemperatureDevice(device: DeviceProjection): device is DeviceProjection & {
-    lastSeenAt: string;
-    reportedState: DeviceState & {
-        temperature: number;
-        temperatureUnit: 'celsius';
-    };
-} {
-    return (
-        typeof device.reportedState.temperature === 'number' &&
-        device.reportedState.temperatureUnit === 'celsius' &&
-        typeof device.lastSeenAt === 'string'
-    );
 }

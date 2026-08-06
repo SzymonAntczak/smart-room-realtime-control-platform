@@ -2,7 +2,7 @@ import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { connectTemperatureRealtime } from './room-realtime-client';
+import { connectRoomRealtime as connectTemperatureRealtime } from '../../room/realtime/room-realtime-client';
 
 describe('connectTemperatureRealtime', () => {
     beforeEach(() => {

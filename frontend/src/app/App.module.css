@@ -1,13 +1,37 @@
 .shell {
     min-block-size: 100vh;
-    display: grid;
-    place-items: center;
     padding: var(--space-8);
+}
+
+.controls {
+    display: grid;
+    inline-size: min(100%, 64rem);
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--space-5);
+    margin-inline: auto;
+}
+
+.controls > section {
+    grid-column: span 6;
+    inline-size: 100%;
+}
+
+@media (max-width: 80rem) {
+    .controls > section {
+        grid-column: span 12;
+    }
 }
 
 @media (max-width: 32.5rem) {
     .shell {
         padding: var(--space-5);
-        place-items: stretch;
+    }
+
+    .controls {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .controls > section {
+        grid-column: span 4;
     }
 }

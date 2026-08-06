@@ -1,11 +1,12 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
+import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { CircleCheck, Clock3, Thermometer, TriangleAlert, WifiOff } from 'lucide-react';
 import { memo } from 'react';
 
 import { TemperatureScenarioDrawer } from '../../dev/temperature-scenarios/TemperatureScenarioDrawer';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
-import { type TemperatureSensorReading, toTemperatureSensorReading } from './room-realtime-client';
+import { type TemperatureSensorReading, toTemperatureSensorReading } from './temperature-reading';
 import styles from './TemperatureControl.module.css';
 import { type TemperatureControlState, useTemperatureRealtime } from './use-temperature-realtime';
 
@@ -17,6 +18,50 @@ export function TemperatureControl({
     return (
         <TemperatureControlView
             state={useTemperatureRealtime()}
+            showDevScenarioPanel={showDevScenarioPanel}
+        />
+    );
+}
+
+export function TemperatureControlFromRoom({
+    snapshot,
+    connectionStatus = 'connecting',
+    contractError,
+    showDevScenarioPanel = import.meta.env.DEV,
+}: {
+    snapshot?: RoomSnapshotProjection;
+    connectionStatus?: 'connecting' | 'connected' | 'reconnecting';
+    contractError?: string;
+    showDevScenarioPanel?: boolean;
+}) {
+    const devices =
+        snapshot?.devices.filter((device) => device.role === 'temperature-sensor') ?? [];
+    const readyConnectionStatus =
+        connectionStatus === 'connecting' ? 'reconnecting' : connectionStatus;
+    const initialConnectionStatus =
+        connectionStatus === 'connected' ? 'connecting' : connectionStatus;
+    return (
+        <TemperatureControlView
+            state={
+                snapshot
+                    ? devices.length === 0
+                        ? {
+                              status: 'empty',
+                              connectionStatus: readyConnectionStatus,
+                              contractError,
+                          }
+                        : {
+                              status: 'ready',
+                              devices,
+                              connectionStatus: readyConnectionStatus,
+                              contractError,
+                          }
+                    : {
+                          status: 'connecting',
+                          connectionStatus: initialConnectionStatus,
+                          contractError,
+                      }
+            }
             showDevScenarioPanel={showDevScenarioPanel}
         />
     );

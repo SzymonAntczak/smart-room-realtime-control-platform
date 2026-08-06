@@ -1,0 +1,79 @@
+.message,
+.requested,
+.warning,
+.error {
+    margin: var(--space-5) 0 0;
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+.message,
+.requested {
+    color: var(--color-text-muted);
+}
+
+.warning {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-warning-text);
+    font-weight: var(--font-weight-bold);
+}
+
+.error {
+    color: var(--color-danger-text);
+    font-weight: var(--font-weight-bold);
+}
+
+.power {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-block: var(--space-12) var(--space-5);
+    font-size: var(--font-size-heading-md);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+}
+
+.actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 2.75rem;
+    min-block-size: 2.75rem;
+    padding-block: var(--space-2);
+    padding-inline: var(--space-2);
+    border: var(--border-width-thin) solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--color-on-accent);
+    background: var(--color-action-primary);
+    font-weight: var(--font-weight-bold);
+    cursor: pointer;
+}
+
+.actions button.toggleOn {
+    color: var(--color-on-accent);
+    background: var(--color-action-primary);
+}
+
+.actions button.toggleOff {
+    border-color: var(--color-action-primary);
+    color: var(--color-action-primary);
+    background: transparent;
+}
+
+.actions button:focus-visible {
+    outline: var(--border-width-thin) solid var(--color-action-primary);
+    outline-offset: var(--space-1);
+}
+
+.actions button:disabled {
+    border-color: var(--color-action-disabled);
+    color: var(--color-text-subtle);
+    background: var(--color-action-disabled);
+    cursor: not-allowed;
+}

@@ -84,6 +84,13 @@ rules already documented in architecture and accepted ADRs.
 These are remaining implementation tasks that are not currently assigned to a
 specific roadmap stage.
 
+- [ ] Decide and document the security policy for frontend-visible command errors.
+      Evaluate which rejection reasons/messages may be shown to local users and
+      which operational details must remain backend-only diagnostics. Define a
+      stable safe error vocabulary, logging/redaction expectations and tests.
+      Promote the chosen policy to architecture documentation or an ADR before
+      relying on it as a durable behavior rule.
+
 - [x] Remove obsolete code and compatibility paths. The supported realtime and
       development-scenario contracts describe only the current behavior.
 
