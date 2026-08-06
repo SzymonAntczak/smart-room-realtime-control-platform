@@ -1,4 +1,4 @@
-import type { CommandRequestedBy } from './commands';
+import type { CommandRequestedBy, CommandType } from './commands';
 import type { DeviceHealth, DeviceState, PowerState } from './devices';
 
 export const platformEventTypes = [
@@ -71,6 +71,9 @@ export interface CommandConfirmedPayload {
 export interface CommandFailedPayload {
     reason: string;
     message: string;
+    commandType?: CommandType;
+    requestedState?: { power: PowerState };
+    requestedAt?: string;
 }
 
 export interface CommandTimedOutPayload {

@@ -45,7 +45,7 @@ rules already documented in architecture and accepted ADRs.
   - Done when: Adapter tests verify both translations and an integration test
     exercises command → simulator → report → event processor.
 
-- [ ] **S3.4 — Implement command lifecycle and backend projections**
+- [x] **S3.4 — Implement command lifecycle and backend projections**
   - Scope: Project accepted, pending, confirmed, failed and timed-out commands;
     enforce one active command per device; match `set.power` reports; maintain
     bounded terminal history; preserve a timeout when a matching report is

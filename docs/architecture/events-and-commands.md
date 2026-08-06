@@ -145,9 +145,17 @@ The first implementation should keep payloads small and explicit.
 ```json
 {
     "reason": "command_already_active",
-    "message": "Device already has an active command."
+    "message": "Device already has an active command.",
+    "commandType": "set.power",
+    "requestedState": { "power": "on" },
+    "requestedAt": "2026-05-21T07:10:00Z"
 }
 ```
+
+When a command fails before it becomes active, for example because the device
+already has an active command, `command.failed` must include `commandType`,
+`requestedState` and `requestedAt`. This lets the terminal projection retain
+the rejected intent without misrepresenting it as an accepted `command.requested`.
 
 ### `command.timed_out`
 

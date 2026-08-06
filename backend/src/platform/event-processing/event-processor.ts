@@ -1,4 +1,12 @@
 import {
+    type CommandDispatchedEvent,
+    commandDispatchedEventSchema,
+    type CommandFailedEvent,
+    commandFailedEventSchema,
+    type CommandRequestedEvent,
+    commandRequestedEventSchema,
+    type CommandTimedOutEvent,
+    commandTimedOutEventSchema,
     type DeviceStateReportedEvent,
     deviceStateReportedEventSchema,
     type IgnoredEventReason,
@@ -130,9 +138,47 @@ export function createEventProcessor({
                 );
             }
 
+            if (event.eventType === 'command.requested') {
+                if (!isSchema(commandRequestedEventSchema, event)) {
+                    return ignored('invalid_payload');
+                }
+                return acceptCommandEvent(event as CommandRequestedEvent, (acceptedEvent) =>
+                    roomProjector.applyCommandRequested(acceptedEvent),
+                );
+            }
+
+            if (event.eventType === 'command.dispatched') {
+                if (!isSchema(commandDispatchedEventSchema, event)) {
+                    return ignored('invalid_payload');
+                }
+                return acceptCommandEvent(event as CommandDispatchedEvent, (acceptedEvent) =>
+                    roomProjector.applyCommandDispatched(acceptedEvent),
+                );
+            }
+
+            if (event.eventType === 'command.failed') {
+                if (!isSchema(commandFailedEventSchema, event)) {
+                    return ignored('invalid_payload');
+                }
+                return acceptCommandEvent(event as CommandFailedEvent, (acceptedEvent) =>
+                    roomProjector.applyCommandFailed(acceptedEvent),
+                );
+            }
+
+            if (event.eventType === 'command.timed_out') {
+                if (!isSchema(commandTimedOutEventSchema, event)) {
+                    return ignored('invalid_payload');
+                }
+                return acceptCommandEvent(event as CommandTimedOutEvent, (acceptedEvent) =>
+                    roomProjector.applyCommandTimedOut(acceptedEvent),
+                );
+            }
+
             return ignored('unsupported_event_type');
 
-            function acceptEvent<TEvent extends TelemetryReadingRecordedEvent | DeviceStateReportedEvent>(
+            function acceptEvent<
+                TEvent extends TelemetryReadingRecordedEvent | DeviceStateReportedEvent,
+            >(
                 acceptedEvent: TEvent,
                 apply: (event: TEvent) => EventProcessorState,
             ): EventProcessingResult {
@@ -155,6 +201,34 @@ export function createEventProcessor({
                         ? { deduplicationEvictedEventIds }
                         : {}),
                 };
+            }
+
+            function acceptCommandEvent<
+                TEvent extends
+                    | CommandRequestedEvent
+                    | CommandDispatchedEvent
+                    | CommandFailedEvent
+                    | CommandTimedOutEvent,
+            >(
+                acceptedEvent: TEvent,
+                apply: (event: TEvent) => EventProcessorState,
+            ): EventProcessingResult {
+                try {
+                    const state = apply(acceptedEvent);
+                    const deduplicationEvictedEventIds = deduplicator.remember(
+                        acceptedEvent.eventId,
+                    );
+                    return {
+                        status: 'accepted',
+                        evaluatedAt: deduplicationCheck.checkedAt,
+                        state,
+                        ...(deduplicationEvictedEventIds.length > 0
+                            ? { deduplicationEvictedEventIds }
+                            : {}),
+                    };
+                } catch {
+                    return ignored('invalid_payload');
+                }
             }
         },
     };

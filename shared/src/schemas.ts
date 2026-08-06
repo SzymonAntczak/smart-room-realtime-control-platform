@@ -95,6 +95,9 @@ const commandConfirmedPayloadSchema = Type.Object({
 const commandFailedPayloadSchema = Type.Object({
     reason: nonEmptyStringSchema,
     message: nonEmptyStringSchema,
+    commandType: Type.Optional(Type.Literal('set.power')),
+    requestedState: Type.Optional(powerStateProjectionSchema),
+    requestedAt: Type.Optional(isoTimestampSchema),
 });
 const commandTimedOutPayloadSchema = Type.Object({
     timeoutMs: Type.Integer({ minimum: 1 }),
