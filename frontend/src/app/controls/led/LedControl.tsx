@@ -2,6 +2,7 @@ import type {
     ActiveCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
+import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { Lightbulb, LightbulbOff, Power, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
@@ -27,6 +28,7 @@ export function LedControl({
 }) {
     const [submitting, setSubmitting] = useState(false);
     const [selectingScenario, setSelectingScenario] = useState(false);
+    const [selectedScenario, setSelectedScenario] = useState<DeviceScenarioAction>();
     const [transportError, setTransportError] = useState<string>();
 
     if (!device) {
@@ -65,6 +67,7 @@ export function LedControl({
                 requestedState: { power },
             });
             if (result.status === 'rejected') setTransportError(result.message);
+            else setSelectedScenario(undefined);
         } catch {
             setTransportError('Unable to send the LED command. Please try again.');
         } finally {
@@ -83,6 +86,8 @@ export function LedControl({
                         deviceId={device.deviceId}
                         isCommandActive={activeCommand !== undefined}
                         onRequestChange={setSelectingScenario}
+                        selectedScenario={selectedScenario}
+                        onScenarioSelected={setSelectedScenario}
                     />
                 ) : undefined
             }

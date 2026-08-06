@@ -8,7 +8,7 @@ import {
     StepForward,
     TriangleAlert,
 } from 'lucide-react';
-import { useId } from 'react';
+import { useEffect, useId } from 'react';
 
 import type {
     TemperatureScenarioAction,
@@ -35,9 +35,16 @@ const controls: readonly ScenarioControl[] = [
 interface TemperatureScenarioPanelProps {
     readonly client?: TemperatureScenarioClient;
     readonly actions?: readonly TemperatureScenarioAction[];
+    readonly completedAction?: TemperatureScenarioAction;
+    readonly onCompletedAction?: (action: TemperatureScenarioAction) => void;
 }
 
-export function TemperatureScenarioPanel({ client, actions }: TemperatureScenarioPanelProps) {
+export function TemperatureScenarioPanel({
+    client,
+    actions,
+    completedAction: persistedCompletedAction,
+    onCompletedAction,
+}: TemperatureScenarioPanelProps) {
     const reactId = useId().replace(/:/g, '');
     const headingId = `scenario-panel-heading-${reactId}`;
     const diagnosticsHeadingId = `diagnostics-heading-${reactId}`;
@@ -51,7 +58,10 @@ export function TemperatureScenarioPanel({ client, actions }: TemperatureScenari
         runScenario,
         refreshDiagnostics,
     } = useTemperatureScenario(client);
-    const message = errorMessage ?? toCompletedMessage(completedAction);
+    useEffect(() => {
+        if (completedAction) onCompletedAction?.(completedAction);
+    }, [completedAction, onCompletedAction]);
+    const message = errorMessage ?? toCompletedMessage(completedAction ?? persistedCompletedAction);
 
     return (
         <section className={styles.panel} aria-labelledby={headingId}>

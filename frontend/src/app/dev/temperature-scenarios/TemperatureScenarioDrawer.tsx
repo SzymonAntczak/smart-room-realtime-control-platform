@@ -27,6 +27,7 @@ export function TemperatureScenarioDrawer({
     const [isOpen, setIsOpen] = useState(false);
     const [actions, setActions] = useState<readonly TemperatureScenarioAction[]>();
     const [loadError, setLoadError] = useState<string>();
+    const [completedAction, setCompletedAction] = useState<TemperatureScenarioAction>();
     const toggleRef = useRef<HTMLButtonElement>(null);
     const closeButtonRef = useRef<HTMLButtonElement>(null);
     const shouldRestoreToggleFocus = useRef(false);
@@ -110,7 +111,12 @@ export function TemperatureScenarioDrawer({
                         <p role="status">Loading development scenarios for {deviceId}…</p>
                     ) : null}
                     {actions ? (
-                        <TemperatureScenarioPanel actions={actions} client={client} />
+                        <TemperatureScenarioPanel
+                            actions={actions}
+                            client={client}
+                            completedAction={completedAction}
+                            onCompletedAction={setCompletedAction}
+                        />
                     ) : null}
                 </aside>
             ) : null}

@@ -28,6 +28,8 @@ interface LedScenarioDrawerProps {
     readonly client?: TemperatureScenarioClient;
     readonly isCommandActive?: boolean;
     readonly onRequestChange?: (isPending: boolean) => void;
+    readonly selectedScenario?: DeviceScenarioAction;
+    readonly onScenarioSelected?: (scenario: DeviceScenarioAction | undefined) => void;
 }
 
 export function LedScenarioDrawer({
@@ -35,6 +37,8 @@ export function LedScenarioDrawer({
     client: clientOverride,
     isCommandActive = false,
     onRequestChange,
+    selectedScenario,
+    onScenarioSelected,
 }: LedScenarioDrawerProps) {
     const drawerId = `led-scenario-drawer-${useId().replace(/:/g, '')}`;
     const client = useMemo(
@@ -90,10 +94,8 @@ export function LedScenarioDrawer({
         setMessage(undefined);
         try {
             const result = await client.runScenario(action);
-            setMessage(
-                result.action === 'confirm_immediately'
-                    ? undefined
-                    : `${labels[result.action]} selected for the next LED command.`,
+            onScenarioSelected?.(
+                result.action === 'confirm_immediately' ? undefined : result.action,
             );
         } catch (error) {
             setMessage(error instanceof Error ? error.message : 'Scenario control request failed.');
@@ -159,9 +161,10 @@ export function LedScenarioDrawer({
                                     </button>
                                 ))}
                             </div>
-                            {message ? (
+                            {message || selectedScenario ? (
                                 <p className={panelStyles.message} role="status">
-                                    {message}
+                                    {message ??
+                                        `${labels[selectedScenario!]} selected for the next LED command.`}
                                 </p>
                             ) : null}
                         </section>
