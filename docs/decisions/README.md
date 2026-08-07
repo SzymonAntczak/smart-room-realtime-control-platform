@@ -24,6 +24,7 @@ Keep current system behavior in [architecture](../architecture/). Promote a trad
 - [Room Realtime Synchronization](adr-room-realtime-synchronization.md)
 - [LED Command Transport and Operational Defaults](adr-led-command-transport-and-operational-defaults.md)
 - [External Actuation and Command Outcomes](adr-external-actuation-and-command-outcomes.md)
+- [Device Availability, Health and Observation Freshness](adr-device-availability-and-observation-freshness.md)
 
 ## Superseded ADRs
 

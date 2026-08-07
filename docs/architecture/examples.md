@@ -120,22 +120,28 @@ sequenceDiagram
 The late device report updates `reportedState` because it is a real observation.
 It does not reopen or convert the timed-out command into a confirmed command.
 
-## Stale, Offline and Recovery
+## Availability, Freshness and Recovery
 
 ```mermaid
 stateDiagram-v2
-    [*] --> online
-    online --> stale: no fresh telemetry inside freshness window
-    stale --> offline: stale period exceeds offline threshold
-    online --> degraded: partial data or unstable behavior
-    degraded --> online: healthy fresh report
-    stale --> online: fresh report received
-    offline --> online: reconnect and fresh report
+    state availability {
+        [*] --> unknown
+        unknown --> online: explicit available evidence
+        online --> offline: explicit disconnect or failed probe
+        offline --> online: explicit reconnect or successful probe
+    }
+    state freshness {
+        [*] --> unknown
+        unknown --> fresh: accepted observation
+        fresh --> stale: freshness window exceeded
+        stale --> fresh: newer accepted observation
+    }
 ```
 
-Recovery requires fresh evidence. When a device reconnects, the processor should
-mark it online only after a fresh state report, then replace stale values in the
-UI while keeping older unresolved command history visible.
+Availability changes only from availability evidence. A later accepted
+observation independently restores freshness. The UI may therefore show an
+online device with stale data, or an offline device while retaining its last
+known observation and command history.
 
 ## Command Correlation
 
@@ -190,11 +196,13 @@ flowchart LR
     projection --> reported[reportedState<br/>confirmed observable state]
     projection --> requested[requestedState<br/>latest accepted intent]
     projection --> command[command<br/>idle, pending, confirmed,<br/>failed, timed_out]
-    projection --> health[health<br/>online, stale,<br/>offline, degraded]
+    projection --> availability[availability<br/>online, offline, unknown]
+    projection --> health[health<br/>healthy, degraded, unknown]
+    projection --> freshness[freshness<br/>fresh, stale, unknown]
     projection --> history[event history<br/>auditable timeline]
 ```
 
 The frontend reads the projection, not raw intent. This keeps the visible room
-state aligned with the reliability rules: pending state is visible, stale data
-is labeled, failures are first-class and confirmed state is never faked from a
-request.
+state aligned with the reliability rules: availability and stale data are
+separate, pending state is visible, failures are first-class and confirmed state
+is never faked from a request.

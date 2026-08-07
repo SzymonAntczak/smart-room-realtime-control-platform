@@ -4,6 +4,24 @@ This list records deliberately deferred implementation work. It does not define
 binding system behavior; promote a durable rule to architecture documentation or
 an ADR as part of the related change.
 
+## Cross-Stage Blockers
+
+- [ ] **B1 — Migrate the device projection to availability, health and freshness**
+    - Scope: Replace the legacy combined `health` field and `lastSeenAt` in shared
+      contracts, backend projections, simulator adapters, realtime BFF messages,
+      frontend cards and their tests. Project `availability`
+      (`online`/`offline`/`unknown`), operational `health`
+      (`healthy`/`degraded`/`unknown`) and applicable observation `freshness`
+      (`fresh`/`stale`/`unknown`) independently. Add explicit availability and
+      health events, keep command lifecycle independent, and derive command
+      availability from capability, availability and degradation reason.
+    - Depends on: [ADR: Device Availability, Health and Observation Freshness](../decisions/adr-device-availability-and-observation-freshness.md).
+    - Blocks: Stage 3.5 and every later roadmap stage.
+    - Done when: Contract, projection, simulator and UI tests prove that sparse
+      telemetry changes freshness without making a device offline; explicit
+      availability evidence changes only availability; degraded health is visible
+      separately; and commands retain their documented lifecycle semantics.
+
 ## Stage 3 — Simulated LED Command Reference Slice
 
 These are deliberately small, ordered implementation tasks for the first
@@ -11,73 +29,73 @@ controllable-device reference slice. They do not change the binding command
 rules already documented in architecture and accepted ADRs.
 
 - [x] **S3.0 — Decide the command transport and operational LED defaults**
-  - Scope: Decide the frontend-to-BFF command boundary (HTTP request or a new
-    WebSocket direction), the `set.power` timeout, `recentCommands` bound and
-    the names and expected behavior of LED simulator scenarios. Promote any
-    durable decision to architecture documentation or an ADR.
-  - Depends on: Stage 2.5 manual acceptance loop.
-  - Done when: An implementer has documented transport, timeout, retention and
-    scenario choices without having to infer system rules.
+    - Scope: Decide the frontend-to-BFF command boundary (HTTP request or a new
+      WebSocket direction), the `set.power` timeout, `recentCommands` bound and
+      the names and expected behavior of LED simulator scenarios. Promote any
+      durable decision to architecture documentation or an ADR.
+    - Depends on: Stage 2.5 manual acceptance loop.
+    - Done when: An implementer has documented transport, timeout, retention and
+      scenario choices without having to infer system rules.
 
 - [x] **S3.1 — Extend shared command and realtime contracts**
-  - Scope: Define TypeBox contracts for the chosen command transport and for
-    active and terminal command projection updates, while preserving the
-    existing `set.power`, `activeCommands` and `recentCommands` invariants.
-  - Depends on: S3.0.
-  - Done when: Contract tests accept valid command and realtime messages and
-    reject malformed or semantically inconsistent shapes.
+    - Scope: Define TypeBox contracts for the chosen command transport and for
+      active and terminal command projection updates, while preserving the
+      existing `set.power`, `activeCommands` and `recentCommands` invariants.
+    - Depends on: S3.0.
+    - Done when: Contract tests accept valid command and realtime messages and
+      reject malformed or semantically inconsistent shapes.
 
 - [x] **S3.2 — Add the simulator-native LED model and repeatable scenarios**
-  - Scope: Add an LED state report and `set.power` behavior to the simulator,
-    including normal confirmation, delayed confirmation, explicit rejection,
-    timeout/no confirmation and late-report scenarios.
-  - Depends on: S3.0.
-  - Done when: Simulator tests deterministically cover native messages,
-    commands and scenario timing; the simulator remains device-like and does
-    not own platform command lifecycle rules.
+    - Scope: Add an LED state report and `set.power` behavior to the simulator,
+      including normal confirmation, delayed confirmation, explicit rejection,
+      timeout/no confirmation and late-report scenarios.
+    - Depends on: S3.0.
+    - Done when: Simulator tests deterministically cover native messages,
+      commands and scenario timing; the simulator remains device-like and does
+      not own platform command lifecycle rules.
 
 - [x] **S3.3 — Add the backend LED adapter and command dispatch path**
-  - Scope: Translate platform `set.power` commands to simulator-native
-    commands and LED reports to `device.state.reported`; compose the adapter in
-    the local runtime without exposing simulator protocol details to platform
-    code.
-  - Depends on: S3.1 and S3.2.
-  - Done when: Adapter tests verify both translations and an integration test
-    exercises command → simulator → report → event processor.
+    - Scope: Translate platform `set.power` commands to simulator-native
+      commands and LED reports to `device.state.reported`; compose the adapter in
+      the local runtime without exposing simulator protocol details to platform
+      code.
+    - Depends on: S3.1 and S3.2.
+    - Done when: Adapter tests verify both translations and an integration test
+      exercises command → simulator → report → event processor.
 
 - [x] **S3.4 — Implement command lifecycle and backend projections**
-  - Scope: Project accepted, pending, confirmed, failed and timed-out commands;
-    enforce one active command per device; match `set.power` reports; maintain
-    bounded terminal history; preserve a timeout when a matching report is
-    late.
-  - Depends on: S3.1 and S3.3.
-  - Done when: State-model tests cover confirmation, rejection, active-command
-    conflict, timeout and late report without turning a timed-out command back
-    into a confirmed command.
+    - Scope: Project accepted, pending, confirmed, failed and timed-out commands;
+      enforce one active command per device; match `set.power` reports; maintain
+      bounded terminal history; preserve a timeout when a matching report is
+      late.
+    - Depends on: S3.1 and S3.3.
+    - Done when: State-model tests cover confirmation, rejection, active-command
+      conflict, timeout and late report without turning a timed-out command back
+      into a confirmed command.
 
 - [x] **S3.5 — Expose command handling and command projections through the BFF**
-  - Scope: Implement the selected BFF command boundary, validation and dispatch
-    to the platform, plus documented realtime snapshot and delta delivery for
-    active and terminal command projections.
-  - Depends on: S3.1 and S3.4.
-  - Done when: BFF tests cover valid and invalid requests, initial snapshot,
-    sequential projection updates and rejection of undocumented message shapes.
+    - Scope: Implement the selected BFF command boundary, validation and dispatch
+      to the platform, plus documented realtime snapshot and delta delivery for
+      active and terminal command projections.
+    - Depends on: S3.1 and S3.4.
+    - Done when: BFF tests cover valid and invalid requests, initial snapshot,
+      sequential projection updates and rejection of undocumented message shapes.
 
 - [ ] **S3.6 — Build the LED control UI and command outcome history**
-  - Scope: Add a LED control surface with UI-side `submitting`, visible
-    pending/failed/timed-out states, stale-state warning and terminal command
-    history; keep requested state visibly distinct from confirmed device state.
-  - Depends on: S3.5.
-  - Done when: Frontend tests prove that a requested power state is never shown
-    as confirmed before a device report and terminal outcomes remain
-    understandable.
+    - Scope: Add a LED control surface with UI-side `submitting`, visible
+      pending/failed/timed-out states, applicable old-observation warning and terminal command
+      history; keep requested state visibly distinct from confirmed device state.
+    - Depends on: S3.5.
+    - Done when: Frontend tests prove that a requested power state is never shown
+      as confirmed before a device report and terminal outcomes remain
+      understandable.
 
 - [ ] **S3.7 — Verify the reference loop and document manual acceptance**
-  - Scope: Add a runtime-level integration test and a manual acceptance
-    checklist for normal, delayed, rejected, timed-out and late-report flows.
-  - Depends on: S3.2 through S3.6.
-  - Done when: The full bidirectional loop is repeatable in the simulator and
-    meets the Stage 3 completion criteria in the roadmap.
+    - Scope: Add a runtime-level integration test and a manual acceptance
+      checklist for normal, delayed, rejected, timed-out and late-report flows.
+    - Depends on: S3.2 through S3.6.
+    - Done when: The full bidirectional loop is repeatable in the simulator and
+      meets the Stage 3 completion criteria in the roadmap.
 
 ## General Follow-ups
 
@@ -101,7 +119,7 @@ specific roadmap stage.
       documentation are aligned.
 
 - [x] Add a second simulated temperature sensor and cover two simultaneous
-      temperature sensors end-to-end. Verify independent cadences, health,
+      temperature sensors end-to-end. Verify independent cadences, availability and freshness,
       device-scoped scenario controls and per-device realtime updates without
       unnecessary updates to the other sensor card.
 

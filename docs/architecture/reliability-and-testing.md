@@ -3,8 +3,10 @@
 ## Core Reliability Rules
 
 - The UI must distinguish requested state from confirmed state.
-- Offline devices must not be silently treated as healthy.
-- Stale data must be visible when it is still shown.
+- Device availability must not be inferred from the age of telemetry or state reports.
+- Offline devices must not be silently treated as available.
+- Degraded health must be visible without being misrepresented as offline.
+- Stale observation data must be visible when it is still shown.
 - A future dedicated history slice should make important user actions traceable.
 - Command failures and timeouts should be first-class states, not generic errors.
 - Terminal command outcomes should remain available through bounded command
@@ -17,14 +19,15 @@ scenarios through automated tests and development controls where applicable:
 
 - lost telemetry event
 - duplicate telemetry event
-- device goes stale
-- device goes offline
-- device recovers with a fresh reading
+- telemetry observation becomes stale while availability remains unchanged
+- device becomes explicitly offline
+- device recovers availability and later reports a fresh observation
 - invalid telemetry payload
 - realtime stream reconnect while retaining the last valid snapshot
 
-Future command slices should add delayed confirmations, command rejection,
-degraded reports and late confirmation after timeout. Future-dated device
+Future command slices should add delayed confirmations, command rejection and
+late confirmation after timeout. Degraded health reports must be part of the
+device-state model. Future-dated device
 reports are already rejected by the platform event contract and are covered by
 backend tests; they do not yet have a manual scenario control.
 
@@ -41,12 +44,12 @@ The platform should make these questions easy to answer:
 
 ## Recovery Behavior
 
-When a device reconnects after being stale or offline:
+When explicit availability evidence reports that a device reconnects:
 
-1. the device should report a fresh state
-2. the processor should mark the device as `online`
-3. the UI should replace stale values with confirmed fresh values
-4. unresolved commands should remain historically visible, even if the current state is now healthy
+1. the processor should mark the device as `online`
+2. a later accepted observation should update `lastObservedAt` and freshness
+3. the UI should replace stale values when a fresh observation arrives
+4. unresolved commands should remain historically visible, even after recovery
 
 ## Testing Strategy
 
@@ -73,7 +76,8 @@ Focus areas:
 - command confirmation
 - command failure and timeout
 - late confirmation after timeout
-- stale and offline transitions
+- independent availability and freshness transitions
+- health degradation and recovery transitions
 
 ### Simulator Scenario Tests
 
@@ -87,10 +91,12 @@ Initial scenarios:
 - `omit_confirmation`: no LED state report, so the command times out after 5000 ms
 - `report_after_timeout`: matching LED state report after 6000 ms; it updates
   observed state but does not reconfirm the timed-out command
-- telemetry stops and device becomes stale
-- stale device becomes offline
-- device reconnects and reports fresh state
-- future-dated report is ignored and a later time-valid report recovers health
+- telemetry stops and its observation becomes stale while availability stays online
+- explicit device disconnection changes availability to offline
+- explicit reconnection changes availability to online; a later report refreshes observation data
+- device health becomes degraded while availability remains online
+- degraded health recovers without rewriting availability or freshness
+- future-dated report is ignored and a later time-valid report refreshes the observation
 
 ### UI Behavior Tests
 
@@ -100,7 +106,8 @@ Focus areas:
 
 - accepted and pending command progress is visible
 - confirmed state is not faked from requested state
-- stale and offline states are visible
+- availability and stale observation data are visible as distinct states
+- degraded health is visible separately from availability and freshness
 - failed and timed-out commands remain understandable
 - future history work has an explicit traceability acceptance criterion
 

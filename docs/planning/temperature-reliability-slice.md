@@ -13,10 +13,12 @@ The slice remains read-only. It does not add temperature commands.
   current reading.
 - When telemetry stops long enough to become `stale`, the UI keeps the last
   known reading visible and labels it as stale.
-- When telemetry remains absent long enough to become `offline`, the UI keeps
-  the last known reading visible and labels the sensor as offline.
-- A fresh reading after stale or offline state returns the sensor to `online`
-  and replaces the stale value with the fresh value.
+- Missing telemetry alone does not change availability. The UI keeps the last
+  known reading visible and labels its observation as stale.
+- Explicit availability evidence can label the sensor `offline` while retaining
+  that last known reading.
+- Explicit reconnection restores `online` availability; a later fresh reading
+  replaces the stale value.
 - Duplicate platform events do not update current state.
 - Invalid telemetry payloads do not update current state.
 - Replayed or out-of-order device-like readings do not regress the current
@@ -45,11 +47,11 @@ Run the backend and frontend locally with `npm run dev`. The development panel
 is intentionally separate from the temperature control surface and is available
 only in the local development build.
 
-1. Confirm that normal telemetry shows an `Online` reading and its last-reading time.
+1. Confirm that normal telemetry shows `Online` availability, a fresh reading and its last-reading time.
 2. Choose **Pause telemetry**; wait for the reading to become `Stale`, then
-   `Offline`, while its last value remains visible.
+   while availability remains unchanged and its last value remains visible.
 3. Choose **Resume telemetry** and **Emit next reading**; confirm the fresh
-   observation restores `Online` health.
+   observation restores freshness without changing availability.
 4. Choose **Replay last reading**; confirm the current reading does not change,
    then use **Refresh diagnostics** in the dev panel to confirm
    `duplicate_event`.
@@ -64,8 +66,8 @@ only in the local development build.
 ## Completion Rule
 
 Temperature is complete when the checklist above passes and the UI can
-demonstrate normal, stale, offline, recovery, duplicate, invalid and reconnect
-flows without hiding uncertainty from the user.
+demonstrate normal availability, stale observations, explicit offline and
+recovery, duplicate, invalid and reconnect flows without hiding uncertainty.
 
 ## Acceptance Record
 

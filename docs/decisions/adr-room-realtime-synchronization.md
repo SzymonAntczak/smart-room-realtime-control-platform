@@ -54,13 +54,14 @@ Before production deployment, introduce a documented strategy for evolving
 independently deployed contracts. Until then, no contract carries a version
 marker and no compatibility path is supported.
 
-The configured device set is static in this reference slice. A device becomes
-stale or offline; it is not removed from the projection. A future dynamic
-device set requires explicit add/remove messages and a contract revision.
+The configured device set is static in this reference slice. A device may have
+a stale observation or become explicitly offline; it is not removed from the
+projection. A future dynamic device set requires explicit add/remove messages
+and a contract revision.
 
 The backend still evaluates freshness periodically, but publishes only when a
-device projection actually changes health. It does not broadcast unchanged
-room state.
+device projection actually changes freshness. Availability changes require
+explicit availability evidence. It does not broadcast unchanged room state.
 
 Development scenarios are discovered lazily per device. A dev-only device-card
 control opens a sidebar, which calls `GET /dev/devices/:deviceId/scenarios`.

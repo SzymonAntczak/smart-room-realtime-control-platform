@@ -113,7 +113,9 @@ The control loop should make time visible:
 - `requestedAt` records when the user or automation asked for the change
 - `dispatchedAt` records when the backend sent the command
 - `confirmedAt`, `failedAt` or `timedOutAt` closes the command lifecycle
-- stale device state should include the last known `lastSeenAt`
+- an observed state with applicable freshness should include `lastObservedAt`
+- availability, stale observation data and a command outcome should remain
+  independently visible
 
 Command lifecycle events are correlated by `commandId`. Device reports remain
 observable facts and confirm commands only when the reported state matches the

@@ -90,11 +90,13 @@ realtime BFF.
 The current BFF exposes `ws://localhost:4310/room/realtime` as the frontend
 runtime path. The backend sends an initial `room.snapshot` message when the
 frontend connects, then streams revision-linked `device.updated` messages after
-projection changes. Snapshots and updates contain only current device state and
-health; event history is deferred to a dedicated future slice. It periodically rereads the
-projection, but emits only an actual time-derived health change such as
-`stale` or `offline`. The frontend does not interpret raw platform
-events.
+projection changes. The current implementation still exposes the legacy
+combined `health` field; it must migrate to the target availability, operational
+health and freshness projection defined in the device-availability ADR. Event history is
+deferred to a dedicated future slice. The backend periodically rereads the
+projection, but the target model emits time-derived freshness changes such as
+`stale` separately from explicit availability changes. The frontend does not
+interpret raw platform events.
 
 The BFF also keeps `GET /room` as a debug/read snapshot endpoint for the latest
 `RoomSnapshotProjection`; it is not the frontend runtime fallback. `GET

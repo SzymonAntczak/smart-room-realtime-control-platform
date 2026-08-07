@@ -58,20 +58,21 @@ report may be at most 1 second ahead of that clock; a report further in the
 future is ignored as `future_dated_report`. Ignored reports do not update the
 current projection, event history or deduplication state, but their metadata is
 available through development diagnostics. This prevents a bad device clock
-from advancing `lastSeenAt` and making stale or offline health appear fresh.
+from advancing `lastObservedAt` and making an old observation appear fresh.
 
 ## Initial Event Types
 
-| Event type                   | Purpose                                                                   |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| `device.state.reported`      | Device reported its current observable state.                             |
-| `device.health.changed`      | Device health changed between `online`, `offline`, `stale` or `degraded`. |
-| `telemetry.reading.recorded` | Sensor reading was recorded.                                              |
-| `command.requested`          | User or automation request was accepted as a command.                     |
-| `command.dispatched`         | Backend dispatched a platform command to an adapter.                      |
-| `command.confirmed`          | Command completion was confirmed.                                         |
-| `command.failed`             | Command failure was detected explicitly.                                  |
-| `command.timed_out`          | Command did not complete within the allowed time.                         |
+| Event type                    | Purpose                                                               |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `device.state.reported`       | Device reported its current observable state.                         |
+| `device.availability.changed` | Device availability changed between `online`, `offline` or `unknown`. |
+| `device.health.changed`       | Device health changed between `healthy`, `degraded` or `unknown`.     |
+| `telemetry.reading.recorded`  | Sensor reading was recorded.                                          |
+| `command.requested`           | User or automation request was accepted as a command.                 |
+| `command.dispatched`          | Backend dispatched a platform command to an adapter.                  |
+| `command.confirmed`           | Command completion was confirmed.                                     |
+| `command.failed`              | Command failure was detected explicitly.                              |
+| `command.timed_out`           | Command did not complete within the allowed time.                     |
 
 ## Initial Payload Shapes
 
@@ -88,13 +89,23 @@ The first implementation should keep payloads small and explicit.
 }
 ```
 
+### `device.availability.changed`
+
+```json
+{
+    "previousAvailability": "online",
+    "availability": "offline",
+    "reason": "transport_disconnected"
+}
+```
+
 ### `device.health.changed`
 
 ```json
 {
-    "previousHealth": "stale",
-    "health": "offline",
-    "reason": "offline_threshold_exceeded"
+    "previousHealth": "healthy",
+    "health": "degraded",
+    "reason": "partial_state_report"
 }
 ```
 

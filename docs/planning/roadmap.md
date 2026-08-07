@@ -39,8 +39,8 @@ Each device or capability should move through the same delivery rhythm:
 
 The current reference slice is the simulated temperature sensor read path. It
 should become the pattern for later read-only telemetry slices by finishing the
-event contract, simulator scenario coverage, stale/offline behavior, recovery
-behavior, realtime UI states, recent event visibility and manual acceptance
+event contract, simulator scenario coverage, availability and observation
+freshness behavior, recovery behavior, realtime UI states, recent event visibility and manual acceptance
 checklist for temperature first. Before the first hardware integration, the
 project should add one narrow simulated LED command slice. This establishes the
 full bidirectional control loop—user intent, command dispatch, observed device
@@ -98,21 +98,21 @@ deployment posture with cloud operations, fleet management or full monitoring.
 
 ## Roadmap Overview
 
-| Stage     | Focus                                     | Intended outcome                                                        |
-| --------- | ----------------------------------------- | ----------------------------------------------------------------------- |
-| Stage 0   | Project foundation                        | Clear direction, initial architecture and documentation structure       |
-| Stage 1   | Simulated temperature read path           | A working realtime UI driven by one simulated temperature sensor        |
-| Stage 2   | Reliable simulated temperature slice      | Temperature shows stale, offline, recovery, history and failure signals |
-| Stage 2.5 | Dev scenario controls                     | Manual simulator controls make reliability scenarios demonstrable       |
-| Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator |
-| Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                 |
-| Stage 4   | Real temperature hardware slice           | A real temperature sensor validates the same read model                 |
-| Stage 5   | Real LED button and output hardware slice | Physical input or UI control affects a real LED through the same model  |
-| Stage 6   | Simulated motion-triggered LED behavior   | Motion telemetry can trigger LED behavior with explainable causality    |
-| Stage 7   | Real motion sensor hardware slice         | A physical motion sensor validates the motion-triggered LED behavior    |
-| Stage 8   | Simulated ambient light slice             | Lux readings add context for light-aware automation                     |
-| Stage 9   | Real ambient light hardware slice         | A physical light sensor validates the same contextual read model        |
-| Stage 10  | Scenes, telemetry depth and packaging     | Multi-device scenes, history, resilience and project narrative mature   |
+| Stage     | Focus                                     | Intended outcome                                                                          |
+| --------- | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Stage 0   | Project foundation                        | Clear direction, initial architecture and documentation structure                         |
+| Stage 1   | Simulated temperature read path           | A working realtime UI driven by one simulated temperature sensor                          |
+| Stage 2   | Reliable simulated temperature slice      | Temperature shows availability, stale observations, recovery, history and failure signals |
+| Stage 2.5 | Dev scenario controls                     | Manual simulator controls make reliability scenarios demonstrable                         |
+| Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator                   |
+| Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                                   |
+| Stage 4   | Real temperature hardware slice           | A real temperature sensor validates the same read model                                   |
+| Stage 5   | Real LED button and output hardware slice | Physical input or UI control affects a real LED through the same model                    |
+| Stage 6   | Simulated motion-triggered LED behavior   | Motion telemetry can trigger LED behavior with explainable causality                      |
+| Stage 7   | Real motion sensor hardware slice         | A physical motion sensor validates the motion-triggered LED behavior                      |
+| Stage 8   | Simulated ambient light slice             | Lux readings add context for light-aware automation                                       |
+| Stage 9   | Real ambient light hardware slice         | A physical light sensor validates the same contextual read model                          |
+| Stage 10  | Scenes, telemetry depth and packaging     | Multi-device scenes, history, resilience and project narrative mature                     |
 
 ## Stage 0 - Project Foundation
 
@@ -166,16 +166,16 @@ operation.
 
 Expected outcome:
 
-- stale and offline temperature states are shown clearly,
+- availability and stale temperature observations are shown clearly and separately,
 - delayed or missing temperature updates are part of the system model,
 - duplicate and invalid temperature telemetry do not corrupt current state,
-- recovery after stale or offline periods is visible and tested,
+- availability recovery and later fresh observations are visible and tested,
 - development diagnostics make ignored duplicate and invalid telemetry explainable,
 - a manual acceptance checklist exists for the temperature slice.
 
-Stage 2 is complete when the temperature slice can demonstrate normal,
-stale, offline, invalid, duplicate and recovery flows without hiding
-uncertainty from the user.
+Stage 2 is complete when the temperature slice can demonstrate normal
+availability, stale observations, explicit offline, invalid, duplicate and
+recovery flows without hiding uncertainty from the user.
 
 ## Stage 2.5 - Dev Scenario Controls
 
@@ -198,8 +198,9 @@ Expected outcome:
 - each action flows through backend scenario control, simulator behavior,
   adapter translation, event processing, projection updates and realtime delivery
   through the connection snapshot baseline or revision-linked device updates,
-- the UI can manually demonstrate normal, stale, offline, recovery, duplicate,
-  invalid and reconnect behavior without changing the product model,
+- the UI can manually demonstrate normal availability, stale observations,
+  explicit offline, recovery, duplicate, invalid and reconnect behavior without
+  changing the product model,
 - the dev controls are clearly separated from the user-facing smart-room
   surface and can be reused by later simulator-first slices.
 
@@ -277,8 +278,8 @@ Expected outcome:
 - one real temperature sensor reports through a backend-owned adapter,
 - real readings use the same platform event and projection model as the
   simulator,
-- disconnecting, delaying or stopping the real sensor becomes visible as stale
-  or offline state,
+- disconnecting becomes visible through availability, while delayed or stopped
+  readings become visible through observation freshness,
 - recent history can explain whether a reading came from simulator or hardware,
 - the hardware slice has a manual acceptance checklist.
 
@@ -322,7 +323,7 @@ Expected outcome:
 - automation-triggered commands use the same command lifecycle as manual
   commands,
 - history shows the motion event, the triggered intent and the LED result,
-- stale or offline motion state does not silently drive automation.
+- stale motion observations or offline availability do not silently drive automation.
 
 Stage 6 is complete when the simulator can demonstrate motion-driven LED
 behavior without hiding why the LED changed.
@@ -359,7 +360,7 @@ Expected outcome:
 
 - simulated lux readings flow through the same adapter, event and projection
   model as other telemetry,
-- stale, offline, invalid and recovery behavior are visible for ambient light,
+- availability, stale observation, invalid-data and recovery behavior are visible for ambient light,
 - light-level interpretation is explainable and does not hide raw telemetry,
 - motion-triggered LED behavior can be constrained by "room is dark" context,
 - the slice has a manual acceptance checklist.
@@ -436,8 +437,8 @@ The roadmap is successful if the finished project can show:
 
 - a local realtime control loop,
 - simulated and at least minimal real device behavior,
-- honest UI states for requested, confirmed, pending, failed, offline and stale
-  conditions,
+- honest UI states for requested, confirmed, pending and failed commands, plus
+  independent availability and observation-freshness conditions,
 - useful event and telemetry history,
 - documented architectural decisions,
 - repeatable failure scenarios,

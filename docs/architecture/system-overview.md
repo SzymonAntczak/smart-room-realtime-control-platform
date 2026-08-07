@@ -10,20 +10,20 @@ The system should be small enough to build incrementally, but realistic enough t
 - realtime user interface updates
 - telemetry and event history
 - simulated devices first, minimal real hardware later
-- explicit handling of offline, stale and degraded devices
+- explicit handling of device availability, operational health, observation freshness and failures
 
 ## Domain Boundaries
 
 The architecture is organized around the main domain concepts, not around implementation layers.
 
-| Domain area | Responsibility                                                                 |
-| ----------- | ------------------------------------------------------------------------------ |
-| Room state  | Current derived view of devices, telemetry, health and active commands.        |
-| Devices     | Report observable state, receive commands and expose connection health.        |
-| Events      | Facts emitted by backend adapters, backend workflows or user-facing workflows. |
-| Commands    | User or automation requests that may later succeed, fail or time out.          |
-| Telemetry   | Time-series readings and historical facts used for debugging and trends.       |
-| Realtime UI | Human-facing projection of state, command progress and history.                |
+| Domain area | Responsibility                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| Room state  | Current derived view of devices, telemetry, availability, health, freshness and active commands. |
+| Devices     | Report observable state, receive commands, and expose availability and health evidence.          |
+| Events      | Facts emitted by backend adapters, backend workflows or user-facing workflows.                   |
+| Commands    | User or automation requests that may later succeed, fail or time out.                            |
+| Telemetry   | Time-series readings and historical facts used for debugging and trends.                         |
+| Realtime UI | Human-facing projection of state, command progress and history.                                  |
 
 ## Incremental Read Path
 
@@ -42,9 +42,8 @@ A minimal read path should show:
 - that the value is coming from simulated realtime updates
 
 This read-only slice does not define the long-term command topology. It already
-includes backend adapters, event processing and
-stale/offline handling; later command slices must preserve the same platform
-model.
+includes backend adapters, event processing and observation-freshness handling;
+later command slices must preserve the same platform model.
 
 ## Target MVP Scope
 
@@ -69,9 +68,9 @@ Initial reliability scenarios:
 - delayed confirmation
 - command rejection
 - command timeout
-- telemetry stops and the device becomes `stale`
-- stale device becomes `offline`
-- device reconnects and reports fresh state
+- telemetry stops and its observation becomes `stale` while availability remains unchanged
+- explicit disconnection changes availability to `offline`
+- explicit reconnection restores availability; a later report refreshes the observation
 
 The exact hardware models and UI layout can change. The stable MVP goal is to
 exercise the control loop, state model and reliability behavior with a small set
@@ -120,8 +119,8 @@ Materialized backend views derived from accepted platform events.
 Expected responsibilities:
 
 - keep the current room and device state used by realtime reads
-- expose active command state, requested state, confirmed reported state and
-  device health as derived projections
+- expose active command state, requested state, confirmed reported state,
+  availability, health and applicable freshness as derived projections
 - defer event-history storage and UI until a dedicated history slice defines
   retention and access semantics
 - provide UI-friendly read data to the realtime API/BFF without requiring the
@@ -138,7 +137,7 @@ Expected responsibilities:
 - show when the reading was last updated
 - show confirmed device state separately from requested state
 - show pending, failed and timed-out commands
-- surface offline, stale and degraded devices clearly
+- surface availability, degraded health and applicable stale observations clearly
 - defer event-history troubleshooting views to a dedicated history slice
 
 ### Telemetry Storage
@@ -181,7 +180,7 @@ event processor, read model/projections and in-memory storage.
 The current realtime read contract sends a `room.snapshot` over
 WebSocket only when the frontend connects or reconnects. It is followed by
 named, revision-linked `device.updated` and `commands.updated` messages. A device projection contains
-current device state and health; command updates atomically carry the changed
+current device state, availability, health and applicable freshness; command updates atomically carry the changed
 device plus active and terminal command projections. A future dedicated history
 slice will define durable event retention and details access. A client reconnects for a new
 snapshot when a delta is malformed or has a revision gap.
@@ -191,8 +190,8 @@ snapshot when a delta is malformed or has a revision gap.
 - `payload`: the current `RoomSnapshotProjection`
 
 Unsupported message types and malformed payloads are not renderable frontend
-state. Accepted events and time-derived health changes such
-as `stale` and `offline` reach connected clients through `device.updated`.
+state. Accepted events and projection changes to availability, health or freshness reach
+connected clients through `device.updated`.
 
 ### Device Adapters
 
@@ -232,8 +231,8 @@ adapter, event processor with validation and deduplication, and a read-model
 projection for `telemetry.reading.recorded` events. The frontend receives
 an initial UI-oriented `room.snapshot` baseline followed by per-device deltas over WebSocket
 from the local backend BFF. The backend evaluates freshness periodically, but
-sends a delta only when a time-derived `stale` or `offline` health change
-actually occurs. The projection retains current device state; ignored duplicate
+sends a delta only when the observation freshness changes. Availability changes
+only when explicit availability evidence arrives. The projection retains current device state; ignored duplicate
 and invalid events are exposed only through bounded development diagnostics.
 `GET /room` remains available as
 a debug/read snapshot endpoint, but it is not the frontend fallback path.
