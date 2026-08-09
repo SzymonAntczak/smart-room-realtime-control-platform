@@ -325,15 +325,9 @@ export function createTemperatureRoomRuntime({
             }
 
             if (action === 'disconnect_device') {
-                sensorEntry.sensor.reportAvailability?.(
-                    'offline',
-                    nextTransitionAt(deviceId, 'availabilityChangedAt'),
-                );
+                sensorEntry.sensor.disconnect(nextTransitionAt(deviceId, 'availabilityChangedAt'));
             } else if (action === 'reconnect_device') {
-                sensorEntry.sensor.reportAvailability?.(
-                    'online',
-                    nextTransitionAt(deviceId, 'availabilityChangedAt'),
-                );
+                sensorEntry.sensor.reconnect(nextTransitionAt(deviceId, 'availabilityChangedAt'));
             } else if (action === 'degrade_device') {
                 sensorEntry.sensor.reportHealth?.(
                     'degraded',
@@ -346,7 +340,15 @@ export function createTemperatureRoomRuntime({
                     'recovered',
                     nextTransitionAt(deviceId, 'healthChangedAt'),
                 );
-            } else runScenarioAction(sensorEntry, action, clock.now());
+            } else {
+                if (sensorEntry.sensor.isOffline()) {
+                    throw Object.assign(
+                        new Error('Reconnect the device before running telemetry scenarios.'),
+                        { code: 'device_offline' },
+                    );
+                }
+                runScenarioAction(sensorEntry, action, clock.now());
+            }
 
             return {
                 action,

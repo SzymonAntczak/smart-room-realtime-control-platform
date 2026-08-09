@@ -20,9 +20,24 @@ describe('TemperatureControl', () => {
         render(<TemperatureControl />);
 
         expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
-        expect(screen.getByText('Realtime room stream')).toBeInTheDocument();
+        expect(screen.queryByText('Realtime room stream')).not.toBeInTheDocument();
         expect(screen.getByRole('status')).toHaveTextContent('Connecting');
         expect(screen.getByText('Connecting to realtime room stream...')).toBeInTheDocument();
+    });
+
+    it('uses the alert frame for an invalid initial realtime snapshot', async () => {
+        render(<TemperatureControl />);
+
+        await emitLatestMessage({
+            messageType: 'room.snapshot',
+            sentAt: '2026-06-08T09:30:01Z',
+            payload: { roomName: 'Smart Room' },
+        });
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Realtime room stream sent an invalid update.',
+        );
+        expect(screen.queryByText('No current alerts.')).not.toBeInTheDocument();
     });
 
     it('renders the realtime temperature sensor reading', async () => {
@@ -37,7 +52,7 @@ describe('TemperatureControl', () => {
             'aria-hidden',
             'true',
         );
-        expect(screen.getByText('Realtime room stream')).toBeInTheDocument();
+        expect(screen.queryByText('Realtime room stream')).not.toBeInTheDocument();
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('celsius');
         expect(screen.getByText('Last reading 09:30:00 UTC.')).toBeInTheDocument();

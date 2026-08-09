@@ -186,6 +186,61 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('stops periodic telemetry while a sensor is offline and resumes its schedule on reconnect', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            clock,
+            timer,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            const reportedStateBeforeDisconnect = device(runtime, 'temp-window')?.reportedState;
+
+            runtime.runDeviceScenario('temp-window', 'disconnect_device');
+            clock.advanceBy(1_000);
+            timer.run(3);
+
+            expect(device(runtime, 'temp-window')).toMatchObject({
+                availability: 'offline',
+                reportedState: reportedStateBeforeDisconnect,
+            });
+
+            for (const action of [
+                'pause_telemetry',
+                'resume_telemetry',
+                'emit_next_reading',
+                'replay_last_reading',
+                'emit_invalid_reading',
+                'reset',
+            ] as const) {
+                expect(() => runtime.runDeviceScenario('temp-window', action)).toThrow(
+                    expect.objectContaining({ code: 'device_offline' }),
+                );
+            }
+
+            runtime.runDeviceScenario('temp-window', 'reconnect_device');
+
+            expect(device(runtime, 'temp-window')).toMatchObject({
+                availability: 'online',
+                reportedState: reportedStateBeforeDisconnect,
+            });
+
+            clock.advanceBy(1_000);
+            timer.runLatest();
+
+            expect(device(runtime, 'temp-window')?.reportedState).toEqual({
+                temperature: 20.2,
+                temperatureUnit: 'celsius',
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('changes temperature health independently of availability and freshness', () => {
         const runtime = createTemperatureRoomRuntime({
             clock: createMutableClock('2026-06-08T09:30:00Z'),

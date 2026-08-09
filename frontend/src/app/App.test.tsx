@@ -19,7 +19,7 @@ describe('App', () => {
             screen.getByRole('heading', { name: 'Desk Temperature', level: 2 }),
         ).toBeInTheDocument();
         expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
-        expect(screen.getAllByText('Realtime room stream')).toHaveLength(2);
+        expect(screen.getAllByText('No current alerts.')).toHaveLength(2);
         expect(screen.getByText('Connecting to realtime room stream...')).toBeInTheDocument();
     });
 

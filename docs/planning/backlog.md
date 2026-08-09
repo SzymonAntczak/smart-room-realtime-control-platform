@@ -96,7 +96,7 @@ rules already documented in architecture and accepted ADRs.
       as confirmed before a device report and the latest terminal outcome remains
       understandable on the main dashboard.
 
-- [ ] **S3.7 — Verify the reference loop and document manual acceptance**
+- [x] **S3.7 — Verify the reference loop and document manual acceptance**
     - Scope: Add a runtime-level integration test and a manual acceptance
       checklist for normal, delayed, rejected, timed-out and late-report flows.
     - Depends on: S3.2 through S3.6.

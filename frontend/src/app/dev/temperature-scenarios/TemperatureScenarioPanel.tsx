@@ -62,13 +62,24 @@ interface TemperatureScenarioPanelProps {
     readonly actions?: readonly TemperatureScenarioAction[];
     readonly completedAction?: TemperatureScenarioAction;
     readonly onCompletedAction?: (action: TemperatureScenarioAction) => void;
+    readonly telemetryUnavailable?: boolean;
 }
+
+const telemetryActions: readonly TemperatureScenarioAction[] = [
+    'pause_telemetry',
+    'resume_telemetry',
+    'emit_next_reading',
+    'replay_last_reading',
+    'emit_invalid_reading',
+    'reset',
+];
 
 export function TemperatureScenarioPanel({
     client,
     actions,
     completedAction: persistedCompletedAction,
     onCompletedAction,
+    telemetryUnavailable = false,
 }: TemperatureScenarioPanelProps) {
     const reactId = useId().replace(/:/g, '');
     const headingId = `scenario-panel-heading-${reactId}`;
@@ -96,6 +107,11 @@ export function TemperatureScenarioPanel({
                 Controls operate the local simulator through the backend. Room state still arrives
                 through the realtime stream: a snapshot baseline followed by device updates.
             </p>
+            {telemetryUnavailable ? (
+                <p className={styles.description}>
+                    Telemetry controls are unavailable while the device is offline.
+                </p>
+            ) : null}
             <div className={styles.scenarioSections}>
                 {sections.map((section) => {
                     const visibleControls = section.controls.filter(
@@ -111,7 +127,11 @@ export function TemperatureScenarioPanel({
                                         key={control.action}
                                         className={styles.button}
                                         type="button"
-                                        disabled={activeAction !== undefined}
+                                        disabled={
+                                            activeAction !== undefined ||
+                                            (telemetryUnavailable &&
+                                                telemetryActions.includes(control.action))
+                                        }
                                         onClick={() => void runScenario(control.action)}
                                     >
                                         <control.Icon

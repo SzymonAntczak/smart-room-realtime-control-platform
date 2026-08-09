@@ -32,16 +32,6 @@
     min-inline-size: 0;
 }
 
-.eyebrow {
-    margin-block: 0 var(--space-2);
-    margin-inline: 0;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-label-sm);
-    font-weight: var(--font-weight-bold);
-    letter-spacing: 0;
-    text-transform: uppercase;
-}
-
 .header h2 {
     margin: 0;
     font-size: var(--font-size-heading-md);

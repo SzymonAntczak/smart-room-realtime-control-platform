@@ -56,6 +56,12 @@ describe('LedControl', () => {
         expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
     });
 
+    it('keeps an empty alert frame visible when the LED has nothing to report', () => {
+        render(<LedControl device={{ ...createLed(), activeCommandId: undefined }} />);
+
+        expect(screen.getByText('No current alerts.')).toBeInTheDocument();
+    });
+
     it('renders the dev-only scenario control only when enabled', () => {
         const { rerender } = render(<LedControl device={createLed()} />);
 

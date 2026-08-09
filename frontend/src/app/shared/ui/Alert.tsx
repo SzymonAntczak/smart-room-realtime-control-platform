@@ -5,7 +5,7 @@ import styles from './Alert.module.css';
 export type AlertVariant = 'info' | 'warning' | 'error';
 
 export function Alert({ message, variant = 'info' }: { message?: string; variant?: AlertVariant }) {
-    if (!message) return null;
+    const displayMessage = message ?? 'No current alerts.';
 
     const Icon =
         variant === 'warning' ? TriangleAlert : variant === 'error' ? CircleAlert : undefined;
@@ -16,7 +16,7 @@ export function Alert({ message, variant = 'info' }: { message?: string; variant
             role={variant === 'info' ? undefined : 'alert'}
         >
             {Icon ? <Icon aria-hidden="true" size={18} /> : null}
-            <span>{message}</span>
+            <span>{displayMessage}</span>
         </p>
     );
 }

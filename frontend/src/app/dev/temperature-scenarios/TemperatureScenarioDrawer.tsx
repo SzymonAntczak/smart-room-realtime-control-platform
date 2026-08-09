@@ -12,11 +12,13 @@ import { TemperatureScenarioPanel } from './TemperatureScenarioPanel';
 interface TemperatureScenarioDrawerProps {
     readonly deviceId?: string;
     readonly client?: TemperatureScenarioClient;
+    readonly telemetryUnavailable?: boolean;
 }
 
 export function TemperatureScenarioDrawer({
     deviceId = 'temp-desk',
     client: clientOverride,
+    telemetryUnavailable = false,
 }: TemperatureScenarioDrawerProps) {
     const reactId = useId();
     const drawerId = `device-scenario-drawer-${reactId.replace(/:/g, '')}`;
@@ -116,6 +118,7 @@ export function TemperatureScenarioDrawer({
                             client={client}
                             completedAction={completedAction}
                             onCompletedAction={setCompletedAction}
+                            telemetryUnavailable={telemetryUnavailable}
                         />
                     ) : null}
                 </aside>

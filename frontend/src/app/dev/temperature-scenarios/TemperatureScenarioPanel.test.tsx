@@ -54,6 +54,17 @@ describe('TemperatureScenarioPanel', () => {
         expect(diagnosticsButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     });
 
+    it('disables telemetry controls while the device is offline', () => {
+        render(<TemperatureScenarioPanel telemetryUnavailable />);
+
+        expect(screen.getByRole('button', { name: 'Pause telemetry' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Emit next reading' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Mark device online' })).toBeEnabled();
+        expect(
+            screen.getByText('Telemetry controls are unavailable while the device is offline.'),
+        ).toBeInTheDocument();
+    });
+
     it('groups controls by freshness, availability and health', () => {
         render(<TemperatureScenarioPanel />);
 

@@ -15,10 +15,10 @@ The slice remains read-only. It does not add temperature commands.
   known reading visible and labels it as stale.
 - Missing telemetry alone does not change availability. The UI keeps the last
   known reading visible and labels its observation as stale.
-- Explicit availability evidence can label the sensor `offline` while retaining
-  that last known reading.
-- Explicit reconnection restores `online` availability; a later fresh reading
-  replaces the stale value.
+- Explicit device disconnection labels the sensor `offline`, stops periodic
+  telemetry and retains the last known reading.
+- Explicit reconnection restores `online` availability and resumes the
+  telemetry schedule; a later fresh reading replaces the stale value.
 - Duplicate platform events do not update current state.
 - Invalid telemetry payloads do not update current state.
 - Replayed or out-of-order device-like readings do not regress the current
@@ -60,7 +60,13 @@ only in the local development build.
 6. Choose **Reset scenario**; confirm scheduled telemetry resumes from the
    deterministic first simulator value. Existing diagnostics remain available
    for inspection.
-7. Stop and restart the local backend to confirm the frontend shows reconnecting
+7. Choose **Mark device offline**; confirm the sensor becomes `Offline`, its
+   last reading remains visible and no new periodic readings arrive. Confirm
+   that telemetry scenario controls are unavailable.
+8. Choose **Mark device online**; confirm the sensor becomes `Online` without
+   immediately replacing its last reading, then wait for the next scheduled
+   reading to refresh it.
+9. Stop and restart the local backend to confirm the frontend shows reconnecting
    state without erasing its last valid snapshot.
 
 ## Completion Rule

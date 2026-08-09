@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 
+import { Alert } from './Alert';
 import styles from './ControlCard.module.css';
 
 type ControlCardStatusTone = 'neutral' | 'success' | 'warning' | 'danger';
 
 interface ControlCardProps {
-    eyebrow: string;
     title: string;
     status: string;
     statusIcon?: ReactNode;
@@ -19,13 +19,12 @@ interface ControlCardProps {
 }
 
 export function ControlCard({
-    eyebrow,
     title,
     status,
     statusIcon,
     headerAction,
     children,
-    bottomAlert,
+    bottomAlert = <Alert />,
     statusTone = 'neutral',
     statusAriaLive = 'polite',
     statusRole = 'status',
@@ -35,7 +34,6 @@ export function ControlCard({
         <section className={styles.card} aria-labelledby={titleId}>
             <div className={styles.header}>
                 <div>
-                    <p className={styles.eyebrow}>{eyebrow}</p>
                     <h2 id={titleId}>{title}</h2>
                 </div>
                 <div className={styles.headerActions}>

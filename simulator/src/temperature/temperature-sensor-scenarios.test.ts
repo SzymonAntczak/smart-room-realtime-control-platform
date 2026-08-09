@@ -66,6 +66,30 @@ describe('createTemperatureSensorScenario', () => {
         ]);
     });
 
+    it('suppresses periodic telemetry while offline and resumes with the next reading', () => {
+        const scenario = createTemperatureScenario();
+        const readings: TemperatureReadingMessage[] = [];
+        scenario.onReading((reading) => readings.push(reading));
+
+        scenario.tick('2026-06-08T09:30:00Z');
+        scenario.disconnect('2026-06-08T09:30:01Z');
+        scenario.tick('2026-06-08T09:30:02Z');
+        scenario.emitInvalidReading('2026-06-08T09:30:03Z');
+        scenario.replayLastReading();
+
+        expect(readings).toHaveLength(1);
+        expect(scenario.isOffline()).toBe(true);
+
+        scenario.reconnect('2026-06-08T09:30:04Z');
+        scenario.tick('2026-06-08T09:30:05Z');
+
+        expect(scenario.isOffline()).toBe(false);
+        expect(readings.map(({ sequence, recordedAt }) => ({ sequence, recordedAt }))).toEqual([
+            { sequence: 0, recordedAt: '2026-06-08T09:30:00Z' },
+            { sequence: 1, recordedAt: '2026-06-08T09:30:05Z' },
+        ]);
+    });
+
     it('replays the last native reading as a duplicate device message', () => {
         const scenario = createTemperatureScenario();
         const readings: TemperatureReadingMessage[] = [];

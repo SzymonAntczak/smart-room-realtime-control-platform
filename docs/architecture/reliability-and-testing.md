@@ -108,8 +108,9 @@ Initial scenarios:
 - `report_after_timeout`: matching LED state report after 6000 ms; it updates
   observed state but does not reconfirm the timed-out command
 - telemetry stops and its observation becomes stale while availability stays online
-- explicit device disconnection changes availability to offline
-- explicit reconnection changes availability to online; a later report refreshes observation data
+- explicit device disconnection changes availability to offline and suppresses
+  periodic and development-triggered telemetry until reconnect
+- explicit reconnection changes availability to online and resumes its schedule; a later report refreshes observation data
 - device health becomes degraded while availability remains online
 - degraded health recovers without rewriting availability or freshness
 - future-dated report is ignored and a later time-valid report refreshes the observation

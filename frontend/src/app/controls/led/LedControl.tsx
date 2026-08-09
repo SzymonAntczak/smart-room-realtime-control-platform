@@ -33,7 +33,7 @@ export function LedControl({
     const [transportError, setTransportError] = useState<string>();
     if (!device)
         return (
-            <ControlCard eyebrow="Realtime room stream" title="Main LED" status="Unknown">
+            <ControlCard title="Main LED" status="Unknown">
                 <p className={styles.message}>No LED device is available yet.</p>
             </ControlCard>
         );
@@ -64,7 +64,6 @@ export function LedControl({
     }
     return (
         <ControlCard
-            eyebrow="Realtime room stream"
             title={device.name}
             titleId={`led-heading-${device.deviceId}`}
             status={formatAvailability(device.availability)}

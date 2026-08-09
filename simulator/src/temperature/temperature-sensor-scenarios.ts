@@ -18,6 +18,9 @@ export interface TemperatureTelemetryResume {
 }
 
 export interface TemperatureSensorScenario extends TemperatureSensorSimulator {
+    disconnect(reportedAt: string): void;
+    reconnect(reportedAt: string): void;
+    isOffline(): boolean;
     pauseTelemetry(observedAt: string): TemperatureTelemetryPause;
     resumeTelemetry(observedAt: string): TemperatureTelemetryResume;
     replayLastReading(): TemperatureReadingMessage;
@@ -31,6 +34,7 @@ export function createTemperatureSensorScenario(
     let sensor = createTemperatureSensorSimulator(config);
     const listeners = new Set<TemperatureReadingListener>();
     let lastReading: TemperatureReadingMessage | undefined;
+    let offline = false;
 
     return {
         onReading(listener) {
@@ -47,6 +51,8 @@ export function createTemperatureSensorScenario(
             return sensor.onHealth!(listener);
         },
         tick(recordedAt) {
+            if (offline && lastReading) return { ...lastReading };
+
             const reading = sensor.tick(recordedAt);
             lastReading = reading;
             emitReading(reading);
@@ -58,6 +64,17 @@ export function createTemperatureSensorScenario(
         },
         reportHealth(health, reason, reportedAt) {
             return sensor.reportHealth!(health, reason, reportedAt);
+        },
+        disconnect(reportedAt) {
+            offline = true;
+            sensor.reportAvailability!('offline', reportedAt);
+        },
+        reconnect(reportedAt) {
+            sensor.reportAvailability!('online', reportedAt);
+            offline = false;
+        },
+        isOffline() {
+            return offline;
         },
         pauseTelemetry(observedAt) {
             assertValidIsoTimestamp(observedAt, 'Temperature telemetry pause observedAt');
@@ -80,11 +97,13 @@ export function createTemperatureSensorScenario(
                 throw new Error('Cannot replay temperature reading before one has been recorded.');
             }
 
-            emitReading(lastReading);
+            if (!offline) emitReading(lastReading);
 
             return { ...lastReading };
         },
         emitInvalidReading(recordedAt) {
+            if (offline && lastReading) return { ...lastReading };
+
             const reading = sensor.tick(recordedAt);
             const invalidReading = {
                 ...reading,

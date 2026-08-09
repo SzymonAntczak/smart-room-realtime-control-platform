@@ -78,7 +78,6 @@ export function TemperatureControlView({
     if (controlState.status === 'connecting') {
         return (
             <ControlCard
-                eyebrow="Realtime room stream"
                 title="Desk Temperature"
                 status={
                     controlState.connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting'
@@ -87,15 +86,17 @@ export function TemperatureControlView({
                     controlState.connectionStatus === 'reconnecting' ? 'warning' : 'neutral'
                 }
                 titleId="sensor-heading"
+                bottomAlert={
+                    controlState.contractError ? (
+                        <Alert message={controlState.contractError} variant="error" />
+                    ) : undefined
+                }
                 headerAction={
                     showDevScenarioPanel ? (
                         <TemperatureScenarioDrawer deviceId="temp-desk" />
                     ) : undefined
                 }
             >
-                {controlState.contractError ? (
-                    <ContractErrorAlert message={controlState.contractError} />
-                ) : null}
                 <p className={styles.message}>
                     {controlState.connectionStatus === 'reconnecting'
                         ? 'Reconnecting to realtime room stream...'
@@ -108,20 +109,21 @@ export function TemperatureControlView({
     if (controlState.status === 'empty') {
         return (
             <ControlCard
-                eyebrow="Realtime room stream"
                 title="Desk Temperature"
                 status="No reading"
                 statusTone="warning"
                 titleId="sensor-heading"
+                bottomAlert={
+                    controlState.contractError ? (
+                        <Alert message={controlState.contractError} variant="error" />
+                    ) : undefined
+                }
                 headerAction={
                     showDevScenarioPanel ? (
                         <TemperatureScenarioDrawer deviceId="temp-desk" />
                     ) : undefined
                 }
             >
-                {controlState.contractError ? (
-                    <ContractErrorAlert message={controlState.contractError} />
-                ) : null}
                 {controlState.connectionStatus === 'reconnecting' ? (
                     <p className={styles.warning} role="alert">
                         Realtime stream is reconnecting. Waiting for the room baseline.
@@ -166,7 +168,6 @@ const TemperatureCard = memo(function TemperatureCard({
 
     return (
         <ControlCard
-            eyebrow="Realtime room stream"
             title={reading.sensorName}
             status={formatAvailability(reading.availability)}
             statusIcon={getAvailabilityIcon(reading.availability)}
@@ -174,7 +175,10 @@ const TemperatureCard = memo(function TemperatureCard({
             titleId={`sensor-heading-${reading.sensorId}`}
             headerAction={
                 showDevScenarioPanel ? (
-                    <TemperatureScenarioDrawer deviceId={reading.sensorId} />
+                    <TemperatureScenarioDrawer
+                        deviceId={reading.sensorId}
+                        telemetryUnavailable={reading.availability === 'offline'}
+                    />
                 ) : undefined
             }
             bottomAlert={<Alert {...getCardAlert(reading)} />}
