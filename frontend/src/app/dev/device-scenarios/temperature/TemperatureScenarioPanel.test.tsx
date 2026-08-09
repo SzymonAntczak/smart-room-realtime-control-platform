@@ -6,7 +6,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { TemperatureScenarioClient } from './temperature-scenario-client';
+import type { DeviceScenarioClient as TemperatureScenarioClient } from '../device-scenario-client';
+
 import { TemperatureScenarioPanel } from './TemperatureScenarioPanel';
 
 describe('TemperatureScenarioPanel', () => {

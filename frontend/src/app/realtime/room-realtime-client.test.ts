@@ -2,7 +2,7 @@ import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { connectRoomRealtime as connectTemperatureRealtime } from '../../room/realtime/room-realtime-client';
+import { connectRoomRealtime as connectTemperatureRealtime } from './room-realtime-client';
 
 describe('connectTemperatureRealtime', () => {
     beforeEach(() => {
@@ -241,6 +241,86 @@ describe('connectTemperatureRealtime', () => {
         );
     });
 
+    it('applies a contiguous command delta without replacing the reported LED state', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({
+                devices: [createLedDevice()],
+            }),
+        );
+        MockWebSocket.latest().emitMessage(createCommandsUpdatedMessage());
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                devices: [expect.objectContaining({ reportedState: { power: 'off' } })],
+                activeCommands: [
+                    expect.objectContaining({
+                        commandId: 'cmd-1',
+                        requestedState: { power: 'on' },
+                        status: 'pending',
+                    }),
+                ],
+            }),
+        );
+    });
+
+    it('rejects a non-contiguous command delta without replacing the valid view', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({ devices: [createLedDevice()] }),
+        );
+        MockWebSocket.latest().emitMessage(
+            createCommandsUpdatedMessage({ previousRevision: 1, revision: 2 }),
+        );
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+    });
+
+    it('rejects a malformed command delta without replacing the valid view', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({ devices: [createLedDevice()] }),
+        );
+        MockWebSocket.latest().emitMessage({
+            ...createCommandsUpdatedMessage(),
+            version: 1,
+        });
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+    });
+
+    it('keeps the confirmed LED state separate when a command becomes terminal', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({
+                devices: [createLedDevice('cmd-1')],
+                activeCommands: [createPendingCommand()],
+            }),
+        );
+        MockWebSocket.latest().emitMessage(
+            createCommandsUpdatedMessage({
+                activeCommands: [],
+                recentCommands: [createConfirmedCommand()],
+            }),
+        );
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                devices: [expect.objectContaining({ reportedState: { power: 'off' } })],
+                activeCommands: [],
+                recentCommands: [expect.objectContaining({ status: 'confirmed' })],
+            }),
+        );
+    });
+
     it('rejects removed history fields without replacing the valid view', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
@@ -339,12 +419,16 @@ function createHandlers() {
 
 function createRoomSnapshotMessage({
     devices = [createTemperatureDevice()],
+    activeCommands = [],
+    recentCommands = [],
 }: {
     devices?: RoomRealtimeServerMessage extends { payload: infer Payload }
         ? Payload extends { devices: infer Devices }
             ? Devices
             : never
         : never;
+    activeCommands?: RoomSnapshotProjection['activeCommands'];
+    recentCommands?: RoomSnapshotProjection['recentCommands'];
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'room.snapshot',
@@ -354,8 +438,8 @@ function createRoomSnapshotMessage({
             roomName: 'Smart Room',
             updatedAt: '2026-06-08T09:30:00Z',
             devices,
-            activeCommands: [],
-            recentCommands: [],
+            activeCommands,
+            recentCommands,
         },
     };
 }
@@ -410,6 +494,73 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
         observationStatus: {
             temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
         },
+    };
+}
+
+function createLedDevice(activeCommandId?: string): RoomSnapshotProjection['devices'][number] {
+    return {
+        deviceId: 'led-main',
+        name: 'Main LED',
+        role: 'led-output',
+        availability: 'online',
+        availabilityChangedAt: '2026-06-08T09:30:00Z',
+        health: 'healthy',
+        healthChangedAt: '2026-06-08T09:30:00Z',
+        reportedState: { power: 'off' },
+        commandAvailability: { policy: 'allow' },
+        observationStatus: {
+            power: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+        },
+        ...(activeCommandId ? { activeCommandId } : {}),
+    };
+}
+
+function createCommandsUpdatedMessage({
+    previousRevision = 0,
+    revision = 1,
+    activeCommands = [createPendingCommand()],
+    recentCommands = [],
+}: {
+    previousRevision?: number;
+    revision?: number;
+    activeCommands?: RoomSnapshotProjection['activeCommands'];
+    recentCommands?: RoomSnapshotProjection['recentCommands'];
+} = {}): RoomRealtimeServerMessage {
+    return {
+        messageType: 'commands.updated',
+        previousRevision,
+        revision,
+        sentAt: '2026-06-08T09:30:02Z',
+        payload: {
+            device: createLedDevice(activeCommands[0]?.commandId),
+            activeCommands,
+            recentCommands,
+        },
+    };
+}
+
+function createPendingCommand(): RoomSnapshotProjection['activeCommands'][number] {
+    return {
+        commandId: 'cmd-1',
+        deviceId: 'led-main',
+        commandType: 'set.power',
+        status: 'pending',
+        requestedState: { power: 'on' },
+        requestedAt: '2026-06-08T09:30:00Z',
+        dispatchedAt: '2026-06-08T09:30:01Z',
+    };
+}
+
+function createConfirmedCommand(): RoomSnapshotProjection['recentCommands'][number] {
+    return {
+        commandId: 'cmd-1',
+        deviceId: 'led-main',
+        commandType: 'set.power',
+        status: 'confirmed',
+        requestedState: { power: 'on' },
+        requestedAt: '2026-06-08T09:30:00Z',
+        dispatchedAt: '2026-06-08T09:30:01Z',
+        confirmedAt: '2026-06-08T09:30:03Z',
     };
 }
 

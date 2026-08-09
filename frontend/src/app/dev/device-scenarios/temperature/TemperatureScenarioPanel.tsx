@@ -3,18 +3,20 @@ import {
     type LucideIcon,
     Pause,
     Play,
-    RefreshCw,
     RotateCcw,
     StepForward,
     TriangleAlert,
 } from 'lucide-react';
-import { useEffect, useId } from 'react';
+import { useEffect } from 'react';
 
-import type {
-    TemperatureScenarioAction,
-    TemperatureScenarioClient,
-} from './temperature-scenario-client';
-import styles from './TemperatureScenarioPanel.module.css';
+import type { DeviceScenarioClient, TemperatureScenarioAction } from '../device-scenario-client';
+import { DeviceScenarioAction } from '../DeviceScenarioAction';
+import { DeviceScenarioActions } from '../DeviceScenarioActions';
+import { DeviceScenarioPanel } from '../DeviceScenarioPanel';
+import { DeviceScenarioSection } from '../DeviceScenarioSection';
+import { DeviceScenarioStatus } from '../DeviceScenarioStatus';
+
+import { TemperatureScenarioDiagnostics } from './TemperatureScenarioDiagnostics';
 import { useTemperatureScenario } from './use-temperature-scenario';
 
 interface ScenarioControl {
@@ -58,7 +60,7 @@ const sections: readonly ScenarioSection[] = [
 const controls = sections.flatMap((section) => section.controls);
 
 interface TemperatureScenarioPanelProps {
-    readonly client?: TemperatureScenarioClient;
+    readonly client?: DeviceScenarioClient;
     readonly actions?: readonly TemperatureScenarioAction[];
     readonly completedAction?: TemperatureScenarioAction;
     readonly onCompletedAction?: (action: TemperatureScenarioAction) => void;
@@ -81,9 +83,6 @@ export function TemperatureScenarioPanel({
     onCompletedAction,
     telemetryUnavailable = false,
 }: TemperatureScenarioPanelProps) {
-    const reactId = useId().replace(/:/g, '');
-    const headingId = `scenario-panel-heading-${reactId}`;
-    const diagnosticsHeadingId = `diagnostics-heading-${reactId}`;
     const {
         activeAction,
         completedAction,
@@ -100,32 +99,25 @@ export function TemperatureScenarioPanel({
     const message = errorMessage ?? toCompletedMessage(completedAction ?? persistedCompletedAction);
 
     return (
-        <section className={styles.panel} aria-labelledby={headingId}>
-            <p className={styles.eyebrow}>Development only</p>
-            <h2 id={headingId}>Temperature scenarios</h2>
-            <p className={styles.description}>
-                Controls operate the local simulator through the backend. Room state still arrives
-                through the realtime stream: a snapshot baseline followed by device updates.
-            </p>
+        <DeviceScenarioPanel
+            title="Temperature scenarios"
+            description="Controls operate the local simulator through the backend. Room state still arrives through the realtime stream: a snapshot baseline followed by device updates."
+        >
             {telemetryUnavailable ? (
-                <p className={styles.description}>
-                    Telemetry controls are unavailable while the device is offline.
-                </p>
+                <p>Telemetry controls are unavailable while the device is offline.</p>
             ) : null}
-            <div className={styles.scenarioSections}>
+            <div>
                 {sections.map((section) => {
                     const visibleControls = section.controls.filter(
                         (control) => actions?.includes(control.action) ?? true,
                     );
                     if (visibleControls.length === 0) return null;
                     return (
-                        <section key={section.title} className={styles.scenarioSection}>
-                            <h3>{section.title}</h3>
-                            <div className={styles.controls}>
+                        <DeviceScenarioSection key={section.title} title={section.title}>
+                            <DeviceScenarioActions>
                                 {visibleControls.map((control) => (
-                                    <button
+                                    <DeviceScenarioAction
                                         key={control.action}
-                                        className={styles.button}
                                         type="button"
                                         disabled={
                                             activeAction !== undefined ||
@@ -142,72 +134,23 @@ export function TemperatureScenarioPanel({
                                         {activeAction === control.action
                                             ? 'Running...'
                                             : control.label}
-                                    </button>
+                                    </DeviceScenarioAction>
                                 ))}
-                            </div>
-                        </section>
+                            </DeviceScenarioActions>
+                        </DeviceScenarioSection>
                     );
                 })}
             </div>
-            {message ? (
-                <p className={styles.message} role="status">
-                    {message}
-                </p>
-            ) : null}
-            <section className={styles.diagnostics} aria-labelledby={diagnosticsHeadingId}>
-                <div className={styles.diagnosticsHeader}>
-                    <div>
-                        <h3 id={diagnosticsHeadingId}>Diagnostics</h3>
-                        <p>Ignored events: {diagnostics?.ignoredEvents.length ?? 'not loaded'}</p>
-                    </div>
-                    <button
-                        className={styles.button}
-                        type="button"
-                        disabled={isRefreshingDiagnostics || activeAction !== undefined}
-                        onClick={() => void refreshDiagnostics()}
-                    >
-                        <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
-                        {isRefreshingDiagnostics ? 'Refreshing...' : 'Refresh diagnostics'}
-                    </button>
-                </div>
-                {diagnosticsErrorMessage ? (
-                    <p className={styles.message} role="alert">
-                        {diagnosticsErrorMessage}
-                    </p>
-                ) : null}
-                {diagnostics ? <DiagnosticsList diagnostics={diagnostics} /> : null}
-            </section>
-        </section>
+            {message ? <DeviceScenarioStatus>{message}</DeviceScenarioStatus> : null}
+            <TemperatureScenarioDiagnostics
+                diagnostics={diagnostics}
+                errorMessage={diagnosticsErrorMessage}
+                isRefreshing={isRefreshingDiagnostics}
+                isActionActive={activeAction !== undefined}
+                onRefresh={() => void refreshDiagnostics()}
+            />
+        </DeviceScenarioPanel>
     );
-}
-
-function DiagnosticsList({
-    diagnostics,
-}: {
-    diagnostics: NonNullable<ReturnType<typeof useTemperatureScenario>['diagnostics']>;
-}) {
-    if (diagnostics.ignoredEvents.length === 0) {
-        return <p className={styles.diagnosticsEmpty}>No ignored events recorded.</p>;
-    }
-
-    return (
-        <ol className={styles.diagnosticsList}>
-            {diagnostics.ignoredEvents.map((event) => (
-                <li key={event.diagnosticId}>
-                    <strong>{event.reason}</strong>
-                    <span>{event.eventType ?? 'unknown event'}</span>
-                    <span>{event.deviceId ?? 'no device'}</span>
-                    <time dateTime={event.observedAt}>
-                        {formatDiagnosticTime(event.observedAt)}
-                    </time>
-                </li>
-            ))}
-        </ol>
-    );
-}
-
-function formatDiagnosticTime(timestamp: string): string {
-    return `${timestamp.slice(11, 19)} UTC`;
 }
 
 function toCompletedMessage(action: TemperatureScenarioAction | undefined): string | undefined {

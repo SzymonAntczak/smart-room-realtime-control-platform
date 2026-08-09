@@ -2,13 +2,13 @@
 
 React, TypeScript and Vite control surface for the Smart Room realtime platform.
 
-The completed Stage 2/2.5 reference slice is a read-only simulated temperature
-sensor backed by the local realtime runtime. The UI receives a `room.snapshot`
-baseline followed by `device.updated` messages over WebSocket, keeps the last valid reading during reconnects, makes
-`stale` and `offline` health visible, and shows recent accepted temperature
-events. A development-only scenario panel controls the simulator through the
-backend and displays ignored-event diagnostics; it is separate from the
-user-facing room surface. Command controls remain a later slice.
+The frontend displays temperature telemetry and LED command state from the
+local realtime runtime. It receives a `room.snapshot` baseline followed by
+validated device and command updates over WebSocket, keeps the last valid view
+during reconnects, and makes availability, health and observation freshness
+visible. Development-only, device-scoped scenarios control the simulator through
+the backend; one shared sidebar swaps temperature or LED content for the card
+that opened it.
 
 `VITE_BFF_URL` configures the shared HTTP origin for development scenarios and
 diagnostics. `VITE_ROOM_REALTIME_URL` independently configures the WebSocket endpoint.
@@ -25,6 +25,10 @@ diagnostics. `VITE_ROOM_REALTIME_URL` independently configures the WebSocket end
 - `src/main.tsx`: Vite/React bootstrap.
 - `src/globals.css`: global reset and shared design tokens.
 - `src/app/App.tsx`: application composition root.
+- `src/app/realtime`: validated realtime projection client and hook.
+- `src/app/dev/device-scenarios`: development-only shared scenario sidebar and
+  device-specific scenario content.
+- `src/app/controls/led`: LED command UI and command transport boundary.
 - `src/app/sensors/temperature`: temperature sensor domain UI and behavior.
 - `src/app/shared/ui`: frontend-local reusable UI building blocks.
 - `src/test`: global test setup only.

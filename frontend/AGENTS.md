@@ -19,6 +19,10 @@ enough to render documented behavior honestly.
 ## React
 
 - Use modern React with function components, hooks and composition.
+- Define exactly one React component per `.tsx` file. Extract sibling,
+  nested or helper components into their own clearly named files; keep only
+  types, constants and non-component helpers that directly support that one
+  component in the same module.
 - Keep derived UI state explicit and testable.
 - Avoid duplicating realtime state into local component state unless there is a
   clear interaction reason.
@@ -31,6 +35,9 @@ enough to render documented behavior honestly.
   tested without transport. Extend behavior through composition and small,
   explicit contracts instead of growing conditional components; do not add
   abstractions, interfaces or indirection without a second real use.
+- Keep interaction, transport and domain-specific state transitions in a named
+  hook. Components should orchestrate hooks and render state through props;
+  do not embed that business logic directly in JSX components.
 
 ## Contract Boundary
 
@@ -89,6 +96,11 @@ enough to render documented behavior honestly.
   be expressed reliably in CSS.
 - Keep state colors accessible and distinguishable.
 - Keep layouts stable across state changes.
+- A component that owns CSS must have a colocated CSS Module with the same base
+  name (for example, `DeviceScenarioTrigger.tsx` and
+  `DeviceScenarioTrigger.module.css`). Do not import one component's CSS Module
+  from another component. Share visual tokens globally or introduce an explicit
+  shared UI component when reusable markup and styles are both needed.
 
 ## Linting and Formatting
 

@@ -2,35 +2,37 @@ import type {
     ActiveCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
-import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { Lightbulb, LightbulbOff, Power } from 'lucide-react';
-import { useState } from 'react';
 
+import type { DeviceScenarioTarget } from '../../dev/device-scenarios/device-scenario-target';
+import { DeviceScenarioTrigger } from '../../dev/device-scenarios/DeviceScenarioTrigger';
 import { Alert, type AlertVariant } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
-import { submitLedPowerCommand } from './led-command-client';
 import styles from './LedControl.module.css';
-import { LedScenarioDrawer } from './LedScenarioDrawer';
+import { useLedCommandRequest } from './use-led-command-request';
 
 export function LedControl({
     device,
     activeCommand,
     recentCommand,
     showDevScenarioPanel = false,
+    isSelectingScenario = false,
+    activeDevScenarioDeviceId,
+    onOpenDevScenario,
     realtimeUncertain = false,
 }: {
     device?: DeviceProjection;
     activeCommand?: ActiveCommandProjection;
     recentCommand?: TerminalCommandProjection;
     showDevScenarioPanel?: boolean;
+    isSelectingScenario?: boolean;
+    activeDevScenarioDeviceId?: string;
+    onOpenDevScenario?(target: DeviceScenarioTarget): void;
     realtimeUncertain?: boolean;
 }) {
-    const [submitting, setSubmitting] = useState(false);
-    const [selectingScenario, setSelectingScenario] = useState(false);
-    const [selectedScenario, setSelectedScenario] = useState<DeviceScenarioAction>();
-    const [transportError, setTransportError] = useState<string>();
+    const { requestPower, submitting, transportError } = useLedCommandRequest(device?.deviceId);
     if (!device)
         return (
             <ControlCard title="Main LED" status="Unknown">
@@ -40,28 +42,10 @@ export function LedControl({
     if (device.role !== 'led-output') return null;
 
     const isBlocked = device.commandAvailability.policy === 'block' || realtimeUncertain;
-    const isBusy = submitting || selectingScenario || activeCommand !== undefined;
+    const isBusy = submitting || isSelectingScenario || activeCommand !== undefined;
     const hasReportedPower = isPowerState(device.reportedState.power);
     const isOn = device.reportedState.power === 'on';
     const PowerIcon = isOn ? Lightbulb : LightbulbOff;
-    const deviceId = device.deviceId;
-    async function requestPower(power: 'on' | 'off') {
-        setSubmitting(true);
-        setTransportError(undefined);
-        try {
-            const result = await submitLedPowerCommand({
-                deviceId,
-                commandType: 'set.power',
-                requestedState: { power },
-            });
-            if (result.status === 'rejected') setTransportError(result.message);
-            else setSelectedScenario(undefined);
-        } catch {
-            setTransportError('Unable to send the LED command. Please try again.');
-        } finally {
-            setSubmitting(false);
-        }
-    }
     return (
         <ControlCard
             title={device.name}
@@ -76,12 +60,16 @@ export function LedControl({
             }
             headerAction={
                 showDevScenarioPanel ? (
-                    <LedScenarioDrawer
+                    <DeviceScenarioTrigger
                         deviceId={device.deviceId}
-                        isCommandActive={activeCommand !== undefined}
-                        onRequestChange={setSelectingScenario}
-                        selectedScenario={selectedScenario}
-                        onScenarioSelected={setSelectedScenario}
+                        expanded={activeDevScenarioDeviceId === device.deviceId}
+                        onClick={() =>
+                            onOpenDevScenario?.({
+                                kind: 'led',
+                                deviceId: device.deviceId,
+                                isCommandActive: activeCommand !== undefined,
+                            })
+                        }
                     />
                 ) : undefined
             }

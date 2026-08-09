@@ -13,17 +13,17 @@ export type { TemperatureScenarioAction } from '@smart-room/contracts/developmen
 
 const defaultBffUrl = 'http://localhost:4310';
 
-export interface TemperatureScenarioClient {
+export interface DeviceScenarioClient {
     runScenario(action: TemperatureScenarioAction): Promise<TemperatureScenarioResult>;
     getScenarios?(): Promise<DeviceScenarioList>;
     getDiagnostics(): Promise<EventProcessingDiagnosticsSnapshot>;
 }
 
-export function createTemperatureScenarioClient(
+export function createScenarioClient(
     fetchImplementation: typeof fetch = fetch,
     scenarioControlUrl = `${getBffUrl()}/dev/devices/temp-desk/scenarios`,
     diagnosticsUrl = `${getBffUrl()}/diagnostics`,
-): TemperatureScenarioClient {
+): DeviceScenarioClient {
     return {
         async runScenario(action) {
             const response = await fetchImplementation(scenarioControlUrl, {
@@ -82,14 +82,14 @@ export function createTemperatureScenarioClient(
     };
 }
 
-export const temperatureScenarioClient = createTemperatureScenarioClient();
+export const scenarioClient = createScenarioClient();
 
 export function createDeviceScenarioClient(
     deviceId: string,
     fetchImplementation: typeof fetch = fetch,
-): TemperatureScenarioClient {
+): DeviceScenarioClient {
     const baseUrl = getBffUrl();
-    const client = createTemperatureScenarioClient(
+    const client = createScenarioClient(
         fetchImplementation,
         `${baseUrl}/dev/devices/${encodeURIComponent(deviceId)}/scenarios`,
         `${baseUrl}/diagnostics`,

@@ -2,10 +2,10 @@ import type { EventProcessingDiagnosticsSnapshot } from '@smart-room/contracts/d
 import { useRef, useState } from 'react';
 
 import {
+    type DeviceScenarioClient,
+    scenarioClient,
     type TemperatureScenarioAction,
-    type TemperatureScenarioClient,
-    temperatureScenarioClient,
-} from './temperature-scenario-client';
+} from '../device-scenario-client';
 
 export interface TemperatureScenarioRequestState {
     readonly activeAction: TemperatureScenarioAction | undefined;
@@ -19,7 +19,7 @@ export interface TemperatureScenarioRequestState {
 }
 
 export function useTemperatureScenario(
-    client: TemperatureScenarioClient = temperatureScenarioClient,
+    client: DeviceScenarioClient = scenarioClient,
 ): TemperatureScenarioRequestState {
     const [activeAction, setActiveAction] = useState<TemperatureScenarioAction>();
     const [completedAction, setCompletedAction] = useState<TemperatureScenarioAction>();

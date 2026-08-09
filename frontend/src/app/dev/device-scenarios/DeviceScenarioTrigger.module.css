@@ -1,0 +1,33 @@
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 2rem;
+    block-size: 2rem;
+    gap: var(--space-2);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    font-weight: var(--font-weight-bold);
+    padding: 0;
+}
+
+.toggle:hover {
+    border-color: var(--color-action-primary);
+}
+
+.toggle:focus-visible {
+    outline: 0.1875rem solid var(--color-info-text);
+    outline-offset: 0.125rem;
+}
+
+.toggleLabel {
+    position: absolute;
+    inline-size: 0.0625rem;
+    block-size: 0.0625rem;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}

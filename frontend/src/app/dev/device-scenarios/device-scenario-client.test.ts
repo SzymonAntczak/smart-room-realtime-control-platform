@@ -1,18 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-    createDeviceScenarioClient,
-    createTemperatureScenarioClient,
-} from './temperature-scenario-client';
+import { createDeviceScenarioClient, createScenarioClient } from './device-scenario-client';
 
-describe('createTemperatureScenarioClient', () => {
+describe('createScenarioClient', () => {
     it('posts a scenario action and returns the validated result', async () => {
         const fetchMock = vi.fn().mockResolvedValue(
             new Response(JSON.stringify({ action: 'pause_telemetry', status: 'completed' }), {
                 status: 200,
             }),
         );
-        const client = createTemperatureScenarioClient(fetchMock, 'http://localhost:4310/dev/test');
+        const client = createScenarioClient(fetchMock, 'http://localhost:4310/dev/test');
 
         await expect(client.runScenario('pause_telemetry')).resolves.toEqual({
             action: 'pause_telemetry',
@@ -33,7 +30,7 @@ describe('createTemperatureScenarioClient', () => {
                 status: 200,
             }),
         );
-        const client = createTemperatureScenarioClient(fetchMock);
+        const client = createScenarioClient(fetchMock);
 
         await expect(client.runScenario('pause_telemetry')).rejects.toThrow(
             'Scenario control returned an invalid response.',
@@ -46,7 +43,7 @@ describe('createTemperatureScenarioClient', () => {
                 status: 200,
             }),
         );
-        const client = createTemperatureScenarioClient(fetchMock);
+        const client = createScenarioClient(fetchMock);
 
         await expect(client.runScenario('pause_telemetry')).rejects.toThrow(
             'Scenario control returned a response for a different action.',
@@ -68,7 +65,7 @@ describe('createTemperatureScenarioClient', () => {
                 { status: 200 },
             ),
         );
-        const client = createTemperatureScenarioClient(
+        const client = createScenarioClient(
             fetchMock,
             'http://localhost:4310/dev/test',
             'http://localhost:4310/diagnostics-test',
@@ -100,7 +97,7 @@ describe('createTemperatureScenarioClient', () => {
                 { status: 200 },
             ),
         );
-        const client = createTemperatureScenarioClient(fetchMock);
+        const client = createScenarioClient(fetchMock);
 
         await expect(client.getDiagnostics()).rejects.toThrow(
             'Diagnostics returned an invalid response.',
