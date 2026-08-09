@@ -97,6 +97,7 @@ deployment posture with cloud operations, fleet management or full monitoring.
 | Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator                                   |
 | Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                                                   |
 | Stage 4   | Simulator platform readiness              | Telemetry, diagnostics and a repeatable local demo make the simulator slice a complete platform reference |
+| Stage 4.5 | LAN security foundation                   | Secure LAN access and MQTT identities are established without burdening the loopback development path     |
 | Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes a real transport boundary while the direct simulator path remains intact                |
 | Stage 6   | ESP32 / ESPHome source                    | Environmental telemetry and on/off control use MQTT from minimal custom hardware                          |
 | Stage 7   | Standalone MQTT device source             | A second, native MQTT device validates independent adapter and physical-actuation behavior                |
@@ -285,11 +286,47 @@ reference: its state, telemetry, diagnostics and command outcomes can be
 explained and verified end to end. Later MQTT and hardware stages must conform
 to this reference rather than redefining its user-visible semantics.
 
+## Stage 4.5 - LAN Security Foundation
+
+Stage 4.5 establishes the minimum security posture for a platform that remains
+local-first but is intentionally reachable from a trusted LAN. It is a boundary
+before the MQTT and hardware stages, not a reason to turn the direct simulator
+or deterministic tests into deployment-like environments.
+
+The goal is to protect the frontend-facing BFF, its realtime connection and
+the local MQTT broker without introducing cloud identity or Internet exposure.
+The durable access, transport and broker rules must be recorded in accepted
+decisions before implementation.
+
+Expected outcome:
+
+- the runtime has explicit `dev` and `lan` profiles: `dev` remains loopback-only
+  and keeps the direct simulator and deterministic tests usable without broker,
+  LAN credentials or deployment certificates;
+- the LAN profile uses HTTPS and WSS, requires local user authentication,
+  session-based access, CSRF protection for state-changing requests and
+  backend-enforced authorization for reads, diagnostics, commands and realtime
+  subscriptions;
+- development scenario controls remain an explicitly enabled development-only
+  surface and are unavailable in the LAN profile;
+- secrets and credentials are kept outside version control and are redacted
+  from frontend-visible errors and operational logs;
+- each MQTT adapter and device source has its own credentials and the broker
+  restricts publish and subscribe access to the minimum required topic scope;
+- automated tests and a local LAN acceptance run demonstrate rejected
+  unauthenticated or unauthorized access, rejected cross-device MQTT access,
+  and preservation of the fast direct-simulator development path.
+
+Stage 4.5 is complete when LAN access has an explicit, tested security boundary
+and the direct simulator remains a frictionless development and deterministic
+test route. Stage 5 must not introduce the MQTT-backed simulator runtime until
+this foundation and its relevant architectural decisions are complete.
+
 ## Stage 5 - MQTT-Backed Simulator Runtime
 
 Stage 5 introduces MQTT as a production-like transport boundary without
 replacing the direct simulator route used by development and deterministic
-tests.
+tests. It builds on the LAN security foundation established in Stage 4.5.
 
 Expected outcome:
 
