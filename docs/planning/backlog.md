@@ -6,7 +6,7 @@ an ADR as part of the related change.
 
 ## Cross-Stage Blockers
 
-- [ ] **B1 — Migrate the device projection to availability, health and freshness**
+- [x] **B1 — Migrate the device projection to availability, health and freshness**
     - Scope: Replace the legacy combined `health` field and `lastSeenAt` in shared
       contracts, backend projections, simulator adapters, realtime BFF messages,
       frontend cards and their tests. Project `availability`
@@ -85,14 +85,16 @@ rules already documented in architecture and accepted ADRs.
     - Done when: BFF tests cover valid and invalid requests, initial snapshot,
       sequential projection updates and rejection of undocumented message shapes.
 
-- [ ] **S3.6 — Build the LED control UI and command outcome history**
+- [x] **S3.6 — Build the LED control UI and command outcome feedback**
     - Scope: Add a LED control surface with UI-side `submitting`, visible
-      pending/failed/timed-out states, applicable old-observation warning and terminal command
-      history; keep requested state visibly distinct from confirmed device state.
+      pending/failed/timed-out states, applicable old-observation warning and the
+      latest understandable terminal command outcome; keep requested state visibly
+      distinct from confirmed device state. A full terminal-command history belongs
+      to a future device-details view, not the main dashboard card.
     - Depends on: S3.5.
     - Done when: Frontend tests prove that a requested power state is never shown
-      as confirmed before a device report and terminal outcomes remain
-      understandable.
+      as confirmed before a device report and the latest terminal outcome remains
+      understandable on the main dashboard.
 
 - [ ] **S3.7 — Verify the reference loop and document manual acceptance**
     - Scope: Add a runtime-level integration test and a manual acceptance
@@ -106,12 +108,15 @@ rules already documented in architecture and accepted ADRs.
 These are remaining implementation tasks that are not currently assigned to a
 specific roadmap stage.
 
-- [ ] Decide and document the security policy for frontend-visible command errors.
-      Evaluate which rejection reasons/messages may be shown to local users and
-      which operational details must remain backend-only diagnostics. Define a
-      stable safe error vocabulary, logging/redaction expectations and tests.
-      Promote the chosen policy to architecture documentation or an ADR before
-      relying on it as a durable behavior rule.
+- [ ] Add frontend internationalization with `react-i18next`. Establish the
+      translation-provider bootstrap, locale detection and a maintainable
+      namespace structure; migrate user-visible dashboard and development-panel
+      strings without translating stable machine-readable reasons, event names
+      or API values. Define an initial supported locale set and a fallback
+      locale before exposing a language selector.
+      Done when: the frontend has deterministic fallback behavior, representative
+      dashboard and development-control flows render from translation resources,
+      and focused tests cover locale selection and fallback rendering.
 
 - [x] Remove obsolete code and compatibility paths. The supported realtime and
       development-scenario contracts describe only the current behavior.
@@ -145,13 +150,3 @@ specific roadmap stage.
       Done when: simulator or hardware-adapter tests and UI tests cover physical
       actuation with no active command, matching and non-matching active
       commands, and a matching report after timeout.
-
-- [ ] Define runtime device-membership behavior for devices added or removed
-      while a frontend realtime connection is active. The current slice assumes
-      a fixed configured device set for the connection lifetime; decide whether
-      this needs device lifecycle deltas or an explicit snapshot refresh.
-
-- [ ] Evaluate selective realtime subscriptions and device filters when room
-      size, multiple room views or telemetry volume make the all-devices room
-      stream insufficient. Keep the initial room snapshot atomic with the
-      chosen subscription scope.

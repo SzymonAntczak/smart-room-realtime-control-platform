@@ -1,9 +1,10 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import { CircleCheck, Clock3, Thermometer, TriangleAlert, WifiOff } from 'lucide-react';
+import { CircleCheck, Thermometer, WifiOff } from 'lucide-react';
 import { memo } from 'react';
 
 import { TemperatureScenarioDrawer } from '../../dev/temperature-scenarios/TemperatureScenarioDrawer';
+import { Alert, type AlertVariant } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
 import { type TemperatureSensorReading, toTemperatureSensorReading } from './temperature-reading';
@@ -167,21 +168,17 @@ const TemperatureCard = memo(function TemperatureCard({
         <ControlCard
             eyebrow="Realtime room stream"
             title={reading.sensorName}
-            status={formatHealth(reading.health)}
-            statusIcon={getHealthIcon(reading.health)}
-            statusTone={toHealthTone(reading.health)}
+            status={formatAvailability(reading.availability)}
+            statusIcon={getAvailabilityIcon(reading.availability)}
+            statusTone={toAvailabilityTone(reading.availability)}
             titleId={`sensor-heading-${reading.sensorId}`}
             headerAction={
                 showDevScenarioPanel ? (
                     <TemperatureScenarioDrawer deviceId={reading.sensorId} />
                 ) : undefined
             }
+            bottomAlert={<Alert {...getCardAlert(reading)} />}
         >
-            {getHealthWarning(reading) ? (
-                <p className={styles.warning} role="alert">
-                    {getHealthWarning(reading)}
-                </p>
-            ) : null}
             <div className={styles.reading} aria-label="Current temperature">
                 <Thermometer
                     aria-hidden="true"
@@ -189,13 +186,9 @@ const TemperatureCard = memo(function TemperatureCard({
                     size={24}
                     strokeWidth={1.75}
                 />
-                <span className={styles.value}>{reading.value.toFixed(1)}</span>
-                <span className={styles.unit}>{reading.unit}</span>
+                <span className={styles.value}>{reading.value?.toFixed(1) ?? '—'}</span>
+                <span className={styles.unit}>{reading.unit ?? ''}</span>
             </div>
-            <p className={styles.updated}>
-                Last reading{' '}
-                <time dateTime={reading.recordedAt}>{formatReadingTime(reading.recordedAt)}</time>
-            </p>
         </ControlCard>
     );
 });
@@ -212,64 +205,64 @@ function formatReadingTime(recordedAt: string): string {
     return `${recordedAt.slice(11, 19)} UTC`;
 }
 
-function formatHealth(health: TemperatureSensorReading['health']): string {
-    if (health === 'online') {
+function formatAvailability(availability: TemperatureSensorReading['availability']): string {
+    if (availability === 'online') {
         return 'Online';
     }
 
-    if (health === 'stale') {
-        return 'Stale';
-    }
-
-    if (health === 'offline') {
+    if (availability === 'offline') {
         return 'Offline';
     }
 
-    return 'Degraded';
+    return 'Unknown';
 }
 
-function toHealthTone(health: TemperatureSensorReading['health']) {
-    if (health === 'online') {
+function toAvailabilityTone(availability: TemperatureSensorReading['availability']) {
+    if (availability === 'online') {
         return 'success';
     }
 
-    if (health === 'offline') {
+    if (availability === 'offline') {
         return 'danger';
     }
 
     return 'warning';
 }
 
-function getHealthIcon(health: TemperatureSensorReading['health']) {
+function getAvailabilityIcon(availability: TemperatureSensorReading['availability']) {
     const iconProps = { 'aria-hidden': true, size: 16, strokeWidth: 1.75 } as const;
 
-    if (health === 'online') {
+    if (availability === 'online') {
         return <CircleCheck {...iconProps} />;
     }
 
-    if (health === 'stale') {
-        return <Clock3 {...iconProps} />;
-    }
-
-    if (health === 'offline') {
+    if (availability === 'offline') {
         return <WifiOff {...iconProps} />;
     }
 
-    return <TriangleAlert {...iconProps} />;
+    return undefined;
 }
 
-function getHealthWarning(reading: TemperatureSensorReading): string | undefined {
-    if (reading.health === 'stale') {
-        return `Temperature telemetry is stale. Showing the last known reading from ${formatReadingTime(reading.recordedAt)}.`;
-    }
-
-    if (reading.health === 'offline') {
-        return `Temperature sensor is offline. Showing the last known reading from ${formatReadingTime(reading.recordedAt)}.`;
-    }
-
-    if (reading.health === 'degraded') {
-        return `Temperature sensor is degraded. Showing the latest reported reading from ${formatReadingTime(reading.recordedAt)}.`;
-    }
-
-    return undefined;
+function getCardAlert(reading: TemperatureSensorReading): {
+    message?: string;
+    variant?: AlertVariant;
+} {
+    const messages = [
+        reading.availability === 'offline'
+            ? `Temperature sensor is offline${reading.availabilityReason ? `: ${reading.availabilityReason}` : '.'}`
+            : undefined,
+        reading.health === 'degraded'
+            ? (reading.healthReason ?? 'Temperature sensor health is degraded.')
+            : undefined,
+        reading.freshness === 'stale' && reading.recordedAt
+            ? `Temperature telemetry is stale. Showing the last known reading from ${formatReadingTime(reading.recordedAt)}.`
+            : undefined,
+    ].filter((message): message is string => message !== undefined);
+    if (messages.length > 0) return { message: messages.join(' '), variant: 'warning' };
+    if (reading.recordedAt)
+        return {
+            message: `Last reading ${formatReadingTime(reading.recordedAt)}.`,
+            variant: 'info',
+        };
+    return { message: 'No reading received yet.', variant: 'info' };
 }

@@ -2,12 +2,14 @@ import type {
     ActiveCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
-import type { DeviceHealth, DeviceRole, DeviceState } from '@smart-room/contracts/devices';
+import type { CommandAvailability, DeviceRole, DeviceState } from '@smart-room/contracts/devices';
 import type {
     CommandDispatchedEvent,
     CommandFailedEvent,
     CommandRequestedEvent,
     CommandTimedOutEvent,
+    DeviceAvailabilityChangedEvent,
+    DeviceHealthChangedEvent,
     DeviceStateReportedEvent,
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
@@ -22,28 +24,22 @@ export interface DeviceDefinition {
 
 export interface DeviceFreshnessThresholds {
     staleAfterMs: number;
-    offlineAfterMs: number;
 }
-
 export type FreshnessThresholdsByRole = Partial<Record<DeviceRole, DeviceFreshnessThresholds>>;
-
 export interface RoomProjectionConfig {
     devices: DeviceDefinition[];
     initialUpdatedAt: string;
     freshnessThresholdsByRole?: FreshnessThresholdsByRole;
 }
-
 export interface ProjectionEvaluationOptions {
     evaluatedAt?: string;
 }
-
 export interface RoomProjection {
     updatedAt: string;
     devices: DeviceProjection[];
     activeCommands: ActiveCommandProjection[];
     recentCommands: TerminalCommandProjection[];
 }
-
 export interface RoomProjector {
     applyDeviceStateReported(
         event: DeviceStateReportedEvent,
@@ -53,6 +49,8 @@ export interface RoomProjector {
         event: TelemetryReadingRecordedEvent,
         options?: ProjectionEvaluationOptions,
     ): RoomProjection;
+    applyDeviceAvailabilityChanged(event: DeviceAvailabilityChangedEvent): RoomProjection;
+    applyDeviceHealthChanged(event: DeviceHealthChangedEvent): RoomProjection;
     applyCommandRequested(event: CommandRequestedEvent): RoomProjection;
     applyCommandDispatched(event: CommandDispatchedEvent): RoomProjection;
     applyCommandFailed(event: CommandFailedEvent): RoomProjection;
@@ -65,102 +63,113 @@ export function createRoomProjector({
     initialUpdatedAt,
     freshnessThresholdsByRole = defaultFreshnessThresholdsByRole,
 }: RoomProjectionConfig): RoomProjector {
-    const deviceDefinitions = new Map(devices.map((device) => [device.deviceId, device]));
-    const deviceProjections = new Map<string, DeviceProjection>();
-    const activeCommandsByDeviceId = new Map<string, ActiveCommandProjection>();
-    const recentCommands: TerminalCommandProjection[] = [];
+    const definitions = new Map(devices.map((device) => [device.deviceId, device]));
+    const projections = new Map<string, DeviceProjection>(
+        devices.map((device) => [device.deviceId, bootstrap(device, initialUpdatedAt)]),
+    );
+    const activeByDeviceId = new Map<string, ActiveCommandProjection>();
+    const recent: TerminalCommandProjection[] = [];
     let updatedAt = initialUpdatedAt;
 
     return {
         applyDeviceStateReported(event, options = {}) {
-            const device = deviceDefinitions.get(event.deviceId);
-            if (!device) {
-                throw new Error(
-                    `Cannot project device state for unknown device: ${event.deviceId}`,
-                );
-            }
-
-            const currentDevice = deviceProjections.get(device.deviceId);
+            const current = requireDevice(event.deviceId);
+            const observation = current.observationStatus.power;
             if (
-                currentDevice?.lastSeenAt &&
-                parseTimestamp(event.occurredAt, 'event.occurredAt') <=
-                    parseTimestamp(currentDevice.lastSeenAt, 'device.lastSeenAt')
-            ) {
-                return buildProjection({ evaluatedAt: options.evaluatedAt ?? event.occurredAt });
-            }
-
+                observation?.lastObservedAt &&
+                !isLater(event.occurredAt, observation.lastObservedAt)
+            )
+                return build(options.evaluatedAt ?? event.occurredAt);
             updatedAt = event.occurredAt;
-            deviceProjections.set(device.deviceId, {
-                deviceId: device.deviceId,
-                name: device.name,
-                role: device.role,
-                health: 'online',
-                reportedState: event.payload.reportedState,
-                commandAvailability: { policy: 'allow' },
-                lastSeenAt: event.occurredAt,
-            });
-
-            const activeCommand = activeCommandsByDeviceId.get(device.deviceId);
+            projections.set(
+                event.deviceId,
+                withObservation(current, 'power', event.occurredAt, event.payload.reportedState),
+            );
+            const active = activeByDeviceId.get(event.deviceId);
             if (
-                activeCommand?.status === 'pending' &&
-                isOnOrAfter(event.occurredAt, activeCommand.dispatchedAt) &&
-                matchesSetPowerCommand(activeCommand, event.payload.reportedState)
+                active?.status === 'pending' &&
+                isOnOrAfter(event.occurredAt, active.dispatchedAt) &&
+                matchesSetPowerCommand(active, event.payload.reportedState)
             ) {
-                moveToRecent({
-                    ...activeCommand,
-                    status: 'confirmed',
-                    confirmedAt: event.occurredAt,
-                });
+                moveToRecent({ ...active, status: 'confirmed', confirmedAt: event.occurredAt });
             }
-
-            return buildProjection({ evaluatedAt: options.evaluatedAt ?? event.occurredAt });
+            return build(options.evaluatedAt ?? event.occurredAt);
         },
         applyTelemetryReadingRecorded(event, options = {}) {
-            const device = deviceDefinitions.get(event.deviceId);
-
-            if (!device) {
-                throw new Error(`Cannot project telemetry for unknown device: ${event.deviceId}`);
-            }
-
-            const currentDevice = deviceProjections.get(device.deviceId);
-
+            const current = requireDevice(event.deviceId);
+            const observation = current.observationStatus.temperature;
             if (
-                currentDevice?.lastSeenAt &&
-                parseTimestamp(event.occurredAt, 'event.occurredAt') <=
-                    parseTimestamp(currentDevice.lastSeenAt, 'device.lastSeenAt')
-            ) {
-                return buildProjection({
-                    evaluatedAt: options.evaluatedAt ?? event.occurredAt,
-                });
-            }
-
+                observation?.lastObservedAt &&
+                !isLater(event.occurredAt, observation.lastObservedAt)
+            )
+                return build(options.evaluatedAt ?? event.occurredAt);
             updatedAt = event.occurredAt;
-            deviceProjections.set(device.deviceId, {
-                deviceId: device.deviceId,
-                name: device.name,
-                role: device.role,
-                health: 'online',
-                reportedState: toTemperatureReportedState(event.payload),
-                commandAvailability: {
-                    policy: 'block',
-                    reason: 'read_only_device',
-                },
-                lastSeenAt: event.occurredAt,
-            });
-
-            return buildProjection({
-                evaluatedAt: options.evaluatedAt ?? event.occurredAt,
-            });
+            projections.set(
+                event.deviceId,
+                withObservation(
+                    current,
+                    'temperature',
+                    event.occurredAt,
+                    toTemperatureReportedState(event.payload),
+                ),
+            );
+            return build(options.evaluatedAt ?? event.occurredAt);
+        },
+        applyDeviceAvailabilityChanged(event) {
+            const current = requireDevice(event.deviceId);
+            if (!isLater(event.occurredAt, current.availabilityChangedAt))
+                return build(event.occurredAt);
+            updatedAt = event.occurredAt;
+            const next = {
+                ...current,
+                availability: event.payload.availability,
+                availabilityChangedAt: event.occurredAt,
+                commandAvailability: commandAvailabilityFor(
+                    current.role,
+                    event.payload.availability,
+                    current.health,
+                    current.healthReason,
+                ),
+                ...(event.payload.availability === 'offline'
+                    ? { availabilityReason: event.payload.reason }
+                    : {}),
+            };
+            if (event.payload.availability !== 'offline') delete next.availabilityReason;
+            projections.set(event.deviceId, next);
+            return build(event.occurredAt);
+        },
+        applyDeviceHealthChanged(event) {
+            const current = requireDevice(event.deviceId);
+            if (!isLater(event.occurredAt, current.healthChangedAt)) return build(event.occurredAt);
+            updatedAt = event.occurredAt;
+            const next = {
+                ...current,
+                health: event.payload.health,
+                healthChangedAt: event.occurredAt,
+                commandAvailability: commandAvailabilityFor(
+                    current.role,
+                    current.availability,
+                    event.payload.health,
+                    event.payload.health === 'degraded' ? event.payload.reason : undefined,
+                ),
+                ...(event.payload.health === 'degraded'
+                    ? { healthReason: event.payload.reason }
+                    : {}),
+            };
+            if (event.payload.health !== 'degraded') delete next.healthReason;
+            projections.set(event.deviceId, next);
+            return build(event.occurredAt);
         },
         applyCommandRequested(event) {
-            assertProjectableLedCommandDevice(event.deviceId);
-            assertUnusedCommandId(event.commandId);
-            const activeCommand = activeCommandsByDeviceId.get(event.deviceId);
-
-            if (activeCommand) {
+            const device = requireDevice(event.deviceId);
+            if (device.role !== 'led-output' || !device.observationStatus.power?.lastObservedAt) {
+                throw new Error(`Cannot project a set.power command for device ${event.deviceId}.`);
+            }
+            if (activeByDeviceId.has(event.deviceId)) {
                 throw new Error(`Device ${event.deviceId} already has an active command.`);
             }
-            activeCommandsByDeviceId.set(event.deviceId, {
+            assertUnusedCommandId(event.commandId);
+            activeByDeviceId.set(event.deviceId, {
                 commandId: event.commandId,
                 deviceId: event.deviceId,
                 commandType: event.payload.commandType,
@@ -169,260 +178,203 @@ export function createRoomProjector({
                 status: 'accepted',
             });
             updatedAt = event.occurredAt;
-            return buildProjection({ evaluatedAt: event.occurredAt });
+            return build(event.occurredAt);
         },
         applyCommandDispatched(event) {
-            const activeCommand = requireActiveCommand(event.deviceId, event.commandId);
-            if (activeCommand.status !== 'accepted') {
-                throw new Error(
-                    `Cannot dispatch command ${event.commandId} from ${activeCommand.status}.`,
-                );
-            }
-            assertChronological(event.occurredAt, activeCommand.requestedAt, 'dispatch');
-            activeCommandsByDeviceId.set(event.deviceId, {
-                ...activeCommand,
+            const active = requireActive(event.deviceId, event.commandId);
+            if (active.status !== 'accepted')
+                throw new Error(`Cannot dispatch command ${event.commandId}.`);
+            assertChronological(event.occurredAt, active.requestedAt, 'dispatch');
+            activeByDeviceId.set(event.deviceId, {
+                ...active,
                 status: 'pending',
                 dispatchedAt: event.occurredAt,
             });
             updatedAt = event.occurredAt;
-            return buildProjection({ evaluatedAt: event.occurredAt });
+            return build(event.occurredAt);
         },
         applyCommandFailed(event) {
-            const activeCommand = activeCommandsByDeviceId.get(event.deviceId);
-            if (!activeCommand || activeCommand.commandId !== event.commandId) {
-                const rejectedCommand = toRejectedCommandFailure(event);
-                assertProjectableLedCommandDevice(event.deviceId);
+            const active = activeByDeviceId.get(event.deviceId);
+            if (!active || active.commandId !== event.commandId) {
+                const rejected = toRejectedCommandFailure(event);
+                requireDevice(event.deviceId);
                 assertUnusedCommandId(event.commandId);
+                addRecent(rejected);
                 updatedAt = event.occurredAt;
-                addRecentCommand(rejectedCommand);
-                return buildProjection({ evaluatedAt: event.occurredAt });
+                return build(event.occurredAt);
             }
-            assertChronological(event.occurredAt, activeCommand.requestedAt, 'failure');
-            if (activeCommand.status === 'pending') {
-                assertChronological(event.occurredAt, activeCommand.dispatchedAt, 'failure');
-            }
+            assertChronological(event.occurredAt, active.requestedAt, 'failure');
+            if (active.status === 'pending')
+                assertChronological(event.occurredAt, active.dispatchedAt, 'failure');
             updatedAt = event.occurredAt;
             moveToRecent({
-                ...activeCommand,
+                ...active,
                 status: 'failed',
                 failedAt: event.occurredAt,
                 reason: event.payload.reason,
                 message: event.payload.message,
             });
-            return buildProjection({ evaluatedAt: event.occurredAt });
+            return build(event.occurredAt);
         },
         applyCommandTimedOut(event) {
-            const activeCommand = requireActiveCommand(event.deviceId, event.commandId);
-            if (activeCommand.status !== 'pending') {
-                throw new Error(
-                    `Cannot time out command ${event.commandId} from ${activeCommand.status}.`,
-                );
-            }
-            if (event.payload.timeoutMs !== ledSetPowerTimeoutMs) {
+            const active = requireActive(event.deviceId, event.commandId);
+            if (active.status !== 'pending')
+                throw new Error(`Cannot time out command ${event.commandId}.`);
+            if (event.payload.timeoutMs !== ledSetPowerTimeoutMs)
                 throw new Error(`LED set.power timeout must be ${ledSetPowerTimeoutMs} ms.`);
-            }
-            assertChronological(event.occurredAt, activeCommand.dispatchedAt, 'timeout');
+            assertChronological(event.occurredAt, active.dispatchedAt, 'timeout');
             if (
-                Date.parse(event.occurredAt) - Date.parse(activeCommand.dispatchedAt) <
+                Date.parse(event.occurredAt) - Date.parse(active.dispatchedAt) <
                 ledSetPowerTimeoutMs
-            ) {
+            )
                 throw new Error(
                     `Command timeout must occur at least ${ledSetPowerTimeoutMs} ms after dispatch.`,
                 );
-            }
             updatedAt = event.occurredAt;
             moveToRecent({
-                ...activeCommand,
+                ...active,
                 status: 'timed_out',
                 timedOutAt: event.occurredAt,
                 reason: event.payload.reason,
             });
-            return buildProjection({ evaluatedAt: event.occurredAt });
+            return build(event.occurredAt);
         },
         getProjection(options = {}) {
-            return buildProjection({
-                evaluatedAt: options.evaluatedAt ?? updatedAt,
-            });
+            return build(options.evaluatedAt ?? updatedAt);
         },
     };
 
-    function buildProjection({
-        evaluatedAt,
-    }: Required<ProjectionEvaluationOptions>): RoomProjection {
+    function requireDevice(deviceId: string): DeviceProjection {
+        const device = projections.get(deviceId);
+        if (!device || !definitions.has(deviceId)) throw new Error(`Unknown device: ${deviceId}`);
+        return device;
+    }
+    function build(evaluatedAt: string): RoomProjection {
         return {
             updatedAt,
-            devices: [...deviceProjections.values()].map((device) => {
-                const activeCommand = activeCommandsByDeviceId.get(device.deviceId);
+            devices: [...projections.values()].map((device) => {
+                const active = activeByDeviceId.get(device.deviceId);
                 return {
-                    ...applyFreshnessHealth(device, evaluatedAt),
-                    ...(activeCommand ? { activeCommandId: activeCommand.commandId } : {}),
+                    ...withFreshness(device, evaluatedAt),
+                    ...(active ? { activeCommandId: active.commandId } : {}),
                 };
             }),
-            activeCommands: [...activeCommandsByDeviceId.values()],
-            recentCommands: [...recentCommands],
+            activeCommands: [...activeByDeviceId.values()],
+            recentCommands: [...recent],
         };
     }
-
-    function assertProjectableLedCommandDevice(deviceId: string): void {
-        const device = deviceDefinitions.get(deviceId);
-        if (!device || device.role !== 'led-output' || !deviceProjections.has(deviceId)) {
-            throw new Error(`Cannot project a set.power command for device ${deviceId}.`);
-        }
+    function withFreshness(device: DeviceProjection, evaluatedAt: string): DeviceProjection {
+        const threshold = freshnessThresholdsByRole[device.role];
+        if (!threshold) return device;
+        const observationStatus = Object.fromEntries(
+            Object.entries(device.observationStatus).map(([capability, status]) => {
+                if (!status.lastObservedAt) return [capability, status];
+                const freshness: 'fresh' | 'stale' =
+                    Date.parse(evaluatedAt) - Date.parse(status.lastObservedAt) >
+                    threshold.staleAfterMs
+                        ? 'stale'
+                        : 'fresh';
+                return [capability, { ...status, freshness }];
+            }),
+        );
+        return { ...device, observationStatus };
     }
-
-    function requireActiveCommand(deviceId: string, commandId: string): ActiveCommandProjection {
-        const command = activeCommandsByDeviceId.get(deviceId);
-        if (!command || command.commandId !== commandId) {
-            throw new Error(`No active command ${commandId} exists for device ${deviceId}.`);
-        }
-        return command;
+    function moveToRecent(command: TerminalCommandProjection): void {
+        activeByDeviceId.delete(command.deviceId);
+        addRecent(command);
     }
-
+    function addRecent(command: TerminalCommandProjection): void {
+        recent.push(command);
+        recent.sort((left, right) => terminalTimestamp(right) - terminalTimestamp(left));
+        recent.splice(20);
+    }
+    function requireActive(deviceId: string, commandId: string): ActiveCommandProjection {
+        const active = activeByDeviceId.get(deviceId);
+        if (!active || active.commandId !== commandId)
+            throw new Error(`No active command ${commandId}.`);
+        return active;
+    }
     function assertUnusedCommandId(commandId: string): void {
         if (
-            [...activeCommandsByDeviceId.values()].some(
+            [...activeByDeviceId.values(), ...recent].some(
                 (command) => command.commandId === commandId,
-            ) ||
-            recentCommands.some((command) => command.commandId === commandId)
-        ) {
-            throw new Error(`Command ${commandId} is already projected.`);
-        }
-    }
-
-    function assertChronological(
-        occurredAt: string,
-        previousTimestamp: string,
-        transition: string,
-    ): void {
-        if (!isOnOrAfter(occurredAt, previousTimestamp)) {
-            throw new Error(`Command ${transition} cannot precede its previous lifecycle state.`);
-        }
-    }
-
-    function moveToRecent(command: TerminalCommandProjection): void {
-        activeCommandsByDeviceId.delete(command.deviceId);
-        addRecentCommand(command);
-    }
-
-    function addRecentCommand(command: TerminalCommandProjection): void {
-        recentCommands.unshift(command);
-        recentCommands.sort((left, right) => terminalTimestamp(right) - terminalTimestamp(left));
-        recentCommands.length = Math.min(recentCommands.length, 20);
-    }
-
-    function applyFreshnessHealth(device: DeviceProjection, evaluatedAt: string): DeviceProjection {
-        if (!device.lastSeenAt) {
-            return { ...device };
-        }
-
-        const thresholds = freshnessThresholdsByRole[device.role];
-
-        if (!thresholds) {
-            return { ...device };
-        }
-
-        return {
-            ...device,
-            health: deriveFreshnessHealth({
-                lastSeenAt: device.lastSeenAt,
-                evaluatedAt,
-                thresholds,
-            }),
-        };
+            )
+        )
+            throw new Error(`Command ${commandId} already exists.`);
     }
 }
 
-const defaultFreshnessThresholdsByRole: FreshnessThresholdsByRole = {
-    'temperature-sensor': {
-        staleAfterMs: 2500,
-        offlineAfterMs: 10000,
-    },
-};
-
-export const ledSetPowerTimeoutMs = 5_000;
-
-function deriveFreshnessHealth({
-    lastSeenAt,
-    evaluatedAt,
-    thresholds,
-}: {
-    lastSeenAt: string;
-    evaluatedAt: string;
-    thresholds: DeviceFreshnessThresholds;
-}): DeviceHealth {
-    const ageMs = Math.max(
-        0,
-        parseTimestamp(evaluatedAt, 'projection.evaluatedAt') -
-            parseTimestamp(lastSeenAt, 'device.lastSeenAt'),
-    );
-
-    if (ageMs > thresholds.offlineAfterMs) {
-        return 'offline';
-    }
-
-    if (ageMs > thresholds.staleAfterMs) {
-        return 'stale';
-    }
-
-    return 'online';
-}
-
-function parseTimestamp(timestamp: string, fieldName: string): number {
-    const parsed = Date.parse(timestamp);
-
-    if (Number.isNaN(parsed)) {
-        throw new Error(`Invalid timestamp for ${fieldName}: ${timestamp}`);
-    }
-
-    return parsed;
-}
-
-function toTemperatureReportedState(payload: TelemetryReadingRecordedPayload): DeviceState {
+function bootstrap(device: DeviceDefinition, at: string): DeviceProjection {
     return {
-        temperature: payload.value,
-        temperatureUnit: payload.unit,
+        deviceId: device.deviceId,
+        name: device.name,
+        role: device.role,
+        availability: 'unknown',
+        availabilityChangedAt: at,
+        health: 'unknown',
+        healthChangedAt: at,
+        reportedState: {},
+        observationStatus:
+            device.role === 'temperature-sensor' ? { temperature: { freshness: 'unknown' } } : {},
+        commandAvailability: commandAvailabilityFor(device.role, 'unknown', 'unknown'),
     };
 }
-
-function matchesSetPowerCommand(
-    command: ActiveCommandProjection,
+function withObservation(
+    device: DeviceProjection,
+    capability: string,
+    observedAt: string,
     reportedState: DeviceState,
-): boolean {
-    return (
-        command.commandType === 'set.power' && reportedState.power === command.requestedState.power
-    );
+): DeviceProjection {
+    const freshness =
+        device.role === 'temperature-sensor' && capability === 'temperature' ? 'fresh' : 'unknown';
+    return {
+        ...device,
+        reportedState,
+        observationStatus: {
+            ...device.observationStatus,
+            [capability]: { freshness, lastObservedAt: observedAt },
+        },
+        commandAvailability: commandAvailabilityFor(
+            device.role,
+            device.availability,
+            device.health,
+            device.healthReason,
+        ),
+    };
 }
-
-function terminalTimestamp(command: TerminalCommandProjection): number {
-    switch (command.status) {
-        case 'confirmed':
-            return parseTimestamp(command.confirmedAt, 'command.confirmedAt');
-        case 'failed':
-            return parseTimestamp(command.failedAt, 'command.failedAt');
-        case 'timed_out':
-            return parseTimestamp(command.timedOutAt, 'command.timedOutAt');
-    }
+function commandAvailabilityFor(
+    role: DeviceRole,
+    availability: DeviceProjection['availability'],
+    health: DeviceProjection['health'],
+    healthReason?: string,
+): CommandAvailability {
+    if (role !== 'led-output') return { policy: 'block', reason: 'read_only_device' };
+    if (availability === 'offline') return { policy: 'block', reason: 'device_offline' };
+    if (availability === 'unknown') return { policy: 'block', reason: 'availability_unknown' };
+    if (health !== 'degraded') return { policy: 'allow' };
+    if (healthReason === 'command_blocked') return { policy: 'block', reason: 'device_degraded' };
+    return { policy: 'allow_with_warning', reason: 'device_degraded' };
 }
-
-function isOnOrAfter(timestamp: string, referenceTimestamp: string): boolean {
-    return (
-        parseTimestamp(timestamp, 'timestamp') >=
-        parseTimestamp(referenceTimestamp, 'reference timestamp')
-    );
+function isLater(value: string, reference: string): boolean {
+    return Date.parse(value) > Date.parse(reference);
 }
-
+function isOnOrAfter(value: string, reference: string): boolean {
+    return Date.parse(value) >= Date.parse(reference);
+}
+function assertChronological(value: string, reference: string, action: string): void {
+    if (!isOnOrAfter(value, reference)) throw new Error(`${action} cannot precede its command.`);
+}
+function toTemperatureReportedState(payload: TelemetryReadingRecordedPayload): DeviceState {
+    return { temperature: payload.value, temperatureUnit: payload.unit };
+}
+function matchesSetPowerCommand(command: ActiveCommandProjection, state: DeviceState): boolean {
+    return command.commandType === 'set.power' && state.power === command.requestedState.power;
+}
 function toRejectedCommandFailure(event: CommandFailedEvent): TerminalCommandProjection {
     const { commandType, requestedState, requestedAt } = event.payload;
-
-    if (commandType !== 'set.power' || !requestedState || !requestedAt) {
-        throw new Error(
-            `No active command ${event.commandId} exists for device ${event.deviceId}.`,
-        );
-    }
-    if (!isOnOrAfter(event.occurredAt, requestedAt)) {
-        throw new Error('Command failure cannot precede the rejected request.');
-    }
-
+    if (!commandType || !requestedState || !requestedAt)
+        throw new Error(`No rejected-command context for ${event.commandId}.`);
+    assertChronological(event.occurredAt, requestedAt, 'failure');
     return {
         commandId: event.commandId,
         deviceId: event.deviceId,
@@ -435,3 +387,16 @@ function toRejectedCommandFailure(event: CommandFailedEvent): TerminalCommandPro
         message: event.payload.message,
     };
 }
+function terminalTimestamp(command: TerminalCommandProjection): number {
+    return Date.parse(
+        command.status === 'confirmed'
+            ? command.confirmedAt
+            : command.status === 'failed'
+              ? command.failedAt
+              : command.timedOutAt,
+    );
+}
+const defaultFreshnessThresholdsByRole: FreshnessThresholdsByRole = {
+    'temperature-sensor': { staleAfterMs: 2_500 },
+};
+export const ledSetPowerTimeoutMs = 5_000;

@@ -40,11 +40,32 @@ describe('TemperatureControl', () => {
         expect(screen.getByText('Realtime room stream')).toBeInTheDocument();
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('celsius');
-        expect(screen.getAllByText('09:30:00 UTC').length).toBeGreaterThan(0);
-        expect(screen.getByText(/Last reading/)).toHaveTextContent('Last reading 09:30:00 UTC');
+        expect(screen.getByText('Last reading 09:30:00 UTC.')).toBeInTheDocument();
         expect(
             screen.queryByRole('region', { name: 'Recent temperature events' }),
         ).not.toBeInTheDocument();
+    });
+
+    it('renders a configured bootstrap sensor before its first observation', async () => {
+        render(<TemperatureControl />);
+
+        await emitLatestMessage(
+            createRoomSnapshotMessage({
+                devices: [
+                    {
+                        ...createTemperatureDevice(),
+                        availability: 'unknown',
+                        health: 'unknown',
+                        reportedState: {},
+                        observationStatus: { temperature: { freshness: 'unknown' } },
+                    },
+                ],
+            }),
+        );
+
+        expect(screen.getByRole('status')).toHaveTextContent('Unknown');
+        expect(screen.getByLabelText('Current temperature')).toHaveTextContent('—');
+        expect(screen.getByText('No reading received yet.')).toBeInTheDocument();
     });
 
     it('updates the temperature after a device delta', async () => {
@@ -55,12 +76,14 @@ describe('TemperatureControl', () => {
             createDeviceUpdatedMessage({
                 ...createTemperatureDevice(),
                 reportedState: { temperature: 22.6, temperatureUnit: 'celsius' },
-                lastSeenAt: '2026-06-08T09:30:01Z',
+                observationStatus: {
+                    temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:01Z' },
+                },
             }),
         );
 
         expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.6');
-        expect(screen.getByText('09:30:01 UTC')).toBeInTheDocument();
+        expect(screen.getByText('Last reading 09:30:01 UTC.')).toBeInTheDocument();
     });
 
     it('renders both temperature cards and updates only the targeted card', async () => {
@@ -217,54 +240,60 @@ describe('TemperatureControl', () => {
         );
     });
 
-    it.each([
-        [
-            'stale',
-            'Stale',
-            'warning',
-            'Temperature telemetry is stale. Showing the last known reading from 09:30:00 UTC.',
-        ],
-        [
-            'offline',
-            'Offline',
-            'danger',
-            'Temperature sensor is offline. Showing the last known reading from 09:30:00 UTC.',
-        ],
-        [
-            'degraded',
-            'Degraded',
-            'warning',
-            'Temperature sensor is degraded. Showing the latest reported reading from 09:30:00 UTC.',
-        ],
-    ] as const)(
-        'keeps the last temperature visible when the device is %s',
-        async (health, label, tone, warning) => {
-            render(<TemperatureControl />);
-
-            await emitLatestMessage(
-                createRoomSnapshotMessage({
-                    sentAt: '2026-06-08T09:30:06Z',
-                    devices: [
-                        {
-                            ...createTemperatureDevice(),
-                            health,
+    it('shows stale freshness without changing online availability', async () => {
+        render(<TemperatureControl />);
+        await emitLatestMessage(
+            createRoomSnapshotMessage({
+                devices: [
+                    {
+                        ...createTemperatureDevice(),
+                        observationStatus: {
+                            temperature: {
+                                freshness: 'stale',
+                                lastObservedAt: '2026-06-08T09:30:00Z',
+                            },
                         },
-                    ],
-                }),
-            );
+                    },
+                ],
+            }),
+        );
+        expect(await screen.findByText('Online')).toBeInTheDocument();
+        expect(screen.getByRole('alert')).toHaveTextContent('Temperature telemetry is stale');
+    });
 
-            expect(await screen.findByRole('status')).toHaveTextContent(label);
-            expect(screen.getByRole('status')).toHaveAttribute('data-tone', tone);
-            expect(screen.getByRole('status').querySelector('svg')).toHaveAttribute(
-                'aria-hidden',
-                'true',
-            );
-            expect(screen.queryByText('Online')).not.toBeInTheDocument();
-            expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
-            expect(screen.getAllByText('09:30:00 UTC').length).toBeGreaterThan(0);
-            expect(screen.getByRole('alert')).toHaveTextContent(warning);
-        },
-    );
+    it('shows offline availability without discarding the last reading', async () => {
+        render(<TemperatureControl />);
+        await emitLatestMessage(
+            createRoomSnapshotMessage({
+                devices: [
+                    {
+                        ...createTemperatureDevice(),
+                        availability: 'offline',
+                        availabilityReason: 'device_disconnected',
+                    },
+                ],
+            }),
+        );
+        expect(await screen.findByText('Offline')).toBeInTheDocument();
+        expect(screen.getByLabelText('Current temperature')).toHaveTextContent('22.4');
+    });
+
+    it('shows degraded health separately from availability', async () => {
+        render(<TemperatureControl />);
+        await emitLatestMessage(
+            createRoomSnapshotMessage({
+                devices: [
+                    {
+                        ...createTemperatureDevice(),
+                        health: 'degraded',
+                        healthReason: 'partial_data',
+                    },
+                ],
+            }),
+        );
+        expect(await screen.findByText('Online')).toBeInTheDocument();
+        expect(screen.getByRole('alert')).toHaveTextContent('partial_data');
+    });
 });
 
 async function emitLatestMessage(message: unknown): Promise<void> {
@@ -311,7 +340,10 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
         deviceId: 'temp-desk',
         name: 'Desk Temperature',
         role: 'temperature-sensor',
-        health: 'online',
+        availability: 'online',
+        availabilityChangedAt: '2026-06-08T09:30:00Z',
+        health: 'healthy',
+        healthChangedAt: '2026-06-08T09:30:00Z',
         reportedState: {
             temperature: 22.4,
             temperatureUnit: 'celsius',
@@ -320,7 +352,9 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
             policy: 'block',
             reason: 'read_only_device',
         },
-        lastSeenAt: '2026-06-08T09:30:00Z',
+        observationStatus: {
+            temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+        },
     };
 }
 
@@ -329,7 +363,10 @@ function createHumidityDevice(): RoomSnapshotProjection['devices'][number] {
         deviceId: 'humidity-desk',
         name: 'Desk Humidity',
         role: 'humidity-sensor',
-        health: 'online',
+        availability: 'online',
+        availabilityChangedAt: '2026-06-08T09:30:00Z',
+        health: 'healthy',
+        healthChangedAt: '2026-06-08T09:30:00Z',
         reportedState: {
             humidity: 45,
             humidityUnit: 'percent',
@@ -338,7 +375,9 @@ function createHumidityDevice(): RoomSnapshotProjection['devices'][number] {
             policy: 'block',
             reason: 'read_only_device',
         },
-        lastSeenAt: '2026-06-08T09:30:00Z',
+        observationStatus: {
+            humidity: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+        },
     };
 }
 

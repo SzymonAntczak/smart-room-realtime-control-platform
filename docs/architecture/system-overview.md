@@ -252,9 +252,8 @@ telemetry path for two simulated temperature sensors. It includes simulator
 adapter, event processor with validation and deduplication, and a read-model
 projection for `telemetry.reading.recorded` events. The frontend receives
 an initial UI-oriented `room.snapshot` baseline followed by per-device deltas over WebSocket
-from the local backend BFF. The current projection still uses the legacy
-combined `health` field and device-level `lastSeenAt`; B1 must migrate it to the
-target availability, health and per-capability observation-status model. Ignored
+from the local backend BFF. The current projection exposes independent
+availability, health and per-capability observation status. Ignored
 duplicate and invalid events are exposed only through bounded development
 diagnostics.
 `GET /room` remains available as

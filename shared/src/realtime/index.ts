@@ -99,13 +99,16 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
                 value.payload.recentCommands,
             ) &&
             hasCanonicalDeviceTimestamps(value.payload.device) &&
+            hasValidDeviceSemantics(value.payload.device) &&
             hasCanonicalCommandTimestamps(
                 value.payload.activeCommands,
                 value.payload.recentCommands,
             )
         );
     return (
-        value.revision === value.previousRevision + 1 && hasCanonicalDeviceTimestamps(value.payload)
+        value.revision === value.previousRevision + 1 &&
+        hasCanonicalDeviceTimestamps(value.payload) &&
+        hasValidDeviceSemantics(value.payload)
     );
 }
 
@@ -118,7 +121,9 @@ export function isRoomSnapshotProjection(value: unknown): value is RoomSnapshotP
             value.recentCommands,
         ) &&
         isCanonicalUtcTimestamp(value.updatedAt) &&
-        value.devices.every(hasCanonicalDeviceTimestamps) &&
+        value.devices.every(
+            (device) => hasCanonicalDeviceTimestamps(device) && hasValidDeviceSemantics(device),
+        ) &&
         hasCanonicalCommandTimestamps(value.activeCommands, value.recentCommands)
     );
 }
@@ -223,7 +228,53 @@ function hasCanonicalCommandTimestamps(
     );
 }
 function hasCanonicalDeviceTimestamps(device: Static<typeof deviceProjectionSchema>): boolean {
-    return device.lastSeenAt === undefined || isCanonicalUtcTimestamp(device.lastSeenAt);
+    return (
+        isCanonicalUtcTimestamp(device.availabilityChangedAt) &&
+        isCanonicalUtcTimestamp(device.healthChangedAt) &&
+        Object.values(device.observationStatus).every(
+            (status) =>
+                status.lastObservedAt === undefined ||
+                isCanonicalUtcTimestamp(status.lastObservedAt),
+        )
+    );
+}
+function hasValidDeviceSemantics(device: Static<typeof deviceProjectionSchema>): boolean {
+    if ((device.availability === 'offline') !== (device.availabilityReason !== undefined))
+        return false;
+    if ((device.health === 'degraded') !== (device.healthReason !== undefined)) return false;
+    if (
+        Object.values(device.observationStatus).some(
+            (status) =>
+                (status.freshness === 'fresh' || status.freshness === 'stale') &&
+                status.lastObservedAt === undefined,
+        )
+    )
+        return false;
+    if (device.role !== 'led-output')
+        return (
+            device.commandAvailability.policy === 'block' &&
+            device.commandAvailability.reason === 'read_only_device'
+        );
+    if (device.availability === 'offline')
+        return (
+            device.commandAvailability.policy === 'block' &&
+            device.commandAvailability.reason === 'device_offline'
+        );
+    if (device.availability === 'unknown')
+        return (
+            device.commandAvailability.policy === 'block' &&
+            device.commandAvailability.reason === 'availability_unknown'
+        );
+    if (device.health !== 'degraded')
+        return (
+            device.commandAvailability.policy === 'allow' &&
+            device.commandAvailability.reason === undefined
+        );
+    return (
+        (device.commandAvailability.policy === 'allow_with_warning' ||
+            device.commandAvailability.policy === 'block') &&
+        device.commandAvailability.reason === 'device_degraded'
+    );
 }
 function isCanonicalUtcTimestamp(value: string): boolean {
     return isSchema(canonicalUtcTimestampSchema, value);

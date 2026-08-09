@@ -1,10 +1,23 @@
 .card {
+    display: flex;
+    flex-direction: column;
     inline-size: min(100%, 32.5rem);
     padding: var(--space-8);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-sm);
     background: var(--color-surface);
     box-shadow: var(--shadow-panel);
+}
+
+.body {
+    flex: 1 1 auto;
+}
+
+.bottomAlert {
+    min-block-size: calc(
+        var(--font-size-body-sm) * var(--line-height-relaxed) * 3 + var(--space-4)
+    );
+    margin-block-start: var(--space-5);
 }
 
 .header {

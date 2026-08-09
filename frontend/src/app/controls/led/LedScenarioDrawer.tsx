@@ -1,5 +1,5 @@
 import type { DeviceScenarioAction } from '@smart-room/contracts/development';
-import { FlaskConical, Timer, X } from 'lucide-react';
+import { FlaskConical, Timer, TriangleAlert, Wifi, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import {
@@ -21,6 +21,10 @@ const labels: Record<DeviceScenarioAction, string> = {
     reject_command: 'Reject next command',
     omit_confirmation: 'Omit confirmation',
     report_after_timeout: 'Report after timeout',
+    degrade_device: 'Mark device degraded',
+    recover_device: 'Recover device health',
+    disconnect_device: 'Mark device offline',
+    reconnect_device: 'Mark device online',
 };
 
 interface LedScenarioDrawerProps {
@@ -31,6 +35,26 @@ interface LedScenarioDrawerProps {
     readonly selectedScenario?: DeviceScenarioAction;
     readonly onScenarioSelected?: (scenario: DeviceScenarioAction | undefined) => void;
 }
+
+interface LedScenarioSection {
+    readonly title: string;
+    readonly actions: readonly DeviceScenarioAction[];
+}
+
+const sections: readonly LedScenarioSection[] = [
+    {
+        title: 'Command behavior',
+        actions: [
+            'confirm_immediately',
+            'confirm_delayed',
+            'reject_command',
+            'omit_confirmation',
+            'report_after_timeout',
+        ],
+    },
+    { title: 'Availability', actions: ['disconnect_device', 'reconnect_device'] },
+    { title: 'Health', actions: ['degrade_device', 'recover_device'] },
+];
 
 export function LedScenarioDrawer({
     deviceId,
@@ -147,19 +171,40 @@ export function LedScenarioDrawer({
                                 Select how the next LED command behaves. This does not change the
                                 confirmed LED state.
                             </p>
-                            <div className={panelStyles.controls}>
-                                {actions.map((action) => (
-                                    <button
-                                        key={action}
-                                        className={panelStyles.button}
-                                        type="button"
-                                        disabled={activeAction !== undefined || isCommandActive}
-                                        onClick={() => void run(action)}
-                                    >
-                                        <Timer aria-hidden="true" size={16} strokeWidth={1.75} />
-                                        {activeAction === action ? 'Selecting...' : labels[action]}
-                                    </button>
-                                ))}
+                            <div className={panelStyles.scenarioSections}>
+                                {sections.map((section) => {
+                                    const visibleActions = section.actions.filter((action) =>
+                                        actions.includes(action),
+                                    );
+                                    if (visibleActions.length === 0) return null;
+                                    return (
+                                        <section
+                                            key={section.title}
+                                            className={panelStyles.scenarioSection}
+                                        >
+                                            <h3>{section.title}</h3>
+                                            <div className={panelStyles.controls}>
+                                                {visibleActions.map((action) => (
+                                                    <button
+                                                        key={action}
+                                                        className={panelStyles.button}
+                                                        type="button"
+                                                        disabled={
+                                                            activeAction !== undefined ||
+                                                            isCommandActive
+                                                        }
+                                                        onClick={() => void run(action)}
+                                                    >
+                                                        <ScenarioIcon action={action} />
+                                                        {activeAction === action
+                                                            ? 'Selecting...'
+                                                            : labels[action]}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </section>
+                                    );
+                                })}
                             </div>
                             {message || selectedScenario ? (
                                 <p className={panelStyles.message} role="status">
@@ -174,4 +219,13 @@ export function LedScenarioDrawer({
             ) : null}
         </>
     );
+}
+
+function ScenarioIcon({ action }: { action: DeviceScenarioAction }) {
+    const iconProps = { 'aria-hidden': true, size: 16, strokeWidth: 1.75 } as const;
+    if (action === 'disconnect_device' || action === 'reconnect_device')
+        return <Wifi {...iconProps} />;
+    if (action === 'degrade_device' || action === 'recover_device')
+        return <TriangleAlert {...iconProps} />;
+    return <Timer {...iconProps} />;
 }

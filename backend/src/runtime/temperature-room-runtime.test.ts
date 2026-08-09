@@ -102,7 +102,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('publishes health changes for the affected device without changing the other projection', () => {
+    it('publishes freshness changes for the affected device without changing availability', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
         const runtime = createTemperatureRoomRuntime({
@@ -125,8 +125,20 @@ describe('createTemperatureRoomRuntime', () => {
 
             expect(snapshots.at(-1)?.devices).toEqual(
                 expect.arrayContaining([
-                    expect.objectContaining({ deviceId: 'temp-desk', health: 'online' }),
-                    expect.objectContaining({ deviceId: 'temp-window', health: 'stale' }),
+                    expect.objectContaining({
+                        deviceId: 'temp-desk',
+                        availability: 'online',
+                        observationStatus: expect.objectContaining({
+                            temperature: expect.objectContaining({ freshness: 'fresh' }),
+                        }),
+                    }),
+                    expect.objectContaining({
+                        deviceId: 'temp-window',
+                        availability: 'online',
+                        observationStatus: expect.objectContaining({
+                            temperature: expect.objectContaining({ freshness: 'stale' }),
+                        }),
+                    }),
                 ]),
             );
         } finally {
@@ -134,7 +146,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('takes one paused sensor offline and restores only that sensor on fresh telemetry', () => {
+    it('keeps a paused sensor online while freshness becomes stale and then recovers', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
         const runtime = createTemperatureRoomRuntime({
@@ -151,7 +163,10 @@ describe('createTemperatureRoomRuntime', () => {
             clock.advanceBy(10_001);
             timer.run(1);
 
-            expect(device(runtime, 'temp-window')?.health).toBe('offline');
+            expect(device(runtime, 'temp-window')?.availability).toBe('online');
+            expect(device(runtime, 'temp-window')?.observationStatus.temperature?.freshness).toBe(
+                'stale',
+            );
 
             runtime.runDeviceScenario('temp-window', 'resume_telemetry');
             clock.advanceBy(1);
@@ -159,10 +174,42 @@ describe('createTemperatureRoomRuntime', () => {
 
             expect(device(runtime, 'temp-window')).toEqual(
                 expect.objectContaining({
-                    health: 'online',
+                    availability: 'online',
+                    observationStatus: expect.objectContaining({
+                        temperature: expect.objectContaining({ freshness: 'fresh' }),
+                    }),
                     reportedState: { temperature: 20.2, temperatureUnit: 'celsius' },
                 }),
             );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('changes temperature health independently of availability and freshness', () => {
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-06-08T09:30:00Z'),
+            generateEventId: createEventIdGenerator(),
+        });
+        try {
+            runtime.start();
+            const before = device(runtime, 'temp-window');
+            runtime.runDeviceScenario('temp-window', 'degrade_device');
+
+            expect(device(runtime, 'temp-window')).toMatchObject({
+                availability: 'online',
+                health: 'degraded',
+                healthReason: 'partial_data',
+                reportedState: before?.reportedState,
+                observationStatus: before?.observationStatus,
+            });
+
+            runtime.runDeviceScenario('temp-window', 'recover_device');
+            expect(device(runtime, 'temp-window')).toMatchObject({
+                availability: 'online',
+                health: 'healthy',
+            });
+            expect(device(runtime, 'temp-window')?.healthReason).toBeUndefined();
         } finally {
             runtime.stop();
         }

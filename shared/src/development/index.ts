@@ -2,6 +2,8 @@ import { Type } from '@sinclair/typebox';
 
 import { isoTimestampSchema, nonEmptyStringSchema } from '../validation';
 
+export const deviceConnectionScenarioActions = ['disconnect_device', 'reconnect_device'] as const;
+export const deviceHealthScenarioActions = ['degrade_device', 'recover_device'] as const;
 export const temperatureScenarioActions = [
     'pause_telemetry',
     'resume_telemetry',
@@ -9,6 +11,8 @@ export const temperatureScenarioActions = [
     'emit_invalid_reading',
     'emit_next_reading',
     'reset',
+    ...deviceConnectionScenarioActions,
+    ...deviceHealthScenarioActions,
 ] as const;
 export const ledScenarioActions = [
     'confirm_immediately',
@@ -16,6 +20,8 @@ export const ledScenarioActions = [
     'reject_command',
     'omit_confirmation',
     'report_after_timeout',
+    ...deviceConnectionScenarioActions,
+    ...deviceHealthScenarioActions,
 ] as const;
 export const deviceScenarioActions = [
     ...temperatureScenarioActions,
@@ -45,6 +51,7 @@ export const ignoredEventReasons = [
     'invalid_payload',
     'device_metric_mismatch',
     'future_dated_report',
+    'stale_device_transition',
 ] as const;
 export type IgnoredEventReason = (typeof ignoredEventReasons)[number];
 export interface IgnoredEventDiagnostic {

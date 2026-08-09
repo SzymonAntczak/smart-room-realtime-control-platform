@@ -38,9 +38,8 @@ behavior:
 
 The completed Stage 2/2.5 implementation is a read-only simulated temperature
 reference slice. It uses the backend adapter, event processor, read-model
-projection and realtime BFF. It currently exposes the legacy combined `health`
-field; B1 must migrate it to independent availability, operational health and
-observation freshness. Event history is a later dedicated slice. Development-only controls
+projection and realtime BFF. It exposes independent availability, operational
+health and observation freshness; event history is a later dedicated slice. Development-only controls
 exercise normal and failure scenarios through that same backend-owned path.
 The broader command rules below remain the target model for the later LED
 control slice.

@@ -40,7 +40,8 @@ describe('createRoomBffServer', () => {
             createRoomBffServer(
                 createRoomBffConfig({
                     roomSnapshot: createRoomSnapshot({
-                        health: 'stale',
+                        health: 'degraded',
+                        healthReason: 'partial_data',
                     }),
                 }),
             ),
@@ -54,7 +55,7 @@ describe('createRoomBffServer', () => {
             devices: [
                 {
                     deviceId: 'temp-desk',
-                    health: 'stale',
+                    health: 'degraded',
                 },
             ],
         });
@@ -111,7 +112,10 @@ describe('createRoomBffServer', () => {
         });
 
         expect(response.status).toBe(202);
-        await expect(response.json()).resolves.toEqual({ commandId: 'cmd-led-1', status: 'accepted' });
+        await expect(response.json()).resolves.toEqual({
+            commandId: 'cmd-led-1',
+            status: 'accepted',
+        });
         expect(requests).toEqual([
             { deviceId: 'led-main', commandType: 'set.power', requestedState: { power: 'on' } },
         ]);
@@ -482,11 +486,7 @@ describe('createRoomBffServer', () => {
     it('streams sequential command projection deltas for the affected device', async () => {
         const harness = createRoomBffHarness({
             roomSnapshot: createLedRoomSnapshot(),
-            sentAt: [
-                '2026-06-08T09:30:01Z',
-                '2026-06-08T09:30:02Z',
-                '2026-06-08T09:30:03Z',
-            ],
+            sentAt: ['2026-06-08T09:30:01Z', '2026-06-08T09:30:02Z', '2026-06-08T09:30:03Z'],
         });
         const server = await listen(createRoomBffServer(harness.config));
         openServers.push(server);
@@ -668,11 +668,13 @@ function createRoomBffHarness({
 }
 
 function createRoomSnapshot({
-    health = 'online',
+    health = 'healthy',
+    healthReason,
     temperature = 22,
     updatedAt = '2026-06-08T09:30:00Z',
 }: {
     health?: RoomSnapshotProjection['devices'][number]['health'];
+    healthReason?: string;
     temperature?: number;
     updatedAt?: string;
 } = {}): RoomSnapshotProjection {
@@ -684,7 +686,11 @@ function createRoomSnapshot({
                 deviceId: 'temp-desk',
                 name: 'Desk Temperature',
                 role: 'temperature-sensor',
+                availability: 'online',
+                availabilityChangedAt: '2026-06-08T09:30:00Z',
                 health,
+                healthChangedAt: '2026-06-08T09:30:00Z',
+                ...(healthReason ? { healthReason } : {}),
                 reportedState: {
                     temperature,
                     temperatureUnit: 'celsius',
@@ -693,7 +699,9 @@ function createRoomSnapshot({
                     policy: 'block',
                     reason: 'read_only_device',
                 },
-                lastSeenAt: '2026-06-08T09:30:00Z',
+                observationStatus: {
+                    temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+                },
             },
         ],
         activeCommands: [],
@@ -721,10 +729,15 @@ function createLedRoomSnapshot({
                 deviceId: 'led-main',
                 name: 'Main LED',
                 role: 'led-output',
-                health: 'online',
+                availability: 'online',
+                availabilityChangedAt: '2026-06-08T09:30:00Z',
+                health: 'healthy',
+                healthChangedAt: '2026-06-08T09:30:00Z',
                 reportedState: { power: status === 'confirmed' ? 'on' : 'off' },
                 commandAvailability: { policy: 'allow' },
-                lastSeenAt: '2026-06-08T09:30:00Z',
+                observationStatus: {
+                    power: { freshness: 'unknown', lastObservedAt: '2026-06-08T09:30:00Z' },
+                },
                 ...(status === 'accepted' ? { activeCommandId: command.commandId } : {}),
             },
         ],

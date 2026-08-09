@@ -1,5 +1,6 @@
 import {
     createTemperatureSensorSimulator,
+    type TemperatureHealthListener,
     type TemperatureReadingListener,
     type TemperatureReadingMessage,
     type TemperatureSensorConfig,
@@ -39,12 +40,24 @@ export function createTemperatureSensorScenario(
                 listeners.delete(listener);
             };
         },
+        onAvailability(listener) {
+            return sensor.onAvailability!(listener);
+        },
+        onHealth(listener: TemperatureHealthListener) {
+            return sensor.onHealth!(listener);
+        },
         tick(recordedAt) {
             const reading = sensor.tick(recordedAt);
             lastReading = reading;
             emitReading(reading);
 
             return reading;
+        },
+        reportAvailability(availability, reportedAt) {
+            return sensor.reportAvailability!(availability, reportedAt);
+        },
+        reportHealth(health, reason, reportedAt) {
+            return sensor.reportHealth!(health, reason, reportedAt);
         },
         pauseTelemetry(observedAt) {
             assertValidIsoTimestamp(observedAt, 'Temperature telemetry pause observedAt');

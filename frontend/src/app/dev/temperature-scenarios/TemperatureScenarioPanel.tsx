@@ -23,14 +23,39 @@ interface ScenarioControl {
     readonly Icon: LucideIcon;
 }
 
-const controls: readonly ScenarioControl[] = [
-    { action: 'pause_telemetry', label: 'Pause telemetry', Icon: Pause },
-    { action: 'resume_telemetry', label: 'Resume telemetry', Icon: Play },
-    { action: 'emit_next_reading', label: 'Emit next reading', Icon: StepForward },
-    { action: 'replay_last_reading', label: 'Replay last reading', Icon: History },
-    { action: 'emit_invalid_reading', label: 'Emit invalid reading', Icon: TriangleAlert },
-    { action: 'reset', label: 'Reset scenario', Icon: RotateCcw },
+interface ScenarioSection {
+    readonly title: string;
+    readonly controls: readonly ScenarioControl[];
+}
+
+const sections: readonly ScenarioSection[] = [
+    {
+        title: 'Freshness and telemetry',
+        controls: [
+            { action: 'pause_telemetry', label: 'Pause telemetry', Icon: Pause },
+            { action: 'resume_telemetry', label: 'Resume telemetry', Icon: Play },
+            { action: 'emit_next_reading', label: 'Emit next reading', Icon: StepForward },
+            { action: 'replay_last_reading', label: 'Replay last reading', Icon: History },
+            { action: 'emit_invalid_reading', label: 'Emit invalid reading', Icon: TriangleAlert },
+            { action: 'reset', label: 'Reset scenario', Icon: RotateCcw },
+        ],
+    },
+    {
+        title: 'Availability',
+        controls: [
+            { action: 'disconnect_device', label: 'Mark device offline', Icon: Pause },
+            { action: 'reconnect_device', label: 'Mark device online', Icon: Play },
+        ],
+    },
+    {
+        title: 'Health',
+        controls: [
+            { action: 'degrade_device', label: 'Degrade device health', Icon: TriangleAlert },
+            { action: 'recover_device', label: 'Recover device health', Icon: RotateCcw },
+        ],
+    },
 ];
+const controls = sections.flatMap((section) => section.controls);
 
 interface TemperatureScenarioPanelProps {
     readonly client?: TemperatureScenarioClient;
@@ -71,21 +96,38 @@ export function TemperatureScenarioPanel({
                 Controls operate the local simulator through the backend. Room state still arrives
                 through the realtime stream: a snapshot baseline followed by device updates.
             </p>
-            <div className={styles.controls}>
-                {controls
-                    .filter((control) => actions?.includes(control.action) ?? true)
-                    .map((control) => (
-                        <button
-                            key={control.action}
-                            className={styles.button}
-                            type="button"
-                            disabled={activeAction !== undefined}
-                            onClick={() => void runScenario(control.action)}
-                        >
-                            <control.Icon aria-hidden="true" size={16} strokeWidth={1.75} />
-                            {activeAction === control.action ? 'Running...' : control.label}
-                        </button>
-                    ))}
+            <div className={styles.scenarioSections}>
+                {sections.map((section) => {
+                    const visibleControls = section.controls.filter(
+                        (control) => actions?.includes(control.action) ?? true,
+                    );
+                    if (visibleControls.length === 0) return null;
+                    return (
+                        <section key={section.title} className={styles.scenarioSection}>
+                            <h3>{section.title}</h3>
+                            <div className={styles.controls}>
+                                {visibleControls.map((control) => (
+                                    <button
+                                        key={control.action}
+                                        className={styles.button}
+                                        type="button"
+                                        disabled={activeAction !== undefined}
+                                        onClick={() => void runScenario(control.action)}
+                                    >
+                                        <control.Icon
+                                            aria-hidden="true"
+                                            size={16}
+                                            strokeWidth={1.75}
+                                        />
+                                        {activeAction === control.action
+                                            ? 'Running...'
+                                            : control.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+                    );
+                })}
             </div>
             {message ? (
                 <p className={styles.message} role="status">

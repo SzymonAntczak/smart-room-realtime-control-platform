@@ -13,6 +13,7 @@
 
     --line-height-solid: 1;
     --line-height-tight: 1.1;
+    --line-height-relaxed: 1.5;
 
     --color-page: oklch(96% 0.012 235);
     --color-surface: oklch(100% 0 0);

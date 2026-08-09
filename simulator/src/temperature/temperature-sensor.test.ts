@@ -152,4 +152,40 @@ describe('createTemperatureSensorSimulator', () => {
             'Temperature reading recordedAt must be a valid timestamp string.',
         );
     });
+
+    it('emits explicit availability transitions with truthful previous values', () => {
+        const sensor = createTemperatureSensorSimulator({
+            sensorId: 'temp-desk',
+            baseTemperature: 22,
+            readingPattern: [0],
+        });
+        const reports: unknown[] = [];
+        sensor.onAvailability?.((report) => reports.push(report));
+
+        sensor.reportAvailability?.('online', '2026-06-08T09:30:00Z');
+        sensor.reportAvailability?.('offline', '2026-06-08T09:30:01Z');
+
+        expect(reports).toMatchObject([
+            { previousAvailability: 'unknown', availability: 'online' },
+            { previousAvailability: 'online', availability: 'offline' },
+        ]);
+    });
+
+    it('emits explicit health transitions with truthful previous values', () => {
+        const sensor = createTemperatureSensorSimulator({
+            sensorId: 'temp-desk',
+            baseTemperature: 22,
+            readingPattern: [0],
+        });
+        const reports: unknown[] = [];
+        sensor.onHealth?.((report) => reports.push(report));
+
+        sensor.reportHealth?.('degraded', 'partial_data', '2026-06-08T09:30:00Z');
+        sensor.reportHealth?.('healthy', 'recovered', '2026-06-08T09:30:01Z');
+
+        expect(reports).toMatchObject([
+            { previousHealth: 'unknown', health: 'degraded', reason: 'partial_data' },
+            { previousHealth: 'degraded', health: 'healthy', reason: 'recovered' },
+        ]);
+    });
 });

@@ -65,6 +65,28 @@ describe('createLedSimulator', () => {
         expect(reports).toEqual([]);
         expect(simulator.getObservedPower()).toBe('off');
     });
+
+    it('emits explicit availability and health facts with truthful previous values', () => {
+        const simulator = createSimulator();
+        const availability: unknown[] = [];
+        const health: unknown[] = [];
+        simulator.onAvailability((report) => availability.push(report));
+        simulator.onHealth((report) => health.push(report));
+
+        simulator.reportAvailability('online', '2026-08-05T10:00:00Z');
+        simulator.reportAvailability('offline', '2026-08-05T10:00:01Z');
+        simulator.reportHealth('degraded', 'partial_data', '2026-08-05T10:00:02Z');
+        simulator.reportHealth('healthy', 'recovered', '2026-08-05T10:00:03Z');
+
+        expect(availability).toMatchObject([
+            { previousAvailability: 'unknown', availability: 'online' },
+            { previousAvailability: 'online', availability: 'offline' },
+        ]);
+        expect(health).toMatchObject([
+            { previousHealth: 'unknown', health: 'degraded' },
+            { previousHealth: 'degraded', health: 'healthy' },
+        ]);
+    });
 });
 
 function createSimulator() {

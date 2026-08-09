@@ -11,7 +11,48 @@ describe('LedControl', () => {
 
         expect(screen.getByLabelText('Confirmed LED power')).toHaveTextContent('Confirmed: Off');
         expect(screen.getByText('Requested: On — awaiting device report.')).toBeInTheDocument();
-        expect(screen.getByRole('status')).toHaveTextContent('Pending');
+        expect(screen.getByText('Online')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
+    });
+
+    it('keeps command progress visible beside degraded and stale warnings', () => {
+        render(
+            <LedControl
+                device={{
+                    ...createLed(),
+                    health: 'degraded',
+                    healthReason: 'partial_data',
+                    observationStatus: {
+                        power: { freshness: 'stale', lastObservedAt: '2026-08-06T11:00:00Z' },
+                    },
+                }}
+                activeCommand={createPendingCommand()}
+            />,
+        );
+
+        expect(screen.getByText(/partial_data/)).toBeInTheDocument();
+        expect(screen.getByText(/LED state observation is stale/)).toBeInTheDocument();
+        expect(screen.getByText(/Requested: On/)).toBeInTheDocument();
+    });
+
+    it('renders a bootstrap LED without inventing a confirmed power state', () => {
+        render(
+            <LedControl
+                device={{
+                    ...createLed(),
+                    availability: 'unknown',
+                    health: 'unknown',
+                    reportedState: {},
+                    observationStatus: {},
+                    commandAvailability: { policy: 'block', reason: 'availability_unknown' },
+                    activeCommandId: undefined,
+                }}
+            />,
+        );
+
+        expect(screen.getByLabelText('Confirmed LED power')).toHaveTextContent(
+            'Confirmed: Unknown',
+        );
         expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
     });
 
@@ -31,10 +72,15 @@ function createLed(): DeviceProjection {
         deviceId: 'led-main',
         name: 'Main LED',
         role: 'led-output',
-        health: 'online',
+        availability: 'online',
+        availabilityChangedAt: '2026-08-06T12:00:00Z',
+        health: 'healthy',
+        healthChangedAt: '2026-08-06T12:00:00Z',
         reportedState: { power: 'off' },
         commandAvailability: { policy: 'allow' },
-        lastSeenAt: '2026-08-06T12:00:00Z',
+        observationStatus: {
+            power: { freshness: 'unknown', lastObservedAt: '2026-08-06T12:00:00Z' },
+        },
         activeCommandId: 'cmd-1',
     };
 }

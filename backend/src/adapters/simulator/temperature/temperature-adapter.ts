@@ -1,4 +1,8 @@
-import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts/events';
+import type {
+    DeviceAvailabilityChangedEvent,
+    DeviceHealthChangedEvent,
+    TelemetryReadingRecordedEvent,
+} from '@smart-room/contracts/events';
 import type { TemperatureSensorSimulator } from '@smart-room/simulator';
 
 import type { EventIdGenerator, PlatformEventSink } from '../../../platform/ports/event-sink';
@@ -9,6 +13,8 @@ export interface SimulatorTemperatureAdapterConfig {
     platformDeviceId: string;
     generateEventId: EventIdGenerator;
     emitEvent: PlatformEventSink<TelemetryReadingRecordedEvent>;
+    emitAvailabilityEvent?: PlatformEventSink<DeviceAvailabilityChangedEvent>;
+    emitHealthEvent?: PlatformEventSink<DeviceHealthChangedEvent>;
 }
 
 export interface SimulatorTemperatureAdapter {
@@ -21,6 +27,8 @@ export function createSimulatorTemperatureAdapter({
     platformDeviceId,
     generateEventId,
     emitEvent,
+    emitAvailabilityEvent,
+    emitHealthEvent,
 }: SimulatorTemperatureAdapterConfig): SimulatorTemperatureAdapter {
     const replayableEventsBySequence = new Map<number, TelemetryReadingRecordedEvent>();
     const unsubscribe = sensor.onReading((reading) => {
@@ -52,10 +60,42 @@ export function createSimulatorTemperatureAdapter({
         trimReplayableEvents(replayableEventsBySequence);
         emitEvent(event);
     });
+    const unsubscribeFromAvailability = sensor.onAvailability?.((report) => {
+        if (report.sensorId !== nativeSensorId) return;
+        emitAvailabilityEvent?.({
+            eventId: generateEventId(),
+            eventType: 'device.availability.changed',
+            occurredAt: report.reportedAt,
+            source: 'simulator-adapter',
+            deviceId: platformDeviceId,
+            payload: {
+                previousAvailability: report.previousAvailability,
+                availability: report.availability,
+                reason: 'simulator_reported',
+            },
+        });
+    });
+    const unsubscribeFromHealth = sensor.onHealth?.((report) => {
+        if (report.sensorId !== nativeSensorId) return;
+        emitHealthEvent?.({
+            eventId: generateEventId(),
+            eventType: 'device.health.changed',
+            occurredAt: report.reportedAt,
+            source: 'simulator-adapter',
+            deviceId: platformDeviceId,
+            payload: {
+                previousHealth: report.previousHealth,
+                health: report.health,
+                reason: report.reason,
+            },
+        });
+    });
 
     return {
         stop() {
             unsubscribe();
+            unsubscribeFromAvailability?.();
+            unsubscribeFromHealth?.();
         },
     };
 }

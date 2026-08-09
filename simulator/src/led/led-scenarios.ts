@@ -1,7 +1,11 @@
 import {
     createLedSimulator,
+    type LedAvailabilityListener,
+    type LedAvailabilityReport,
     type LedCommandListener,
     type LedCommandRejectionListener,
+    type LedHealthListener,
+    type LedHealthReport,
     type LedSetPowerCommand,
     type LedSimulator,
     type LedSimulatorConfig,
@@ -34,7 +38,18 @@ export interface LedScenario extends Pick<LedSimulator, 'getObservedPower'> {
     onCommand(listener: LedCommandListener): () => void;
     onStateReport(listener: LedStateReportListener): () => void;
     onCommandRejection(listener: LedCommandRejectionListener): () => void;
+    onAvailability(listener: LedAvailabilityListener): () => void;
+    onHealth(listener: LedHealthListener): () => void;
     receive(command: LedSetPowerCommand): void;
+    reportAvailability(
+        availability: 'online' | 'offline',
+        reportedAt: string,
+    ): LedAvailabilityReport;
+    reportHealth(
+        health: 'healthy' | 'degraded',
+        reason: string,
+        reportedAt: string,
+    ): LedHealthReport;
     setNextCommandScenario(scenario: LedScenarioName): void;
     stop(): void;
 }

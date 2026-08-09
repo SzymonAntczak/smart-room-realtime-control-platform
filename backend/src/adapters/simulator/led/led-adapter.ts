@@ -1,7 +1,14 @@
 import type { SetPowerCommandRequest } from '@smart-room/contracts/commands';
-import type { CommandFailedEvent, DeviceStateReportedEvent } from '@smart-room/contracts/events';
 import type {
+    CommandFailedEvent,
+    DeviceAvailabilityChangedEvent,
+    DeviceHealthChangedEvent,
+    DeviceStateReportedEvent,
+} from '@smart-room/contracts/events';
+import type {
+    LedAvailabilityListener,
     LedCommandRejectionListener,
+    LedHealthListener,
     LedSetPowerCommand,
     LedStateReportListener,
 } from '@smart-room/simulator';
@@ -15,6 +22,8 @@ export type PlatformSetPowerCommand = SetPowerCommandRequest & {
 export interface LedCommandTransport {
     onStateReport(listener: LedStateReportListener): () => void;
     onCommandRejection(listener: LedCommandRejectionListener): () => void;
+    onAvailability?(listener: LedAvailabilityListener): () => void;
+    onHealth?(listener: LedHealthListener): () => void;
     receive(command: LedSetPowerCommand): void;
 }
 
@@ -23,7 +32,12 @@ export interface SimulatorLedAdapterConfig {
     nativeLedId: string;
     platformDeviceId: string;
     generateEventId: EventIdGenerator;
-    emitEvent: PlatformEventSink<DeviceStateReportedEvent | CommandFailedEvent>;
+    emitEvent: PlatformEventSink<
+        | DeviceStateReportedEvent
+        | CommandFailedEvent
+        | DeviceAvailabilityChangedEvent
+        | DeviceHealthChangedEvent
+    >;
 }
 
 export interface SimulatorLedAdapter {
@@ -84,6 +98,36 @@ export function createSimulatorLedAdapter({
             },
         });
     });
+    const unsubscribeFromAvailability = led.onAvailability?.((report) => {
+        if (report.deviceId !== nativeLedId) return;
+        emitEvent({
+            eventId: generateEventId(),
+            eventType: 'device.availability.changed',
+            occurredAt: report.reportedAt,
+            source: 'simulator-adapter',
+            deviceId: platformDeviceId,
+            payload: {
+                previousAvailability: report.previousAvailability,
+                availability: report.availability,
+                reason: 'simulator_reported',
+            },
+        });
+    });
+    const unsubscribeFromHealth = led.onHealth?.((report) => {
+        if (report.deviceId !== nativeLedId) return;
+        emitEvent({
+            eventId: generateEventId(),
+            eventType: 'device.health.changed',
+            occurredAt: report.reportedAt,
+            source: 'simulator-adapter',
+            deviceId: platformDeviceId,
+            payload: {
+                previousHealth: report.previousHealth,
+                health: report.health,
+                reason: report.reason,
+            },
+        });
+    });
 
     return {
         dispatch(command) {
@@ -106,6 +150,8 @@ export function createSimulatorLedAdapter({
             hasStopped = true;
             unsubscribeFromStateReports();
             unsubscribeFromCommandRejections();
+            unsubscribeFromAvailability?.();
+            unsubscribeFromHealth?.();
         },
     };
 }

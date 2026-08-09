@@ -213,11 +213,23 @@ function createControllableLed(): {
                 rejectionListeners.add(listener);
                 return () => rejectionListeners.delete(listener);
             },
+            onAvailability() {
+                return () => undefined;
+            },
+            onHealth() {
+                return () => undefined;
+            },
             receive() {},
             reportState() {
                 throw new Error('Not used by this test double.');
             },
             rejectCommand() {
+                throw new Error('Not used by this test double.');
+            },
+            reportAvailability() {
+                throw new Error('Not used by this test double.');
+            },
+            reportHealth() {
                 throw new Error('Not used by this test double.');
             },
             getObservedPower() {

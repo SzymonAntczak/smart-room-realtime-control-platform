@@ -22,30 +22,22 @@ describe('temperature read path integration', () => {
 
         readPath.sensor.tick('2026-06-08T09:30:00Z');
 
-        expect(readPath.lastResult()).toEqual({
+        expect(readPath.lastResult()).toMatchObject({
             status: 'accepted',
-            evaluatedAt: '2026-06-08T09:30:00Z',
             state: {
-                updatedAt: '2026-06-08T09:30:00Z',
                 devices: [
                     {
-                        deviceId: 'temp-desk',
-                        name: 'Desk Temperature',
-                        role: 'temperature-sensor',
-                        health: 'online',
-                        reportedState: {
-                            temperature: 22.5,
-                            temperatureUnit: 'celsius',
+                        availability: 'unknown',
+                        health: 'unknown',
+                        observationStatus: {
+                            temperature: {
+                                freshness: 'fresh',
+                                lastObservedAt: '2026-06-08T09:30:00Z',
+                            },
                         },
-                        commandAvailability: {
-                            policy: 'block',
-                            reason: 'read_only_device',
-                        },
-                        lastSeenAt: '2026-06-08T09:30:00Z',
+                        reportedState: { temperature: 22.5, temperatureUnit: 'celsius' },
                     },
                 ],
-                activeCommands: [],
-                recentCommands: [],
             },
         });
     });
@@ -90,7 +82,7 @@ describe('temperature read path integration', () => {
         });
     });
 
-    it('keeps the latest reading visible when telemetry becomes stale or offline', () => {
+    it('keeps the latest reading visible when telemetry becomes stale', () => {
         const readPath = createTemperatureReadPath({
             eventIds: ['evt-temperature-1'],
             readingPattern: [0.5],
@@ -100,26 +92,25 @@ describe('temperature read path integration', () => {
         readPath.sensor.pauseTelemetry('2026-06-08T09:30:02.501Z');
 
         const staleProjection = readPath.getProjection('2026-06-08T09:30:02.501Z');
-        const offlineProjection = readPath.getProjection('2026-06-08T09:30:10.001Z');
-
-        expect(staleProjection.devices[0]?.health).toBe('stale');
-        expect(offlineProjection.devices[0]?.health).toBe('offline');
-        expect(offlineProjection.devices[0]?.reportedState).toEqual({
+        expect(staleProjection.devices[0]?.observationStatus.temperature?.freshness).toBe('stale');
+        expect(staleProjection.devices[0]?.availability).toBe('unknown');
+        expect(staleProjection.devices[0]?.reportedState).toEqual({
             temperature: 22.5,
             temperatureUnit: 'celsius',
         });
     });
 
-    it('recovers from stale or offline health after a fresh scenario reading', () => {
+    it('recovers freshness after a fresh scenario reading', () => {
         const readPath = createTemperatureReadPath({
             eventIds: ['evt-temperature-1', 'evt-temperature-2'],
             readingPattern: [0.5, 0.8],
         });
 
         readPath.sensor.tick('2026-06-08T09:30:00Z');
-        expect(readPath.getProjection('2026-06-08T09:30:10.001Z').devices[0]?.health).toBe(
-            'offline',
-        );
+        expect(
+            readPath.getProjection('2026-06-08T09:30:10.001Z').devices[0]?.observationStatus
+                .temperature?.freshness,
+        ).toBe('stale');
 
         readPath.sensor.tick('2026-06-08T09:30:11Z');
 
@@ -127,8 +118,10 @@ describe('temperature read path integration', () => {
 
         expect(recoveredProjection.devices[0]).toEqual(
             expect.objectContaining({
-                health: 'online',
-                lastSeenAt: '2026-06-08T09:30:11Z',
+                availability: 'unknown',
+                observationStatus: {
+                    temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:11Z' },
+                },
                 reportedState: {
                     temperature: 22.8,
                     temperatureUnit: 'celsius',

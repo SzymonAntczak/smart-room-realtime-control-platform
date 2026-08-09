@@ -167,16 +167,16 @@ function validateRenderableDevices(snapshot: RoomSnapshotProjection): void {
     for (const device of snapshot.devices) {
         if (
             device.role === 'led-output' &&
+            device.reportedState.power !== undefined &&
             device.reportedState.power !== 'on' &&
             device.reportedState.power !== 'off'
-        ) {
+        )
             throw new Error('LED data did not match the expected contract.');
-        }
         if (
             device.role === 'temperature-sensor' &&
+            device.observationStatus.temperature?.lastObservedAt !== undefined &&
             (typeof device.reportedState.temperature !== 'number' ||
-                device.reportedState.temperatureUnit !== 'celsius' ||
-                typeof device.lastSeenAt !== 'string')
+                device.reportedState.temperatureUnit !== 'celsius')
         ) {
             throw new Error('Temperature sensor data did not match the expected contract.');
         }

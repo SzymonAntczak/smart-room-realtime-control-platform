@@ -5,11 +5,15 @@ import { powerStateProjectionSchema } from '../commands';
 import {
     type CommandAvailability,
     commandAvailabilityPolicies,
-    type DeviceHealth,
-    deviceHealthStates,
+    type DeviceAvailability,
+    deviceAvailabilityStates,
+    type DeviceOperationalHealth,
+    deviceOperationalHealthStates,
     type DeviceRole,
     deviceRoles,
     type DeviceState,
+    type ObservationFreshness,
+    observationFreshnessStates,
 } from '../devices';
 import { isoTimestampSchema, nonEmptyStringSchema } from '../validation';
 
@@ -17,12 +21,15 @@ export interface DeviceProjection {
     deviceId: string;
     name: string;
     role: DeviceRole;
-    health: DeviceHealth;
+    availability: DeviceAvailability;
+    availabilityChangedAt: string;
+    availabilityReason?: string;
+    health: DeviceOperationalHealth;
+    healthChangedAt: string;
+    healthReason?: string;
     reportedState: DeviceState;
-    requestedState?: DeviceState;
+    observationStatus: Record<string, { freshness: ObservationFreshness; lastObservedAt?: string }>;
     commandAvailability: CommandAvailability;
-    lastSeenAt?: string;
-    warning?: string;
     activeCommandId?: string;
 }
 export interface RoomSnapshotProjection {
@@ -41,17 +48,27 @@ const commandAvailabilitySchema = Type.Object({
     policy: Type.Union(commandAvailabilityPolicies.map((policy) => Type.Literal(policy))),
     reason: Type.Optional(Type.String()),
 });
+const observationStatusSchema = Type.Record(
+    Type.String(),
+    Type.Object({
+        freshness: Type.Union(observationFreshnessStates.map((value) => Type.Literal(value))),
+        lastObservedAt: Type.Optional(isoTimestampSchema),
+    }),
+);
 export const deviceProjectionSchema = Type.Object(
     {
         deviceId: nonEmptyStringSchema,
         name: nonEmptyStringSchema,
         role: Type.Union(deviceRoles.map((role) => Type.Literal(role))),
-        health: Type.Union(deviceHealthStates.map((health) => Type.Literal(health))),
+        availability: Type.Union(deviceAvailabilityStates.map((value) => Type.Literal(value))),
+        availabilityChangedAt: isoTimestampSchema,
+        availabilityReason: Type.Optional(nonEmptyStringSchema),
+        health: Type.Union(deviceOperationalHealthStates.map((value) => Type.Literal(value))),
+        healthChangedAt: isoTimestampSchema,
+        healthReason: Type.Optional(nonEmptyStringSchema),
         reportedState: deviceStateSchema,
-        requestedState: Type.Optional(deviceStateSchema),
+        observationStatus: observationStatusSchema,
         commandAvailability: commandAvailabilitySchema,
-        lastSeenAt: Type.Optional(isoTimestampSchema),
-        warning: Type.Optional(Type.String()),
         activeCommandId: Type.Optional(nonEmptyStringSchema),
     },
     { additionalProperties: false },

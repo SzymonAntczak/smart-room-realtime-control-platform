@@ -11,6 +11,7 @@ interface ControlCardProps {
     statusIcon?: ReactNode;
     headerAction?: ReactNode;
     children: ReactNode;
+    bottomAlert?: ReactNode;
     statusTone?: ControlCardStatusTone;
     statusAriaLive?: 'off' | 'polite' | 'assertive';
     statusRole?: 'status';
@@ -24,6 +25,7 @@ export function ControlCard({
     statusIcon,
     headerAction,
     children,
+    bottomAlert,
     statusTone = 'neutral',
     statusAriaLive = 'polite',
     statusRole = 'status',
@@ -50,7 +52,8 @@ export function ControlCard({
                 </div>
             </div>
 
-            {children}
+            <div className={styles.body}>{children}</div>
+            <div className={styles.bottomAlert}>{bottomAlert}</div>
         </section>
     );
 }

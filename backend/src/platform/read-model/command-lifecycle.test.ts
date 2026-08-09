@@ -39,6 +39,34 @@ describe('command lifecycle projections', () => {
         ]);
     });
 
+    it('keeps an accepted command active when a later availability fact becomes offline', () => {
+        const projector = createLedProjector();
+        projector.applyDeviceStateReported(report('off'));
+        projector.applyCommandRequested(requested('cmd-1', 'on'));
+
+        const snapshot = projector.applyDeviceAvailabilityChanged({
+            eventId: 'evt-led-offline',
+            eventType: 'device.availability.changed',
+            occurredAt: '2026-08-05T10:00:02Z',
+            source: 'simulator-adapter',
+            deviceId: 'led-main',
+            payload: {
+                previousAvailability: 'online',
+                availability: 'offline',
+                reason: 'device_disconnected',
+            },
+        });
+
+        expect(snapshot.devices[0]).toMatchObject({
+            availability: 'offline',
+            activeCommandId: 'cmd-1',
+            commandAvailability: { policy: 'block', reason: 'device_offline' },
+        });
+        expect(snapshot.activeCommands).toEqual([
+            expect.objectContaining({ commandId: 'cmd-1', status: 'accepted' }),
+        ]);
+    });
+
     it('rejects a competing request so its producer must emit command.failed explicitly', () => {
         const projector = createLedProjector();
         projector.applyDeviceStateReported(report('off'));

@@ -1,6 +1,11 @@
-export const deviceHealthStates = ['online', 'stale', 'offline', 'degraded'] as const;
+export const deviceAvailabilityStates = ['online', 'offline', 'unknown'] as const;
+export type DeviceAvailability = (typeof deviceAvailabilityStates)[number];
 
-export type DeviceHealth = (typeof deviceHealthStates)[number];
+export const deviceOperationalHealthStates = ['healthy', 'degraded', 'unknown'] as const;
+export type DeviceOperationalHealth = (typeof deviceOperationalHealthStates)[number];
+
+export const observationFreshnessStates = ['fresh', 'stale', 'unknown'] as const;
+export type ObservationFreshness = (typeof observationFreshnessStates)[number];
 
 export const deviceRoles = [
     'temperature-sensor',

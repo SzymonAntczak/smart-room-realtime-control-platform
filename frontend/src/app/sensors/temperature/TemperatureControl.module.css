@@ -37,12 +37,6 @@
     font-weight: var(--font-weight-bold);
 }
 
-.updated {
-    margin: 0;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
-}
-
 .message {
     margin-block: var(--space-12) 0;
     margin-inline: 0;

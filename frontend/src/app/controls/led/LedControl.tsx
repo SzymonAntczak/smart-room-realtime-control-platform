@@ -4,9 +4,10 @@ import type {
 } from '@smart-room/contracts/commands';
 import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
-import { Lightbulb, LightbulbOff, Power, TriangleAlert } from 'lucide-react';
+import { Lightbulb, LightbulbOff, Power } from 'lucide-react';
 import { useState } from 'react';
 
+import { Alert, type AlertVariant } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
 import { submitLedPowerCommand } from './led-command-client';
@@ -30,34 +31,21 @@ export function LedControl({
     const [selectingScenario, setSelectingScenario] = useState(false);
     const [selectedScenario, setSelectedScenario] = useState<DeviceScenarioAction>();
     const [transportError, setTransportError] = useState<string>();
-
-    if (!device) {
+    if (!device)
         return (
-            <ControlCard eyebrow="Realtime room stream" title="Main LED" status="Unavailable">
+            <ControlCard eyebrow="Realtime room stream" title="Main LED" status="Unknown">
                 <p className={styles.message}>No LED device is available yet.</p>
             </ControlCard>
         );
-    }
-
-    const isLed = device.role === 'led-output' && isPowerState(device.reportedState.power);
-    if (!isLed) return null;
+    if (device.role !== 'led-output') return null;
 
     const isBlocked = device.commandAvailability.policy === 'block' || realtimeUncertain;
     const isBusy = submitting || selectingScenario || activeCommand !== undefined;
-    const deviceId = device.deviceId;
-    const confirmedPower = device.reportedState.power;
-    const isOn = confirmedPower === 'on';
+    const hasReportedPower = isPowerState(device.reportedState.power);
+    const isOn = device.reportedState.power === 'on';
     const PowerIcon = isOn ? Lightbulb : LightbulbOff;
-    const requestedPower = activeCommand?.requestedState.power;
-    const status = submitting
-        ? 'Submitting'
-        : activeCommand === undefined
-          ? formatHealth(device.health)
-          : activeCommand.status === 'accepted'
-            ? 'Accepted'
-            : 'Pending';
-
-    async function requestPower(power: 'on' | 'off'): Promise<void> {
+    const deviceId = device.deviceId;
+    async function requestPower(power: 'on' | 'off') {
         setSubmitting(true);
         setTransportError(undefined);
         try {
@@ -74,12 +62,19 @@ export function LedControl({
             setSubmitting(false);
         }
     }
-
     return (
         <ControlCard
             eyebrow="Realtime room stream"
             title={device.name}
             titleId={`led-heading-${device.deviceId}`}
+            status={formatAvailability(device.availability)}
+            statusTone={
+                device.availability === 'online'
+                    ? 'success'
+                    : device.availability === 'offline'
+                      ? 'danger'
+                      : 'warning'
+            }
             headerAction={
                 showDevScenarioPanel ? (
                     <LedScenarioDrawer
@@ -91,40 +86,24 @@ export function LedControl({
                     />
                 ) : undefined
             }
-            status={status}
-            statusTone={
-                isBlocked || device.health === 'offline'
-                    ? 'danger'
-                    : activeCommand || submitting
-                      ? 'warning'
-                      : device.health === 'online'
-                        ? 'success'
-                        : 'warning'
+            bottomAlert={
+                <Alert
+                    {...getCardAlert({
+                        device,
+                        activeCommand,
+                        recentCommand,
+                        transportError,
+                        realtimeUncertain,
+                        submitting,
+                    })}
+                />
             }
         >
-            {device.commandAvailability.policy === 'allow_with_warning' ||
-            device.health === 'stale' ? (
-                <p className={styles.warning} role="alert">
-                    <TriangleAlert aria-hidden="true" size={16} /> LED state may be stale. Commands
-                    remain available.
-                </p>
-            ) : null}
-            {isBlocked ? (
-                <p className={styles.warning} role="alert">
-                    {realtimeUncertain
-                        ? 'Realtime stream is reconnecting. LED controls are temporarily unavailable.'
-                        : (device.warning ?? 'LED controls are unavailable.')}
-                </p>
-            ) : null}
-            {transportError ? (
-                <p className={styles.error} role="alert">
-                    {transportError}
-                </p>
-            ) : null}
             <div className={styles.power} aria-label="Confirmed LED power">
                 <PowerIcon aria-hidden="true" size={28} />
                 <span>
-                    Confirmed: <strong>{isOn ? 'On' : 'Off'}</strong>
+                    Confirmed:{' '}
+                    <strong>{hasReportedPower ? (isOn ? 'On' : 'Off') : 'Unknown'}</strong>
                 </span>
             </div>
             <div className={styles.actions} aria-label="LED power controls">
@@ -133,50 +112,102 @@ export function LedControl({
                     aria-label={isOn ? 'Turn off' : 'Turn on'}
                     aria-pressed={isOn}
                     className={isOn ? styles.toggleOn : styles.toggleOff}
-                    disabled={isBlocked || isBusy}
+                    disabled={isBlocked || isBusy || !hasReportedPower}
                     onClick={() => void requestPower(isOn ? 'off' : 'on')}
                 >
                     <Power aria-hidden="true" size={20} />
                 </button>
             </div>
-            <div className={styles.commandMessages}>
-                {recentCommand ? (
-                    <p
-                        className={
-                            recentCommand.status === 'confirmed' ? styles.message : styles.error
-                        }
-                        role="status"
-                    >
-                        Latest command: {recentCommand.status.replace('_', ' ')} at{' '}
-                        <time dateTime={terminalTimestamp(recentCommand)}>
-                            {terminalTimestamp(recentCommand).slice(11, 19)} UTC
-                        </time>
-                        {' — '}
-                        {recentCommand.status === 'failed'
-                            ? recentCommand.message
-                            : (recentCommand.reason ?? 'completed')}
-                    </p>
-                ) : null}
-                <p className={styles.requested} aria-hidden={requestedPower === undefined}>
-                    {requestedPower
-                        ? `Requested: ${requestedPower === 'on' ? 'On' : 'Off'} — awaiting device report.`
-                        : null}
-                </p>
-            </div>
         </ControlCard>
     );
 }
-
 function isPowerState(value: unknown): value is 'on' | 'off' {
     return value === 'on' || value === 'off';
 }
-
-function formatHealth(health: DeviceProjection['health']): string {
-    return health[0]?.toUpperCase() + health.slice(1);
+function formatAvailability(availability: DeviceProjection['availability']) {
+    return availability[0]?.toUpperCase() + availability.slice(1);
 }
-
-function terminalTimestamp(command: TerminalCommandProjection): string {
-    if (command.status === 'confirmed') return command.confirmedAt;
-    if (command.status === 'failed') return command.failedAt;
-    return command.timedOutAt;
+function terminalTimestamp(command: TerminalCommandProjection) {
+    return command.status === 'confirmed'
+        ? command.confirmedAt
+        : command.status === 'failed'
+          ? command.failedAt
+          : command.timedOutAt;
+}
+function getCardAlert({
+    device,
+    activeCommand,
+    recentCommand,
+    transportError,
+    realtimeUncertain,
+    submitting,
+}: {
+    device: DeviceProjection;
+    activeCommand?: ActiveCommandProjection;
+    recentCommand?: TerminalCommandProjection;
+    transportError?: string;
+    realtimeUncertain: boolean;
+    submitting: boolean;
+}): { message?: string; variant?: AlertVariant } {
+    const errors = [
+        transportError,
+        recentCommand?.status === 'failed' ? recentCommand.message : undefined,
+        recentCommand?.status === 'timed_out'
+            ? `Command timed out: ${recentCommand.reason}.`
+            : undefined,
+    ].filter((message): message is string => message !== undefined);
+    const warnings = [
+        device.availability === 'offline'
+            ? `LED is offline${device.availabilityReason ? `: ${device.availabilityReason}` : '.'}`
+            : undefined,
+        device.health === 'degraded'
+            ? (device.healthReason ?? 'LED health is degraded.')
+            : undefined,
+        device.observationStatus.power?.freshness === 'stale'
+            ? 'LED state observation is stale.'
+            : undefined,
+        realtimeUncertain
+            ? 'Realtime stream is reconnecting. LED controls are temporarily unavailable.'
+            : undefined,
+    ].filter((message): message is string => message !== undefined);
+    const information = [
+        submitting ? 'Submitting LED command.' : undefined,
+        activeCommand
+            ? `Requested: ${activeCommand.requestedState.power === 'on' ? 'On' : 'Off'} — awaiting device report.`
+            : undefined,
+        recentCommand?.status === 'confirmed'
+            ? `Command confirmed at ${terminalTimestamp(recentCommand).slice(11, 19)} UTC.`
+            : undefined,
+    ].filter((message): message is string => message !== undefined);
+    const messages = [...errors, ...warnings, ...information];
+    if (messages.length > 0)
+        return {
+            message: messages.join(' '),
+            variant: errors.length > 0 ? 'error' : warnings.length > 0 ? 'warning' : 'info',
+        };
+    if (transportError) return { message: transportError, variant: 'error' };
+    if (recentCommand?.status === 'failed')
+        return { message: recentCommand.message, variant: 'error' };
+    if (recentCommand?.status === 'timed_out')
+        return { message: `Command timed out: ${recentCommand.reason}.`, variant: 'error' };
+    if (device.health === 'degraded')
+        return { message: device.healthReason ?? 'LED health is degraded.', variant: 'warning' };
+    if (device.observationStatus.power?.freshness === 'stale')
+        return { message: 'LED state observation is stale.', variant: 'warning' };
+    if (realtimeUncertain)
+        return {
+            message: 'Realtime stream is reconnecting. LED controls are temporarily unavailable.',
+            variant: 'warning',
+        };
+    if (activeCommand)
+        return {
+            message: `Requested: ${activeCommand.requestedState.power === 'on' ? 'On' : 'Off'} — awaiting device report.`,
+            variant: 'info',
+        };
+    if (recentCommand?.status === 'confirmed')
+        return {
+            message: `Command confirmed at ${terminalTimestamp(recentCommand).slice(11, 19)} UTC.`,
+            variant: 'info',
+        };
+    return {};
 }

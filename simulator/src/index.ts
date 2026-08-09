@@ -2,6 +2,10 @@ export {
     createTemperatureSensorSimulator,
     type TemperatureReadingListener,
     type TemperatureReadingMessage,
+    type TemperatureAvailabilityListener,
+    type TemperatureAvailabilityMessage,
+    type TemperatureHealthListener,
+    type TemperatureHealthMessage,
     type TemperatureSensorConfig,
     type TemperatureSensorSimulator,
 } from './temperature/temperature-sensor';
@@ -21,6 +25,10 @@ export {
 export {
     createLedSimulator,
     type LedCommandListener,
+    type LedAvailabilityListener,
+    type LedAvailabilityReport,
+    type LedHealthListener,
+    type LedHealthReport,
     type LedCommandRejection,
     type LedCommandRejectionListener,
     type LedPower,

@@ -654,8 +654,14 @@ function createLedDevice(activeCommandId?: string) {
         deviceId: 'led-main',
         name: 'Main LED',
         role: 'led-output',
-        health: 'online',
+        availability: 'online',
+        availabilityChangedAt: '2026-06-08T09:30:00Z',
+        health: 'healthy',
+        healthChangedAt: '2026-06-08T09:30:00Z',
         reportedState: { power: 'off' },
+        observationStatus: {
+            power: { freshness: 'unknown', lastObservedAt: '2026-06-08T09:30:00Z' },
+        },
         commandAvailability: { policy: 'allow' },
         ...(activeCommandId ? { activeCommandId } : {}),
     };
@@ -671,10 +677,18 @@ function createDeviceUpdatedMessage() {
             deviceId: 'temp-desk',
             name: 'Desk Temperature',
             role: 'temperature-sensor' as const,
-            health: 'online' as const,
+            availability: 'online' as const,
+            availabilityChangedAt: '2026-06-08T09:30:00Z',
+            health: 'healthy' as const,
+            healthChangedAt: '2026-06-08T09:30:00Z',
             reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
+            observationStatus: {
+                temperature: {
+                    freshness: 'fresh' as const,
+                    lastObservedAt: '2026-06-08T09:30:00Z',
+                },
+            },
             commandAvailability: { policy: 'block' as const, reason: 'read_only_device' },
-            lastSeenAt: '2026-06-08T09:30:00Z',
         },
     };
 }
@@ -722,7 +736,7 @@ function createEvent(eventType: string) {
             return {
                 ...base,
                 eventType,
-                payload: { previousHealth: 'stale', health: 'online', reason: 'report_received' },
+                payload: { previousHealth: 'degraded', health: 'healthy', reason: 'recovered' },
             };
         case 'telemetry.reading.recorded':
             return {

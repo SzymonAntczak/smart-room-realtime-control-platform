@@ -7,6 +7,8 @@ import type {
     SetPowerCommandRequest,
 } from '@smart-room/contracts/commands';
 import type {
+    deviceConnectionScenarioActions,
+    deviceHealthScenarioActions,
     DeviceScenarioAction,
     DeviceScenarioList,
     DeviceScenarioResult,
@@ -113,7 +115,9 @@ function isTemperatureScenarioAction(
     return temperatureScenarioActions.some((candidate) => candidate === action);
 }
 
-function isLedScenarioAction(action: DeviceScenarioAction): action is LedScenarioName {
+function isLedScenarioAction(
+    action: DeviceScenarioAction,
+): action is (typeof ledScenarioActions)[number] {
     return ledScenarioActions.some((candidate) => candidate === action);
 }
 
@@ -187,6 +191,10 @@ export function createTemperatureRoomRuntime({
 
             hasStarted = true;
             const startedLed = attachLedScenario('off');
+            startedLed.reportAvailability(
+                'online',
+                new Date(Date.parse(clock.now()) + 1).toISOString(),
+            );
             processPlatformEvent({
                 eventId: generateEventId(),
                 eventType: 'device.state.reported',
@@ -201,10 +209,14 @@ export function createTemperatureRoomRuntime({
             reschedulePendingCommands();
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter = createAdapter(sensorEntry);
+                sensorEntry.sensor.reportAvailability?.(
+                    'online',
+                    new Date(Date.parse(clock.now()) + 1).toISOString(),
+                );
                 sensorEntry.sensor.tick(clock.now());
             }
             snapshotBroadcastTimerHandle = snapshotBroadcastTimer.setInterval(() => {
-                notifyHealthChanges(clock.now());
+                notifyFreshnessChanges(clock.now());
             }, snapshotBroadcastIntervalMs);
             for (const sensorEntry of sensors) {
                 sensorEntry.runtime?.start();
@@ -279,7 +291,31 @@ export function createTemperatureRoomRuntime({
                         { code: 'scenario_conflict' },
                     );
                 }
-                led?.setNextCommandScenario(action);
+                if (action === 'degrade_device') {
+                    led?.reportHealth(
+                        'degraded',
+                        'command_blocked',
+                        nextTransitionAt(deviceId, 'healthChangedAt'),
+                    );
+                } else if (action === 'recover_device') {
+                    led?.reportHealth(
+                        'healthy',
+                        'recovered',
+                        nextTransitionAt(deviceId, 'healthChangedAt'),
+                    );
+                } else if (action === 'disconnect_device') {
+                    led?.reportAvailability(
+                        'offline',
+                        nextTransitionAt(deviceId, 'availabilityChangedAt'),
+                    );
+                } else if (action === 'reconnect_device') {
+                    led?.reportAvailability(
+                        'online',
+                        nextTransitionAt(deviceId, 'availabilityChangedAt'),
+                    );
+                } else {
+                    led?.setNextCommandScenario(action as LedScenarioName);
+                }
                 return { action, status: 'completed' };
             }
 
@@ -288,9 +324,29 @@ export function createTemperatureRoomRuntime({
                 throw new Error(`No development scenarios are configured for ${deviceId}.`);
             }
 
-            const observedAt = clock.now();
-
-            runScenarioAction(sensorEntry, action, observedAt);
+            if (action === 'disconnect_device') {
+                sensorEntry.sensor.reportAvailability?.(
+                    'offline',
+                    nextTransitionAt(deviceId, 'availabilityChangedAt'),
+                );
+            } else if (action === 'reconnect_device') {
+                sensorEntry.sensor.reportAvailability?.(
+                    'online',
+                    nextTransitionAt(deviceId, 'availabilityChangedAt'),
+                );
+            } else if (action === 'degrade_device') {
+                sensorEntry.sensor.reportHealth?.(
+                    'degraded',
+                    'partial_data',
+                    nextTransitionAt(deviceId, 'healthChangedAt'),
+                );
+            } else if (action === 'recover_device') {
+                sensorEntry.sensor.reportHealth?.(
+                    'healthy',
+                    'recovered',
+                    nextTransitionAt(deviceId, 'healthChangedAt'),
+                );
+            } else runScenarioAction(sensorEntry, action, clock.now());
 
             return {
                 action,
@@ -390,7 +446,11 @@ export function createTemperatureRoomRuntime({
 
     function runScenarioAction(
         sensorEntry: (typeof sensors)[number],
-        action: (typeof temperatureScenarioActions)[number],
+        action: Exclude<
+            (typeof temperatureScenarioActions)[number],
+            | (typeof deviceConnectionScenarioActions)[number]
+            | (typeof deviceHealthScenarioActions)[number]
+        >,
         observedAt: string,
     ): void {
         const scenarioHandlers = {
@@ -420,11 +480,27 @@ export function createTemperatureRoomRuntime({
                 sensorEntry.runtime?.start();
             },
         } satisfies Record<
-            (typeof temperatureScenarioActions)[number],
+            Exclude<
+                (typeof temperatureScenarioActions)[number],
+                | (typeof deviceConnectionScenarioActions)[number]
+                | (typeof deviceHealthScenarioActions)[number]
+            >,
             (observedAt: string) => void
         >;
 
         scenarioHandlers[action](observedAt);
+    }
+
+    function nextTransitionAt(
+        deviceId: string,
+        field: 'availabilityChangedAt' | 'healthChangedAt',
+    ): string {
+        const current = getCurrentRoomSnapshot().devices.find(
+            (device) => device.deviceId === deviceId,
+        );
+        return new Date(
+            Math.max(Date.parse(clock.now()), Date.parse(current?.[field] ?? clock.now()) + 1),
+        ).toISOString();
     }
 
     function createAdapter(sensorEntry: (typeof sensors)[number]): SimulatorTemperatureAdapter {
@@ -434,6 +510,12 @@ export function createTemperatureRoomRuntime({
             platformDeviceId: sensorEntry.definition.deviceId,
             generateEventId,
             emitEvent(event) {
+                processPlatformEvent(event);
+            },
+            emitAvailabilityEvent(event) {
+                processPlatformEvent(event);
+            },
+            emitHealthEvent(event) {
                 processPlatformEvent(event);
             },
         });
@@ -476,7 +558,7 @@ export function createTemperatureRoomRuntime({
         }
     }
 
-    function notifyHealthChanges(evaluatedAt: string): void {
+    function notifyFreshnessChanges(evaluatedAt: string): void {
         const snapshot = toRoomSnapshot(roomName, roomProjector, evaluatedAt);
         const previousSnapshot = lastPublishedSnapshot;
 
@@ -487,7 +569,10 @@ export function createTemperatureRoomRuntime({
                     (candidate) => candidate.deviceId === device.deviceId,
                 );
 
-                return previous?.health === device.health;
+                return (
+                    JSON.stringify(previous?.observationStatus) ===
+                    JSON.stringify(device.observationStatus)
+                );
             })
         ) {
             return;

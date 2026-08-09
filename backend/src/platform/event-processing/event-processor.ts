@@ -8,6 +8,10 @@ import {
     commandRequestedEventSchema,
     type CommandTimedOutEvent,
     commandTimedOutEventSchema,
+    type DeviceAvailabilityChangedEvent,
+    deviceAvailabilityChangedEventSchema,
+    type DeviceHealthChangedEvent,
+    deviceHealthChangedEventSchema,
     type DeviceStateReportedEvent,
     deviceStateReportedEventSchema,
     platformEventCandidateSchema,
@@ -53,7 +57,8 @@ export type EventProcessingResult =
               | 'unknown_device'
               | 'invalid_payload'
               | 'device_metric_mismatch'
-              | 'future_dated_report';
+              | 'future_dated_report'
+              | 'stale_device_transition';
           state: EventProcessorState;
       };
 export type { IgnoredEventReason } from '@smart-room/contracts/development';
@@ -119,6 +124,29 @@ export function createEventProcessor({
                     roomProjector.applyDeviceStateReported(acceptedEvent, {
                         evaluatedAt: deduplicationCheck.checkedAt,
                     }),
+                );
+            }
+
+            if (event.eventType === 'device.availability.changed') {
+                if (!isSchema(deviceAvailabilityChangedEventSchema, event)) {
+                    return ignored('invalid_payload');
+                }
+                if (isStaleTransition(event.occurredAt, event.deviceId, 'availabilityChangedAt'))
+                    return ignored('stale_device_transition');
+                return acceptDeviceTransition(
+                    event as DeviceAvailabilityChangedEvent,
+                    (acceptedEvent) => roomProjector.applyDeviceAvailabilityChanged(acceptedEvent),
+                );
+            }
+
+            if (event.eventType === 'device.health.changed') {
+                if (!isSchema(deviceHealthChangedEventSchema, event)) {
+                    return ignored('invalid_payload');
+                }
+                if (isStaleTransition(event.occurredAt, event.deviceId, 'healthChangedAt'))
+                    return ignored('stale_device_transition');
+                return acceptDeviceTransition(event as DeviceHealthChangedEvent, (acceptedEvent) =>
+                    roomProjector.applyDeviceHealthChanged(acceptedEvent),
                 );
             }
 
@@ -202,6 +230,20 @@ export function createEventProcessor({
                 };
             }
 
+            function isStaleTransition(
+                occurredAt: string,
+                deviceId: string,
+                timestampField: 'availabilityChangedAt' | 'healthChangedAt',
+            ): boolean {
+                const projectedDevice = roomProjector
+                    .getProjection()
+                    .devices.find((candidate) => candidate.deviceId === deviceId);
+                return (
+                    projectedDevice !== undefined &&
+                    Date.parse(occurredAt) <= Date.parse(projectedDevice[timestampField])
+                );
+            }
+
             function acceptCommandEvent<
                 TEvent extends
                     | CommandRequestedEvent
@@ -228,6 +270,23 @@ export function createEventProcessor({
                 } catch {
                     return ignored('invalid_payload');
                 }
+            }
+
+            function acceptDeviceTransition<
+                TEvent extends DeviceAvailabilityChangedEvent | DeviceHealthChangedEvent,
+            >(
+                acceptedEvent: TEvent,
+                apply: (event: TEvent) => EventProcessorState,
+            ): EventProcessingResult {
+                const deduplicationEvictedEventIds = deduplicator.remember(acceptedEvent.eventId);
+                return {
+                    status: 'accepted',
+                    evaluatedAt: deduplicationCheck.checkedAt,
+                    state: apply(acceptedEvent),
+                    ...(deduplicationEvictedEventIds.length > 0
+                        ? { deduplicationEvictedEventIds }
+                        : {}),
+                };
             }
         },
     };

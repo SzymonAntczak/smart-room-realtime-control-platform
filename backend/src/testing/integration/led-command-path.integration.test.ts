@@ -46,7 +46,9 @@ describe('LED command path', () => {
             expect.objectContaining({
                 deviceId: 'led-main',
                 reportedState: { power: 'on' },
-                commandAvailability: { policy: 'allow' },
+                availability: 'unknown',
+                health: 'unknown',
+                commandAvailability: { policy: 'block', reason: 'availability_unknown' },
             }),
         ]);
     });

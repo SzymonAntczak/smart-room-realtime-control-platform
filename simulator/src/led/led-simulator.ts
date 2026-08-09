@@ -27,6 +27,21 @@ export interface LedCommandRejection {
     readonly reason: 'command_rejected';
     readonly rejectedAt: string;
 }
+export interface LedAvailabilityReport {
+    readonly messageType: 'led.availability.changed';
+    readonly deviceId: string;
+    readonly availability: 'online' | 'offline';
+    readonly previousAvailability: 'online' | 'offline' | 'unknown';
+    readonly reportedAt: string;
+}
+export interface LedHealthReport {
+    readonly messageType: 'led.health.changed';
+    readonly deviceId: string;
+    readonly health: 'healthy' | 'degraded';
+    readonly previousHealth: 'healthy' | 'degraded' | 'unknown';
+    readonly reason: string;
+    readonly reportedAt: string;
+}
 
 export interface LedSimulatorConfig {
     readonly deviceId: string;
@@ -36,14 +51,27 @@ export interface LedSimulatorConfig {
 export type LedCommandListener = (command: LedSetPowerCommand) => void;
 export type LedStateReportListener = (report: LedStateReport) => void;
 export type LedCommandRejectionListener = (rejection: LedCommandRejection) => void;
+export type LedAvailabilityListener = (report: LedAvailabilityReport) => void;
+export type LedHealthListener = (report: LedHealthReport) => void;
 
 export interface LedSimulator {
     onCommand(listener: LedCommandListener): () => void;
     onStateReport(listener: LedStateReportListener): () => void;
     onCommandRejection(listener: LedCommandRejectionListener): () => void;
+    onAvailability(listener: LedAvailabilityListener): () => void;
+    onHealth(listener: LedHealthListener): () => void;
     receive(command: LedSetPowerCommand): void;
     reportState(power: LedPower, reportedAt: string): LedStateReport;
     rejectCommand(command: LedSetPowerCommand, rejectedAt: string): LedCommandRejection;
+    reportAvailability(
+        availability: 'online' | 'offline',
+        reportedAt: string,
+    ): LedAvailabilityReport;
+    reportHealth(
+        health: 'healthy' | 'degraded',
+        reason: string,
+        reportedAt: string,
+    ): LedHealthReport;
     getObservedPower(): LedPower;
 }
 
@@ -54,8 +82,12 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
     const commandListeners = new Set<LedCommandListener>();
     const reportListeners = new Set<LedStateReportListener>();
     const rejectionListeners = new Set<LedCommandRejectionListener>();
+    const availabilityListeners = new Set<LedAvailabilityListener>();
+    const healthListeners = new Set<LedHealthListener>();
     let observedPower = config.initialPower;
     let stateReportSequence = 0;
+    let observedAvailability: LedAvailabilityReport['previousAvailability'] = 'unknown';
+    let observedHealth: LedHealthReport['previousHealth'] = 'unknown';
 
     return {
         onCommand(listener) {
@@ -69,6 +101,14 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
         onCommandRejection(listener) {
             rejectionListeners.add(listener);
             return () => rejectionListeners.delete(listener);
+        },
+        onAvailability(listener) {
+            availabilityListeners.add(listener);
+            return () => availabilityListeners.delete(listener);
+        },
+        onHealth(listener) {
+            healthListeners.add(listener);
+            return () => healthListeners.delete(listener);
         },
         receive(command) {
             assertCommand(command, config.deviceId);
@@ -102,6 +142,34 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
             };
             emit(rejectionListeners, rejection);
             return rejection;
+        },
+        reportAvailability(availability, reportedAt) {
+            assertTimestamp(reportedAt, 'LED availability reportedAt');
+            const report: LedAvailabilityReport = {
+                messageType: 'led.availability.changed',
+                deviceId: config.deviceId,
+                availability,
+                previousAvailability: observedAvailability,
+                reportedAt,
+            };
+            observedAvailability = report.availability;
+            emit(availabilityListeners, report);
+            return report;
+        },
+        reportHealth(health, reason, reportedAt) {
+            assertNonEmpty(reason, 'LED health reason');
+            assertTimestamp(reportedAt, 'LED health reportedAt');
+            const report: LedHealthReport = {
+                messageType: 'led.health.changed',
+                deviceId: config.deviceId,
+                health,
+                previousHealth: observedHealth,
+                reason,
+                reportedAt,
+            };
+            observedHealth = report.health;
+            emit(healthListeners, report);
+            return report;
         },
         getObservedPower() {
             return observedPower;

@@ -1,7 +1,7 @@
 import { Type } from '@sinclair/typebox';
 
 import { commandRequestedByValues, powerStateProjectionSchema } from '../commands';
-import { deviceHealthStates } from '../devices';
+import { deviceAvailabilityStates, deviceOperationalHealthStates } from '../devices';
 import { isoTimestampSchema, nonEmptyStringSchema } from '../validation';
 
 export const platformEventSources = ['simulator-adapter', 'hardware-adapter', 'backend'] as const;
@@ -20,8 +20,13 @@ export interface DeviceStateReportedPayload {
     reportedAt: string;
 }
 export interface DeviceHealthChangedPayload {
-    previousHealth: (typeof deviceHealthStates)[number];
-    health: (typeof deviceHealthStates)[number];
+    previousHealth: (typeof deviceOperationalHealthStates)[number];
+    health: (typeof deviceOperationalHealthStates)[number];
+    reason: string;
+}
+export interface DeviceAvailabilityChangedPayload {
+    previousAvailability: (typeof deviceAvailabilityStates)[number];
+    availability: (typeof deviceAvailabilityStates)[number];
     reason: string;
 }
 export interface TelemetryReadingRecordedPayload {
@@ -61,6 +66,10 @@ export type DeviceHealthChangedEvent = PlatformEventEnvelope<
     'device.health.changed',
     DeviceHealthChangedPayload
 > & { deviceId: string };
+export type DeviceAvailabilityChangedEvent = PlatformEventEnvelope<
+    'device.availability.changed',
+    DeviceAvailabilityChangedPayload
+> & { deviceId: string };
 export type TelemetryReadingRecordedEvent = PlatformEventEnvelope<
     'telemetry.reading.recorded',
     TelemetryReadingRecordedPayload
@@ -88,6 +97,7 @@ export type CommandTimedOutEvent = PlatformEventEnvelope<
 export type PlatformEvent =
     | DeviceStateReportedEvent
     | DeviceHealthChangedEvent
+    | DeviceAvailabilityChangedEvent
     | TelemetryReadingRecordedEvent
     | CommandRequestedEvent
     | CommandDispatchedEvent
@@ -113,8 +123,13 @@ const deviceStateReportedPayloadSchema = Type.Object({
     reportedAt: isoTimestampSchema,
 });
 const deviceHealthChangedPayloadSchema = Type.Object({
-    previousHealth: Type.Union(deviceHealthStates.map((health) => Type.Literal(health))),
-    health: Type.Union(deviceHealthStates.map((health) => Type.Literal(health))),
+    previousHealth: Type.Union(deviceOperationalHealthStates.map((value) => Type.Literal(value))),
+    health: Type.Union(deviceOperationalHealthStates.map((value) => Type.Literal(value))),
+    reason: nonEmptyStringSchema,
+});
+const deviceAvailabilityChangedPayloadSchema = Type.Object({
+    previousAvailability: Type.Union(deviceAvailabilityStates.map((value) => Type.Literal(value))),
+    availability: Type.Union(deviceAvailabilityStates.map((value) => Type.Literal(value))),
     reason: nonEmptyStringSchema,
 });
 export const telemetryReadingRecordedPayloadSchema = Type.Object({
@@ -163,6 +178,12 @@ export const deviceHealthChangedEventSchema = Type.Object({
     deviceId: nonEmptyStringSchema,
     payload: deviceHealthChangedPayloadSchema,
 });
+export const deviceAvailabilityChangedEventSchema = Type.Object({
+    ...platformEventBaseShape,
+    eventType: Type.Literal('device.availability.changed'),
+    deviceId: nonEmptyStringSchema,
+    payload: deviceAvailabilityChangedPayloadSchema,
+});
 export const telemetryReadingRecordedEventSchema = Type.Object({
     ...platformEventBaseShape,
     eventType: Type.Literal('telemetry.reading.recorded'),
@@ -202,6 +223,7 @@ export const commandTimedOutEventSchema = Type.Object({
 export const platformEventEnvelopeSchema = Type.Union([
     deviceStateReportedEventSchema,
     deviceHealthChangedEventSchema,
+    deviceAvailabilityChangedEventSchema,
     telemetryReadingRecordedEventSchema,
     commandRequestedEventSchema,
     commandDispatchedEventSchema,

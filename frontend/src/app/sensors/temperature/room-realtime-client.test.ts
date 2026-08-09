@@ -186,7 +186,8 @@ describe('connectTemperatureRealtime', () => {
         MockWebSocket.latest().emitMessage(
             createDeviceUpdatedMessage({
                 reportedState: { temperature: 23.1, temperatureUnit: 'celsius' },
-                health: 'stale',
+                health: 'degraded',
+                healthReason: 'partial_data',
             }),
         );
 
@@ -195,7 +196,7 @@ describe('connectTemperatureRealtime', () => {
                 devices: [
                     expect.objectContaining({
                         reportedState: { temperature: 23.1, temperatureUnit: 'celsius' },
-                        health: 'stale',
+                        health: 'degraded',
                     }),
                 ],
             }),
@@ -364,12 +365,14 @@ function createDeviceUpdatedMessage({
     revision = 1,
     deviceId = 'temp-desk',
     health,
+    healthReason,
     reportedState = { temperature: 22.8, temperatureUnit: 'celsius' },
 }: {
     previousRevision?: number;
     revision?: number;
     deviceId?: string;
     health?: RoomSnapshotProjection['devices'][number]['health'];
+    healthReason?: string;
     reportedState?: { temperature: number; temperatureUnit: 'celsius' };
 } = {}): RoomRealtimeServerMessage {
     return {
@@ -381,6 +384,7 @@ function createDeviceUpdatedMessage({
             ...createTemperatureDevice(),
             deviceId,
             ...(health ? { health } : {}),
+            ...(healthReason ? { healthReason } : {}),
             reportedState,
         },
     };
@@ -391,7 +395,10 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
         deviceId: 'temp-desk',
         name: 'Desk Temperature',
         role: 'temperature-sensor',
-        health: 'online',
+        availability: 'online',
+        availabilityChangedAt: '2026-06-08T09:30:00Z',
+        health: 'healthy',
+        healthChangedAt: '2026-06-08T09:30:00Z',
         reportedState: {
             temperature: 22.4,
             temperatureUnit: 'celsius',
@@ -400,7 +407,9 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
             policy: 'block',
             reason: 'read_only_device',
         },
-        lastSeenAt: '2026-06-08T09:30:00Z',
+        observationStatus: {
+            temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+        },
     };
 }
 

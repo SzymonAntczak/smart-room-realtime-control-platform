@@ -54,6 +54,18 @@ describe('TemperatureScenarioPanel', () => {
         expect(diagnosticsButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     });
 
+    it('groups controls by freshness, availability and health', () => {
+        render(<TemperatureScenarioPanel />);
+
+        expect(
+            screen.getByRole('heading', { name: 'Freshness and telemetry', level: 3 }),
+        ).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Availability', level: 3 })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Health', level: 3 })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Degrade device health' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Recover device health' })).toBeInTheDocument();
+    });
+
     it('shows a failure without synthesizing room state', async () => {
         const user = userEvent.setup();
         const client: TemperatureScenarioClient = {
