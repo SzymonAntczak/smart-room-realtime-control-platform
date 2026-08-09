@@ -1,3 +1,4 @@
+import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { X } from 'lucide-react';
 
 import type { DeviceScenarioTarget } from './device-scenario-target';
@@ -8,10 +9,12 @@ import { useDeviceScenarioSidebar } from './use-device-scenario-sidebar';
 
 export function DeviceScenarioSidebar({
     target,
+    snapshot,
     onClose,
     onLedScenarioRequestChange,
 }: {
     target?: DeviceScenarioTarget;
+    snapshot?: RoomSnapshotProjection;
     onClose(): void;
     onLedScenarioRequestChange(deviceId: string, isPending: boolean): void;
 }) {
@@ -44,14 +47,21 @@ export function DeviceScenarioSidebar({
                 <TemperatureScenarioPanel
                     client={client}
                     actions={actions}
-                    telemetryUnavailable={target.telemetryUnavailable}
+                    telemetryUnavailable={
+                        snapshot?.devices.find((device) => device.deviceId === target.deviceId)
+                            ?.availability === 'offline'
+                    }
                 />
             ) : null}
             {actions && target.kind === 'led' ? (
                 <LedScenarioPanel
                     client={client}
                     actions={actions}
-                    isCommandActive={target.isCommandActive}
+                    isCommandActive={
+                        snapshot?.activeCommands.some(
+                            (command) => command.deviceId === target.deviceId,
+                        ) ?? false
+                    }
                     onRequestChange={(isPending) =>
                         onLedScenarioRequestChange(target.deviceId, isPending)
                     }

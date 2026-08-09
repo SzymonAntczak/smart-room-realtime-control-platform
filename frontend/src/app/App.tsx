@@ -17,27 +17,8 @@ export function App({ showDevScenarioPanel = import.meta.env.DEV }: AppProps) {
     const [scenarioTarget, setScenarioTarget] = useState<DeviceScenarioTarget>();
     const [selectingLedScenarioDeviceId, setSelectingLedScenarioDeviceId] = useState<string>();
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;
-    const devicesById = snapshot
-        ? new Map(snapshot.devices.map((device) => [device.deviceId, device]))
-        : undefined;
     const realtimeUncertain =
         room.connectionStatus === 'reconnecting' || room.contractError !== undefined;
-    const sidebarTarget =
-        scenarioTarget?.kind === 'temperature'
-            ? {
-                  ...scenarioTarget,
-                  telemetryUnavailable:
-                      devicesById?.get(scenarioTarget.deviceId)?.availability === 'offline',
-              }
-            : scenarioTarget?.kind === 'led'
-              ? {
-                    ...scenarioTarget,
-                    isCommandActive:
-                        snapshot?.activeCommands.some(
-                            (command) => command.deviceId === scenarioTarget.deviceId,
-                        ) ?? false,
-                }
-              : undefined;
     const deviceRenderers: Partial<
         Record<DeviceProjection['role'], (device: DeviceProjection) => ReactNode>
     > = {
@@ -95,7 +76,8 @@ export function App({ showDevScenarioPanel = import.meta.env.DEV }: AppProps) {
             </div>
             {showDevScenarioPanel ? (
                 <DeviceScenarioSidebar
-                    target={sidebarTarget}
+                    target={scenarioTarget}
+                    snapshot={snapshot}
                     onClose={closeScenarioSidebar}
                     onLedScenarioRequestChange={(deviceId, isPending) =>
                         setSelectingLedScenarioDeviceId(isPending ? deviceId : undefined)

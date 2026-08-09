@@ -33,7 +33,7 @@ describe('DeviceScenarioSidebar', () => {
         const onClose = vi.fn();
         const { rerender } = render(
             <DeviceScenarioSidebar
-                target={{ kind: 'temperature', deviceId: 'temp-desk', telemetryUnavailable: false }}
+                target={{ kind: 'temperature', deviceId: 'temp-desk' }}
                 onClose={onClose}
                 onLedScenarioRequestChange={vi.fn()}
             />,
@@ -44,7 +44,7 @@ describe('DeviceScenarioSidebar', () => {
         ).toBeInTheDocument();
         rerender(
             <DeviceScenarioSidebar
-                target={{ kind: 'led', deviceId: 'led-main', isCommandActive: false }}
+                target={{ kind: 'led', deviceId: 'led-main' }}
                 onClose={onClose}
                 onLedScenarioRequestChange={vi.fn()}
             />,

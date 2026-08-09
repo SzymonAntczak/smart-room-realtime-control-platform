@@ -10,11 +10,13 @@ import {
 import { useEffect } from 'react';
 
 import type { DeviceScenarioClient, TemperatureScenarioAction } from '../device-scenario-client';
-import { DeviceScenarioAction } from '../DeviceScenarioAction';
-import { DeviceScenarioActions } from '../DeviceScenarioActions';
-import { DeviceScenarioPanel } from '../DeviceScenarioPanel';
-import { DeviceScenarioSection } from '../DeviceScenarioSection';
-import { DeviceScenarioStatus } from '../DeviceScenarioStatus';
+import {
+    ScenarioPanel,
+    ScenarioPanelAction,
+    ScenarioPanelActions,
+    ScenarioPanelSection,
+    ScenarioPanelStatus,
+} from '../scenario-panel';
 
 import { TemperatureScenarioDiagnostics } from './TemperatureScenarioDiagnostics';
 import { useTemperatureScenario } from './use-temperature-scenario';
@@ -101,7 +103,7 @@ export function TemperatureScenarioPanel({
     const message = errorMessage ?? toCompletedMessage(completedAction ?? persistedCompletedAction);
 
     return (
-        <DeviceScenarioPanel
+        <ScenarioPanel
             title="Temperature scenarios"
             description="Controls operate the local simulator through the backend. Room state still arrives through the realtime stream: a snapshot baseline followed by device updates."
         >
@@ -119,10 +121,10 @@ export function TemperatureScenarioPanel({
                     }
 
                     return (
-                        <DeviceScenarioSection key={section.title} title={section.title}>
-                            <DeviceScenarioActions>
+                        <ScenarioPanelSection key={section.title} title={section.title}>
+                            <ScenarioPanelActions>
                                 {visibleControls.map((control) => (
-                                    <DeviceScenarioAction
+                                    <ScenarioPanelAction
                                         key={control.action}
                                         type="button"
                                         disabled={
@@ -140,14 +142,14 @@ export function TemperatureScenarioPanel({
                                         {activeAction === control.action
                                             ? 'Running...'
                                             : control.label}
-                                    </DeviceScenarioAction>
+                                    </ScenarioPanelAction>
                                 ))}
-                            </DeviceScenarioActions>
-                        </DeviceScenarioSection>
+                            </ScenarioPanelActions>
+                        </ScenarioPanelSection>
                     );
                 })}
             </div>
-            {message ? <DeviceScenarioStatus>{message}</DeviceScenarioStatus> : null}
+            {message ? <ScenarioPanelStatus>{message}</ScenarioPanelStatus> : null}
             <TemperatureScenarioDiagnostics
                 diagnostics={diagnostics}
                 errorMessage={diagnosticsErrorMessage}
@@ -155,7 +157,7 @@ export function TemperatureScenarioPanel({
                 isActionActive={activeAction !== undefined}
                 onRefresh={() => void refreshDiagnostics()}
             />
-        </DeviceScenarioPanel>
+        </ScenarioPanel>
     );
 }
 

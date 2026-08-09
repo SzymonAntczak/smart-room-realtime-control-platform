@@ -44,7 +44,6 @@ export function TemperatureControl({
                             onOpenDevScenario?.({
                                 kind: 'temperature',
                                 deviceId: reading.sensorId,
-                                telemetryUnavailable: reading.availability === 'offline',
                             })
                         }
                     />

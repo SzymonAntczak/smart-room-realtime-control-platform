@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 
-import styles from './DeviceScenarioSection.module.css';
+import styles from './ScenarioPanelSection.module.css';
 
-interface DeviceScenarioSectionProps {
+interface ScenarioPanelSectionProps {
     readonly title: string;
     readonly children: ReactNode;
 }
 
-export function DeviceScenarioSection({ title, children }: DeviceScenarioSectionProps) {
+export function ScenarioPanelSection({ title, children }: ScenarioPanelSectionProps) {
     return (
         <section className={styles.section}>
             <h3>{title}</h3>

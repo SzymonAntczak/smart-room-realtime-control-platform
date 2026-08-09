@@ -1,8 +1,8 @@
 import type { ButtonHTMLAttributes } from 'react';
 
-import styles from './DeviceScenarioAction.module.css';
+import styles from './ScenarioPanelAction.module.css';
 
-export function DeviceScenarioAction({
+export function ScenarioPanelAction({
     children,
     ...props
 }: ButtonHTMLAttributes<HTMLButtonElement>) {

@@ -1,7 +1,7 @@
 import type { EventProcessingDiagnosticsSnapshot } from '@smart-room/contracts/development';
 import { RefreshCw } from 'lucide-react';
 
-import { DeviceScenarioAction } from '../DeviceScenarioAction';
+import { ScenarioPanelAction } from '../scenario-panel';
 
 import styles from './TemperatureScenarioDiagnostics.module.css';
 
@@ -27,14 +27,14 @@ export function TemperatureScenarioDiagnostics({
                     <h3 id="temperature-scenario-diagnostics">Diagnostics</h3>
                     <p>Ignored events: {diagnostics?.ignoredEvents.length ?? 'not loaded'}</p>
                 </div>
-                <DeviceScenarioAction
+                <ScenarioPanelAction
                     type="button"
                     disabled={isRefreshing || isActionActive}
                     onClick={onRefresh}
                 >
                     <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
                     {isRefreshing ? 'Refreshing...' : 'Refresh diagnostics'}
-                </DeviceScenarioAction>
+                </ScenarioPanelAction>
             </div>
             {errorMessage ? <p role="alert">{errorMessage}</p> : null}
             {diagnostics?.ignoredEvents.length === 0 ? <p>No ignored events recorded.</p> : null}

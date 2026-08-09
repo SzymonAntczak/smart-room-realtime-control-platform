@@ -3,11 +3,13 @@ import { Timer, TriangleAlert, Wifi } from 'lucide-react';
 import { useEffect } from 'react';
 
 import type { DeviceScenarioClient } from '../device-scenario-client';
-import { DeviceScenarioAction } from '../DeviceScenarioAction';
-import { DeviceScenarioActions } from '../DeviceScenarioActions';
-import { DeviceScenarioPanel } from '../DeviceScenarioPanel';
-import { DeviceScenarioSection } from '../DeviceScenarioSection';
-import { DeviceScenarioStatus } from '../DeviceScenarioStatus';
+import {
+    ScenarioPanel,
+    ScenarioPanelAction,
+    ScenarioPanelActions,
+    ScenarioPanelSection,
+    ScenarioPanelStatus,
+} from '../scenario-panel';
 
 import { useLedScenario } from './use-led-scenario';
 
@@ -67,7 +69,7 @@ export function LedScenarioPanel({
     }, [clearSelectedScenario, isCommandActive]);
 
     return (
-        <DeviceScenarioPanel
+        <ScenarioPanel
             title="LED scenarios"
             description="Select how the next LED command behaves. This does not change the confirmed LED state."
         >
@@ -82,10 +84,10 @@ export function LedScenarioPanel({
                     }
 
                     return (
-                        <DeviceScenarioSection key={section.title} title={section.title}>
-                            <DeviceScenarioActions>
+                        <ScenarioPanelSection key={section.title} title={section.title}>
+                            <ScenarioPanelActions>
                                 {visibleActions.map((action) => (
-                                    <DeviceScenarioAction
+                                    <ScenarioPanelAction
                                         key={action}
                                         type="button"
                                         disabled={activeAction !== undefined || isCommandActive}
@@ -93,19 +95,19 @@ export function LedScenarioPanel({
                                     >
                                         {scenarioIcon(action)}
                                         {activeAction === action ? 'Selecting...' : labels[action]}
-                                    </DeviceScenarioAction>
+                                    </ScenarioPanelAction>
                                 ))}
-                            </DeviceScenarioActions>
-                        </DeviceScenarioSection>
+                            </ScenarioPanelActions>
+                        </ScenarioPanelSection>
                     );
                 })}
             </div>
             {message || selectedScenario ? (
-                <DeviceScenarioStatus>
+                <ScenarioPanelStatus>
                     {message ?? `${labels[selectedScenario!]} selected for the next LED command.`}
-                </DeviceScenarioStatus>
+                </ScenarioPanelStatus>
             ) : null}
-        </DeviceScenarioPanel>
+        </ScenarioPanel>
     );
 }
 

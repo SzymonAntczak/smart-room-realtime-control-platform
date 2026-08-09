@@ -73,7 +73,6 @@ export function LedControl({
                             onOpenDevScenario?.({
                                 kind: 'led',
                                 deviceId: device.deviceId,
-                                isCommandActive: activeCommand !== undefined,
                             })
                         }
                     />

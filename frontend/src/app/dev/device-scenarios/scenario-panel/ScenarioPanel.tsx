@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 
-import styles from './DeviceScenarioPanel.module.css';
+import styles from './ScenarioPanel.module.css';
 
-interface DeviceScenarioPanelProps {
+interface ScenarioPanelProps {
     readonly title: string;
     readonly description: string;
     readonly children: ReactNode;
 }
 
-export function DeviceScenarioPanel({ title, description, children }: DeviceScenarioPanelProps) {
+export function ScenarioPanel({ title, description, children }: ScenarioPanelProps) {
     return (
         <section className={styles.panel}>
             <p className={styles.eyebrow}>Development only</p>
