@@ -60,6 +60,13 @@ current projection, event history or deduplication state, but their metadata is
 available through development diagnostics. This prevents a bad device clock
 from advancing `lastObservedAt` and making an old observation appear fresh.
 
+Availability and health transitions are ordered independently by their envelope
+`occurredAt`. The event processor updates the corresponding projection only
+when a transition is later than `availabilityChangedAt` or `healthChangedAt`.
+An equal or older transition is retained for history and diagnostics but does
+not regress current state. Its `previousAvailability` or `previousHealth` is a
+producer-reported fact, not a precondition for a newer transition.
+
 ## Initial Event Types
 
 | Event type                    | Purpose                                                               |

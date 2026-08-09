@@ -38,6 +38,7 @@ Use these files as the main context:
 - `docs/decisions/adr-device-command-confirmation-and-health-policy.md`
 - `docs/decisions/adr-command-history-and-terminal-projections.md`
 - `docs/decisions/adr-json-schema-transport-contracts.md`
+- `docs/decisions/adr-mqtt-source-parity-before-device-expansion.md`
 - `docs/decisions/tradeoffs.md`
 
 ## Decision Output

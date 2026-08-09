@@ -5,16 +5,26 @@ Room platform.
 
 ```mermaid
 flowchart LR
-    subgraph external[External Sources]
+    subgraph development[Development-only Source]
         direction TB
-        simulator[Event Simulator]
-        hardware[Hardware Device]
+        directSimulator[Direct Event Simulator]
     end
+
+    subgraph mqttDevices[Production-like MQTT Sources]
+        direction TB
+        mqttSimulator[MQTT Event Simulator]
+        esp32[ESP32 / ESPHome]
+        standaloneDevice[Standalone MQTT Device]
+    end
+
+    broker[(Mosquitto MQTT Broker)]
 
     subgraph adapters[Backend Adapters]
         direction TB
-        simAdapter[Simulator Adapter]
-        hardwareAdapter[Hardware Adapter]
+        directAdapter[Direct Simulator Adapter]
+        mqttSimulatorAdapter[MQTT Simulator Adapter]
+        espHomeAdapter[ESPHome MQTT Adapter]
+        standaloneAdapter[Standalone MQTT Device Adapter]
     end
 
     subgraph platform[Backend Platform Core]
@@ -38,11 +48,18 @@ flowchart LR
         user[User]
     end
 
-    simulator <-->|simulator-native messages / commands| simAdapter
-    hardware <-->|device-native messages / commands| hardwareAdapter
+    directSimulator <-->|simulator-native messages / commands| directAdapter
+    mqttSimulator <-->|simulator-native MQTT| broker
+    esp32 <-->|ESPHome MQTT| broker
+    standaloneDevice <-->|device-native MQTT| broker
 
-    simAdapter -->|platform events| processor
-    hardwareAdapter -->|platform events| processor
+    directAdapter -->|platform events| processor
+    broker <-->|MQTT| mqttSimulatorAdapter
+    broker <-->|MQTT| espHomeAdapter
+    broker <-->|MQTT| standaloneAdapter
+    mqttSimulatorAdapter -->|platform events| processor
+    espHomeAdapter -->|platform events| processor
+    standaloneAdapter -->|platform events| processor
 
     readModel -->|snapshots / updates| api
     api -->|server-to-client WebSocket projections| ui
@@ -50,15 +67,24 @@ flowchart LR
     ui <--> user
 
     api -->|command requests| processor
-    processor -->|platform commands| simAdapter
-    processor -->|platform commands| hardwareAdapter
+    processor -->|platform commands| directAdapter
+    processor -->|platform commands| mqttSimulatorAdapter
+    processor -->|platform commands| espHomeAdapter
+    processor -->|platform commands| standaloneAdapter
 ```
 
-In the broader target model, the simulator is the first external device source.
-The backend simulator adapter turns simulator-native messages into platform
-events and platform commands into simulator-native commands. A hardware adapter
-can be added later without changing the frontend's mental model: simulator and
-hardware sources are both handled behind backend-owned adapters.
+In the broader target model, the direct simulator route remains a
+development-only source for deterministic tests. The production-like runtime
+introduces Mosquitto between sources and their backend adapters. The MQTT
+simulator, ESP32/ESPHome and standalone MQTT devices are allowed to have different native topics
+and payloads; each backend-owned adapter translates them to and from the same
+platform contracts. The frontend does not depend on a source protocol.
+
+The broker is a required transport dependency for MQTT-backed devices. On a
+backend-to-broker disconnect, devices available only through that dependency
+become `offline` with `broker_unavailable` as the availability reason, and
+their commands are blocked. A broker reconnect must be followed by trustworthy
+device availability evidence before an adapter restores `online`.
 
 The event processor owns validation, deduplication and command lifecycle rules.
 It accepts, ignores or routes events to quarantine according to the platform

@@ -34,10 +34,14 @@ failures, stale data, offline periods and recovery.
 This is a per-slice delivery rule, not a requirement to finish the whole
 simulated room before any hardware appears. Before the first hardware
 integration, the project may add one narrow simulated controllable-device slice
-to prove the bidirectional command loop under repeatable conditions. Each later
-device role or capability should be proven in the simulator first, then
-validated on the corresponding real hardware before the roadmap moves on to the
-next device role.
+to prove the bidirectional command loop under repeatable conditions.
+
+For the initial environmental-sensor and on/off-output roles, the direct
+simulator route remains development-only. The project also adds an MQTT-backed
+simulator runtime, ESP32/ESPHome and a standalone MQTT source before it expands
+the device-role catalog. This source-parity gate refines the former
+"hardware after each slice" rule: the next role waits until the current roles
+work concurrently through all required sources.
 
 ## Consequences
 
@@ -60,6 +64,10 @@ Real hardware should therefore appear early after each reliable simulated slice.
 Hardware validation should check whether the simulator-taught event contracts,
 state derivation, command lifecycle and UI expectations still hold under real
 device timing and connectivity.
+
+The direct simulator retains its value for deterministic domain and adapter
+tests. MQTT transport integration is tested separately with a real local broker
+so that a transport failure does not make ordinary domain tests slow or opaque.
 
 ## Links
 

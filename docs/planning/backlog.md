@@ -11,16 +11,20 @@ an ADR as part of the related change.
       contracts, backend projections, simulator adapters, realtime BFF messages,
       frontend cards and their tests. Project `availability`
       (`online`/`offline`/`unknown`), operational `health`
-      (`healthy`/`degraded`/`unknown`) and applicable observation `freshness`
-      (`fresh`/`stale`/`unknown`) independently. Add explicit availability and
-      health events, keep command lifecycle independent, and derive command
-      availability from capability, availability and degradation reason.
+      (`healthy`/`degraded`/`unknown`) and per-capability observation status
+      (`fresh`/`stale`/`unknown`) independently. Retain transition timestamps,
+      `availabilityReason` and `healthReason` where applicable. Add explicit
+      availability and health events, keep command lifecycle independent, and
+      derive command availability from capability, availability and degradation
+      reason.
     - Depends on: [ADR: Device Availability, Health and Observation Freshness](../decisions/adr-device-availability-and-observation-freshness.md).
     - Blocks: Stage 3.5 and every later roadmap stage.
-    - Done when: Contract, projection, simulator and UI tests prove that sparse
-      telemetry changes freshness without making a device offline; explicit
-      availability evidence changes only availability; degraded health is visible
-      separately; and commands retain their documented lifecycle semantics.
+    - Done when: Contract, projection, simulator and UI tests prove that
+      configured devices bootstrap as `unknown`; sparse telemetry changes only its
+      capability freshness; explicit availability and health evidence changes only
+      its dimension; delayed or equal-timestamp transitions cannot regress state;
+      reasons are retained and visible; degraded health is separate; and an active
+      command survives an availability change until explicit failure or timeout.
 
 ## Stage 3 — Simulated LED Command Reference Slice
 
@@ -134,7 +138,7 @@ specific roadmap stage.
       stream.
 
 - [ ] Implement physical LED actuation according to the external-actuation ADR
-      before Stage 5 hardware acceptance. A physical state report must update
+      before Stage 6 hardware acceptance. A physical state report must update
       observed state even during a Dashboard command; a matching report confirms
       the requested outcome without asserting causal attribution, while a
       non-matching report leaves the command pending.

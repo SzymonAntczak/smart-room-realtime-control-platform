@@ -38,9 +38,9 @@ behavior:
 
 The completed Stage 2/2.5 implementation is a read-only simulated temperature
 reference slice. It uses the backend adapter, event processor, read-model
-projection and realtime BFF; the UI exposes current telemetry, reconnect
-feedback plus independent availability, operational health and observation freshness. Event history is a later dedicated
-slice. Development-only controls
+projection and realtime BFF. It currently exposes the legacy combined `health`
+field; B1 must migrate it to independent availability, operational health and
+observation freshness. Event history is a later dedicated slice. Development-only controls
 exercise normal and failure scenarios through that same backend-owned path.
 The broader command rules below remain the target model for the later LED
 control slice.
@@ -63,6 +63,7 @@ control slice.
 - [ADR: Command correlation, confirmation and concurrency](../decisions/adr-command-correlation-confirmation-and-concurrency.md)
 - [ADR: Device availability, health and observation freshness](../decisions/adr-device-availability-and-observation-freshness.md)
 - [ADR: Device command confirmation and health policy](../decisions/adr-device-command-confirmation-and-health-policy.md)
+- [ADR: MQTT source parity before device expansion](../decisions/adr-mqtt-source-parity-before-device-expansion.md)
 - [Trade-offs and decision log](../decisions/tradeoffs.md)
 
 ## Updating Architecture

@@ -49,14 +49,13 @@ later command slices must preserve the same platform model.
 
 The first useful system slice focuses on a small smart-room model.
 
-Initial device roles:
+The active MVP is deliberately limited to:
 
-- temperature sensor
-- humidity sensor
-- motion sensor
-- ambient light sensor
-- LED output
-- physical LED button
+- one environmental sensor role providing temperature and humidity telemetry;
+- one controllable on/off output using `set.power`.
+
+Motion, ambient light and separate physical-input roles are deferred until the
+same two roles have passed the source-parity gate across all planned sources.
 
 Initial command:
 
@@ -75,6 +74,13 @@ Initial reliability scenarios:
 The exact hardware models and UI layout can change. The stable MVP goal is to
 exercise the control loop, state model and reliability behavior with a small set
 of understandable devices.
+
+For deterministic development and domain tests, the simulator may communicate
+directly with a simulator adapter in-process. This route is not a production
+device transport. Production-like sources communicate through a local MQTT
+broker: the MQTT-backed simulator, ESP32/ESPHome and standalone MQTT-capable
+devices. Backend-owned source adapters may use different native topics and
+payloads, but must produce the same platform contracts.
 
 ## Main Components
 
@@ -217,6 +223,22 @@ Adapters belong to the backend side of the boundary. The simulator and later
 hardware devices should remain device-like sources of observations and receivers
 of device-specific commands.
 
+### MQTT Transport Boundary
+
+Mosquitto is a local transport dependency for every production-like device
+source. It routes native MQTT messages only; it does not interpret platform
+events, commands or room state. Each MQTT adapter owns validation of its source
+topics and payloads, translation into platform facts, and dispatch of platform
+commands to native MQTT commands.
+
+If the backend loses its required broker connection, every device available
+only through that MQTT source becomes `offline` with the reason
+`broker_unavailable`; its commands are blocked. This expresses that the
+platform cannot reach the device through its required production transport. A
+backend reconnect alone does not restore `online`: a later trustworthy device
+availability signal is required. The direct simulator route is unaffected
+because it is explicitly a development-only source.
+
 ## Local-First Assumption
 
 The platform should work on a local machine or local network first. Cloud services can be added later, but the core control loop should not require them.
@@ -230,10 +252,11 @@ telemetry path for two simulated temperature sensors. It includes simulator
 adapter, event processor with validation and deduplication, and a read-model
 projection for `telemetry.reading.recorded` events. The frontend receives
 an initial UI-oriented `room.snapshot` baseline followed by per-device deltas over WebSocket
-from the local backend BFF. The backend evaluates freshness periodically, but
-sends a delta only when the observation freshness changes. Availability changes
-only when explicit availability evidence arrives. The projection retains current device state; ignored duplicate
-and invalid events are exposed only through bounded development diagnostics.
+from the local backend BFF. The current projection still uses the legacy
+combined `health` field and device-level `lastSeenAt`; B1 must migrate it to the
+target availability, health and per-capability observation-status model. Ignored
+duplicate and invalid events are exposed only through bounded development
+diagnostics.
 `GET /room` remains available as
 a debug/read snapshot endpoint, but it is not the frontend fallback path.
 

@@ -25,6 +25,7 @@ Keep current system behavior in [architecture](../architecture/). Promote a trad
 - [LED Command Transport and Operational Defaults](adr-led-command-transport-and-operational-defaults.md)
 - [External Actuation and Command Outcomes](adr-external-actuation-and-command-outcomes.md)
 - [Device Availability, Health and Observation Freshness](adr-device-availability-and-observation-freshness.md)
+- [MQTT Source Parity Before Device Expansion](adr-mqtt-source-parity-before-device-expansion.md)
 
 ## Superseded ADRs
 

@@ -37,6 +37,12 @@ Each device or capability should move through the same delivery rhythm:
 3. validate the same slice on real hardware,
 4. then move to the next device role or capability.
 
+For the initial environment-sensor and on/off-output roles, "real hardware"
+means more than one physical proof point. Before the device scope grows, the
+same Dashboard must work concurrently with the direct development simulator,
+the MQTT-backed simulator, an ESP32 device and a standalone MQTT device. This
+is the source-parity gate described below.
+
 The current reference slice is the simulated temperature sensor read path. It
 should become the pattern for later read-only telemetry slices by finishing the
 event contract, simulator scenario coverage, availability and observation
@@ -45,9 +51,9 @@ checklist for temperature first. Before the first hardware integration, the
 project should add one narrow simulated LED command slice. This establishes the
 full bidirectional control loop—user intent, command dispatch, observed device
 report and confirmation—under repeatable simulator conditions. The real
-temperature sensor path follows after browser-level frontend integration tests
-validate the user-visible control loop against controlled BFF responses; the
-simulated LED slice remains the reference implementation for later
+temperature sensor path is deferred until Stage 4 completes telemetry,
+diagnostics and the simulator demo after browser-level frontend integration
+tests. The simulated LED slice remains the reference implementation for later
 controllable-device hardware.
 
 This keeps the project from becoming either a broad dashboard with shallow
@@ -57,38 +63,22 @@ reliability, freshness, command lifecycle and UI semantics from scratch.
 
 ## Planned Device Scope
 
-The planned device set should stay small, but it should cover enough different
-signals to exercise the system model.
+The project deliberately freezes product breadth after Stage 3. Until the
+source-parity gate is complete, the only device roles are:
 
-Initial device candidates:
+- an environmental sensor providing temperature and humidity telemetry;
+- an on/off output controlled through `set.power`.
 
-- temperature sensor,
-- motion sensor,
-- ambient light sensor,
-- LED output,
-- physical LED button,
-- humidity sensor as a later optional telemetry role.
+The goal is to make these two roles credible across transport and hardware
+boundaries, not to add a broader collection of shallow device cards. Motion,
+ambient light, buttons as a separate input role and every other device role are
+explicitly deferred. They may be planned only after the parity gate is met.
 
-This set gives the project a useful mix of telemetry, presence detection,
-environmental context, physical input and visible output. The exact hardware
-models can be chosen later; at the roadmap level, the important part is the
-role each device plays in the control loop.
-
-Ambient light should be the next read-only sensor after the temperature, LED
-and motion slices are reliable. It adds more learning value than another
-temperature-like telemetry sensor because it gives automation contextual
-meaning: motion can turn on the LED only when the room is dark. Humidity can
-remain optional until the project needs another environmental time-series
-signal.
-
-These roles should not all be implemented in the simulator before hardware work
-begins. The temperature sensor is the first read-only reference implementation.
-After its simulated reliability slice, one simulated LED control slice should
-prove the bidirectional command path before browser-level frontend integration
-tests validate it against a mocked BFF contract. The real temperature sensor
-can then validate the read model with physical transport and timing. Each later
-device role should still be proven in the simulator before its corresponding
-hardware validation.
+The direct simulator-to-adapter route remains a development and deterministic
+test path. All production-like device sources use MQTT through the local
+broker: the MQTT simulator, ESP32/ESPHome and standalone MQTT-capable devices.
+Their native topics and payloads need not match; backend-owned adapters
+translate each source into the shared platform contract.
 
 At the roadmap level, "production ready" means reliability-first for a local
 project slice: clear contracts, explicit uncertainty and failure states,
@@ -98,21 +88,21 @@ deployment posture with cloud operations, fleet management or full monitoring.
 
 ## Roadmap Overview
 
-| Stage     | Focus                                     | Intended outcome                                                                          |
-| --------- | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Stage 0   | Project foundation                        | Clear direction, initial architecture and documentation structure                         |
-| Stage 1   | Simulated temperature read path           | A working realtime UI driven by one simulated temperature sensor                          |
-| Stage 2   | Reliable simulated temperature slice      | Temperature shows availability, stale observations, recovery, history and failure signals |
-| Stage 2.5 | Dev scenario controls                     | Manual simulator controls make reliability scenarios demonstrable                         |
-| Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator                   |
-| Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                                   |
-| Stage 4   | Real temperature hardware slice           | A real temperature sensor validates the same read model                                   |
-| Stage 5   | Real LED button and output hardware slice | Physical input or UI control affects a real LED through the same model                    |
-| Stage 6   | Simulated motion-triggered LED behavior   | Motion telemetry can trigger LED behavior with explainable causality                      |
-| Stage 7   | Real motion sensor hardware slice         | A physical motion sensor validates the motion-triggered LED behavior                      |
-| Stage 8   | Simulated ambient light slice             | Lux readings add context for light-aware automation                                       |
-| Stage 9   | Real ambient light hardware slice         | A physical light sensor validates the same contextual read model                          |
-| Stage 10  | Scenes, telemetry depth and packaging     | Multi-device scenes, history, resilience and project narrative mature                     |
+| Stage     | Focus                                     | Intended outcome                                                                                          |
+| --------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Stage 0   | Project foundation                        | Clear direction, initial architecture and documentation structure                                         |
+| Stage 1   | Simulated temperature read path           | A working realtime UI driven by one simulated temperature sensor                                          |
+| Stage 2   | Reliable simulated temperature slice      | Temperature shows availability, stale observations, recovery, history and failure signals                 |
+| Stage 2.5 | Dev scenario controls                     | Manual simulator controls make reliability scenarios demonstrable                                         |
+| Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator                                   |
+| Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                                                   |
+| Stage 4   | Simulator platform readiness              | Telemetry, diagnostics and a repeatable local demo make the simulator slice a complete platform reference |
+| Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes a real transport boundary while the direct simulator path remains intact                |
+| Stage 6   | ESP32 / ESPHome source                    | Environmental telemetry and on/off control use MQTT from minimal custom hardware                          |
+| Stage 7   | Standalone MQTT device source             | A second, native MQTT device validates independent adapter and physical-actuation behavior                |
+| Stage 8   | Dashboard source-parity gate              | All four sources work concurrently with equivalent visibility and control guarantees                      |
+| Stage 9   | Cross-source scenes and packaging         | Explainable multi-device behavior and a final portfolio-ready narrative build on validated sources        |
+| Future    | New device roles                          | Motion, ambient light or other roles are considered only after Stage 9                                    |
 
 ## Stage 0 - Project Foundation
 
@@ -254,7 +244,7 @@ Expected outcome:
 - a mocked BFF deterministically supplies initial snapshots, realtime updates
   and command responses for each test scenario,
 - tests assert requested versus confirmed state, command progress, visible
-  failures and relevant event history through user-visible behavior,
+  failures and bounded command-outcome history through user-visible behavior,
 - the mocked scenarios cover normal, delayed, rejected, timed-out and
   late-report flows for the LED command loop,
 - tests use the BFF contract boundary rather than simulator-native messages or
@@ -264,155 +254,165 @@ Stage 3.5 is complete when the browser suite protects the documented LED
 control-loop behavior with deterministic mocked BFF scenarios. End-to-end
 verification with the real backend is a later, separate stage.
 
-## Stage 4 - Real Temperature Hardware Slice
+## Stage 4 - Simulator Platform Readiness
 
-Stage 4 validates the temperature read model with a real physical sensor.
-
-The goal is not to introduce new product behavior. The goal is to prove that
-the simulator-backed temperature model survives real transport, real timing,
-real connection behavior and hardware-specific quirks without changing the core
-system story.
+Stage 4 completes the platform on the direct simulator route before MQTT or
+hardware add new transport and adapter concerns. It turns the temperature and
+LED reference slices into a complete local system that can be tested,
+diagnosed and demonstrated on its own terms.
 
 Expected outcome:
 
-- one real temperature sensor reports through a backend-owned adapter,
-- real readings use the same platform event and projection model as the
-  simulator,
-- disconnecting becomes visible through availability, while delayed or stopped
-  readings become visible through observation freshness,
-- recent history can explain whether a reading came from simulator or hardware,
-- the hardware slice has a manual acceptance checklist.
+- the simulator-backed Dashboard shows bounded telemetry history, recent events
+  and diagnostics with enough time context to explain current observed state,
+  availability, health, freshness and command outcomes;
+- the UI can distinguish normal values from stale observations, explicit
+  availability changes, degraded health, pending commands and terminal command
+  outcomes without requiring raw-event interpretation by the user;
+- diagnostics make duplicate, malformed, future-dated and otherwise ignored
+  events explainable without corrupting the current projection;
+- repeatable simulator scenarios cover the important normal, failure and
+  recovery paths for the supported environmental-sensor and on/off-output
+  roles;
+- a local acceptance checklist and concise walkthrough let a reviewer run and
+  understand the simulator platform without hardware.
 
-Stage 4 is complete when a real temperature sensor can replace or sit beside
-the simulator without changing the read-path mental model.
+Stage 4 establishes bounded telemetry and recent-event views. Stage 3.5 tests
+only the command-outcome history already exposed by the command slice.
 
-## Stage 5 - Real LED Button And Output Hardware Slice
+Stage 4 is complete when the simulator route is a trustworthy platform
+reference: its state, telemetry, diagnostics and command outcomes can be
+explained and verified end to end. Later MQTT and hardware stages must conform
+to this reference rather than redefining its user-visible semantics.
 
-Stage 5 validates the LED command model with physical input and output.
+## Stage 5 - MQTT-Backed Simulator Runtime
 
-The goal is to prove that the same requested-vs-confirmed state model works
-when a real button, LED, ESP32, MQTT, Home Assistant or another local hardware
-path participates in the loop.
-
-Expected outcome:
-
-- a physical input or UI action can request a real LED state change,
-- the hardware adapter translates device-native messages into the same platform
-  events used by the simulator,
-- command confirmation, rejection, timeout and disconnect behavior remain
-  visible,
-- the UI can show whether current LED state came from real hardware evidence,
-- the hardware slice has a manual acceptance checklist.
-
-Stage 5 is complete when the real LED slice follows the same command lifecycle
-and user-facing reliability rules as the simulated LED slice.
-
-## Stage 6 - Simulated Motion-Triggered LED Behavior
-
-Stage 6 introduces device-to-device behavior in the simulator.
-
-The goal is to add a simulated motion sensor and use motion detection to
-trigger LED behavior while keeping causality visible. This is the first slice
-where one device observation can cause a command or desired behavior for
-another device.
+Stage 5 introduces MQTT as a production-like transport boundary without
+replacing the direct simulator route used by development and deterministic
+tests.
 
 Expected outcome:
 
-- simulated motion telemetry follows the read-only sensor reliability model,
-- motion-triggered LED behavior is represented as an explainable system action,
-- automation-triggered commands use the same command lifecycle as manual
-  commands,
-- history shows the motion event, the triggered intent and the LED result,
-- stale motion observations or offline availability do not silently drive automation.
+- the same simulator device model can run directly through its existing adapter
+  or publish simulator-native MQTT messages through local Mosquitto,
+- a backend MQTT simulator adapter validates topics and payloads before it
+  creates the same platform events and receives the same platform commands,
+- broker reconnect, malformed payload, duplicate delivery, retained state and
+  broker-unavailable scenarios are visible and tested at the transport level,
+- losing the required broker marks MQTT-backed devices `offline` with the
+  reason `broker_unavailable` and blocks their commands,
+- reconnecting the backend to the broker does not restore a device to `online`
+  until new trustworthy device availability evidence arrives,
+- the direct path remains the fast reference for domain and adapter tests.
 
-Stage 6 is complete when the simulator can demonstrate motion-driven LED
-behavior without hiding why the LED changed.
+Stage 5 is complete when the MQTT simulator and direct simulator produce the
+same platform-level behavior for the supported sensor and on/off roles, while
+transport-specific failure behavior remains explicit.
 
-## Stage 7 - Real Motion Sensor Hardware Slice
+## Stage 6 - ESP32 / ESPHome Source
 
-Stage 7 validates the motion-triggered LED behavior with a real motion sensor.
-
-The goal is to check whether the simulated motion assumptions hold when motion
-events arrive from physical hardware with real timing, noise and connection
-behavior.
-
-Expected outcome:
-
-- a real motion sensor reports through a backend-owned adapter,
-- real motion observations use the same platform model as simulated motion,
-- the system can trigger LED behavior from real motion events,
-- hardware noise, disconnects or missing reports are visible instead of hidden,
-- the hardware slice has a manual acceptance checklist.
-
-Stage 7 is complete when real motion can trigger LED behavior through the same
-explainable event and command model proven in the simulator.
-
-## Stage 8 - Simulated Ambient Light Slice
-
-Stage 8 adds a simulated ambient light sensor after the project already has
-temperature telemetry, LED command behavior and motion-triggered behavior.
-
-The goal is to add environmental context that makes automation more realistic.
-Ambient light should follow the read-only sensor reliability model while
-teaching threshold-based interpretation such as bright, dim or dark conditions.
+Stage 6 adds minimal custom hardware through MQTT: one environmental sensor
+for temperature and humidity, and one low-voltage on/off output.
 
 Expected outcome:
 
-- simulated lux readings flow through the same adapter, event and projection
-  model as other telemetry,
-- availability, stale observation, invalid-data and recovery behavior are visible for ambient light,
-- light-level interpretation is explainable and does not hide raw telemetry,
-- motion-triggered LED behavior can be constrained by "room is dark" context,
-- the slice has a manual acceptance checklist.
+- ESP32/ESPHome publishes device-native telemetry and availability through
+  Mosquitto and receives `set.power` commands through MQTT,
+- an ESPHome adapter maps those native messages to the existing platform event
+  and command model without requiring its payloads to match simulator payloads,
+- UI commands remain pending until a matching ESP32 state report arrives,
+- physical disconnect, broker loss, delayed report and recovery are visible in
+  availability, freshness, command history and logs,
+- a manual acceptance checklist covers temperature, humidity and `set.power`.
 
-Stage 8 is complete when simulated ambient light can provide reliable context
-for automation without becoming a one-off telemetry path.
+Stage 6 is complete when the ESP32 source can run beside both simulator routes
+without changing the Dashboard's control or reliability semantics.
 
-## Stage 9 - Real Ambient Light Hardware Slice
+## Stage 7 - Standalone MQTT Device Source
 
-Stage 9 validates the ambient light model with a real light sensor.
-
-The goal is to check whether the simulated lux and threshold assumptions hold
-under real room lighting, sensor noise, placement differences and connection
-behavior.
-
-Expected outcome:
-
-- a real ambient light sensor reports through a backend-owned adapter,
-- real lux observations use the same platform model as simulated light,
-- sensor noise, missing reports and disconnects are visible instead of hidden,
-- the system can explain when motion did or did not trigger LED behavior
-  because the room was bright enough,
-- the hardware slice has a manual acceptance checklist.
-
-Stage 9 is complete when real ambient light can safely act as contextual input
-for light-aware automation.
-
-## Stage 10 - Scenes, Telemetry Depth And Packaging
-
-Stage 10 grows the project after several device roles already exist in both the
-simulator-first and hardware-validated model.
-
-The goal is to make multi-device behavior easier to define, inspect, test and
-explain. Scenes and automation should build on the existing event, state,
-command, history and reliability model instead of bypassing it.
+Stage 7 adds a standalone device that emits MQTT events directly, rather than
+running custom ESPHome firmware. A Shelly relay is one possible example, but
+the architecture does not depend on a particular vendor or product.
 
 Expected outcome:
 
-- simple scenes can coordinate the existing temperature, LED, motion and
-  ambient light roles,
-- the first light-aware scene can express "when motion is detected and the room
-  is dark, turn on the LED for a bounded time",
-- automation activity appears in history with clear triggering causes,
-- telemetry and event history can answer operational questions over time,
-- repeatable failure scenarios cover state derivation, command lifecycle,
-  realtime UI behavior and hardware validation,
-- the README, architecture and walkthrough explain the project clearly.
+- a standalone-device adapter maps its native MQTT topics, retained state and physical
+  relay changes to platform facts and `set.power` commands,
+- a UI-initiated command and a physical switch change both update reported
+  state through normal event processing,
+- the UI and history distinguish the source and show the same command,
+  availability and freshness semantics as for the ESP32 and simulator sources,
+- the adapter handles broker reconnect, retained bootstrap messages, malformed
+  native payloads and duplicate delivery explicitly.
 
-Stage 10 is complete when the project can intentionally reproduce important
-normal and failure flows, show that the system responds predictably and be
-shown to a recruiter, tech lead or architect without needing a long spoken
-preface.
+Stage 7 is complete when a standalone device is a second independently shaped
+MQTT source, not a special path that bypasses the platform model.
+
+## Stage 8 - Dashboard Source-Parity Gate
+
+Stage 8 proves the platform rather than adding another device role. The local
+Dashboard runs the following sources concurrently:
+
+- direct in-process simulator (development-only route),
+- MQTT-backed simulator,
+- ESP32 / ESPHome,
+- standalone MQTT-capable device.
+
+Expected outcome:
+
+- every source has a distinct platform `deviceId`; parallel sources are never
+  merged into an ambiguous single device, and each source exposes the same
+  platform semantics for its applicable capabilities,
+- the Dashboard shows source-aware telemetry, reported state, availability,
+  applicable freshness, command lifecycle, recent events and logs for all
+  sources,
+- no source-specific Dashboard control flow bypasses the ordinary platform
+  command lifecycle, history or device adapters,
+- source-specific and shared failures, especially `broker_unavailable`, are
+  understandable in the UI and repeatable in a local acceptance run,
+- contract, domain, adapter, transport-integration and browser tests cover the
+  intended boundary at the appropriate level.
+
+Stage 8 is complete when all four sources are useful together in one Dashboard
+and the user can explain their state, events, commands and failure causes.
+
+## Stage 9 - Cross-Source Scenes and Packaging
+
+Stage 9 turns the source-parity platform into a coherent, demonstrable product
+slice. Telemetry depth and single-source diagnostics are already established in
+Stage 4; this stage applies them across validated sources. It does not introduce
+a new device source or bypass the existing event, command, availability, health
+and freshness model.
+
+Expected outcome:
+
+- scenes and automations coordinate existing devices only through ordinary
+  platform commands, retain normal command lifecycle and history, and expose
+  their triggering cause;
+- cross-source telemetry and recent-event views retain enough time context to
+  compare current state, changes, command outcomes and relevant reliability
+  conditions without becoming an unbounded raw-event console;
+- multi-device normal, failure and recovery scenarios are repeatable and cover
+  causality, stale observations, availability, degraded health and late command
+  outcomes where they apply;
+- the Dashboard, local acceptance checklist and project documentation present a
+  clear walkthrough of the architecture, available sources, reliability model
+  and intentional boundaries;
+- the repository includes the concise packaging needed to demonstrate the
+  project to a recruiter, technical lead or architect without relying on a
+  long spoken explanation.
+
+Stage 9 is complete when a user can run a local end-to-end demo, understand why
+a multi-device behavior occurred, inspect the relevant telemetry and command
+history, and verify the important normal and failure paths through documented
+steps. Only then may the roadmap schedule motion, ambient light or another new
+device role.
+
+## Future Device Expansion
+
+New device roles are intentionally not scheduled. After Stage 9, select the
+next role through a documented decision, then prove it in the simulator and
+validate it through the required MQTT production path before adding another.
 
 ## Cross-Slice Reliability Expectations
 

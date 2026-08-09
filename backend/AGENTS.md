@@ -22,6 +22,7 @@ particular, keep backend behavior aligned with:
 - `docs/decisions/adr-json-schema-transport-contracts.md`
 - `docs/decisions/adr-event-simulator-before-real-devices.md`
 - `docs/decisions/adr-local-first-before-cloud.md`
+- `docs/decisions/adr-mqtt-source-parity-before-device-expansion.md`
 
 For TypeScript modules in the backend, follow the root TypeScript rules.
 

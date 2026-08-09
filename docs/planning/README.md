@@ -26,5 +26,6 @@ system rule, move it or restate it in the architecture or decision documents.
 
 - [Development goal and project direction](goal.md)
 - [Smart Room roadmap](roadmap.md)
+- [Required hardware](hardware.md)
 - [Temperature reliability slice checklist](temperature-reliability-slice.md)
 - [Working backlog](backlog.md)

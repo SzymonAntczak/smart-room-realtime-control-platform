@@ -39,6 +39,11 @@ heartbeat, successful or failed probe, or a device-native availability report.
 The absence or age of telemetry or state reports must never, by itself, change
 availability to `offline`.
 
+Each projection retains `availabilityChangedAt` and, while availability is
+`offline`, a machine-readable `availabilityReason`. The reason explains the
+availability fact, for example `broker_unavailable`; it is distinct from the
+derived `commandAvailability.reason` such as `device_offline`.
+
 Every device projection also exposes operational `health`:
 
 | Health     | Meaning                                                               |
@@ -54,8 +59,21 @@ health projection includes a machine-readable reason. It may coexist with any
 availability and freshness value; for example, a device can be `online`,
 `degraded` and have a `fresh` temperature observation.
 
+Each projection retains `healthChangedAt` and, while health is `degraded`, a
+machine-readable `healthReason`.
+
+Availability and health transitions are monotonic per device dimension. The
+event processor changes a dimension only when an accepted transition has an
+`occurredAt` later than its corresponding projected changed-at timestamp. A
+transition with an equal or earlier timestamp remains visible in history and
+diagnostics but cannot regress the projection. `previousAvailability` and
+`previousHealth` describe the producer's fact; they are not a precondition for
+applying a newer transition because a dropped earlier transition must not leave
+the projection stuck.
+
 Freshness describes the confidence in an observed state, not reachability. A
-capability that has a configured freshness policy exposes `freshness` as
+capability that has a configured freshness policy exposes an entry in
+`observationStatus`, keyed by capability. Each entry contains `freshness` as
 `fresh`, `stale` or `unknown`, together with `lastObservedAt` when there is an
 accepted observation. `stale` means that the observation exceeded its expected
 freshness window. `unknown` means that no accepted observation exists or that
@@ -92,6 +110,16 @@ The UI uses availability as the primary device-card status. When applicable,
 it separately displays a degraded-health warning, stale observation data and the
 lifecycle of an active or recent command.
 
+Configured devices exist in the room projection before their first device fact.
+They bootstrap with `availability: unknown` and `health: unknown`; a
+controllable device therefore exposes `block` with `availability_unknown` until
+availability evidence is accepted.
+
+An availability change affects only new command admission. An already accepted
+or pending command remains active until an explicit `command.failed` fact or its
+normal timeout. A later offline state must not silently rewrite that command's
+lifecycle outcome.
+
 ## Consequences
 
 The platform avoids false offline claims for infrequent sensors and
@@ -100,9 +128,10 @@ real availability signal before they can assert `online` or `offline`; until
 then the honest value is `unknown`.
 
 Snapshots become more expressive and consumers need to render more than one
-status when relevant. `lastSeenAt` is replaced in the target projection by
-`lastObservedAt`, because it records an observation and must not be treated as
-availability evidence.
+status when relevant. The legacy device-level `lastSeenAt` is replaced by
+per-capability `observationStatus.*.lastObservedAt`, because an observation
+must not be treated as availability evidence and capabilities can age
+independently.
 
 The existing combined `health` vocabulary and stale-to-offline escalation are
 retired from the target model. The command-confirmation rules in the earlier ADR
@@ -112,9 +141,12 @@ superseded by this decision.
 ## Verification
 
 - Contract tests reject a projection whose `availability`, `health` or
-  `freshness` is outside its vocabulary and cover an absent `freshness` policy.
+  `freshness` is outside its vocabulary; they cover reasons and independent
+  capability freshness entries.
 - Projection tests prove that elapsed telemetry time changes only `freshness`,
-  while explicit availability evidence changes only `availability`.
+  while explicit availability evidence changes only `availability`; they cover
+  bootstrap `unknown`, delayed transitions, equal timestamps and offline during
+  an active command.
 - Simulator scenarios cover a sparse-but-online sensor, an explicit offline
   device with retained last observation, a degraded-but-online device, and
   recovery through explicit availability and health evidence.

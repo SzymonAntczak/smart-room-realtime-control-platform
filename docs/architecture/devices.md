@@ -25,6 +25,10 @@ device-appropriate evidence such as transport connection state, heartbeat,
 probe result or a device-native availability report. The age or absence of an
 observation must not independently make a device `offline`.
 
+The projection stores `availabilityChangedAt` and, while availability is
+`offline`, `availabilityReason`. For example, `broker_unavailable` explains the
+transport fact; it is not the same vocabulary as `commandAvailability.reason`.
+
 ## Device Health
 
 | State      | Meaning                                                       | UI expectation                                       |
@@ -38,10 +42,15 @@ Health applies to every device but is independent of availability. A
 changes only from accepted health facts; an old observation does not itself
 make a device degraded.
 
+The projection stores `healthChangedAt` and, while health is `degraded`,
+`healthReason`.
+
 ## Observation Freshness
 
 Freshness applies to an observable capability only when that capability has a
-configured freshness policy.
+configured freshness policy. The projection exposes it through
+`observationStatus`, keyed by capability, so each capability has independent
+`freshness` and `lastObservedAt` metadata.
 
 | State     | Meaning                                                                        |
 | --------- | ------------------------------------------------------------------------------ |
@@ -54,11 +63,12 @@ actuator state, such as LED power, may retain `lastObservedAt` and optionally
 expose freshness when the age of that state matters. An ephemeral button press
 is an event, not a persistent observed value, so it has no freshness state.
 
-Only accepted, time-valid reports may advance `lastObservedAt`. A future-dated
-report beyond the event contract's one-second clock-skew tolerance is ignored;
-it cannot make an observation appear fresh. An accepted report whose observation
-time is not newer than the projected `lastObservedAt` remains visible in history
-but cannot regress reported state or advance freshness.
+Only accepted, time-valid reports may advance that capability's `lastObservedAt`.
+A future-dated report beyond the event contract's one-second clock-skew
+tolerance is ignored; it cannot make an observation appear fresh. An accepted
+report whose observation time is not newer than the projected capability
+timestamp remains visible in history but cannot regress reported state or
+advance freshness.
 
 ## Command States
 
@@ -85,10 +95,16 @@ command projections. A device links to its one active command by
         {
             "deviceId": "led-main",
             "availability": "online",
+            "availabilityChangedAt": "2026-05-21T07:09:59Z",
             "health": "healthy",
+            "healthChangedAt": "2026-05-21T07:09:59Z",
             "reportedState": { "power": "off" },
-            "lastObservedAt": "2026-05-21T07:10:01Z",
-            "freshness": "unknown",
+            "observationStatus": {
+                "power": {
+                    "lastObservedAt": "2026-05-21T07:10:01Z",
+                    "freshness": "unknown"
+                }
+            },
             "activeCommandId": "cmd-123"
         }
     ],
@@ -130,6 +146,10 @@ A device-type policy may add a visible warning when a command depends on an old
 reported state. That warning describes stale observation data; it does not
 change availability to `offline`.
 
+Configured devices bootstrap in the projection with `availability: unknown` and
+`health: unknown`. A controllable bootstrap device blocks commands with
+`availability_unknown` until an accepted availability fact changes it.
+
 ## Example Transition
 
 ```text
@@ -137,7 +157,7 @@ Initial state:
 - availability: online
 - health: healthy
 - reportedState.power: off
-- lastObservedAt: 2026-05-21T07:10:01Z
+- observationStatus.power.lastObservedAt: 2026-05-21T07:10:01Z
 - command.state: idle
 
 User clicks: turn LED on
@@ -150,7 +170,7 @@ Backend dispatches the command
 
 Device reports: LED on
 - reportedState.power: on
-- lastObservedAt advances
+- observationStatus.power.lastObservedAt advances
 - activeCommands no longer contains the command
 - recentCommands contains the confirmed command
 ```
@@ -174,6 +194,16 @@ Individual devices may override them when there is a specific reason.
 Health reasons are configured per device type. A `degraded` health reason
 derives the command policy for a controllable online device; it never changes
 availability.
+
+Availability and health transitions are ordered independently by `occurredAt`.
+The processor applies a transition only when its timestamp is later than the
+corresponding `availabilityChangedAt` or `healthChangedAt`; an equal or older
+transition remains diagnosable but cannot regress current state. The event's
+previous-value field is descriptive, not a transition precondition.
+
+An availability change blocks only new commands. An existing `accepted` or
+`pending` command remains active until the adapter emits `command.failed` or the
+normal timeout expires; the availability change must not silently rewrite it.
 
 Initial command policies:
 

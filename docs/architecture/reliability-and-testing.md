@@ -11,6 +11,12 @@
 - Command failures and timeouts should be first-class states, not generic errors.
 - Terminal command outcomes should remain available through bounded command
   history with their reason and timing metadata.
+- For a production-like MQTT source, broker loss makes its devices unavailable
+  to the platform with the explicit reason `broker_unavailable`; it blocks
+  commands but does not erase their last observed state.
+- A broker reconnect alone is not evidence that a device is online. A retained
+  availability message, heartbeat or other device-appropriate signal must
+  restore availability.
 
 ## Failure Modes To Simulate
 
@@ -31,6 +37,11 @@ device-state model. Future-dated device
 reports are already rejected by the platform event contract and are covered by
 backend tests; they do not yet have a manual scenario control.
 
+MQTT-backed slices additionally cover broker unavailable and reconnect,
+subscription recovery, malformed native payloads, duplicate delivery and
+retained-message bootstrap. These are transport-integration scenarios; the
+direct simulator path remains the faster domain-test route.
+
 ## Observability
 
 The platform should make these questions easy to answer:
@@ -41,6 +52,8 @@ The platform should make these questions easy to answer:
 - Did the command fail, time out or complete?
 - Did any matching device report arrive after the command timed out?
 - Was the device healthy when the command was sent?
+- Is the device unavailable because of its own signal or because its required
+  broker transport is unavailable?
 
 ## Recovery Behavior
 
@@ -78,6 +91,9 @@ Focus areas:
 - late confirmation after timeout
 - independent availability and freshness transitions
 - health degradation and recovery transitions
+- bootstrap `unknown`, reason retention and per-capability freshness
+- delayed or equal-timestamp availability and health transitions cannot regress state
+- availability loss during an active command leaves it pending until explicit failure or timeout
 
 ### Simulator Scenario Tests
 
@@ -97,6 +113,19 @@ Initial scenarios:
 - device health becomes degraded while availability remains online
 - degraded health recovers without rewriting availability or freshness
 - future-dated report is ignored and a later time-valid report refreshes the observation
+
+### MQTT Transport Integration Tests
+
+Run the real local broker only where transport behavior is under test. Verify:
+
+- the MQTT simulator, ESP32/ESPHome and standalone-device adapters translate their own
+  native payloads to the shared platform contract;
+- broker loss projects `broker_unavailable` and blocks commands for MQTT-only
+  devices;
+- backend reconnect waits for new device availability evidence before restoring
+  `online`;
+- retained state is handled as bootstrap evidence, not as event history;
+- QoS or reconnect delivery duplicates do not corrupt projections.
 
 ### UI Behavior Tests
 

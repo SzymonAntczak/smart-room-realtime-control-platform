@@ -27,6 +27,7 @@ treat that as drift to resolve in code, tests, documentation or a new decision.
 - [Planning README](planning/README.md)
 - [Development goal and project direction](planning/goal.md)
 - [Roadmap](planning/roadmap.md)
+- [Required hardware](planning/hardware.md)
 
 ## Decisions And Supporting Documents
 
