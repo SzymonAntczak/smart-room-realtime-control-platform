@@ -45,7 +45,9 @@ export function createEventProcessingDiagnostics({
                     });
                     nextDiagnosticNumber += 1;
                 }
+
                 deduplicationEvictions.splice(diagnosticEventLimit);
+
                 return;
             }
 

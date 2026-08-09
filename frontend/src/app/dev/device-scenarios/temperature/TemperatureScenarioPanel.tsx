@@ -94,7 +94,9 @@ export function TemperatureScenarioPanel({
         refreshDiagnostics,
     } = useTemperatureScenario(client);
     useEffect(() => {
-        if (completedAction) onCompletedAction?.(completedAction);
+        if (completedAction) {
+            onCompletedAction?.(completedAction);
+        }
     }, [completedAction, onCompletedAction]);
     const message = errorMessage ?? toCompletedMessage(completedAction ?? persistedCompletedAction);
 
@@ -111,7 +113,11 @@ export function TemperatureScenarioPanel({
                     const visibleControls = section.controls.filter(
                         (control) => actions?.includes(control.action) ?? true,
                     );
-                    if (visibleControls.length === 0) return null;
+
+                    if (visibleControls.length === 0) {
+                        return null;
+                    }
+
                     return (
                         <DeviceScenarioSection key={section.title} title={section.title}>
                             <DeviceScenarioActions>

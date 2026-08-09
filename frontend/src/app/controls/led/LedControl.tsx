@@ -33,19 +33,25 @@ export function LedControl({
     realtimeUncertain?: boolean;
 }) {
     const { requestPower, submitting, transportError } = useLedCommandRequest(device?.deviceId);
-    if (!device)
+
+    if (!device) {
         return (
             <ControlCard title="Main LED" status="Unknown">
                 <p className={styles.message}>No LED device is available yet.</p>
             </ControlCard>
         );
-    if (device.role !== 'led-output') return null;
+    }
+
+    if (device.role !== 'led-output') {
+        return null;
+    }
 
     const isBlocked = device.commandAvailability.policy === 'block' || realtimeUncertain;
     const isBusy = submitting || isSelectingScenario || activeCommand !== undefined;
     const hasReportedPower = isPowerState(device.reportedState.power);
     const isOn = device.reportedState.power === 'on';
     const PowerIcon = isOn ? Lightbulb : LightbulbOff;
+
     return (
         <ControlCard
             title={device.name}
@@ -108,12 +114,15 @@ export function LedControl({
         </ControlCard>
     );
 }
+
 function isPowerState(value: unknown): value is 'on' | 'off' {
     return value === 'on' || value === 'off';
 }
+
 function formatAvailability(availability: DeviceProjection['availability']) {
     return availability[0]?.toUpperCase() + availability.slice(1);
 }
+
 function terminalTimestamp(command: TerminalCommandProjection) {
     return command.status === 'confirmed'
         ? command.confirmedAt
@@ -121,6 +130,7 @@ function terminalTimestamp(command: TerminalCommandProjection) {
           ? command.failedAt
           : command.timedOutAt;
 }
+
 function getCardAlert({
     device,
     activeCommand,
@@ -167,34 +177,54 @@ function getCardAlert({
             : undefined,
     ].filter((message): message is string => message !== undefined);
     const messages = [...errors, ...warnings, ...information];
-    if (messages.length > 0)
+
+    if (messages.length > 0) {
         return {
             message: messages.join(' '),
             variant: errors.length > 0 ? 'error' : warnings.length > 0 ? 'warning' : 'info',
         };
-    if (transportError) return { message: transportError, variant: 'error' };
-    if (recentCommand?.status === 'failed')
+    }
+
+    if (transportError) {
+        return { message: transportError, variant: 'error' };
+    }
+
+    if (recentCommand?.status === 'failed') {
         return { message: recentCommand.message, variant: 'error' };
-    if (recentCommand?.status === 'timed_out')
+    }
+
+    if (recentCommand?.status === 'timed_out') {
         return { message: `Command timed out: ${recentCommand.reason}.`, variant: 'error' };
-    if (device.health === 'degraded')
+    }
+
+    if (device.health === 'degraded') {
         return { message: device.healthReason ?? 'LED health is degraded.', variant: 'warning' };
-    if (device.observationStatus.power?.freshness === 'stale')
+    }
+
+    if (device.observationStatus.power?.freshness === 'stale') {
         return { message: 'LED state observation is stale.', variant: 'warning' };
-    if (realtimeUncertain)
+    }
+
+    if (realtimeUncertain) {
         return {
             message: 'Realtime stream is reconnecting. LED controls are temporarily unavailable.',
             variant: 'warning',
         };
-    if (activeCommand)
+    }
+
+    if (activeCommand) {
         return {
             message: `Requested: ${activeCommand.requestedState.power === 'on' ? 'On' : 'Off'} — awaiting device report.`,
             variant: 'info',
         };
-    if (recentCommand?.status === 'confirmed')
+    }
+
+    if (recentCommand?.status === 'confirmed') {
         return {
             message: `Command confirmed at ${terminalTimestamp(recentCommand).slice(11, 19)} UTC.`,
             variant: 'info',
         };
+    }
+
     return {};
 }

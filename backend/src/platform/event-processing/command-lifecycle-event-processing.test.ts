@@ -136,6 +136,7 @@ describe('command lifecycle event processing', () => {
 
 function createLedProcessor() {
     const devices = [{ deviceId: 'led-main', name: 'Main LED', role: 'led-output' as const }];
+
     return createEventProcessor({
         devices,
         roomProjector: createRoomProjector({

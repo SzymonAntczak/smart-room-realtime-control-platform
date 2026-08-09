@@ -60,8 +60,10 @@ export function createSimulatorLedAdapter({
         }
 
         const replayedEvent = replayableEventsBySequence.get(report.sequence);
+
         if (replayedEvent) {
             emitEvent(replayedEvent);
+
             return;
         }
 
@@ -99,7 +101,10 @@ export function createSimulatorLedAdapter({
         });
     });
     const unsubscribeFromAvailability = led.onAvailability?.((report) => {
-        if (report.deviceId !== nativeLedId) return;
+        if (report.deviceId !== nativeLedId) {
+            return;
+        }
+
         emitEvent({
             eventId: generateEventId(),
             eventType: 'device.availability.changed',
@@ -114,7 +119,10 @@ export function createSimulatorLedAdapter({
         });
     });
     const unsubscribeFromHealth = led.onHealth?.((report) => {
-        if (report.deviceId !== nativeLedId) return;
+        if (report.deviceId !== nativeLedId) {
+            return;
+        }
+
         emitEvent({
             eventId: generateEventId(),
             eventType: 'device.health.changed',
@@ -134,6 +142,7 @@ export function createSimulatorLedAdapter({
             if (hasStopped) {
                 throw new Error('Simulator LED adapter has been stopped.');
             }
+
             if (command.deviceId !== platformDeviceId) {
                 throw new RangeError(`LED command deviceId must be ${platformDeviceId}.`);
             }
@@ -161,7 +170,11 @@ function trimReplayableEvents(eventsBySequence: Map<number, DeviceStateReportedE
 
     while (eventsBySequence.size > replayEventLimit) {
         const oldestSequence = eventsBySequence.keys().next().value;
-        if (oldestSequence === undefined) return;
+
+        if (oldestSequence === undefined) {
+            return;
+        }
+
         eventsBySequence.delete(oldestSequence);
     }
 }

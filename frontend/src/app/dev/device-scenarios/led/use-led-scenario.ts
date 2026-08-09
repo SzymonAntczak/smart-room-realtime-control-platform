@@ -15,6 +15,7 @@ export function useLedScenario(
         setActiveAction(action);
         onRequestChange(true);
         setMessage(undefined);
+
         try {
             const result = await client.runScenario(action);
             setSelectedScenario(

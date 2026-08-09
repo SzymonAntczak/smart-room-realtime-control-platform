@@ -33,6 +33,7 @@ export function useRoomRealtime(): RoomRealtimeState {
                                 connectionStatus === 'connected' ? 'connected' : 'reconnecting',
                         };
                     }
+
                     return {
                         status: 'connecting',
                         connectionStatus:
@@ -53,6 +54,7 @@ export function useRoomRealtime(): RoomRealtimeState {
                 }));
             },
         });
+
         return () => connection.close();
     }, []);
 

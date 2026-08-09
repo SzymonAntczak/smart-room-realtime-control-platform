@@ -92,22 +92,27 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
     return {
         onCommand(listener) {
             commandListeners.add(listener);
+
             return () => commandListeners.delete(listener);
         },
         onStateReport(listener) {
             reportListeners.add(listener);
+
             return () => reportListeners.delete(listener);
         },
         onCommandRejection(listener) {
             rejectionListeners.add(listener);
+
             return () => rejectionListeners.delete(listener);
         },
         onAvailability(listener) {
             availabilityListeners.add(listener);
+
             return () => availabilityListeners.delete(listener);
         },
         onHealth(listener) {
             healthListeners.add(listener);
+
             return () => healthListeners.delete(listener);
         },
         receive(command) {
@@ -127,6 +132,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
                 reportedAt,
             };
             emit(reportListeners, report);
+
             return report;
         },
         rejectCommand(command, rejectedAt) {
@@ -141,6 +147,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
                 rejectedAt,
             };
             emit(rejectionListeners, rejection);
+
             return rejection;
         },
         reportAvailability(availability, reportedAt) {
@@ -154,6 +161,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
             };
             observedAvailability = report.availability;
             emit(availabilityListeners, report);
+
             return report;
         },
         reportHealth(health, reason, reportedAt) {
@@ -169,6 +177,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
             };
             observedHealth = report.health;
             emit(healthListeners, report);
+
             return report;
         },
         getObservedPower() {
@@ -181,13 +190,17 @@ function assertCommand(command: LedSetPowerCommand, expectedDeviceId: string): v
     if (command.messageType !== 'led.command.set_power') {
         throw new TypeError('LED command messageType must be led.command.set_power.');
     }
+
     assertNonEmpty(command.commandId, 'LED commandId');
+
     if (command.deviceId !== expectedDeviceId) {
         throw new RangeError(`LED command deviceId must be ${expectedDeviceId}.`);
     }
+
     if (command.commandType !== 'set.power') {
         throw new TypeError('LED commandType must be set.power.');
     }
+
     assertLedPower(command.requestedState.power);
 }
 

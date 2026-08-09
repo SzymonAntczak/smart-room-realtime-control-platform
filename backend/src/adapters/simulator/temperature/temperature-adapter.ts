@@ -40,6 +40,7 @@ export function createSimulatorTemperatureAdapter({
 
         if (replayedEvent) {
             emitEvent(replayedEvent);
+
             return;
         }
 
@@ -61,7 +62,10 @@ export function createSimulatorTemperatureAdapter({
         emitEvent(event);
     });
     const unsubscribeFromAvailability = sensor.onAvailability?.((report) => {
-        if (report.sensorId !== nativeSensorId) return;
+        if (report.sensorId !== nativeSensorId) {
+            return;
+        }
+
         emitAvailabilityEvent?.({
             eventId: generateEventId(),
             eventType: 'device.availability.changed',
@@ -76,7 +80,10 @@ export function createSimulatorTemperatureAdapter({
         });
     });
     const unsubscribeFromHealth = sensor.onHealth?.((report) => {
-        if (report.sensorId !== nativeSensorId) return;
+        if (report.sensorId !== nativeSensorId) {
+            return;
+        }
+
         emitHealthEvent?.({
             eventId: generateEventId(),
             eventType: 'device.health.changed',

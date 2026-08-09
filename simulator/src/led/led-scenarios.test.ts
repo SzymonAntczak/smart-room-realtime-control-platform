@@ -136,25 +136,33 @@ function createFakeScheduler() {
         },
         setTimeout(callback: () => void, delayMs: number) {
             scheduled.push({ dueAt: now + delayMs, callback });
+
             return scheduled.length;
         },
         clearTimeout(handle: number) {
             const scheduledTimer = scheduled[handle - 1];
-            if (scheduledTimer) scheduled.splice(handle - 1, 1);
+
+            if (scheduledTimer) {
+                scheduled.splice(handle - 1, 1);
+            }
         },
         isoNow() {
             return new Date(Date.parse('2026-08-05T10:00:00Z') + now).toISOString();
         },
         advanceBy(durationMs: number) {
             const target = now + durationMs;
+
             while (true) {
                 const next = scheduled
                     .filter(({ dueAt }) => dueAt <= target)
                     .sort((left, right) => left.dueAt - right.dueAt)[0];
+
                 if (!next) {
                     now = target;
+
                     return;
                 }
+
                 scheduled.splice(scheduled.indexOf(next), 1);
                 now = next.dueAt;
                 next.callback();

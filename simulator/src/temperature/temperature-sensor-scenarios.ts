@@ -51,7 +51,9 @@ export function createTemperatureSensorScenario(
             return sensor.onHealth!(listener);
         },
         tick(recordedAt) {
-            if (offline && lastReading) return { ...lastReading };
+            if (offline && lastReading) {
+                return { ...lastReading };
+            }
 
             const reading = sensor.tick(recordedAt);
             lastReading = reading;
@@ -97,12 +99,16 @@ export function createTemperatureSensorScenario(
                 throw new Error('Cannot replay temperature reading before one has been recorded.');
             }
 
-            if (!offline) emitReading(lastReading);
+            if (!offline) {
+                emitReading(lastReading);
+            }
 
             return { ...lastReading };
         },
         emitInvalidReading(recordedAt) {
-            if (offline && lastReading) return { ...lastReading };
+            if (offline && lastReading) {
+                return { ...lastReading };
+            }
 
             const reading = sensor.tick(recordedAt);
             const invalidReading = {

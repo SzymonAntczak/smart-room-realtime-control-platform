@@ -119,8 +119,10 @@ export function connectRoomRealtime(
             if (roomSnapshot || revision !== undefined) {
                 throw new Error('Realtime room stream sent an unexpected snapshot baseline.');
             }
+
             roomSnapshot = message.payload;
             revision = message.revision;
+
             return roomSnapshot;
         }
 
@@ -133,19 +135,26 @@ export function connectRoomRealtime(
                 const deviceIndex = roomSnapshot.devices.findIndex(
                     (device) => device.deviceId === message.payload.deviceId,
                 );
-                if (deviceIndex === -1)
+
+                if (deviceIndex === -1) {
                     throw new Error('Realtime update references an unknown device.');
+                }
+
                 const devices = [...roomSnapshot.devices];
                 devices[deviceIndex] = message.payload;
                 roomSnapshot = { ...roomSnapshot, devices };
                 break;
             }
+
             case 'commands.updated': {
                 const deviceIndex = roomSnapshot.devices.findIndex(
                     (device) => device.deviceId === message.payload.device.deviceId,
                 );
-                if (deviceIndex === -1)
+
+                if (deviceIndex === -1) {
                     throw new Error('Realtime update references an unknown device.');
+                }
+
                 const devices = [...roomSnapshot.devices];
                 devices[deviceIndex] = message.payload.device;
                 roomSnapshot = {
@@ -159,6 +168,7 @@ export function connectRoomRealtime(
         }
 
         revision = message.revision;
+
         return roomSnapshot;
     }
 }
@@ -170,8 +180,10 @@ function validateRenderableDevices(snapshot: RoomSnapshotProjection): void {
             device.reportedState.power !== undefined &&
             device.reportedState.power !== 'on' &&
             device.reportedState.power !== 'off'
-        )
+        ) {
             throw new Error('LED data did not match the expected contract.');
+        }
+
         if (
             device.role === 'temperature-sensor' &&
             device.observationStatus.temperature?.lastObservedAt !== undefined &&

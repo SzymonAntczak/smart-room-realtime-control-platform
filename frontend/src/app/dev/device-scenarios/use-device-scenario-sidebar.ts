@@ -14,24 +14,34 @@ export function useDeviceScenarioSidebar(target: DeviceScenarioTarget | undefine
     );
 
     useEffect(() => {
-        if (!target || !client) return;
+        if (!target || !client) {
+            return;
+        }
+
         closeButtonRef.current?.focus();
         let isCurrent = true;
         setActions(undefined);
         setLoadError(undefined);
         const loadScenarios = client.getScenarios;
+
         if (!loadScenarios) {
             setLoadError(`Development scenarios are unavailable for ${target.deviceId}.`);
+
             return;
         }
+
         void loadScenarios()
             .then((result) => {
-                if (isCurrent) setActions(result.scenarios.map((scenario) => scenario.action));
+                if (isCurrent) {
+                    setActions(result.scenarios.map((scenario) => scenario.action));
+                }
             })
             .catch(() => {
-                if (isCurrent)
+                if (isCurrent) {
                     setLoadError(`Development scenarios are unavailable for ${target.deviceId}.`);
+                }
             });
+
         return () => {
             isCurrent = false;
         };

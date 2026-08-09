@@ -9,6 +9,7 @@ export function Alert({ message, variant = 'info' }: { message?: string; variant
 
     const Icon =
         variant === 'warning' ? TriangleAlert : variant === 'error' ? CircleAlert : undefined;
+
     return (
         <p
             className={styles.alert}

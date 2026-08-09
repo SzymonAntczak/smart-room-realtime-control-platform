@@ -116,6 +116,7 @@ export function createEventProcessor({
                 if (!isSchema(deviceStateReportedEventSchema, event)) {
                     return ignored('invalid_payload');
                 }
+
                 if (device.role !== 'led-output') {
                     return ignored('device_metric_mismatch');
                 }
@@ -131,8 +132,11 @@ export function createEventProcessor({
                 if (!isSchema(deviceAvailabilityChangedEventSchema, event)) {
                     return ignored('invalid_payload');
                 }
-                if (isStaleTransition(event.occurredAt, event.deviceId, 'availabilityChangedAt'))
+
+                if (isStaleTransition(event.occurredAt, event.deviceId, 'availabilityChangedAt')) {
                     return ignored('stale_device_transition');
+                }
+
                 return acceptDeviceTransition(
                     event as DeviceAvailabilityChangedEvent,
                     (acceptedEvent) => roomProjector.applyDeviceAvailabilityChanged(acceptedEvent),
@@ -143,8 +147,11 @@ export function createEventProcessor({
                 if (!isSchema(deviceHealthChangedEventSchema, event)) {
                     return ignored('invalid_payload');
                 }
-                if (isStaleTransition(event.occurredAt, event.deviceId, 'healthChangedAt'))
+
+                if (isStaleTransition(event.occurredAt, event.deviceId, 'healthChangedAt')) {
                     return ignored('stale_device_transition');
+                }
+
                 return acceptDeviceTransition(event as DeviceHealthChangedEvent, (acceptedEvent) =>
                     roomProjector.applyDeviceHealthChanged(acceptedEvent),
                 );
@@ -154,6 +161,7 @@ export function createEventProcessor({
                 if (!isSchema(telemetryReadingRecordedEventSchema, event)) {
                     return ignored('invalid_payload');
                 }
+
                 if (device.role !== 'temperature-sensor') {
                     return ignored('device_metric_mismatch');
                 }
@@ -169,6 +177,7 @@ export function createEventProcessor({
                 if (!isSchema(commandRequestedEventSchema, event)) {
                     return ignored('invalid_payload');
                 }
+
                 return acceptCommandEvent(event as CommandRequestedEvent, (acceptedEvent) =>
                     roomProjector.applyCommandRequested(acceptedEvent),
                 );
@@ -178,6 +187,7 @@ export function createEventProcessor({
                 if (!isSchema(commandDispatchedEventSchema, event)) {
                     return ignored('invalid_payload');
                 }
+
                 return acceptCommandEvent(event as CommandDispatchedEvent, (acceptedEvent) =>
                     roomProjector.applyCommandDispatched(acceptedEvent),
                 );
@@ -187,6 +197,7 @@ export function createEventProcessor({
                 if (!isSchema(commandFailedEventSchema, event)) {
                     return ignored('invalid_payload');
                 }
+
                 return acceptCommandEvent(event as CommandFailedEvent, (acceptedEvent) =>
                     roomProjector.applyCommandFailed(acceptedEvent),
                 );
@@ -196,6 +207,7 @@ export function createEventProcessor({
                 if (!isSchema(commandTimedOutEventSchema, event)) {
                     return ignored('invalid_payload');
                 }
+
                 return acceptCommandEvent(event as CommandTimedOutEvent, (acceptedEvent) =>
                     roomProjector.applyCommandTimedOut(acceptedEvent),
                 );
@@ -220,6 +232,7 @@ export function createEventProcessor({
                 }
 
                 const deduplicationEvictedEventIds = deduplicator.remember(acceptedEvent.eventId);
+
                 return {
                     status: 'accepted',
                     evaluatedAt: deduplicationCheck.checkedAt,
@@ -238,6 +251,7 @@ export function createEventProcessor({
                 const projectedDevice = roomProjector
                     .getProjection()
                     .devices.find((candidate) => candidate.deviceId === deviceId);
+
                 return (
                     projectedDevice !== undefined &&
                     Date.parse(occurredAt) <= Date.parse(projectedDevice[timestampField])
@@ -259,6 +273,7 @@ export function createEventProcessor({
                     const deduplicationEvictedEventIds = deduplicator.remember(
                         acceptedEvent.eventId,
                     );
+
                     return {
                         status: 'accepted',
                         evaluatedAt: deduplicationCheck.checkedAt,
@@ -279,6 +294,7 @@ export function createEventProcessor({
                 apply: (event: TEvent) => EventProcessorState,
             ): EventProcessingResult {
                 const deduplicationEvictedEventIds = deduplicator.remember(acceptedEvent.eventId);
+
                 return {
                     status: 'accepted',
                     evaluatedAt: deduplicationCheck.checkedAt,

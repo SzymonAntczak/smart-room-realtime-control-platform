@@ -23,6 +23,7 @@ export function toTemperatureSensorReading(device: DeviceProjection): Temperatur
         temperature: number;
         temperatureUnit: 'celsius';
     };
+
     return {
         sensorId: device.deviceId,
         sensorName: device.name,

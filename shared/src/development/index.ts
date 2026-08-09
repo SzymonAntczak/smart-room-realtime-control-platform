@@ -74,9 +74,11 @@ export interface EventProcessingDiagnosticsSnapshot {
     ignoredEvents: IgnoredEventDiagnostic[];
     deduplicationEvictions?: DeduplicationEvictionDiagnostic[];
 }
+
 export function isIgnoredEventReason(value: unknown): value is IgnoredEventReason {
     return typeof value === 'string' && ignoredEventReasons.some((reason) => reason === value);
 }
+
 export const deviceScenarioActionSchema = Type.Union(
     deviceScenarioActions.map((action) => Type.Literal(action)),
 );

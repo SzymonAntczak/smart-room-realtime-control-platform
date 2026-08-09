@@ -68,20 +68,25 @@ export function createLedScenario<TimerHandle = unknown>({
     const unsubscribeFromCommands = simulator.onCommand((command) => {
         const scenario = nextScenario;
         nextScenario = defaultScenario;
+
         switch (scenario) {
             case 'confirm_immediately':
                 simulator.reportState(command.requestedState.power, clock.now());
+
                 return;
             case 'confirm_delayed':
                 scheduleReport(command, 2_000);
+
                 return;
             case 'reject_command':
                 simulator.rejectCommand(command, clock.now());
+
                 return;
             case 'omit_confirmation':
                 return;
             case 'report_after_timeout':
                 scheduleReport(command, 6_000);
+
                 return;
         }
     });
@@ -94,9 +99,11 @@ export function createLedScenario<TimerHandle = unknown>({
         },
         stop() {
             unsubscribeFromCommands();
+
             for (const timerHandle of scheduledTimers) {
                 scheduler.clearTimeout(timerHandle);
             }
+
             scheduledTimers.clear();
         },
     };

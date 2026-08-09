@@ -72,10 +72,12 @@ export function createTemperatureSensorSimulator(
         },
         onAvailability(listener) {
             availabilityListeners.add(listener);
+
             return () => availabilityListeners.delete(listener);
         },
         onHealth(listener) {
             healthListeners.add(listener);
+
             return () => healthListeners.delete(listener);
         },
         tick(recordedAt) {
@@ -111,7 +113,11 @@ export function createTemperatureSensorSimulator(
                 reportedAt,
             };
             observedAvailability = availability;
-            for (const listener of availabilityListeners) listener({ ...message });
+
+            for (const listener of availabilityListeners) {
+                listener({ ...message });
+            }
+
             return message;
         },
         reportHealth(health, reason, reportedAt) {
@@ -126,14 +132,20 @@ export function createTemperatureSensorSimulator(
                 reportedAt,
             };
             observedHealth = health;
-            for (const listener of healthListeners) listener({ ...message });
+
+            for (const listener of healthListeners) {
+                listener({ ...message });
+            }
+
             return message;
         },
     };
 }
 
 function assertNonEmpty(value: string, label: string): void {
-    if (value.trim().length === 0) throw new TypeError(`${label} must be a non-empty string.`);
+    if (value.trim().length === 0) {
+        throw new TypeError(`${label} must be a non-empty string.`);
+    }
 }
 
 function assertValidConfig(config: TemperatureSensorConfig): void {

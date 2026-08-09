@@ -61,7 +61,9 @@ export function LedScenarioPanel({
     const { activeAction, selectedScenario, message, runScenario, clearSelectedScenario } =
         useLedScenario(client, onRequestChange);
     useEffect(() => {
-        if (isCommandActive) clearSelectedScenario();
+        if (isCommandActive) {
+            clearSelectedScenario();
+        }
     }, [clearSelectedScenario, isCommandActive]);
 
     return (
@@ -74,7 +76,11 @@ export function LedScenarioPanel({
                     const visibleActions = section.actions.filter((action) =>
                         actions.includes(action),
                     );
-                    if (visibleActions.length === 0) return null;
+
+                    if (visibleActions.length === 0) {
+                        return null;
+                    }
+
                     return (
                         <DeviceScenarioSection key={section.title} title={section.title}>
                             <DeviceScenarioActions>
@@ -105,9 +111,14 @@ export function LedScenarioPanel({
 
 function scenarioIcon(action: ScenarioAction) {
     const iconProps = { 'aria-hidden': true, size: 16, strokeWidth: 1.75 } as const;
-    if (action === 'disconnect_device' || action === 'reconnect_device')
+
+    if (action === 'disconnect_device' || action === 'reconnect_device') {
         return <Wifi {...iconProps} />;
-    if (action === 'degrade_device' || action === 'recover_device')
+    }
+
+    if (action === 'degrade_device' || action === 'recover_device') {
         return <TriangleAlert {...iconProps} />;
+    }
+
     return <Timer {...iconProps} />;
 }

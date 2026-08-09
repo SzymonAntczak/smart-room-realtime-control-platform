@@ -16,6 +16,7 @@ function processor() {
         clock: { now: () => '2026-06-08T09:30:00Z' },
     });
 }
+
 describe('createEventProcessor', () => {
     it('routes explicit availability evidence independently of telemetry', () => {
         const result = processor().processEvent({

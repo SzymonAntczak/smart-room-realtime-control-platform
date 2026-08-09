@@ -25,6 +25,7 @@ async function startServer(): Promise<void> {
         await server.listen({ port });
     } catch (error) {
         runtime.stop();
+
         throw error;
     }
 

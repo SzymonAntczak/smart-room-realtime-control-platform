@@ -207,10 +207,12 @@ function createControllableLed(): {
             },
             onStateReport(listener) {
                 reportListeners.add(listener);
+
                 return () => reportListeners.delete(listener);
             },
             onCommandRejection(listener) {
                 rejectionListeners.add(listener);
+
                 return () => rejectionListeners.delete(listener);
             },
             onAvailability() {
@@ -237,10 +239,14 @@ function createControllableLed(): {
             },
         },
         emitReport(report) {
-            for (const listener of reportListeners) listener(report);
+            for (const listener of reportListeners) {
+                listener(report);
+            }
         },
         emitRejection(rejection) {
-            for (const listener of rejectionListeners) listener(rejection);
+            for (const listener of rejectionListeners) {
+                listener(rejection);
+            }
         },
     };
 }

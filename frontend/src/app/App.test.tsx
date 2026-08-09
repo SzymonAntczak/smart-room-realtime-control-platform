@@ -73,7 +73,11 @@ class MockWebSocket extends EventTarget {
 
     static latest(): MockWebSocket {
         const instance = MockWebSocket.instances.at(-1);
-        if (!instance) throw new Error('No mock websocket instance was created.');
+
+        if (!instance) {
+            throw new Error('No mock websocket instance was created.');
+        }
+
         return instance;
     }
 

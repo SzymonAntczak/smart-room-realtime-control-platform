@@ -168,6 +168,7 @@ export function createTemperatureRoomRuntime({
         clock,
         diagnosticEventLimit,
     });
+
     for (const sensorEntry of sensors) {
         sensorEntry.runtime = createTemperatureSensorRuntime({
             sensor: sensorEntry.sensor,
@@ -176,6 +177,7 @@ export function createTemperatureRoomRuntime({
             timer,
         });
     }
+
     const snapshotBroadcastTimer = timer ?? (realTimer as TimerScheduler);
     const snapshotListeners = new Set<RoomSnapshotListener>();
     let hasStarted = false;
@@ -207,6 +209,7 @@ export function createTemperatureRoomRuntime({
                 },
             });
             reschedulePendingCommands();
+
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter = createAdapter(sensorEntry);
                 sensorEntry.sensor.reportAvailability?.(
@@ -215,9 +218,11 @@ export function createTemperatureRoomRuntime({
                 );
                 sensorEntry.sensor.tick(clock.now());
             }
+
             snapshotBroadcastTimerHandle = snapshotBroadcastTimer.setInterval(() => {
                 notifyFreshnessChanges(clock.now());
             }, snapshotBroadcastIntervalMs);
+
             for (const sensorEntry of sensors) {
                 sensorEntry.runtime?.start();
             }
@@ -226,21 +231,26 @@ export function createTemperatureRoomRuntime({
             for (const sensorEntry of sensors) {
                 sensorEntry.runtime?.stop();
             }
+
             if (snapshotBroadcastTimerHandle !== undefined) {
                 snapshotBroadcastTimer.clearInterval(snapshotBroadcastTimerHandle);
                 snapshotBroadcastTimerHandle = undefined;
             }
+
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter?.stop();
                 sensorEntry.adapter = undefined;
             }
+
             ledAdapter?.stop();
             ledAdapter = undefined;
             led?.stop();
             led = undefined;
+
             for (const timerHandle of commandTimeoutHandles.values()) {
                 commandTimer.clearTimeout(timerHandle);
             }
+
             commandTimeoutHandles.clear();
             hasStarted = false;
         },
@@ -261,7 +271,10 @@ export function createTemperatureRoomRuntime({
             if (deviceId === 'led-main') {
                 return { deviceId, scenarios: ledScenarioActions.map((action) => ({ action })) };
             }
-            if (!findSensor(deviceId)) return undefined;
+
+            if (!findSensor(deviceId)) {
+                return undefined;
+            }
 
             return {
                 deviceId,
@@ -279,6 +292,7 @@ export function createTemperatureRoomRuntime({
                 if (!isLedScenarioAction(action)) {
                     throw new Error(`No development scenarios are configured for ${deviceId}.`);
                 }
+
                 if (
                     getCurrentRoomSnapshot().activeCommands.some(
                         (command) => command.deviceId === deviceId,
@@ -291,6 +305,7 @@ export function createTemperatureRoomRuntime({
                         { code: 'scenario_conflict' },
                     );
                 }
+
                 if (action === 'degrade_device') {
                     led?.reportHealth(
                         'degraded',
@@ -316,10 +331,12 @@ export function createTemperatureRoomRuntime({
                 } else {
                     led?.setNextCommandScenario(action as LedScenarioName);
                 }
+
                 return { action, status: 'completed' };
             }
 
             const sensorEntry = findSensor(deviceId);
+
             if (!sensorEntry || !isTemperatureScenarioAction(action)) {
                 throw new Error(`No development scenarios are configured for ${deviceId}.`);
             }
@@ -347,6 +364,7 @@ export function createTemperatureRoomRuntime({
                         { code: 'device_offline' },
                     );
                 }
+
                 runScenarioAction(sensorEntry, action, clock.now());
             }
 
@@ -369,6 +387,7 @@ export function createTemperatureRoomRuntime({
                     'Device does not support this command.',
                 );
             }
+
             if (device.commandAvailability.policy === 'block') {
                 return rejected(
                     commandId,
@@ -376,6 +395,7 @@ export function createTemperatureRoomRuntime({
                     'Commands are not available for this device.',
                 );
             }
+
             if (request.deviceId !== 'led-main') {
                 return rejected(
                     commandId,
@@ -383,8 +403,10 @@ export function createTemperatureRoomRuntime({
                     'Device does not support this command.',
                 );
             }
+
             if (snapshot.activeCommands.some((command) => command.deviceId === request.deviceId)) {
                 processPlatformEvent(rejectedCommandEvent(commandId, request, clock.now()));
+
                 return rejected(
                     commandId,
                     'command_already_active',
@@ -415,6 +437,7 @@ export function createTemperatureRoomRuntime({
                 commandId,
                 payload: { commandType: request.commandType, target: 'simulator-adapter' },
             });
+
             try {
                 ledAdapter.dispatch({ ...request, commandId });
             } catch {
@@ -430,9 +453,12 @@ export function createTemperatureRoomRuntime({
                         message: 'The command could not be dispatched to the device adapter.',
                     },
                 });
+
                 throw new Error('Command dispatch failed.');
             }
+
             scheduleTimeout(commandId, request.deviceId);
+
             return { commandId, status: 'accepted' };
         },
         dispatchLedCommand(command) {
@@ -500,6 +526,7 @@ export function createTemperatureRoomRuntime({
         const current = getCurrentRoomSnapshot().devices.find(
             (device) => device.deviceId === deviceId,
         );
+
         return new Date(
             Math.max(Date.parse(clock.now()), Date.parse(current?.[field] ?? clock.now()) + 1),
         ).toISOString();
@@ -540,6 +567,7 @@ export function createTemperatureRoomRuntime({
                 processPlatformEvent(event);
             },
         });
+
         return led;
     }
 
@@ -591,6 +619,7 @@ export function createTemperatureRoomRuntime({
             : undefined;
         const result = processor.processEvent(event);
         diagnostics.recordProcessingResult(event, result);
+
         if (result.status === 'accepted') {
             clearCompletedCommandTimeout(activeCommandIdBeforeEvent, result.state.activeCommands);
             clearCompletedCommandTimeout(event.commandId, result.state.activeCommands);
@@ -602,7 +631,11 @@ export function createTemperatureRoomRuntime({
         const active = getCurrentRoomSnapshot().activeCommands.find(
             (command) => command.commandId === commandId && command.status === 'pending',
         );
-        if (!active || active.status !== 'pending') return;
+
+        if (!active || active.status !== 'pending') {
+            return;
+        }
+
         const remainingMs = Math.max(
             0,
             5_000 - (Date.parse(clock.now()) - Date.parse(active.dispatchedAt)),
@@ -636,9 +669,16 @@ export function createTemperatureRoomRuntime({
         commandId: string | undefined,
         activeCommands: RoomSnapshotProjection['activeCommands'],
     ): void {
-        if (!commandId || activeCommands.some((command) => command.commandId === commandId)) return;
+        if (!commandId || activeCommands.some((command) => command.commandId === commandId)) {
+            return;
+        }
+
         const timerHandle = commandTimeoutHandles.get(commandId);
-        if (timerHandle !== undefined) commandTimer.clearTimeout(timerHandle);
+
+        if (timerHandle !== undefined) {
+            commandTimer.clearTimeout(timerHandle);
+        }
+
         commandTimeoutHandles.delete(commandId);
     }
 

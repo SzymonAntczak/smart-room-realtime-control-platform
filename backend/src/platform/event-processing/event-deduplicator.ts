@@ -30,6 +30,7 @@ export function createEventDeduplicator({
         check(eventId) {
             const checkedAt = clock.now();
             removeExpiredEntries(Date.parse(checkedAt));
+
             return {
                 isDuplicate: entries.has(eventId),
                 checkedAt,
@@ -40,20 +41,30 @@ export function createEventDeduplicator({
             removeExpiredEntries(acceptedAt);
             entries.set(eventId, acceptedAt);
             const evictedEventIds: string[] = [];
+
             while (entries.size > entryLimit) {
                 const oldestEventId = entries.keys().next().value;
-                if (oldestEventId === undefined) break;
+
+                if (oldestEventId === undefined) {
+                    break;
+                }
+
                 entries.delete(oldestEventId);
                 evictedEventIds.push(oldestEventId);
             }
+
             return evictedEventIds;
         },
     };
 
     function removeExpiredEntries(currentTimeMs: number): void {
         const expiresBefore = currentTimeMs - retentionMs;
+
         for (const [eventId, acceptedAt] of entries) {
-            if (acceptedAt > expiresBefore) break;
+            if (acceptedAt > expiresBefore) {
+                break;
+            }
+
             entries.delete(eventId);
         }
     }

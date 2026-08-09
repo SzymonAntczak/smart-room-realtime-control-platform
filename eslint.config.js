@@ -31,6 +31,16 @@ export default tseslint.config(
             'simple-import-sort': simpleImportSort,
         },
         rules: {
+            curly: ['error', 'all'],
+            'padding-line-between-statements': [
+                'error',
+                { blankLine: 'always', prev: 'directive', next: '*' },
+                { blankLine: 'any', prev: 'directive', next: 'directive' },
+                { blankLine: 'always', prev: '*', next: 'return' },
+                { blankLine: 'always', prev: '*', next: 'throw' },
+                { blankLine: 'always', prev: '*', next: 'block-like' },
+                { blankLine: 'always', prev: 'block-like', next: '*' },
+            ],
             '@typescript-eslint/consistent-type-imports': [
                 'error',
                 {

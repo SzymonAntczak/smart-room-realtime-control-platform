@@ -246,6 +246,7 @@ describe('createTemperatureRoomRuntime', () => {
             clock: createMutableClock('2026-06-08T09:30:00Z'),
             generateEventId: createEventIdGenerator(),
         });
+
         try {
             runtime.start();
             const before = device(runtime, 'temp-window');
@@ -465,10 +466,12 @@ describe('createTemperatureRoomRuntime', () => {
                     commandType: 'set.power',
                     requestedState: { power: 'on' },
                 });
+
                 if (scenario !== 'reject_command') {
                     clock.advanceBy(5_000);
                     commandTimer.runAll();
                 }
+
                 if (scenario === 'report_after_timeout') {
                     clock.advanceBy(1_000);
                     ledScheduler.runAll();
@@ -573,6 +576,7 @@ function device(runtime: ReturnType<typeof createTemperatureRoomRuntime>, device
 
 function createEventIdGenerator(): () => string {
     let index = 0;
+
     return () => `evt-temperature-${++index}`;
 }
 
@@ -580,6 +584,7 @@ function createMutableClock(
     initialTimestamp: string,
 ): Clock & { advanceBy(milliseconds: number): void } {
     let currentTimeMs = Date.parse(initialTimestamp);
+
     return {
         now: () => new Date(currentTimeMs).toISOString(),
         advanceBy(milliseconds) {
@@ -596,12 +601,14 @@ function createManualTimer(): TimerScheduler<number> & {
     const callbacks = new Map<number, () => void>();
     const intervals: number[] = [];
     let nextHandle = 1;
+
     return {
         intervals,
         setInterval(callback, intervalMs) {
             const handle = nextHandle++;
             callbacks.set(handle, callback);
             intervals.push(intervalMs);
+
             return handle;
         },
         clearInterval(handle) {
@@ -624,13 +631,19 @@ function createLedScheduler() {
         setTimeout(callback: () => void) {
             const handle = nextHandle++;
             callbacks.set(handle, callback);
+
             return handle;
         },
         clearTimeout(timerHandle: unknown) {
-            if (typeof timerHandle === 'number') callbacks.delete(timerHandle);
+            if (typeof timerHandle === 'number') {
+                callbacks.delete(timerHandle);
+            }
         },
         runAll() {
-            for (const callback of callbacks.values()) callback();
+            for (const callback of callbacks.values()) {
+                callback();
+            }
+
             callbacks.clear();
         },
     };
@@ -644,13 +657,19 @@ function createCommandTimer() {
         setTimeout(callback: () => void) {
             const handle = nextHandle++;
             callbacks.set(handle, callback);
+
             return handle;
         },
         clearTimeout(timerHandle: unknown) {
-            if (typeof timerHandle === 'number') callbacks.delete(timerHandle);
+            if (typeof timerHandle === 'number') {
+                callbacks.delete(timerHandle);
+            }
         },
         runAll() {
-            for (const callback of callbacks.values()) callback();
+            for (const callback of callbacks.values()) {
+                callback();
+            }
+
             callbacks.clear();
         },
         size() {

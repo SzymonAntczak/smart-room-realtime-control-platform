@@ -8,9 +8,11 @@ const device = {
     role: 'temperature-sensor',
 } as const;
 const at = '2026-06-08T09:30:00Z';
+
 function projector() {
     return createRoomProjector({ devices: [device], initialUpdatedAt: '2026-06-08T09:29:59Z' });
 }
+
 function telemetry(occurredAt = at) {
     return {
         eventId: `evt-${occurredAt}`,
@@ -21,6 +23,7 @@ function telemetry(occurredAt = at) {
         payload: { metric: 'temperature' as const, value: 22.5, unit: 'celsius' as const },
     };
 }
+
 function availability(availability: 'online' | 'offline', occurredAt = at) {
     return {
         eventId: `availability-${occurredAt}`,

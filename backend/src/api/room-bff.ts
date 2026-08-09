@@ -80,6 +80,7 @@ export function createRoomBffServer({
                 error: 'invalid_request',
                 message: 'Request body must be valid JSON.',
             });
+
             return;
         }
 
@@ -88,6 +89,7 @@ export function createRoomBffServer({
                 error: 'invalid_request',
                 message: 'Request body contains an unsupported scenario action.',
             });
+
             return;
         }
 
@@ -96,6 +98,7 @@ export function createRoomBffServer({
                 error: 'invalid_request',
                 message: 'Request body does not match a supported command.',
             });
+
             return;
         }
 
@@ -110,12 +113,16 @@ export function createRoomBffServer({
             const unsubscribe = subscribeRoomSnapshot((snapshot) => {
                 if (!isBaselineSent) {
                     baseline = snapshot;
+
                     return;
                 }
+
                 if (!hasSameDeviceSet(baseline, snapshot)) {
                     socket.close();
+
                     return;
                 }
+
                 revision = sendRoomDeltas(socket, baseline, snapshot, revision, now);
                 baseline = snapshot;
             });
@@ -151,6 +158,7 @@ export function createRoomBffServer({
                     error: 'not_found',
                     message: 'Device scenarios not found.',
                 });
+
                 return;
             }
 
@@ -178,8 +186,10 @@ export function createRoomBffServer({
                         error: 'unsupported_media_type',
                         message: 'Command requests must use application/json.',
                     });
+
                     return;
                 }
+
                 done();
             },
         },
@@ -193,12 +203,16 @@ export function createRoomBffServer({
                     reason: 'unsupported_command',
                     message: 'Command handling is not available.',
                 });
+
                 return;
             }
+
             if (!isCommandRequestResult(result)) {
                 writeInvalidServerResponse(response);
+
                 return;
             }
+
             writeJson(
                 response,
                 result.status === 'accepted' ? 202 : commandRejectionStatus(result),
@@ -228,8 +242,10 @@ export function createRoomBffServer({
                         error: 'unsupported_media_type',
                         message: 'Scenario requests must use application/json.',
                     });
+
                     return;
                 }
+
                 done();
             },
         },
@@ -247,6 +263,7 @@ export function createRoomBffServer({
                     error: 'not_found',
                     message: 'Device scenarios not found.',
                 });
+
                 return;
             }
 
@@ -255,6 +272,7 @@ export function createRoomBffServer({
                     error: 'invalid_request',
                     message: 'Request body contains an unsupported scenario action.',
                 });
+
                 return;
             }
 
@@ -314,6 +332,7 @@ function handleRoomBffRequest(
             error: 'method_not_allowed',
             message: 'Only GET is supported for this route.',
         });
+
         return;
     }
 
@@ -322,10 +341,12 @@ function handleRoomBffRequest(
 
         if (!isSchema(eventProcessingDiagnosticsSnapshotSchema, snapshot)) {
             writeInvalidServerResponse(response);
+
             return;
         }
 
         writeJson(response, 200, snapshot);
+
         return;
     }
 
@@ -333,6 +354,7 @@ function handleRoomBffRequest(
 
     if (!isRoomSnapshotProjection(snapshot)) {
         writeInvalidServerResponse(response);
+
         return;
     }
 
@@ -350,6 +372,7 @@ async function handleDeviceScenarioRequest(
             error: 'not_found',
             message: 'Route not found.',
         });
+
         return;
     }
 
@@ -358,6 +381,7 @@ async function handleDeviceScenarioRequest(
 
         if (!isSchema(deviceScenarioResultSchema, result) || result.action !== action) {
             writeInvalidServerResponse(response);
+
             return;
         }
 
@@ -368,8 +392,10 @@ async function handleDeviceScenarioRequest(
                 error: 'scenario_conflict',
                 message: error.message,
             });
+
             return;
         }
+
         writeJson(response, 500, {
             error: 'scenario_failed',
             message: 'Scenario could not be executed.',
@@ -447,6 +473,7 @@ function sendRoomSnapshot(
 
     if (!sentAt) {
         socket.close();
+
         return;
     }
 
@@ -459,6 +486,7 @@ function sendRoomSnapshot(
 
     if (!isRoomRealtimeServerMessage(message)) {
         socket.close();
+
         return;
     }
 
@@ -485,12 +513,19 @@ function sendRoomDeltas(
     const commandDeviceIds = changedCommandDeviceIds(previous, next);
 
     for (const device of next.devices) {
-        if (commandDeviceIds.has(device.deviceId)) continue;
-        if (sameJson(previousDevices.get(device.deviceId), device)) continue;
+        if (commandDeviceIds.has(device.deviceId)) {
+            continue;
+        }
+
+        if (sameJson(previousDevices.get(device.deviceId), device)) {
+            continue;
+        }
 
         const sentAt = normalizeIsoTimestamp(now());
+
         if (!sentAt) {
             socket.close();
+
             return revision;
         }
 
@@ -509,14 +544,18 @@ function sendRoomDeltas(
 
     for (const deviceId of commandDeviceIds) {
         const device = nextDevices.get(deviceId);
+
         if (!device) {
             socket.close();
+
             return revision;
         }
 
         const sentAt = normalizeIsoTimestamp(now());
+
         if (!sentAt) {
             socket.close();
+
             return revision;
         }
 
@@ -559,9 +598,15 @@ function changedCommandDeviceIds(
     for (const commandId of commandIds) {
         const previousCommand = previousCommands.find((command) => command.commandId === commandId);
         const nextCommand = nextCommands.find((command) => command.commandId === commandId);
+
         if (!sameJson(previousCommand, nextCommand)) {
-            if (previousCommand) deviceIds.add(previousCommand.deviceId);
-            if (nextCommand) deviceIds.add(nextCommand.deviceId);
+            if (previousCommand) {
+                deviceIds.add(previousCommand.deviceId);
+            }
+
+            if (nextCommand) {
+                deviceIds.add(nextCommand.deviceId);
+            }
         }
     }
 
@@ -575,16 +620,21 @@ function sendRealtimeMessage(
 ): number {
     if (socket.readyState !== WebSocket.OPEN || !isRoomRealtimeServerMessage(message)) {
         socket.close();
+
         return previousRevision;
     }
 
     try {
         socket.send(JSON.stringify(message), (error) => {
-            if (error) socket.close();
+            if (error) {
+                socket.close();
+            }
         });
+
         return message.messageType === 'room.snapshot' ? 0 : message.revision;
     } catch {
         socket.close();
+
         return previousRevision;
     }
 }
@@ -594,10 +644,13 @@ function sameJson(left: unknown, right: unknown): boolean {
 }
 
 function hasSameDeviceSet(previous: RoomSnapshotProjection, next: RoomSnapshotProjection): boolean {
-    if (previous.devices.length !== next.devices.length) return false;
+    if (previous.devices.length !== next.devices.length) {
+        return false;
+    }
 
     const previousDeviceIds = new Set(previous.devices.map((device) => device.deviceId));
     const nextDeviceIds = new Set(next.devices.map((device) => device.deviceId));
+
     return (
         previousDeviceIds.size === previous.devices.length &&
         nextDeviceIds.size === next.devices.length &&

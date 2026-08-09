@@ -95,6 +95,7 @@ describe('createRoomBffServer', () => {
                 ...createRoomBffConfig(),
                 requestCommand(request) {
                     requests.push(request);
+
                     return { commandId: 'cmd-led-1', status: 'accepted' } as const;
                 },
             }),
@@ -607,6 +608,7 @@ function createScenarioBffConfig(actions: Array<{ deviceId: string; action: stri
         },
         runDeviceScenario(deviceId: string, action: TemperatureScenarioAction) {
             actions.push({ deviceId, action });
+
             return { action, status: 'completed' } as const;
         },
     };
@@ -721,6 +723,7 @@ function createLedRoomSnapshot({
         requestedState: { power: 'on' as const },
         requestedAt: '2026-06-08T09:30:00Z',
     };
+
     return {
         roomName: 'Smart Room',
         updatedAt: status ? '2026-06-08T09:30:02Z' : '2026-06-08T09:30:00Z',
@@ -819,6 +822,7 @@ function closeWebSocket(socket: WebSocket): Promise<void> {
     return new Promise((resolve) => {
         if (socket.readyState === WebSocket.CLOSED) {
             resolve();
+
             return;
         }
 
@@ -836,6 +840,7 @@ function waitForCondition(condition: () => boolean): Promise<void> {
             if (condition()) {
                 clearInterval(interval);
                 resolve();
+
                 return;
             }
 

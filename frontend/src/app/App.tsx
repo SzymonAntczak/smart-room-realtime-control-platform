@@ -58,6 +58,7 @@ export function App({ showDevScenarioPanel = import.meta.env.DEV }: AppProps) {
             const recentCommand = snapshot?.recentCommands.find(
                 (command) => command.deviceId === device.deviceId,
             );
+
             return (
                 <LedControl
                     key={device.deviceId}

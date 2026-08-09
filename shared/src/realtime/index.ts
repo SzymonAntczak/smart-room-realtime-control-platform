@@ -87,10 +87,15 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
     if (
         !isSchema(roomRealtimeServerMessageUnionSchema, value) ||
         !isCanonicalUtcTimestamp(value.sentAt)
-    )
+    ) {
         return false;
-    if (value.messageType === 'room.snapshot') return isRoomSnapshotProjection(value.payload);
-    if (value.messageType === 'commands.updated')
+    }
+
+    if (value.messageType === 'room.snapshot') {
+        return isRoomSnapshotProjection(value.payload);
+    }
+
+    if (value.messageType === 'commands.updated') {
         return (
             value.revision === value.previousRevision + 1 &&
             hasConsistentCommandCollections(
@@ -105,6 +110,8 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
                 value.payload.recentCommands,
             )
         );
+    }
+
     return (
         value.revision === value.previousRevision + 1 &&
         hasCanonicalDeviceTimestamps(value.payload) &&
@@ -134,9 +141,14 @@ function hasConsistentCommandCollections(
     recentCommands: Static<typeof terminalCommandProjectionSchema>[],
 ): boolean {
     const deviceIds = new Set(devices.map((device) => device.deviceId));
-    if (deviceIds.size !== devices.length) return false;
+
+    if (deviceIds.size !== devices.length) {
+        return false;
+    }
+
     const activeCommandByDeviceId = new Map<string, string>();
     const commandIds = new Set<string>();
+
     for (const command of activeCommands) {
         if (
             !deviceIds.has(command.deviceId) ||
@@ -145,11 +157,14 @@ function hasConsistentCommandCollections(
             ) ||
             activeCommandByDeviceId.has(command.deviceId) ||
             commandIds.has(command.commandId)
-        )
+        ) {
             return false;
+        }
+
         activeCommandByDeviceId.set(command.deviceId, command.commandId);
         commandIds.add(command.commandId);
     }
+
     for (const command of recentCommands) {
         if (
             !deviceIds.has(command.deviceId) ||
@@ -158,19 +173,24 @@ function hasConsistentCommandCollections(
                     devices.find((device) => device.deviceId === command.deviceId),
                 )) ||
             commandIds.has(command.commandId)
-        )
+        ) {
             return false;
+        }
+
         commandIds.add(command.commandId);
     }
+
     return devices.every(
         (device) => device.activeCommandId === activeCommandByDeviceId.get(device.deviceId),
     );
 }
+
 function isSetPowerCapableDevice(
     device: Static<typeof deviceProjectionSchema> | undefined,
 ): boolean {
     return device?.role === 'led-output';
 }
+
 function hasCanonicalCommandTimestamps(
     activeCommands: Static<typeof activeCommandProjectionSchema>[],
     recentCommands: Static<typeof terminalCommandProjectionSchema>[],
@@ -184,7 +204,10 @@ function hasCanonicalCommandTimestamps(
                         areChronological(command.requestedAt, command.dispatchedAt))),
         ) &&
         recentCommands.every((command) => {
-            if (!isCanonicalUtcTimestamp(command.requestedAt)) return false;
+            if (!isCanonicalUtcTimestamp(command.requestedAt)) {
+                return false;
+            }
+
             switch (command.status) {
                 case 'confirmed':
                     return (
@@ -223,10 +246,12 @@ function hasCanonicalCommandTimestamps(
         }) &&
         recentCommands.every((command, index) => {
             const next = recentCommands[index + 1];
+
             return next === undefined || terminalTimestamp(command) >= terminalTimestamp(next);
         })
     );
 }
+
 function hasCanonicalDeviceTimestamps(device: Static<typeof deviceProjectionSchema>): boolean {
     return (
         isCanonicalUtcTimestamp(device.availabilityChangedAt) &&
@@ -238,53 +263,72 @@ function hasCanonicalDeviceTimestamps(device: Static<typeof deviceProjectionSche
         )
     );
 }
+
 function hasValidDeviceSemantics(device: Static<typeof deviceProjectionSchema>): boolean {
-    if ((device.availability === 'offline') !== (device.availabilityReason !== undefined))
+    if ((device.availability === 'offline') !== (device.availabilityReason !== undefined)) {
         return false;
-    if ((device.health === 'degraded') !== (device.healthReason !== undefined)) return false;
+    }
+
+    if ((device.health === 'degraded') !== (device.healthReason !== undefined)) {
+        return false;
+    }
+
     if (
         Object.values(device.observationStatus).some(
             (status) =>
                 (status.freshness === 'fresh' || status.freshness === 'stale') &&
                 status.lastObservedAt === undefined,
         )
-    )
+    ) {
         return false;
-    if (device.role !== 'led-output')
+    }
+
+    if (device.role !== 'led-output') {
         return (
             device.commandAvailability.policy === 'block' &&
             device.commandAvailability.reason === 'read_only_device'
         );
-    if (device.availability === 'offline')
+    }
+
+    if (device.availability === 'offline') {
         return (
             device.commandAvailability.policy === 'block' &&
             device.commandAvailability.reason === 'device_offline'
         );
-    if (device.availability === 'unknown')
+    }
+
+    if (device.availability === 'unknown') {
         return (
             device.commandAvailability.policy === 'block' &&
             device.commandAvailability.reason === 'availability_unknown'
         );
-    if (device.health !== 'degraded')
+    }
+
+    if (device.health !== 'degraded') {
         return (
             device.commandAvailability.policy === 'allow' &&
             device.commandAvailability.reason === undefined
         );
+    }
+
     return (
         (device.commandAvailability.policy === 'allow_with_warning' ||
             device.commandAvailability.policy === 'block') &&
         device.commandAvailability.reason === 'device_degraded'
     );
 }
+
 function isCanonicalUtcTimestamp(value: string): boolean {
     return isSchema(canonicalUtcTimestampSchema, value);
 }
+
 function areChronological(...timestamps: string[]): boolean {
     return timestamps.every(
         (timestamp, index) =>
             index === 0 || Date.parse(timestamps[index - 1]) <= Date.parse(timestamp),
     );
 }
+
 function terminalTimestamp(command: Static<typeof terminalCommandProjectionSchema>): number {
     switch (command.status) {
         case 'confirmed':

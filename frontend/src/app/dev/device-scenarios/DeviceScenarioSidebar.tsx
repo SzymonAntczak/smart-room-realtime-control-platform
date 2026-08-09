@@ -17,7 +17,9 @@ export function DeviceScenarioSidebar({
 }) {
     const { actions, client, closeButtonRef, loadError } = useDeviceScenarioSidebar(target);
 
-    if (!target || !client) return null;
+    if (!target || !client) {
+        return null;
+    }
 
     return (
         <aside
@@ -25,7 +27,9 @@ export function DeviceScenarioSidebar({
             className={styles.drawer}
             aria-label={`Development scenarios for ${target.deviceId}`}
             onKeyDown={(event) => {
-                if (event.key === 'Escape') onClose();
+                if (event.key === 'Escape') {
+                    onClose();
+                }
             }}
         >
             <button ref={closeButtonRef} className={styles.close} type="button" onClick={onClose}>

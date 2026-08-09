@@ -81,6 +81,7 @@ function ledPower(runtime: ReturnType<typeof createTemperatureRoomRuntime>) {
 
 function createEventIdGenerator(): () => string {
     let index = 0;
+
     return () => `evt-led-reference-${++index}`;
 }
 
@@ -88,6 +89,7 @@ function createMutableClock(
     initialTimestamp: string,
 ): Clock & { advanceBy(milliseconds: number): void } {
     let currentTimeMs = Date.parse(initialTimestamp);
+
     return {
         now: () => new Date(currentTimeMs).toISOString(),
         advanceBy(milliseconds) {
@@ -105,13 +107,19 @@ function createManualTimeoutScheduler(): LedScenarioScheduler<number> &
         setTimeout(callback) {
             const handle = nextHandle++;
             callbacks.set(handle, callback);
+
             return handle;
         },
         clearTimeout(handle) {
-            if (typeof handle === 'number') callbacks.delete(handle);
+            if (typeof handle === 'number') {
+                callbacks.delete(handle);
+            }
         },
         runAll() {
-            for (const callback of callbacks.values()) callback();
+            for (const callback of callbacks.values()) {
+                callback();
+            }
+
             callbacks.clear();
         },
     };

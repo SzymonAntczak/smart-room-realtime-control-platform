@@ -111,6 +111,7 @@ describe('createSimulatorTemperatureAdapter', () => {
             platformDeviceId: 'temp-desk',
             generateEventId: () => {
                 generatedEventCount += 1;
+
                 return 'evt-temperature-1';
             },
             emitEvent: (event) => emittedEvents.push(event),
@@ -139,6 +140,7 @@ describe('createSimulatorTemperatureAdapter', () => {
             platformDeviceId: 'temp-desk',
             generateEventId: () => {
                 generatedEventCount += 1;
+
                 return 'evt-temperature-1';
             },
             emitEvent: (event) => emittedEvents.push(event),
@@ -164,6 +166,7 @@ function createControllableNativeSensor(): {
         sensor: {
             onReading(listener) {
                 listeners.add(listener);
+
                 return () => listeners.delete(listener);
             },
             tick(recordedAt) {

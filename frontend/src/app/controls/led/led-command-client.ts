@@ -27,12 +27,17 @@ export async function submitLedPowerCommand(
     });
     const body: unknown = await response.json().catch(() => undefined);
 
-    if (response.status === 202 && isSchema(acceptedCommandResponseSchema, body)) return body;
+    if (response.status === 202 && isSchema(acceptedCommandResponseSchema, body)) {
+        return body;
+    }
+
     if (
         (response.status === 409 || response.status === 422) &&
         isSchema(rejectedCommandResponseSchema, body)
-    )
+    ) {
         return body;
+    }
+
     throw new Error('Room command service returned an invalid response.');
 }
 

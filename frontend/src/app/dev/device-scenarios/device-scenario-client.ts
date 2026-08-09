@@ -58,6 +58,7 @@ export function createScenarioClient(
             }
 
             const result: unknown = await response.json();
+
             if (!isSchema(deviceScenarioListSchema, result)) {
                 throw new Error('Scenario discovery returned an invalid response.');
             }

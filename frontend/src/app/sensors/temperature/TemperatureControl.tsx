@@ -22,8 +22,12 @@ export function TemperatureControl({
     onOpenDevScenario?(target: DeviceScenarioTarget): void;
     realtimeUncertain?: boolean;
 }) {
-    if (device.role !== 'temperature-sensor') return null;
+    if (device.role !== 'temperature-sensor') {
+        return null;
+    }
+
     const reading = toTemperatureSensorReading(device);
+
     return (
         <ControlCard
             title={reading.sensorName}
@@ -65,6 +69,7 @@ export function TemperatureControl({
 function formatAvailability(availability: 'online' | 'offline' | 'unknown') {
     return availability[0]?.toUpperCase() + availability.slice(1);
 }
+
 function availabilityTone(availability: 'online' | 'offline' | 'unknown') {
     return availability === 'online'
         ? 'success'
@@ -72,14 +77,17 @@ function availabilityTone(availability: 'online' | 'offline' | 'unknown') {
           ? 'danger'
           : 'warning';
 }
+
 function availabilityIcon(availability: 'online' | 'offline' | 'unknown') {
     const props = { 'aria-hidden': true, size: 16, strokeWidth: 1.75 } as const;
+
     return availability === 'online' ? (
         <CircleCheck {...props} />
     ) : availability === 'offline' ? (
         <WifiOff {...props} />
     ) : undefined;
 }
+
 function cardAlert(
     reading: ReturnType<typeof toTemperatureSensorReading>,
     realtimeUncertain: boolean,
@@ -101,7 +109,11 @@ function cardAlert(
             ? 'Realtime stream is reconnecting. Showing the last valid temperature update.'
             : undefined,
     ].filter((message): message is string => message !== undefined);
-    if (messages.length > 0) return { message: messages.join(' '), variant: 'warning' };
+
+    if (messages.length > 0) {
+        return { message: messages.join(' '), variant: 'warning' };
+    }
+
     return reading.recordedAt
         ? { message: `Last reading ${reading.recordedAt.slice(11, 19)} UTC.`, variant: 'info' }
         : { message: 'No reading received yet.', variant: 'info' };
