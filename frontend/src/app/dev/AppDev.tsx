@@ -44,19 +44,9 @@ export function AppDev() {
     }
 
     function updateScenarioRequestCount(deviceId: string, isPending: boolean): void {
-        setScenarioRequestCounts((current) => {
-            const count = current.get(deviceId) ?? 0;
-            const nextCount = isPending ? count + 1 : Math.max(0, count - 1);
-            const next = new Map(current);
-
-            if (nextCount === 0) {
-                next.delete(deviceId);
-            } else {
-                next.set(deviceId, nextCount);
-            }
-
-            return next;
-        });
+        setScenarioRequestCounts((current) =>
+            updateScenarioRequestCounts(current, deviceId, isPending),
+        );
     }
 
     return (
@@ -73,6 +63,24 @@ export function AppDev() {
             ) : null}
         </>
     );
+}
+
+export function updateScenarioRequestCounts(
+    current: ReadonlyMap<string, number>,
+    deviceId: string,
+    isPending: boolean,
+): ReadonlyMap<string, number> {
+    const count = current.get(deviceId) ?? 0;
+    const nextCount = isPending ? count + 1 : Math.max(0, count - 1);
+    const next = new Map(current);
+
+    if (nextCount === 0) {
+        next.delete(deviceId);
+    } else {
+        next.set(deviceId, nextCount);
+    }
+
+    return next;
 }
 
 function toScenarioTarget(device: DeviceProjection): DevPanelTarget | undefined {
