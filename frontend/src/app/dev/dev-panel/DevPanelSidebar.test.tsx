@@ -42,7 +42,7 @@ describe('DevPanel.Sidebar', () => {
         );
 
         expect(
-            await screen.findByRole('heading', { name: 'Temperature scenarios' }),
+            await screen.findByRole('heading', { name: 'Scenariusze temperatury' }),
         ).toBeInTheDocument();
         rerender(
             <DevPanel.Sidebar
@@ -53,7 +53,7 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        expect(await screen.findByRole('heading', { name: 'LED scenarios' })).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: 'Scenariusze LED' })).toBeInTheDocument();
         expect(screen.getAllByRole('complementary')).toHaveLength(1);
     });
 
@@ -83,10 +83,12 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Pause telemetry' }));
+        await user.click(await screen.findByRole('button', { name: 'Wstrzymaj telemetrię' }));
 
-        expect(await screen.findByRole('status')).toHaveTextContent('Pause telemetry completed.');
-        expect(await screen.findByText('Ignored events: 0')).toBeInTheDocument();
+        expect(await screen.findByRole('status')).toHaveTextContent(
+            'Scenariusz „Wstrzymaj telemetrię” został ukończony.',
+        );
+        expect(await screen.findByText('Pominięte zdarzenia: 0')).toBeInTheDocument();
     });
 
     it('uses the LED selection outcome without presenting a confirmed device state', async () => {
@@ -118,10 +120,10 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Confirm after 2 seconds' }));
+        await user.click(await screen.findByRole('button', { name: 'Potwierdź po 2 sekundach' }));
 
         expect(await screen.findByRole('status')).toHaveTextContent(
-            'Confirm after 2 seconds selected for the next LED command.',
+            'Scenariusz „Potwierdź po 2 sekundach” wybrano dla następnego polecenia LED.',
         );
     });
 
@@ -154,7 +156,7 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Confirm immediately' }));
+        await user.click(await screen.findByRole('button', { name: 'Potwierdź natychmiast' }));
 
         await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
     });
@@ -184,10 +186,10 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Confirm after 2 seconds' }));
+        await user.click(await screen.findByRole('button', { name: 'Potwierdź po 2 sekundach' }));
 
         expect(await screen.findByRole('status')).toHaveTextContent(
-            'Scenario control request failed (503).',
+            'Żądanie sterowania scenariuszem nie powiodło się.',
         );
     });
 });

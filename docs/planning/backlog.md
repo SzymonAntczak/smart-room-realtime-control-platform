@@ -6,7 +6,7 @@ an ADR as part of the related change.
 
 ## Open Follow-ups
 
-- [ ] Add frontend internationalization with `react-i18next`. Establish the
+- [x] Add frontend internationalization with `react-i18next`. Establish the
       translation-provider bootstrap, locale detection and a maintainable
       namespace structure; migrate user-visible dashboard and development-panel
       strings without translating stable machine-readable reasons, event names

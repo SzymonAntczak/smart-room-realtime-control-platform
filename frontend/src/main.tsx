@@ -1,4 +1,5 @@
 import './globals.css';
+import './i18n';
 
 import { type ComponentType, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

@@ -17,21 +17,21 @@ export interface ScenarioActionDefinition {
     readonly action: DeviceScenarioAction;
     readonly blockedWhen?: readonly ScenarioActionBlockCondition[];
     readonly icon: ScenarioIcon;
-    readonly label: string;
+    readonly labelKey: string;
     readonly outcome: ScenarioActionOutcome;
 }
 
 export interface ScenarioSectionDefinition {
     readonly actions: readonly ScenarioActionDefinition[];
-    readonly title: string;
+    readonly titleKey: string;
 }
 
 export interface ScenarioDefinition {
-    readonly description: string;
+    readonly descriptionKey: string;
     readonly diagnostics?: {
         readonly refreshAfterAction: boolean;
     };
     readonly lockDeviceControlWhileRequest: boolean;
     readonly sections: readonly ScenarioSectionDefinition[];
-    readonly title: string;
+    readonly titleKey: string;
 }

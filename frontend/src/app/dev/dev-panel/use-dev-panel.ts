@@ -1,9 +1,11 @@
 import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { createDeviceScenarioClient } from './device-scenario-client';
 
 export function useDevPanel(deviceId: string | undefined) {
+    const { t } = useTranslation('development');
     const closeButtonRef = useRef<HTMLButtonElement>(null);
     const [actions, setActions] = useState<readonly DeviceScenarioAction[]>();
     const [loadError, setLoadError] = useState<string>();
@@ -31,14 +33,14 @@ export function useDevPanel(deviceId: string | undefined) {
             })
             .catch(() => {
                 if (isCurrent) {
-                    setLoadError(`Development scenarios are unavailable for ${deviceId}.`);
+                    setLoadError(t('scenariosUnavailable', { deviceId }));
                 }
             });
 
         return () => {
             isCurrent = false;
         };
-    }, [client, deviceId]);
+    }, [client, deviceId, t]);
 
     return { actions, client, closeButtonRef, loadError };
 }

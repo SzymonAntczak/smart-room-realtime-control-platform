@@ -29,8 +29,16 @@ describe('toLedControlViewModel', () => {
         });
 
         expect(viewModel.alert).toEqual({
-            message:
-                'Could not submit LED command. Command timed out: confirmation_missing. LED is offline: device_unreachable partial_data LED state observation is stale. Realtime stream is reconnecting. LED controls are temporarily unavailable. Submitting LED command. Requested: On — awaiting device report.',
+            messages: [
+                { kind: 'raw', message: 'Could not submit LED command.' },
+                { kind: 'command-timed-out', reason: 'confirmation_missing' },
+                { kind: 'offline', reason: 'device_unreachable' },
+                { kind: 'degraded', reason: 'partial_data' },
+                { kind: 'stale' },
+                { kind: 'realtime-reconnecting' },
+                { kind: 'submitting' },
+                { kind: 'requested', power: 'on' },
+            ],
             variant: 'error',
         });
     });
@@ -48,7 +56,7 @@ describe('toLedControlViewModel', () => {
         expect(viewModel.isOn).toBe(false);
         expect(viewModel.isInteractionDisabled).toBe(true);
         expect(viewModel.alert).toEqual({
-            message: 'Requested: On — awaiting device report.',
+            messages: [{ kind: 'requested', power: 'on' }],
             variant: 'info',
         });
     });
@@ -70,7 +78,7 @@ describe('toLedControlViewModel', () => {
 
         expect(viewModel.hasReportedPower).toBe(false);
         expect(viewModel.isInteractionDisabled).toBe(true);
-        expect(viewModel.alert).toEqual({});
+        expect(viewModel.alert).toEqual({ messages: [] });
     });
 });
 

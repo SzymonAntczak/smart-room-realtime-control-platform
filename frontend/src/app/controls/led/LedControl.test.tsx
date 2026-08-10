@@ -9,10 +9,14 @@ describe('LedControl', () => {
     it('keeps reported power confirmed while an on command is pending', () => {
         render(<LedControl device={createLed()} activeCommand={createPendingCommand()} />);
 
-        expect(screen.getByLabelText('Confirmed LED power')).toHaveTextContent('Confirmed: Off');
-        expect(screen.getByText('Requested: On — awaiting device report.')).toBeInTheDocument();
+        expect(screen.getByLabelText('Potwierdzone zasilanie LED')).toHaveTextContent(
+            'Potwierdzono: Wyłączone',
+        );
+        expect(
+            screen.getByText('Zażądano: Włączone — oczekiwanie na raport urządzenia.'),
+        ).toBeInTheDocument();
         expect(screen.getByText('Online')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
     });
 
     it('keeps command progress visible beside degraded and stale warnings', () => {
@@ -31,8 +35,8 @@ describe('LedControl', () => {
         );
 
         expect(screen.getByText(/partial_data/)).toBeInTheDocument();
-        expect(screen.getByText(/LED state observation is stale/)).toBeInTheDocument();
-        expect(screen.getByText(/Requested: On/)).toBeInTheDocument();
+        expect(screen.getByText(/Obserwacja stanu LED jest nieaktualna/)).toBeInTheDocument();
+        expect(screen.getByText(/Zażądano: Włączone/)).toBeInTheDocument();
     });
 
     it('renders a bootstrap LED without inventing a confirmed power state', () => {
@@ -50,16 +54,16 @@ describe('LedControl', () => {
             />,
         );
 
-        expect(screen.getByLabelText('Confirmed LED power')).toHaveTextContent(
-            'Confirmed: Unknown',
+        expect(screen.getByLabelText('Potwierdzone zasilanie LED')).toHaveTextContent(
+            'Potwierdzono: Nieznane',
         );
-        expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
     });
 
     it('keeps an empty alert frame visible when the LED has nothing to report', () => {
         render(<LedControl device={{ ...createLed(), activeCommandId: undefined }} />);
 
-        expect(screen.getByText('No current alerts.')).toBeInTheDocument();
+        expect(screen.getByText('Brak bieżących alertów.')).toBeInTheDocument();
     });
 
     it('renders a supplied neutral header action and locks interaction when requested', () => {
@@ -72,7 +76,7 @@ describe('LedControl', () => {
         );
 
         expect(screen.getByRole('button', { name: 'Extra action' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
     });
 });
 

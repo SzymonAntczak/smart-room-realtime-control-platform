@@ -3,53 +3,52 @@ import type { ScenarioDefinition } from '../dev-panel';
 const telemetryBlockedWhenOffline = ['offline'] as const;
 
 export const temperatureScenarioDefinition = {
-    title: 'Temperature scenarios',
-    description:
-        'Controls operate the local simulator through the backend. Room state still arrives through the realtime stream: a snapshot baseline followed by device updates.',
+    titleKey: 'scenarios.temperature.title',
+    descriptionKey: 'scenarios.temperature.description',
     lockDeviceControlWhileRequest: false,
     diagnostics: { refreshAfterAction: true },
     sections: [
         {
-            title: 'Freshness and telemetry',
+            titleKey: 'scenarios.temperature.freshness',
             actions: [
                 {
                     action: 'pause_telemetry',
-                    label: 'Pause telemetry',
+                    labelKey: 'scenarios.temperature.actions.pause',
                     icon: 'pause',
                     outcome: 'completed',
                     blockedWhen: telemetryBlockedWhenOffline,
                 },
                 {
                     action: 'resume_telemetry',
-                    label: 'Resume telemetry',
+                    labelKey: 'scenarios.temperature.actions.resume',
                     icon: 'play',
                     outcome: 'completed',
                     blockedWhen: telemetryBlockedWhenOffline,
                 },
                 {
                     action: 'emit_next_reading',
-                    label: 'Emit next reading',
+                    labelKey: 'scenarios.temperature.actions.emitNext',
                     icon: 'step-forward',
                     outcome: 'completed',
                     blockedWhen: telemetryBlockedWhenOffline,
                 },
                 {
                     action: 'replay_last_reading',
-                    label: 'Replay last reading',
+                    labelKey: 'scenarios.temperature.actions.replay',
                     icon: 'history',
                     outcome: 'completed',
                     blockedWhen: telemetryBlockedWhenOffline,
                 },
                 {
                     action: 'emit_invalid_reading',
-                    label: 'Emit invalid reading',
+                    labelKey: 'scenarios.temperature.actions.emitInvalid',
                     icon: 'alert',
                     outcome: 'completed',
                     blockedWhen: telemetryBlockedWhenOffline,
                 },
                 {
                     action: 'reset',
-                    label: 'Reset scenario',
+                    labelKey: 'scenarios.temperature.actions.reset',
                     icon: 'refresh',
                     outcome: 'completed',
                     blockedWhen: telemetryBlockedWhenOffline,
@@ -57,34 +56,34 @@ export const temperatureScenarioDefinition = {
             ],
         },
         {
-            title: 'Availability',
+            titleKey: 'scenarios.temperature.availability',
             actions: [
                 {
                     action: 'disconnect_device',
-                    label: 'Mark device offline',
+                    labelKey: 'scenarios.temperature.actions.disconnect',
                     icon: 'pause',
                     outcome: 'completed',
                 },
                 {
                     action: 'reconnect_device',
-                    label: 'Mark device online',
+                    labelKey: 'scenarios.temperature.actions.reconnect',
                     icon: 'play',
                     outcome: 'completed',
                 },
             ],
         },
         {
-            title: 'Health',
+            titleKey: 'scenarios.temperature.health',
             actions: [
                 {
                     action: 'degrade_device',
-                    label: 'Degrade device health',
+                    labelKey: 'scenarios.temperature.actions.degrade',
                     icon: 'alert',
                     outcome: 'completed',
                 },
                 {
                     action: 'recover_device',
-                    label: 'Recover device health',
+                    labelKey: 'scenarios.temperature.actions.recover',
                     icon: 'refresh',
                     outcome: 'completed',
                 },

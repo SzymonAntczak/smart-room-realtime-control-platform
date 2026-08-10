@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { submitLedPowerCommand } from './led-command-client';
 
 export function useLedCommandRequest(deviceId: string | undefined) {
+    const { t } = useTranslation('dashboard');
     const [submitting, setSubmitting] = useState(false);
     const [transportError, setTransportError] = useState<string>();
 
@@ -25,7 +27,7 @@ export function useLedCommandRequest(deviceId: string | undefined) {
                 setTransportError(result.message);
             }
         } catch {
-            setTransportError('Unable to send the LED command. Please try again.');
+            setTransportError(t('led.commandRequestFailed'));
         } finally {
             setSubmitting(false);
         }

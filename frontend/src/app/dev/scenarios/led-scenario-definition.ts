@@ -1,45 +1,44 @@
 import type { ScenarioDefinition } from '../dev-panel';
 
 export const ledScenarioDefinition = {
-    title: 'LED scenarios',
-    description:
-        'Select how the next LED command behaves. This does not change the confirmed LED state.',
+    titleKey: 'scenarios.led.title',
+    descriptionKey: 'scenarios.led.description',
     lockDeviceControlWhileRequest: true,
     sections: [
         {
-            title: 'Command behavior',
+            titleKey: 'scenarios.led.commandBehavior',
             actions: [
                 {
                     action: 'confirm_immediately',
-                    label: 'Confirm immediately',
+                    labelKey: 'scenarios.led.actions.confirmImmediately',
                     icon: 'timer',
                     outcome: 'none',
                     blockedWhen: ['active-command'],
                 },
                 {
                     action: 'confirm_delayed',
-                    label: 'Confirm after 2 seconds',
+                    labelKey: 'scenarios.led.actions.confirmDelayed',
                     icon: 'timer',
                     outcome: 'selected',
                     blockedWhen: ['active-command'],
                 },
                 {
                     action: 'reject_command',
-                    label: 'Reject next command',
+                    labelKey: 'scenarios.led.actions.reject',
                     icon: 'timer',
                     outcome: 'selected',
                     blockedWhen: ['active-command'],
                 },
                 {
                     action: 'omit_confirmation',
-                    label: 'Omit confirmation',
+                    labelKey: 'scenarios.led.actions.omitConfirmation',
                     icon: 'timer',
                     outcome: 'selected',
                     blockedWhen: ['active-command'],
                 },
                 {
                     action: 'report_after_timeout',
-                    label: 'Report after timeout',
+                    labelKey: 'scenarios.led.actions.reportAfterTimeout',
                     icon: 'timer',
                     outcome: 'selected',
                     blockedWhen: ['active-command'],
@@ -47,18 +46,18 @@ export const ledScenarioDefinition = {
             ],
         },
         {
-            title: 'Availability',
+            titleKey: 'scenarios.led.availability',
             actions: [
                 {
                     action: 'disconnect_device',
-                    label: 'Mark device offline',
+                    labelKey: 'scenarios.led.actions.disconnect',
                     icon: 'wifi',
                     outcome: 'selected',
                     blockedWhen: ['active-command'],
                 },
                 {
                     action: 'reconnect_device',
-                    label: 'Mark device online',
+                    labelKey: 'scenarios.led.actions.reconnect',
                     icon: 'wifi',
                     outcome: 'selected',
                     blockedWhen: ['active-command'],
@@ -66,18 +65,18 @@ export const ledScenarioDefinition = {
             ],
         },
         {
-            title: 'Health',
+            titleKey: 'scenarios.led.health',
             actions: [
                 {
                     action: 'degrade_device',
-                    label: 'Mark device degraded',
+                    labelKey: 'scenarios.led.actions.degrade',
                     icon: 'alert',
                     outcome: 'selected',
                     blockedWhen: ['active-command'],
                 },
                 {
                     action: 'recover_device',
-                    label: 'Recover device health',
+                    labelKey: 'scenarios.led.actions.recover',
                     icon: 'alert',
                     outcome: 'selected',
                     blockedWhen: ['active-command'],

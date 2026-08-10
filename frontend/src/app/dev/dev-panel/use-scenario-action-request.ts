@@ -3,6 +3,7 @@ import type {
     EventProcessingDiagnosticsSnapshot,
 } from '@smart-room/contracts/development';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { DeviceScenarioClient } from './device-scenario-client';
 import type { ScenarioDefinition } from './scenario-definition';
@@ -18,6 +19,7 @@ export function useScenarioActionRequest({
     isCommandActive: boolean;
     onRequestChange(isPending: boolean): void;
 }) {
+    const { t } = useTranslation('development');
     const [activeAction, setActiveAction] = useState<DeviceScenarioAction>();
     const [message, setMessage] = useState<string>();
     const [selectedAction, setSelectedAction] = useState<DeviceScenarioAction>();
@@ -42,18 +44,16 @@ export function useScenarioActionRequest({
             if (requestId === latestDiagnosticsRequest.current) {
                 setDiagnostics(result);
             }
-        } catch (error) {
+        } catch {
             if (requestId === latestDiagnosticsRequest.current) {
-                setDiagnosticsErrorMessage(
-                    error instanceof Error ? error.message : 'Diagnostics request failed.',
-                );
+                setDiagnosticsErrorMessage(t('diagnosticsRequestFailed'));
             }
         } finally {
             if (requestId === latestDiagnosticsRequest.current) {
                 setIsRefreshingDiagnostics(false);
             }
         }
-    }, [client, definition.diagnostics]);
+    }, [client, definition.diagnostics, t]);
 
     const clearSelection = useCallback(() => {
         setSelectedAction(undefined);
@@ -87,7 +87,7 @@ export function useScenarioActionRequest({
             const result = await client.runScenario(action);
 
             if (actionDefinition.outcome === 'completed') {
-                setMessage(`${actionDefinition.label} completed.`);
+                setMessage(t('actionCompleted', { action: t(actionDefinition.labelKey) }));
             } else if (actionDefinition.outcome === 'selected') {
                 setSelectedAction(result.action);
             } else {
@@ -97,8 +97,8 @@ export function useScenarioActionRequest({
             if (definition.diagnostics?.refreshAfterAction) {
                 void refreshDiagnostics();
             }
-        } catch (error) {
-            setMessage(error instanceof Error ? error.message : 'Scenario control request failed.');
+        } catch {
+            setMessage(t('scenarioRequestFailed'));
         } finally {
             setActiveAction(undefined);
             onRequestChange(false);
@@ -107,7 +107,7 @@ export function useScenarioActionRequest({
 
     const selectedActionLabel = definition.sections
         .flatMap((section) => section.actions)
-        .find((candidate) => candidate.action === selectedAction)?.label;
+        .find((candidate) => candidate.action === selectedAction)?.labelKey;
 
     return {
         activeAction,
@@ -117,7 +117,7 @@ export function useScenarioActionRequest({
         message:
             message ??
             (selectedActionLabel
-                ? `${selectedActionLabel} selected for the next LED command.`
+                ? t('actionSelected', { action: t(selectedActionLabel) })
                 : undefined),
         refreshDiagnostics,
         runScenario,

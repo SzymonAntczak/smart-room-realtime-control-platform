@@ -1,6 +1,7 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { CircleCheck, Thermometer, WifiOff } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Alert, type AlertVariant } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
@@ -17,6 +18,8 @@ export function TemperatureControl({
     headerAction?: ReactNode;
     realtimeUncertain?: boolean;
 }) {
+    const { t } = useTranslation(['common', 'dashboard']);
+
     if (device.role !== 'temperature-sensor') {
         return null;
     }
@@ -27,13 +30,16 @@ export function TemperatureControl({
         <ControlCard
             title={reading.sensorName}
             titleId={`sensor-heading-${reading.sensorId}`}
-            status={formatAvailability(reading.availability)}
+            status={t(`availability.${reading.availability}`, { ns: 'common' })}
             statusIcon={availabilityIcon(reading.availability)}
             statusTone={availabilityTone(reading.availability)}
             headerAction={headerAction}
-            bottomAlert={<Alert {...cardAlert(reading, realtimeUncertain)} />}
+            bottomAlert={<Alert {...cardAlert(reading, realtimeUncertain, t)} />}
         >
-            <div className={styles.reading} aria-label="Current temperature">
+            <div
+                className={styles.reading}
+                aria-label={t('temperature.current', { ns: 'dashboard' })}
+            >
                 <Thermometer
                     aria-hidden="true"
                     className={styles.readingIcon}
@@ -45,10 +51,6 @@ export function TemperatureControl({
             </div>
         </ControlCard>
     );
-}
-
-function formatAvailability(availability: 'online' | 'offline' | 'unknown') {
-    return availability[0]?.toUpperCase() + availability.slice(1);
 }
 
 function availabilityTone(availability: 'online' | 'offline' | 'unknown') {
@@ -72,22 +74,29 @@ function availabilityIcon(availability: 'online' | 'offline' | 'unknown') {
 function cardAlert(
     reading: ReturnType<typeof toTemperatureSensorReading>,
     realtimeUncertain: boolean,
+    t: ReturnType<typeof useTranslation>['t'],
 ): {
     message?: string;
     variant?: AlertVariant;
 } {
     const messages = [
         reading.availability === 'offline'
-            ? `Temperature sensor is offline${reading.availabilityReason ? `: ${reading.availabilityReason}` : '.'}`
+            ? t('temperature.alert.offline', {
+                  ns: 'dashboard',
+                  reason: reading.availabilityReason ? `: ${reading.availabilityReason}` : '.',
+              })
             : undefined,
         reading.health === 'degraded'
-            ? (reading.healthReason ?? 'Temperature sensor health is degraded.')
+            ? (reading.healthReason ?? t('temperature.alert.degraded', { ns: 'dashboard' }))
             : undefined,
         reading.freshness === 'stale' && reading.recordedAt
-            ? `Temperature telemetry is stale. Showing the last known reading from ${reading.recordedAt.slice(11, 19)} UTC.`
+            ? t('temperature.alert.stale', {
+                  ns: 'dashboard',
+                  time: reading.recordedAt.slice(11, 19),
+              })
             : undefined,
         realtimeUncertain
-            ? 'Realtime stream is reconnecting. Showing the last valid temperature update.'
+            ? t('temperature.alert.realtimeReconnecting', { ns: 'dashboard' })
             : undefined,
     ].filter((message): message is string => message !== undefined);
 
@@ -96,6 +105,12 @@ function cardAlert(
     }
 
     return reading.recordedAt
-        ? { message: `Last reading ${reading.recordedAt.slice(11, 19)} UTC.`, variant: 'info' }
-        : { message: 'No reading received yet.', variant: 'info' };
+        ? {
+              message: t('temperature.alert.lastReading', {
+                  ns: 'dashboard',
+                  time: reading.recordedAt.slice(11, 19),
+              }),
+              variant: 'info',
+          }
+        : { message: t('temperature.alert.noReading', { ns: 'dashboard' }), variant: 'info' };
 }

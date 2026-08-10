@@ -1,11 +1,13 @@
 import { CircleAlert, TriangleAlert } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import styles from './Alert.module.css';
 
 export type AlertVariant = 'info' | 'warning' | 'error';
 
 export function Alert({ message, variant = 'info' }: { message?: string; variant?: AlertVariant }) {
-    const displayMessage = message ?? 'No current alerts.';
+    const { t } = useTranslation('common');
+    const displayMessage = message || t('alert.none');
 
     const Icon =
         variant === 'warning' ? TriangleAlert : variant === 'error' ? CircleAlert : undefined;

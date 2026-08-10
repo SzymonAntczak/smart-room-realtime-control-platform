@@ -17,9 +17,11 @@ describe('DevPanel.Content', () => {
             />,
         );
 
-        expect(screen.getByRole('button', { name: 'Confirm after 2 seconds' })).toBeInTheDocument();
         expect(
-            screen.queryByRole('button', { name: 'Confirm immediately' }),
+            screen.getByRole('button', { name: 'Potwierdź po 2 sekundach' }),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByRole('button', { name: 'Potwierdź natychmiast' }),
         ).not.toBeInTheDocument();
     });
 
@@ -34,8 +36,8 @@ describe('DevPanel.Content', () => {
             />,
         );
 
-        expect(screen.getByRole('button', { name: 'Pause telemetry' })).toBeDisabled();
-        expect(screen.getByRole('button', { name: 'Mark device online' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Wstrzymaj telemetrię' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Oznacz urządzenie jako online' })).toBeEnabled();
 
         rerender(
             <DevPanel.Content
@@ -47,7 +49,7 @@ describe('DevPanel.Content', () => {
             />,
         );
 
-        expect(screen.getByRole('button', { name: 'Confirm immediately' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Potwierdź natychmiast' })).toBeDisabled();
     });
 
     it('keeps an active action label stable while exposing its busy state', () => {
@@ -62,7 +64,7 @@ describe('DevPanel.Content', () => {
             />,
         );
 
-        expect(screen.getByRole('button', { name: 'Confirm immediately' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'Potwierdź natychmiast' })).toHaveAttribute(
             'aria-busy',
             'true',
         );

@@ -1,5 +1,6 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { LedControl } from '../../controls/led/LedControl';
 import type { RoomRealtimeState } from '../../realtime/use-room-realtime';
@@ -19,6 +20,7 @@ export function RoomControlSurface({
     room: RoomRealtimeState;
     getDeviceExtension?(device: DeviceProjection): DeviceControlExtension | undefined;
 }) {
+    const { t } = useTranslation('dashboard');
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;
     const realtimeUncertain =
         room.connectionStatus === 'reconnecting' || room.contractError !== undefined;
@@ -68,8 +70,8 @@ export function RoomControlSurface({
                 {!snapshot ? (
                     <p>
                         {room.connectionStatus === 'reconnecting'
-                            ? 'Reconnecting to realtime room stream...'
-                            : 'Connecting to realtime room stream...'}
+                            ? t('realtime.reconnecting')
+                            : t('realtime.connecting')}
                     </p>
                 ) : null}
             </div>

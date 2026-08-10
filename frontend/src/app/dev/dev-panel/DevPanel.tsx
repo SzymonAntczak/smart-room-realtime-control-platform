@@ -17,6 +17,7 @@ import {
     X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import styles from './DevPanel.module.css';
 import type {
@@ -56,6 +57,8 @@ function DevPanelTrigger({
     expanded: boolean;
     onClick(): void;
 }) {
+    const { t } = useTranslation('development');
+
     return (
         <button
             id={`dev-scenarios-${deviceId}`}
@@ -66,7 +69,7 @@ function DevPanelTrigger({
             onClick={onClick}
         >
             <FlaskConical aria-hidden="true" size={16} strokeWidth={1.75} />
-            <span className={styles.triggerLabel}>Dev scenarios</span>
+            <span className={styles.triggerLabel}>{t('trigger')}</span>
         </button>
     );
 }
@@ -82,6 +85,7 @@ function DevPanelSidebar({
     onClose(): void;
     onRequestChange(deviceId: string, isPending: boolean): void;
 }) {
+    const { t } = useTranslation('development');
     const { actions, client, closeButtonRef, loadError } = useDevPanel(target.deviceId);
     const device = snapshot.devices.find((candidate) => candidate.deviceId === target.deviceId);
     const isCommandActive = snapshot.activeCommands.some(
@@ -102,7 +106,7 @@ function DevPanelSidebar({
         <aside
             id="dev-panel"
             className={styles.drawer}
-            aria-label={`Development scenarios for ${target.deviceId}`}
+            aria-label={t('panelAriaLabel', { deviceId: target.deviceId })}
             onKeyDown={(event) => {
                 if (event.key === 'Escape') {
                     onClose();
@@ -111,11 +115,11 @@ function DevPanelSidebar({
         >
             <button ref={closeButtonRef} className={styles.close} type="button" onClick={onClose}>
                 <X aria-hidden="true" size={16} strokeWidth={1.75} />
-                Close panel
+                {t('closePanel')}
             </button>
             {loadError ? <p role="alert">{loadError}</p> : null}
             {!actions && !loadError ? (
-                <p role="status">Loading development scenarios for {target.deviceId}…</p>
+                <p role="status">{t('loading', { deviceId: target.deviceId })}</p>
             ) : null}
             {actions ? (
                 <DevPanelContent
@@ -158,13 +162,15 @@ function DevPanelContent({
     message?: string;
     onRunScenario(action: DeviceScenarioAction): void;
 }) {
+    const { t } = useTranslation('development');
+
     return (
         <section className={styles.panel}>
-            <p className={styles.eyebrow}>Development only</p>
-            <h2>{definition.title}</h2>
-            <p className={styles.description}>{definition.description}</p>
+            <p className={styles.eyebrow}>{t('only')}</p>
+            <h2>{t(definition.titleKey)}</h2>
+            <p className={styles.description}>{t(definition.descriptionKey)}</p>
             {isOffline && hasOfflineBlockedAction(definition) ? (
-                <p>Telemetry controls are unavailable while the device is offline.</p>
+                <p>{t('telemetryOffline')}</p>
             ) : null}
             <div>
                 {definition.sections.map((section) => {
@@ -177,8 +183,8 @@ function DevPanelContent({
                     }
 
                     return (
-                        <section key={section.title} className={styles.section}>
-                            <h3>{section.title}</h3>
+                        <section key={section.titleKey} className={styles.section}>
+                            <h3>{t(section.titleKey)}</h3>
                             <div className={styles.actions}>
                                 {actions.map((action) => (
                                     <DevPanelAction
@@ -217,6 +223,7 @@ function DevPanelAction({
     isActive: boolean;
     onClick(): void;
 }) {
+    const { t } = useTranslation('development');
     const Icon = iconByName[action.icon];
 
     return (
@@ -228,7 +235,7 @@ function DevPanelAction({
             onClick={onClick}
         >
             <Icon aria-hidden="true" size={16} strokeWidth={1.75} />
-            {action.label}
+            {t(action.labelKey)}
         </button>
     );
 }
@@ -246,12 +253,18 @@ function DevPanelDiagnostics({
     isRefreshing: boolean;
     onRefresh(): void;
 }) {
+    const { t } = useTranslation('development');
+
     return (
         <section className={styles.diagnostics} aria-labelledby="scenario-diagnostics">
             <div className={styles.diagnosticsHeader}>
                 <div>
-                    <h3 id="scenario-diagnostics">Diagnostics</h3>
-                    <p>Ignored events: {diagnostics?.ignoredEvents.length ?? 'not loaded'}</p>
+                    <h3 id="scenario-diagnostics">{t('diagnostics.heading')}</h3>
+                    <p>
+                        {t('diagnostics.ignoredEvents', {
+                            count: diagnostics?.ignoredEvents.length ?? t('diagnostics.notLoaded'),
+                        })}
+                    </p>
                 </div>
                 <button
                     className={styles.action}
@@ -260,18 +273,18 @@ function DevPanelDiagnostics({
                     onClick={onRefresh}
                 >
                     <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
-                    {isRefreshing ? 'Refreshing...' : 'Refresh diagnostics'}
+                    {isRefreshing ? t('diagnostics.refreshing') : t('diagnostics.refresh')}
                 </button>
             </div>
             {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-            {diagnostics?.ignoredEvents.length === 0 ? <p>No ignored events recorded.</p> : null}
+            {diagnostics?.ignoredEvents.length === 0 ? <p>{t('diagnostics.empty')}</p> : null}
             {diagnostics && diagnostics.ignoredEvents.length > 0 ? (
                 <ol className={styles.diagnosticsList}>
                     {diagnostics.ignoredEvents.map((event) => (
                         <li key={event.diagnosticId}>
                             <strong>{event.reason}</strong>
-                            <span>{event.eventType ?? 'unknown event'}</span>
-                            <span>{event.deviceId ?? 'no device'}</span>
+                            <span>{event.eventType ?? t('diagnostics.unknownEvent')}</span>
+                            <span>{event.deviceId ?? t('diagnostics.noDevice')}</span>
                             <time dateTime={event.observedAt}>{formatTime(event.observedAt)}</time>
                         </li>
                     ))}

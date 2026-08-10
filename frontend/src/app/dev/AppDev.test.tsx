@@ -28,17 +28,17 @@ describe('AppDev', () => {
         render(<AppDev />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const trigger = screen.getByRole('button', { name: 'Dev scenarios' });
+        const trigger = screen.getByRole('button', { name: 'Scenariusze programistyczne' });
         await user.click(trigger);
 
         expect(
-            await screen.findByRole('heading', { name: 'Temperature scenarios' }),
+            await screen.findByRole('heading', { name: 'Scenariusze temperatury' }),
         ).toBeInTheDocument();
         expect(globalThis.fetch).toHaveBeenCalledWith(
             'http://localhost:4310/dev/devices/temp-desk/scenarios',
         );
 
-        await user.click(screen.getByRole('button', { name: 'Close panel' }));
+        await user.click(screen.getByRole('button', { name: 'Zamknij panel' }));
 
         expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
         await Promise.resolve();
@@ -50,9 +50,9 @@ describe('AppDev', () => {
         render(<AppDev />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const trigger = screen.getByRole('button', { name: 'Dev scenarios' });
+        const trigger = screen.getByRole('button', { name: 'Scenariusze programistyczne' });
         await user.click(trigger);
-        await screen.findByRole('heading', { name: 'Temperature scenarios' });
+        await screen.findByRole('heading', { name: 'Scenariusze temperatury' });
         await user.keyboard('{Escape}');
 
         expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
@@ -105,14 +105,14 @@ describe('AppDev', () => {
             MockWebSocket.latest().emitMessage(createRoomSnapshotMessage([createLedDevice()])),
         );
 
-        await user.click(screen.getByRole('button', { name: 'Dev scenarios' }));
-        await user.click(await screen.findByRole('button', { name: 'Confirm after 2 seconds' }));
+        await user.click(screen.getByRole('button', { name: 'Scenariusze programistyczne' }));
+        await user.click(await screen.findByRole('button', { name: 'Potwierdź po 2 sekundach' }));
 
-        expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
 
         resolveScenario?.();
 
-        expect(await screen.findByRole('button', { name: 'Turn on' })).toBeEnabled();
+        expect(await screen.findByRole('button', { name: 'Włącz' })).toBeEnabled();
     });
 });
 

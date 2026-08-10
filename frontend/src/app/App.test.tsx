@@ -14,13 +14,15 @@ describe('App', () => {
     it('waits for a realtime snapshot before rendering device controls', () => {
         render(<App />);
 
-        expect(screen.getByText('Connecting to realtime room stream...')).toBeInTheDocument();
+        expect(
+            screen.getByText('Łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
+        ).toBeInTheDocument();
     });
 
     it('does not render development scenario controls', () => {
         render(<App />);
 
-        expect(screen.queryByText('Dev scenarios')).not.toBeInTheDocument();
+        expect(screen.queryByText('Scenariusze programistyczne')).not.toBeInTheDocument();
     });
 
     it('renders supported device cards from one room snapshot and maps LED commands by device', () => {
@@ -29,8 +31,8 @@ describe('App', () => {
 
         expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Main LED' })).toBeInTheDocument();
-        expect(screen.getByText(/Requested: On/)).toBeInTheDocument();
-        expect(screen.queryByText('Dev scenarios')).not.toBeInTheDocument();
+        expect(screen.getByText(/Zażądano: Włączone/)).toBeInTheDocument();
+        expect(screen.queryByText('Scenariusze programistyczne')).not.toBeInTheDocument();
     });
 
     it('keeps the temperature view visible and marks it uncertain while reconnecting', () => {
@@ -45,7 +47,7 @@ describe('App', () => {
         expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
         expect(
             screen.getByText(
-                'Realtime stream is reconnecting. Showing the last valid temperature update.',
+                'Strumień czasu rzeczywistego ponownie się łączy. Wyświetlany jest ostatni prawidłowy odczyt temperatury.',
             ),
         ).toBeInTheDocument();
     });
@@ -59,7 +61,9 @@ describe('App', () => {
         );
 
         expect(screen.queryByRole('heading', { name: 'Humidity sensor' })).not.toBeInTheDocument();
-        expect(screen.queryByText('Connecting to realtime room stream...')).not.toBeInTheDocument();
+        expect(
+            screen.queryByText('Łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
+        ).not.toBeInTheDocument();
     });
 });
 
