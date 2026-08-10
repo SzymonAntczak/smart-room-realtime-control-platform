@@ -4,7 +4,6 @@ export const ledScenarioDefinition = {
     title: 'LED scenarios',
     description:
         'Select how the next LED command behaves. This does not change the confirmed LED state.',
-    pendingLabel: 'Selecting...',
     lockDeviceControlWhileRequest: true,
     sections: [
         {

@@ -6,7 +6,6 @@ export const temperatureScenarioDefinition = {
     title: 'Temperature scenarios',
     description:
         'Controls operate the local simulator through the backend. Room state still arrives through the realtime stream: a snapshot baseline followed by device updates.',
-    pendingLabel: 'Running...',
     lockDeviceControlWhileRequest: false,
     diagnostics: { refreshAfterAction: true },
     sections: [

@@ -189,7 +189,6 @@ function DevPanelContent({
                                             isBlocked(action, isOffline, isCommandActive)
                                         }
                                         isActive={activeAction === action.action}
-                                        pendingLabel={definition.pendingLabel}
                                         onClick={() => onRunScenario(action.action)}
                                     />
                                 ))}
@@ -211,21 +210,25 @@ function DevPanelAction({
     action,
     disabled,
     isActive,
-    pendingLabel,
     onClick,
 }: {
     action: ScenarioActionDefinition;
     disabled: boolean;
     isActive: boolean;
-    pendingLabel: string;
     onClick(): void;
 }) {
     const Icon = iconByName[action.icon];
 
     return (
-        <button className={styles.action} type="button" disabled={disabled} onClick={onClick}>
+        <button
+            className={`${styles.action} ${isActive ? styles.actionActive : ''}`}
+            type="button"
+            aria-busy={isActive || undefined}
+            disabled={disabled}
+            onClick={onClick}
+        >
             <Icon aria-hidden="true" size={16} strokeWidth={1.75} />
-            {isActive ? pendingLabel : action.label}
+            {action.label}
         </button>
     );
 }

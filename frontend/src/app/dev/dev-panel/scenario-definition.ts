@@ -32,7 +32,6 @@ export interface ScenarioDefinition {
         readonly refreshAfterAction: boolean;
     };
     readonly lockDeviceControlWhileRequest: boolean;
-    readonly pendingLabel: string;
     readonly sections: readonly ScenarioSectionDefinition[];
     readonly title: string;
 }

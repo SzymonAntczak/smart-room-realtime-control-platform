@@ -49,4 +49,22 @@ describe('DevPanel.Content', () => {
 
         expect(screen.getByRole('button', { name: 'Confirm immediately' })).toBeDisabled();
     });
+
+    it('keeps an active action label stable while exposing its busy state', () => {
+        render(
+            <DevPanel.Content
+                activeAction="confirm_immediately"
+                availableActions={['confirm_immediately']}
+                definition={ledScenarioDefinition}
+                isCommandActive={false}
+                isOffline={false}
+                onRunScenario={() => undefined}
+            />,
+        );
+
+        expect(screen.getByRole('button', { name: 'Confirm immediately' })).toHaveAttribute(
+            'aria-busy',
+            'true',
+        );
+    });
 });
