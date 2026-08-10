@@ -48,3 +48,9 @@ LED command only.
 The slice is complete when the automated runtime integration test and the five
 manual flows above pass. The Dashboard must distinguish requested and confirmed
 state, and a late matching report must update only observed device state.
+
+## Acceptance Record
+
+The local manual checklist was completed successfully on 2026-08-10 against the
+direct simulator route. The simulator, backend and frontend test suites, plus
+repository typecheck, lint and format checks, passed in the same verification run.
