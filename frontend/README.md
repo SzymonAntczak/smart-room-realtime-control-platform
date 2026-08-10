@@ -4,14 +4,14 @@ React, TypeScript and Vite control surface for the Smart Room realtime platform.
 
 The frontend displays temperature telemetry and LED command state from the
 local realtime runtime. It receives a `room.snapshot` baseline followed by
-validated device and command updates over WebSocket, keeps the last valid view
+validated device and command updates over SSE, keeps the last valid view
 during reconnects, and makes availability, health and observation freshness
 visible. Development-only, device-scoped scenarios control the simulator through
 the backend; one shared sidebar swaps temperature or LED content for the card
 that opened it.
 
 `VITE_BFF_URL` configures the shared HTTP origin for development scenarios and
-diagnostics. `VITE_ROOM_REALTIME_URL` independently configures the WebSocket endpoint.
+diagnostics. `VITE_ROOM_REALTIME_URL` independently configures the SSE endpoint.
 
 ## Source Of Truth
 

@@ -174,7 +174,7 @@ Provides the frontend with UI-oriented access to the local backend.
 Expected responsibilities:
 
 - provide an initial room snapshot when the frontend connects
-- stream state, command and event updates to the frontend over WebSocket
+- stream state, command and event updates to the frontend over SSE
 - accept command requests from the frontend
 - read from backend read model/projections and expose UI-friendly derived views
   without making the frontend interpret raw event streams by itself
@@ -184,7 +184,7 @@ target local runtime it belongs to the local Node.js backend together with the
 event processor, read model/projections and in-memory storage.
 
 The current realtime read contract sends a `room.snapshot` over
-WebSocket only when the frontend connects or reconnects. It is followed by
+SSE only when the frontend connects or reconnects. It is followed by
 named, revision-linked `device.updated` and `commands.updated` messages. A device projection contains
 current device state, availability, health and applicable freshness; command updates atomically carry the changed
 device plus active and terminal command projections. A future dedicated history
@@ -251,7 +251,7 @@ The completed Stage 2/2.5 backend-backed reference slice is the read-only
 telemetry path for two simulated temperature sensors. It includes simulator
 adapter, event processor with validation and deduplication, and a read-model
 projection for `telemetry.reading.recorded` events. The frontend receives
-an initial UI-oriented `room.snapshot` baseline followed by per-device deltas over WebSocket
+an initial UI-oriented `room.snapshot` baseline followed by per-device deltas over SSE
 from the local backend BFF. The current projection exposes independent
 availability, health and per-capability observation status. Ignored
 duplicate and invalid events are exposed only through bounded development

@@ -23,7 +23,7 @@ The slice remains read-only. It does not add temperature commands.
 - Invalid telemetry payloads do not update current state.
 - Replayed or out-of-order device-like readings do not regress the current
   value.
-- WebSocket disconnects are visible as stream reconnection state and do not
+- SSE disconnects are visible as stream reconnection state and do not
   erase the last valid snapshot.
 - Invalid realtime snapshots are treated as contract errors and are not
   rendered as room state.

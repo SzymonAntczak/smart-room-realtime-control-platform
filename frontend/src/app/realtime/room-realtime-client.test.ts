@@ -18,15 +18,15 @@ describe('connectTemperatureRealtime', () => {
     it('connects to the default realtime room endpoint', () => {
         connectTemperatureRealtime(createHandlers(), MockWebSocket);
 
-        expect(MockWebSocket.instances[0]?.url).toBe('ws://localhost:4310/room/realtime');
+        expect(MockWebSocket.instances[0]?.url).toBe('http://localhost:4310/room/realtime');
     });
 
     it('connects to the configured realtime room endpoint', () => {
-        vi.stubEnv('VITE_ROOM_REALTIME_URL', 'ws://127.0.0.1:4999/room/realtime');
+        vi.stubEnv('VITE_ROOM_REALTIME_URL', 'http://127.0.0.1:4999/room/realtime');
 
         connectTemperatureRealtime(createHandlers(), MockWebSocket);
 
-        expect(MockWebSocket.instances[0]?.url).toBe('ws://127.0.0.1:4999/room/realtime');
+        expect(MockWebSocket.instances[0]?.url).toBe('http://127.0.0.1:4999/room/realtime');
     });
 
     it('emits the full room snapshot from a room snapshot message', () => {
@@ -36,6 +36,27 @@ describe('connectTemperatureRealtime', () => {
         MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
 
         expect(handlers.onSnapshot).toHaveBeenCalledWith(createRoomSnapshotMessage().payload);
+    });
+
+    it('rejects an SSE event whose name does not match its message contract', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage(), 'device.updated');
+
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onSnapshot).not.toHaveBeenCalled();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+    });
+
+    it('ignores undocumented unnamed SSE message events', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage(), 'message');
+
+        expect(handlers.onSnapshot).not.toHaveBeenCalled();
+        expect(handlers.onInvalidMessage).not.toHaveBeenCalled();
     });
 
     it('rejects a realtime snapshot whose timestamp is not canonical UTC', () => {
@@ -126,14 +147,17 @@ describe('connectTemperatureRealtime', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
 
-        MockWebSocket.latest().emitMessage({
-            messageType: 'room.error',
-            sentAt: '2026-06-08T09:30:00Z',
-            payload: {
-                reason: 'internal_error',
-                message: 'Stream failed.',
+        MockWebSocket.latest().emitMessage(
+            {
+                messageType: 'room.error',
+                sentAt: '2026-06-08T09:30:00Z',
+                payload: {
+                    reason: 'internal_error',
+                    message: 'Stream failed.',
+                },
             },
-        });
+            'room.snapshot',
+        );
 
         expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
@@ -381,7 +405,7 @@ describe('connectTemperatureRealtime', () => {
         MockWebSocket.latest().emitOpen();
         expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('connecting');
 
-        MockWebSocket.latest().emitClose();
+        MockWebSocket.latest().emitError();
         expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
         expect(MockWebSocket.instances).toHaveLength(1);
 
@@ -601,11 +625,23 @@ class MockWebSocket extends EventTarget {
         this.dispatchEvent(new Event('close'));
     }
 
-    emitMessage(data: unknown): void {
+    emitMessage(data: unknown, eventType = getRealtimeEventType(data)): void {
         this.dispatchEvent(
-            new MessageEvent('message', {
+            new MessageEvent(eventType, {
                 data: JSON.stringify(data),
             }),
         );
     }
+}
+
+function getRealtimeEventType(data: unknown): string {
+    if (typeof data === 'object' && data !== null && 'messageType' in data) {
+        const messageType = data.messageType;
+
+        if (typeof messageType === 'string') {
+            return messageType;
+        }
+    }
+
+    return 'room.snapshot';
 }

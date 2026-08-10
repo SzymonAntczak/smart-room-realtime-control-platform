@@ -10,17 +10,16 @@ Stage 3 adds the first controllable-device reference slice. It needs one
 unambiguous frontend-to-BFF command boundary, a bounded waiting policy, a
 bounded terminal-command projection and deterministic simulator scenarios.
 
-The current realtime BFF stream is server-to-client WebSocket delivery. The
-accepted JSON Schema transport ADR requires an explicit shared schema and BFF
-receive-boundary validation before any future client-to-server WebSocket
-message can reach platform logic. Command confirmation must remain based on a
+The current realtime BFF stream is server-to-client SSE delivery. The accepted
+JSON Schema transport ADR requires an explicit shared schema and boundary
+validation for all transport input. Command confirmation must remain based on a
 matching reported device state, not on request acceptance or adapter dispatch.
 
 ## Options Considered
 
-- Send commands as HTTP requests while retaining the server-to-client WebSocket
+- Send commands as HTTP requests while retaining the server-to-client SSE
   stream for room projections.
-- Add a client-to-server message direction to the existing WebSocket.
+- Add a client-to-server realtime message direction.
 - Defer the command slice until the realtime stream is migrated to SSE.
 
 ## Decision
@@ -40,10 +39,11 @@ active command returns `409`. Rejected outcomes contain `{ commandId, status:
 response `commandId` correlates that outcome without implying device confirmation.
 
 `/room/realtime` remains server-to-client only. The BFF does not accept
-application command messages on that WebSocket. Accepted, pending and terminal
+application command messages on that stream. Accepted, pending and terminal
 command projections reach the frontend through the existing validated realtime
-snapshot-plus-delta path. A future SSE migration is separately tracked in the
-backlog and does not change this Stage 3 decision.
+snapshot-plus-delta path. The completed
+[SSE BFF migration](adr-server-sent-events-realtime-bff.md) preserves this Stage
+3 decision.
 
 The backend timeout for `led` `set.power` commands is 5000 ms from dispatch.
 The backend retains at most 20 terminal command projections in
@@ -78,7 +78,7 @@ configuration and is not included in room projections.
 ## Consequences
 
 - HTTP provides a simple request/response boundary for BFF acceptance while
-  preserving the existing realtime stream and its tested reconnection model.
+  preserving the SSE realtime stream and its tested reconnection model.
 - The frontend must show `submitting` only until the HTTP response, then use
   realtime projections to show `accepted`, `pending` and terminal outcomes.
 - A 5-second timeout makes delayed confirmation visible without keeping the
@@ -86,8 +86,7 @@ configuration and is not included in room projections.
 - The fixed scenario timings make simulator, backend and UI tests repeatable.
 - The 20-entry projection bound limits local memory but intentionally does not
   supply audit retention.
-- Migrating the realtime stream to SSE remains a separate architectural change;
-  it must not silently alter the command boundary or realtime semantics.
+- The SSE realtime stream preserves the command boundary and realtime semantics.
 - HTTP clients can distinguish malformed input, unsupported intent and active-command
   conflicts without treating any synchronous response as device confirmation.
 - Dev tooling can demonstrate each command outcome without adding simulator

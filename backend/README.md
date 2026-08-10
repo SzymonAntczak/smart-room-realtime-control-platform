@@ -10,7 +10,8 @@ the adapter, event processor, projection and realtime BFF. It broadcasts
 time-derived `stale` and `offline` health changes even while telemetry is
 paused. Its development-only scenario endpoint drives the same simulator and
 event path as normal readings; ignored duplicates and invalid payloads are
-available through diagnostics. Command handling remains a later slice.
+available through diagnostics. The Stage 3 LED reference slice adds explicit
+HTTP command acceptance and realtime command lifecycle projections.
 
 ## Structure
 
@@ -28,7 +29,7 @@ available through diagnostics. Command handling remains a later slice.
 - `npm --prefix backend run lint`
 
 The local development BFF listens on `http://localhost:4310` by default. The
-frontend runtime reads room state from `ws://localhost:4310/room/realtime`.
+frontend runtime reads room state from `http://localhost:4310/room/realtime` using SSE.
 `GET http://localhost:4310/room` remains available as a debug/read snapshot
 endpoint. Runtime event processing diagnostics are available at
 `GET http://localhost:4310/diagnostics`. The port can be overridden with `PORT`.

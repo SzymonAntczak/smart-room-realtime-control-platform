@@ -1,4 +1,5 @@
-import websocket from '@fastify/websocket';
+import type { ServerResponse } from 'node:http';
+
 import {
     type AcceptedCommandResponse,
     acceptedCommandResponseSchema,
@@ -29,7 +30,6 @@ import {
 } from '@smart-room/contracts/realtime';
 import { isSchema, normalizeIsoTimestamp } from '@smart-room/contracts/validation';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { WebSocket } from 'ws';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 
@@ -60,8 +60,6 @@ export function createRoomBffServer({
         runDeviceScenario,
         getDeviceScenarios,
     };
-
-    server.register(websocket);
 
     server.addHook('onRequest', async (request, response) => {
         setCorsHeaders(response);
@@ -105,36 +103,53 @@ export function createRoomBffServer({
         void response.send(error);
     });
 
-    server.after(() => {
-        server.get('/room/realtime', { websocket: true }, (socket) => {
-            let baseline = getRoomSnapshot();
-            let revision = 0;
-            let isBaselineSent = false;
-            const unsubscribe = subscribeRoomSnapshot((snapshot) => {
-                if (!isBaselineSent) {
-                    baseline = snapshot;
-
-                    return;
-                }
-
-                if (!hasSameDeviceSet(baseline, snapshot)) {
-                    socket.close();
-
-                    return;
-                }
-
-                revision = sendRoomDeltas(socket, baseline, snapshot, revision, now);
-                baseline = snapshot;
+    server.get('/room/realtime', (request, response) => {
+        if (request.method !== 'GET') {
+            response.header('Allow', 'GET, OPTIONS');
+            writeJson(response, 405, {
+                error: 'method_not_allowed',
+                message: 'Only GET is supported for this route.',
             });
-            const cleanup = once(unsubscribe);
 
-            socket.on('close', cleanup);
-            socket.on('error', cleanup);
+            return;
+        }
 
-            baseline = getRoomSnapshot();
-            sendRoomSnapshot(socket, baseline, now);
-            isBaselineSent = true;
+        response.hijack();
+        const stream = response.raw;
+        stream.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
         });
+        stream.flushHeaders();
+        let baseline = getRoomSnapshot();
+        let revision = 0;
+        let isBaselineSent = false;
+        const unsubscribe = subscribeRoomSnapshot((snapshot) => {
+            if (!isBaselineSent) {
+                baseline = snapshot;
+
+                return;
+            }
+
+            if (!hasSameDeviceSet(baseline, snapshot)) {
+                stream.end();
+
+                return;
+            }
+
+            revision = sendRoomDeltas(stream, baseline, snapshot, revision, now);
+            baseline = snapshot;
+        });
+        const cleanup = once(unsubscribe);
+
+        stream.once('close', cleanup);
+        stream.once('error', cleanup);
+
+        baseline = getRoomSnapshot();
+        sendRoomSnapshot(stream, baseline, now);
+        isBaselineSent = true;
     });
 
     server.get(
@@ -461,18 +476,18 @@ function isJsonMediaType(contentType: string | undefined): boolean {
 }
 
 function sendRoomSnapshot(
-    socket: WebSocket,
+    stream: ServerResponse,
     snapshot: RoomSnapshotProjection,
     now: () => string,
 ): void {
-    if (socket.readyState !== WebSocket.OPEN) {
+    if (stream.writableEnded || stream.destroyed) {
         return;
     }
 
     const sentAt = normalizeIsoTimestamp(now());
 
     if (!sentAt) {
-        socket.close();
+        stream.end();
 
         return;
     }
@@ -485,24 +500,22 @@ function sendRoomSnapshot(
     };
 
     if (!isRoomRealtimeServerMessage(message)) {
-        socket.close();
+        stream.end();
 
         return;
     }
 
     try {
-        socket.send(JSON.stringify(message), (error) => {
-            if (error) {
-                socket.close();
-            }
-        });
+        if (!stream.write(formatSseMessage(message))) {
+            stream.end();
+        }
     } catch {
-        socket.close();
+        stream.end();
     }
 }
 
 function sendRoomDeltas(
-    socket: WebSocket,
+    stream: ServerResponse,
     previous: RoomSnapshotProjection,
     next: RoomSnapshotProjection,
     revision: number,
@@ -524,13 +537,13 @@ function sendRoomDeltas(
         const sentAt = normalizeIsoTimestamp(now());
 
         if (!sentAt) {
-            socket.close();
+            stream.end();
 
             return revision;
         }
 
         revision = sendRealtimeMessage(
-            socket,
+            stream,
             {
                 messageType: 'device.updated',
                 previousRevision: revision,
@@ -546,7 +559,7 @@ function sendRoomDeltas(
         const device = nextDevices.get(deviceId);
 
         if (!device) {
-            socket.close();
+            stream.end();
 
             return revision;
         }
@@ -554,13 +567,13 @@ function sendRoomDeltas(
         const sentAt = normalizeIsoTimestamp(now());
 
         if (!sentAt) {
-            socket.close();
+            stream.end();
 
             return revision;
         }
 
         revision = sendRealtimeMessage(
-            socket,
+            stream,
             {
                 messageType: 'commands.updated',
                 previousRevision: revision,
@@ -614,29 +627,33 @@ function changedCommandDeviceIds(
 }
 
 function sendRealtimeMessage(
-    socket: WebSocket,
+    stream: ServerResponse,
     message: RoomRealtimeServerMessage,
     previousRevision: number,
 ): number {
-    if (socket.readyState !== WebSocket.OPEN || !isRoomRealtimeServerMessage(message)) {
-        socket.close();
+    if (stream.writableEnded || stream.destroyed || !isRoomRealtimeServerMessage(message)) {
+        stream.end();
 
         return previousRevision;
     }
 
     try {
-        socket.send(JSON.stringify(message), (error) => {
-            if (error) {
-                socket.close();
-            }
-        });
+        if (!stream.write(formatSseMessage(message))) {
+            stream.end();
+
+            return previousRevision;
+        }
 
         return message.messageType === 'room.snapshot' ? 0 : message.revision;
     } catch {
-        socket.close();
+        stream.end();
 
         return previousRevision;
     }
+}
+
+function formatSseMessage(message: RoomRealtimeServerMessage): string {
+    return `event: ${message.messageType}\ndata: ${JSON.stringify(message)}\n\n`;
 }
 
 function sameJson(left: unknown, right: unknown): boolean {

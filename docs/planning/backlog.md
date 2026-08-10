@@ -16,7 +16,7 @@ an ADR as part of the related change.
       dashboard and development-control flows render from translation resources,
       and focused tests cover locale selection and fallback rendering.
 
-- [ ] Migrate the server-to-client realtime BFF stream from WebSocket to SSE.
+- [x] Migrate the server-to-client realtime BFF stream from WebSocket to SSE.
       First record and accept an ADR that confirms SSE is the intended durable
       transport. Preserve the room snapshot baseline, revision-linked updates,
       boundary validation and visible reconnect behavior; keep all frontend

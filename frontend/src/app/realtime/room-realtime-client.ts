@@ -2,9 +2,10 @@ import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     isRoomRealtimeServerMessage,
     type RoomRealtimeServerMessage,
+    roomRealtimeServerMessageTypes,
 } from '@smart-room/contracts/realtime';
 
-const defaultRoomRealtimeUrl = 'ws://localhost:4310/room/realtime';
+const defaultRoomRealtimeUrl = 'http://localhost:4310/room/realtime';
 const defaultReconnectDelayMs = 1000;
 
 export type RoomRealtimeConnectionStatus =
@@ -27,17 +28,20 @@ export interface RoomRealtimeClientOptions {
     reconnectDelayMs?: number;
 }
 
-type RealtimeWebSocket = Pick<WebSocket, 'addEventListener' | 'close'>;
-type WebSocketConstructor = new (url: string) => RealtimeWebSocket;
+interface RealtimeEventSource {
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void;
+    close(): void;
+}
+type EventSourceConstructor = new (url: string) => RealtimeEventSource;
 
 export function connectRoomRealtime(
     handlers: RoomRealtimeClientHandlers,
-    WebSocketImplementation: WebSocketConstructor = WebSocket,
+    EventSourceImplementation: EventSourceConstructor = EventSource,
     options: RoomRealtimeClientOptions = {},
 ): RoomRealtimeConnection {
     const reconnectDelayMs = options.reconnectDelayMs ?? defaultReconnectDelayMs;
     let isClosed = false;
-    let activeSocket: RealtimeWebSocket | undefined;
+    let activeSource: RealtimeEventSource | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let roomSnapshot: RoomSnapshotProjection | undefined;
     let revision: number | undefined;
@@ -53,8 +57,8 @@ export function connectRoomRealtime(
                 reconnectTimer = undefined;
             }
 
-            activeSocket?.close();
-            activeSocket = undefined;
+            activeSource?.close();
+            activeSource = undefined;
         },
     };
 
@@ -69,39 +73,47 @@ export function connectRoomRealtime(
         revision = undefined;
         handlers.onConnectionStatus(status);
 
-        const socket = new WebSocketImplementation(getRoomRealtimeUrl());
-        activeSocket = socket;
+        const source = new EventSourceImplementation(getRoomRealtimeUrl());
+        activeSource = source;
 
-        socket.addEventListener('error', () => {
-            scheduleReconnect(socket);
+        source.addEventListener('error', () => {
+            scheduleReconnect(source);
+            source.close();
         });
-        socket.addEventListener('close', () => {
-            scheduleReconnect(socket);
-        });
-        socket.addEventListener('message', (event) => {
-            if (isClosed || activeSocket !== socket) {
+
+        const handleMessage = (event: Event): void => {
+            if (isClosed || activeSource !== source) {
                 return;
             }
 
             try {
-                const message = parseRoomRealtimeMessage(event.data);
+                const message = parseRoomRealtimeMessage((event as MessageEvent<unknown>).data);
+
+                if (event.type !== message.messageType) {
+                    throw new Error('Realtime SSE event name did not match its message contract.');
+                }
+
                 const snapshot = applyRealtimeMessage(message);
                 validateRenderableDevices(snapshot);
                 handlers.onSnapshot(snapshot);
             } catch {
                 handlers.onInvalidMessage();
-                scheduleReconnect(socket);
-                socket.close();
+                scheduleReconnect(source);
+                source.close();
             }
+        };
+
+        roomRealtimeServerMessageTypes.forEach((messageType) => {
+            source.addEventListener(messageType, handleMessage);
         });
     }
 
-    function scheduleReconnect(socket: RealtimeWebSocket): void {
-        if (isClosed || activeSocket !== socket) {
+    function scheduleReconnect(source: RealtimeEventSource): void {
+        if (isClosed || activeSource !== source) {
             return;
         }
 
-        activeSocket = undefined;
+        activeSource = undefined;
         handlers.onConnectionStatus('reconnecting');
 
         if (reconnectTimer !== undefined) {

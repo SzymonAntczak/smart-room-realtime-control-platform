@@ -8,7 +8,7 @@ Accepted
 
 Shared transport contracts currently use Zod-first schemas. The backend BFF
 manually validates scenario input and manually serializes HTTP responses, while
-the frontend validates received WebSocket messages independently. This makes
+the frontend validates received realtime SSE messages independently. This makes
 the JSON contract consumed by HTTP and realtime boundaries less explicit and
 prevents Fastify from using its native validation and response serialization.
 
@@ -37,13 +37,12 @@ default Ajv compiler.
 
 Fastify uses the shared schemas as route `body` and successful `response`
 schemas, allowing its native Ajv validation and response serialization to own
-HTTP transport enforcement. WebSocket does not use Fastify's HTTP response
-serializer, so the BFF validates every outbound `room.snapshot` immediately
+HTTP transport enforcement. SSE does not use Fastify's HTTP response
+serializer, so the BFF validates every outbound realtime message immediately
 before sending it; the frontend validates every received message before it
-becomes renderable state. The current WebSocket route is server-to-client only.
-Any future client-to-server WebSocket message must receive an explicit shared
-schema and validation at the BFF receive boundary before it reaches platform
-logic.
+becomes renderable state. The current SSE route is server-to-client only.
+Application requests use explicit HTTP boundaries with shared schemas and
+validation before they reach platform logic.
 
 JSON Schema represents structural transport validity. The one active command
 per device and `activeCommandId` reference rules remain semantic projection
@@ -59,7 +58,7 @@ Schema validation does not transform input values.
 - Fastify can reject malformed scenario requests and serialize documented
   successful responses without BFF-local schema copies.
 - A new transport message requires a TypeBox schema, boundary validation and
-  contract tests; WebSocket directions must be considered separately.
+  contract tests; SSE framing must be considered separately from payload schemas.
 - Semantic validation and timestamp normalization remain deliberate code rather
   than hidden schema transformations.
 

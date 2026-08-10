@@ -62,7 +62,7 @@ flowchart LR
     standaloneAdapter -->|platform events| processor
 
     readModel -->|snapshots / updates| api
-    api -->|server-to-client WebSocket projections| ui
+    api -->|server-to-client SSE projections| ui
     ui -->|HTTP command requests| api
     ui <--> user
 
@@ -95,7 +95,7 @@ projections and streams UI-oriented snapshots or updates to the frontend; it
 does not reinterpret raw device-native messages.
 
 The realtime API/BFF accepts command requests from the UI through explicit HTTP
-boundaries. Its WebSocket stream is server-to-client only and delivers
+boundaries. Its SSE stream is server-to-client only and delivers
 UI-oriented snapshots and updates. Backend platform code records and interprets
 command lifecycle facts, while adapters translate platform commands into
 simulator-native, hardware-native or external-system commands.
@@ -109,14 +109,14 @@ shows responsibility boundaries, not required production deployment boundaries.
 ## Current Implementation Status
 
 The current repository implementation does not yet include the full target
-context. The backend slice currently covers the simulator temperature telemetry
-path through adapter, event processor, read-model projection and a small
-realtime BFF.
+context. The backend slice covers simulator temperature telemetry and the LED
+command reference path through adapters, event processing, read-model
+projections and a small realtime BFF.
 
-The current BFF exposes `ws://localhost:4310/room/realtime` as the frontend
+The current BFF exposes `http://localhost:4310/room/realtime` as the frontend
 runtime path. The backend sends an initial `room.snapshot` message when the
-frontend connects, then streams revision-linked `device.updated` messages after
-projection changes. The current implementation exposes the availability,
+frontend connects, then streams revision-linked `device.updated` and
+`commands.updated` messages after projection changes. The current implementation exposes the availability,
 operational-health and freshness projection defined in the device-availability ADR. Event history is
 deferred to a dedicated future slice. The backend periodically rereads the
 projection, but the target model emits time-derived freshness changes such as
@@ -128,8 +128,9 @@ The BFF also keeps `GET /room` as a debug/read snapshot endpoint for the latest
 /diagnostics` exposes recent ignored event-processing outcomes so the
 development runtime can explain rejected duplicate or invalid events. The
 diagnostics response is bounded in-memory, newest-first and metadata-only; it is
-not event history or durable quarantine storage. Command handling, persistence
-and quarantine storage are still future slices.
+not event history or durable quarantine storage. Command handling and command
+projections are implemented for the LED reference slice; persistence and
+quarantine storage remain future slices.
 
 ## Development Scenario Controls
 

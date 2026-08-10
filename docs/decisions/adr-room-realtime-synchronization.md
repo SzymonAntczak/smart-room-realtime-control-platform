@@ -29,7 +29,7 @@ consumers. That production-readiness work is outside the current local slice.
 
 ## Decision
 
-The BFF sends a complete `room.snapshot` only when a WebSocket
+The BFF sends a complete `room.snapshot` only when an SSE
 connection is established or re-established. The snapshot is the client's
 baseline and has revision `0`.
 
@@ -94,7 +94,7 @@ versioning decision and its rollout plan are complete.
 
 - A connection receives one full snapshot and later receives deltas only.
 - Snapshots and deltas contain current device values and health, not event history.
-- Unchanged health evaluations produce no websocket message.
+- Unchanged health evaluations produce no SSE message.
 - A revision gap preserves the latest valid UI and reconnects.
 - Retired or undocumented fields in snapshots and deltas are rejected before
   they update renderable UI state.

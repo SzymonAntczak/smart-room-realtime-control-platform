@@ -6,7 +6,7 @@ import { App } from './App';
 describe('App', () => {
     beforeEach(() => {
         MockWebSocket.instances.length = 0;
-        vi.stubGlobal('WebSocket', MockWebSocket);
+        vi.stubGlobal('EventSource', MockWebSocket);
     });
 
     afterEach(() => vi.unstubAllGlobals());
@@ -40,7 +40,7 @@ describe('App', () => {
                 createRoomSnapshotMessage({ devices: [temperatureDevice()], activeCommands: [] }),
             ),
         );
-        act(() => MockWebSocket.latest().emitClose());
+        act(() => MockWebSocket.latest().emitError());
 
         expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
         expect(
@@ -89,9 +89,25 @@ class MockWebSocket extends EventTarget {
         this.dispatchEvent(new Event('close'));
     }
 
-    emitMessage(data: unknown): void {
-        this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(data) }));
+    emitError(): void {
+        this.dispatchEvent(new Event('error'));
     }
+
+    emitMessage(data: unknown, eventType = getRealtimeEventType(data)): void {
+        this.dispatchEvent(new MessageEvent(eventType, { data: JSON.stringify(data) }));
+    }
+}
+
+function getRealtimeEventType(data: unknown): string {
+    if (typeof data === 'object' && data !== null && 'messageType' in data) {
+        const messageType = data.messageType;
+
+        if (typeof messageType === 'string') {
+            return messageType;
+        }
+    }
+
+    return 'room.snapshot';
 }
 
 function createRoomSnapshotMessage({

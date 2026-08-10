@@ -5,7 +5,6 @@ import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
-import { WebSocket } from 'ws';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
@@ -14,11 +13,11 @@ import { createRoomBffServer } from './room-bff';
 
 describe('createRoomBffServer', () => {
     const openServers: FastifyInstance[] = [];
-    const openSockets: WebSocket[] = [];
+    const openStreams: SseConnection[] = [];
 
     afterEach(async () => {
-        openSockets.forEach((socket) => socket.close());
-        openSockets.length = 0;
+        openStreams.forEach((stream) => stream.close());
+        openStreams.length = 0;
         await Promise.all(openServers.map((server) => closeServer(server)));
         openServers.length = 0;
     });
@@ -397,17 +396,25 @@ describe('createRoomBffServer', () => {
         });
     });
 
-    it('sends an initial room snapshot over the realtime WebSocket', async () => {
+    it('sends an initial room snapshot over the SSE stream', async () => {
         const harness = createRoomBffHarness({
             sentAt: ['2026-06-08T09:30:01Z'],
         });
         const server = await listen(createRoomBffServer(harness.config));
         openServers.push(server);
 
-        const socket = connectWebSocket(server);
-        openSockets.push(socket);
+        const stream = await connectSse(server);
+        openStreams.push(stream);
 
-        await expect(readRealtimeMessage(socket)).resolves.toEqual({
+        expect(stream.contentType).toContain('text/event-stream');
+        expect(stream.accessControlAllowOrigin).toBe('*');
+        expect(stream.cacheControl).toBe('no-cache, no-transform');
+        expect(stream.connection).toBe('keep-alive');
+        const frame = await readRealtimeFrame(stream);
+
+        expect(frame.event).toBe('room.snapshot');
+        expect(frame.id).toBeUndefined();
+        expect(frame.message).toEqual({
             messageType: 'room.snapshot',
             revision: 0,
             sentAt: '2026-06-08T09:30:01Z',
@@ -433,10 +440,10 @@ describe('createRoomBffServer', () => {
         const server = await listen(createRoomBffServer(harness.config));
         openServers.push(server);
 
-        const socket = connectWebSocket(server);
-        openSockets.push(socket);
+        const stream = await connectSse(server);
+        openStreams.push(stream);
 
-        await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+        await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
             messageType: 'room.snapshot',
             payload: {
                 updatedAt: '2026-06-08T09:30:01Z',
@@ -459,9 +466,9 @@ describe('createRoomBffServer', () => {
         const server = await listen(createRoomBffServer(harness.config));
         openServers.push(server);
 
-        const socket = connectWebSocket(server);
-        openSockets.push(socket);
-        await readRealtimeMessage(socket);
+        const stream = await connectSse(server);
+        openStreams.push(stream);
+        await readRealtimeMessage(stream);
 
         harness.publishRoomSnapshot(
             createRoomSnapshot({
@@ -470,7 +477,7 @@ describe('createRoomBffServer', () => {
             }),
         );
 
-        await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+        await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
             messageType: 'device.updated',
             previousRevision: 0,
             revision: 1,
@@ -491,12 +498,12 @@ describe('createRoomBffServer', () => {
         });
         const server = await listen(createRoomBffServer(harness.config));
         openServers.push(server);
-        const socket = connectWebSocket(server);
-        openSockets.push(socket);
-        await readRealtimeMessage(socket);
+        const stream = await connectSse(server);
+        openStreams.push(stream);
+        await readRealtimeMessage(stream);
 
         harness.publishRoomSnapshot(createLedRoomSnapshot({ status: 'accepted' }));
-        await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+        await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
             messageType: 'commands.updated',
             previousRevision: 0,
             revision: 1,
@@ -504,7 +511,7 @@ describe('createRoomBffServer', () => {
         });
 
         harness.publishRoomSnapshot(createLedRoomSnapshot({ status: 'confirmed' }));
-        await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+        await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
             messageType: 'commands.updated',
             previousRevision: 1,
             revision: 2,
@@ -523,11 +530,11 @@ describe('createRoomBffServer', () => {
             }),
         );
         openServers.push(server);
-        const socket = connectWebSocket(server);
-        openSockets.push(socket);
+        const stream = await connectSse(server);
+        openStreams.push(stream);
 
         try {
-            await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+            await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
                 messageType: 'room.snapshot',
                 payload: {
                     devices: expect.arrayContaining([
@@ -539,7 +546,7 @@ describe('createRoomBffServer', () => {
 
             runtime.runDeviceScenario('temp-window', 'emit_next_reading');
 
-            await expect(readRealtimeMessage(socket)).resolves.toMatchObject({
+            await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
                 messageType: 'device.updated',
                 previousRevision: 0,
                 revision: 1,
@@ -553,20 +560,20 @@ describe('createRoomBffServer', () => {
         }
     });
 
-    it('removes realtime snapshot subscriptions when the WebSocket closes', async () => {
+    it('removes realtime snapshot subscriptions when the SSE client closes', async () => {
         const harness = createRoomBffHarness({
             sentAt: ['2026-06-08T09:30:01Z'],
         });
         const server = await listen(createRoomBffServer(harness.config));
         openServers.push(server);
 
-        const socket = connectWebSocket(server);
-        openSockets.push(socket);
-        await readRealtimeMessage(socket);
+        const stream = await connectSse(server);
+        openStreams.push(stream);
+        await readRealtimeMessage(stream);
 
         expect(harness.listenerCount()).toBe(1);
 
-        await closeWebSocket(socket);
+        await stream.close();
         await waitForCondition(() => harness.listenerCount() === 0);
 
         expect(harness.listenerCount()).toBe(0);
@@ -795,42 +802,89 @@ function serverUrl(server: FastifyInstance): string {
     return `http://127.0.0.1:${address.port}`;
 }
 
-function websocketUrl(server: FastifyInstance): string {
-    const address = server.server.address() as AddressInfo;
-
-    return `ws://127.0.0.1:${address.port}/room/realtime`;
+interface SseConnection {
+    accessControlAllowOrigin: string | null;
+    contentType: string | null;
+    cacheControl: string | null;
+    connection: string | null;
+    close(): Promise<void>;
+    readFrame(): Promise<SseFrame>;
 }
 
-function connectWebSocket(server: FastifyInstance): WebSocket {
-    return new WebSocket(websocketUrl(server));
+interface SseFrame {
+    event: string | undefined;
+    id: string | undefined;
+    message: RoomRealtimeServerMessage;
 }
 
-function readRealtimeMessage(socket: WebSocket): Promise<RoomRealtimeServerMessage> {
-    return new Promise((resolve, reject) => {
-        socket.once('message', (data) => {
+async function connectSse(server: FastifyInstance): Promise<SseConnection> {
+    const response = await fetch(`${serverUrl(server)}/room/realtime`);
+
+    if (!response.body) {
+        throw new Error('SSE response did not include a body.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    return {
+        accessControlAllowOrigin: response.headers.get('access-control-allow-origin'),
+        contentType: response.headers.get('content-type'),
+        cacheControl: response.headers.get('cache-control'),
+        connection: response.headers.get('connection'),
+        async close() {
             try {
-                resolve(JSON.parse(data.toString()) as RoomRealtimeServerMessage);
-            } catch (error) {
-                reject(error);
+                await reader.cancel();
+            } catch {
+                // The stream may already have been cancelled during test cleanup.
             }
-        });
-        socket.once('error', reject);
-    });
+        },
+        async readFrame() {
+            while (true) {
+                const boundary = buffer.indexOf('\n\n');
+
+                if (boundary !== -1) {
+                    const frame = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+                    const data = frame
+                        .split('\n')
+                        .find((line) => line.startsWith('data: '))
+                        ?.slice('data: '.length);
+
+                    if (data) {
+                        return {
+                            event: frame
+                                .split('\n')
+                                .find((line) => line.startsWith('event: '))
+                                ?.slice('event: '.length),
+                            id: frame
+                                .split('\n')
+                                .find((line) => line.startsWith('id: '))
+                                ?.slice('id: '.length),
+                            message: JSON.parse(data) as RoomRealtimeServerMessage,
+                        };
+                    }
+                }
+
+                const result = await reader.read();
+
+                if (result.done) {
+                    throw new Error('SSE stream closed before a realtime message arrived.');
+                }
+
+                buffer += decoder.decode(result.value, { stream: true });
+            }
+        },
+    };
 }
 
-function closeWebSocket(socket: WebSocket): Promise<void> {
-    return new Promise((resolve) => {
-        if (socket.readyState === WebSocket.CLOSED) {
-            resolve();
+function readRealtimeMessage(stream: SseConnection): Promise<RoomRealtimeServerMessage> {
+    return stream.readFrame().then((frame) => frame.message);
+}
 
-            return;
-        }
-
-        socket.once('close', () => {
-            resolve();
-        });
-        socket.close();
-    });
+function readRealtimeFrame(stream: SseConnection): Promise<SseFrame> {
+    return stream.readFrame();
 }
 
 function waitForCondition(condition: () => boolean): Promise<void> {

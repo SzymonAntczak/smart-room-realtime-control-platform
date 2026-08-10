@@ -16,6 +16,12 @@ export type RoomRealtimeServerMessage =
     | RoomSnapshotMessage
     | DeviceUpdatedMessage
     | CommandsUpdatedMessage;
+
+export const roomRealtimeServerMessageTypes = [
+    'room.snapshot',
+    'device.updated',
+    'commands.updated',
+] as const;
 export interface RoomSnapshotMessage {
     messageType: 'room.snapshot';
     revision: 0;

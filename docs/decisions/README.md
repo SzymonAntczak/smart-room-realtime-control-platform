@@ -22,6 +22,7 @@ Keep current system behavior in [architecture](../architecture/). Promote a trad
 - [JSON Schema Transport Contracts](adr-json-schema-transport-contracts.md)
 - [Command History and Terminal Projections](adr-command-history-and-terminal-projections.md)
 - [Room Realtime Synchronization](adr-room-realtime-synchronization.md)
+- [Server-Sent Events for the Realtime BFF](adr-server-sent-events-realtime-bff.md)
 - [LED Command Transport and Operational Defaults](adr-led-command-transport-and-operational-defaults.md)
 - [External Actuation and Command Outcomes](adr-external-actuation-and-command-outcomes.md)
 - [Device Availability, Health and Observation Freshness](adr-device-availability-and-observation-freshness.md)

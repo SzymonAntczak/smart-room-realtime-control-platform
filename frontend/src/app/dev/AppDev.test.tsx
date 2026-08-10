@@ -7,7 +7,7 @@ import { AppDev, updateScenarioRequestCounts } from './AppDev';
 describe('AppDev', () => {
     beforeEach(() => {
         MockWebSocket.instances.length = 0;
-        vi.stubGlobal('WebSocket', MockWebSocket);
+        vi.stubGlobal('EventSource', MockWebSocket);
         vi.stubGlobal(
             'fetch',
             vi.fn().mockResolvedValue(
@@ -134,13 +134,25 @@ class MockWebSocket extends EventTarget {
         return instance;
     }
 
-    emitMessage(data: unknown): void {
-        this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(data) }));
+    emitMessage(data: unknown, eventType = getRealtimeEventType(data)): void {
+        this.dispatchEvent(new MessageEvent(eventType, { data: JSON.stringify(data) }));
     }
 
     close(): void {
         this.dispatchEvent(new Event('close'));
     }
+}
+
+function getRealtimeEventType(data: unknown): string {
+    if (typeof data === 'object' && data !== null && 'messageType' in data) {
+        const messageType = data.messageType;
+
+        if (typeof messageType === 'string') {
+            return messageType;
+        }
+    }
+
+    return 'room.snapshot';
 }
 
 function createRoomSnapshotMessage(devices: unknown[] = [createTemperatureDevice()]) {

@@ -190,7 +190,7 @@ The initial LED command slice uses `POST /room/commands` for frontend-to-BFF
 `set.power` requests. The HTTP response communicates backend acceptance or
 rejection only; device confirmation remains a later outcome derived from a
 matching `device.state.reported` event and delivered through the server-to-client
-realtime stream. The realtime WebSocket accepts no application command messages.
+realtime stream. The realtime SSE stream accepts no application command messages.
 
 For `led` `set.power`, the backend starts a 5000 ms timeout after dispatch. It
 retains at most 20 terminal command projections in `recentCommands`, newest
