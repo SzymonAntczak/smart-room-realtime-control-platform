@@ -52,7 +52,7 @@ export function AppDev() {
     return (
         <>
             <RoomControlSurface room={room} getDeviceExtension={getDeviceExtension} />
-            {scenarioTarget ? (
+            {scenarioTarget && snapshot ? (
                 <DevPanel.Sidebar
                     key={scenarioTarget.deviceId}
                     target={scenarioTarget}

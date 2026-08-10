@@ -1,3 +1,4 @@
+import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -34,6 +35,7 @@ describe('DevPanel.Sidebar', () => {
         const { rerender } = render(
             <DevPanel.Sidebar
                 target={{ definition: temperatureScenarioDefinition, deviceId: 'temp-desk' }}
+                snapshot={createSnapshot()}
                 onClose={() => undefined}
                 onRequestChange={() => undefined}
             />,
@@ -45,6 +47,7 @@ describe('DevPanel.Sidebar', () => {
         rerender(
             <DevPanel.Sidebar
                 target={{ definition: ledScenarioDefinition, deviceId: 'led-main' }}
+                snapshot={createSnapshot()}
                 onClose={() => undefined}
                 onRequestChange={() => undefined}
             />,
@@ -74,6 +77,7 @@ describe('DevPanel.Sidebar', () => {
         render(
             <DevPanel.Sidebar
                 target={{ definition: temperatureScenarioDefinition, deviceId: 'temp-desk' }}
+                snapshot={createSnapshot()}
                 onClose={() => undefined}
                 onRequestChange={() => undefined}
             />,
@@ -108,6 +112,7 @@ describe('DevPanel.Sidebar', () => {
         render(
             <DevPanel.Sidebar
                 target={{ definition: ledScenarioDefinition, deviceId: 'led-main' }}
+                snapshot={createSnapshot()}
                 onClose={() => undefined}
                 onRequestChange={() => undefined}
             />,
@@ -143,6 +148,7 @@ describe('DevPanel.Sidebar', () => {
         render(
             <DevPanel.Sidebar
                 target={{ definition: ledScenarioDefinition, deviceId: 'led-main' }}
+                snapshot={createSnapshot()}
                 onClose={() => undefined}
                 onRequestChange={() => undefined}
             />,
@@ -172,6 +178,7 @@ describe('DevPanel.Sidebar', () => {
         render(
             <DevPanel.Sidebar
                 target={{ definition: ledScenarioDefinition, deviceId: 'led-main' }}
+                snapshot={createSnapshot()}
                 onClose={() => undefined}
                 onRequestChange={() => undefined}
             />,
@@ -184,3 +191,13 @@ describe('DevPanel.Sidebar', () => {
         );
     });
 });
+
+function createSnapshot(): RoomSnapshotProjection {
+    return {
+        roomName: 'Smart Room',
+        updatedAt: '2026-08-06T12:00:00Z',
+        devices: [],
+        activeCommands: [],
+        recentCommands: [],
+    };
+}

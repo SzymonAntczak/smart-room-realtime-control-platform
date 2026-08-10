@@ -26,8 +26,9 @@ diagnostics. `VITE_ROOM_REALTIME_URL` independently configures the WebSocket end
 - `src/globals.css`: global reset and shared design tokens.
 - `src/app/App.tsx`: application composition root.
 - `src/app/realtime`: validated realtime projection client and hook.
-- `src/app/dev/device-scenarios`: development-only shared scenario sidebar and
-  device-specific scenario content.
+- `src/app/dev/dev-panel`: development-only sidebar that discovers and renders
+  device scenarios.
+- `src/app/dev/scenarios`: declarative LED and temperature scenario definitions.
 - `src/app/controls/led`: LED command UI and command transport boundary.
 - `src/app/sensors/temperature`: temperature sensor domain UI and behavior.
 - `src/app/shared/ui`: frontend-local reusable UI building blocks.

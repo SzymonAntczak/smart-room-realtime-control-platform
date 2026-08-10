@@ -59,6 +59,39 @@ enough to render documented behavior honestly.
   WebSocket, HTTP, storage or fixture data that simulates backend payloads. Do
   not duplicate schemas in components.
 
+## Development-Only Features
+
+- Production frontend modules must not import from `src/app/dev` or depend on
+  development-only contracts, types, components or hooks.
+- Development tooling may compose and decorate production components, but the
+  dependency must never point from production code into development tooling.
+- Keep development-only features outside the production dependency graph. Gate
+  them at a build-time boundary such as the application bootstrap using
+  `import.meta.env.DEV` and dynamic imports when appropriate.
+- Do not rely on runtime props to exclude development-only modules from the
+  production bundle.
+
+## Component Contracts
+
+- Keep component props expressed in terms of the component's own responsibility.
+  Do not expose unrelated features through reusable production component APIs.
+- Prefer neutral composition points such as `headerAction`, `footer` or
+  `actions` over feature-specific props.
+- Resolve environment/build-mode decisions near the application bootstrap
+  instead of threading them through production components.
+- Do not make props optional without a reachable UI state that requires their
+  absence. Model loading or missing entities in the component that owns that
+  state.
+- When several projection fields are repeatedly combined to derive display
+  state or interaction behavior, prefer a pure domain-to-view mapping function.
+  Do not introduce view models for trivial components.
+
+## Refactoring
+
+- After restructuring conditional or derived-state logic, remove branches,
+  fallbacks and compatibility paths that have become unreachable or redundant.
+  Every remaining branch should represent a distinct reachable behavior.
+
 ## Fixtures And Demo Data
 
 - Fixture clients should demonstrate representative documented behavior, not
@@ -144,3 +177,6 @@ Before finishing frontend changes:
 - Check available scripts in `frontend/package.json`.
 - Run the narrowest relevant check.
 - If no relevant check exists, say so explicitly.
+- When a requirement concerns production bundle exclusion, tree-shaking or
+  build-time code removal, rendering tests are insufficient. Verify the
+  production build artifact or module graph.

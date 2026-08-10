@@ -43,7 +43,7 @@ export interface DevPanelTarget {
     readonly deviceId: string;
 }
 
-function DevPanelRoot({ children }: { children?: ReactNode }) {
+function DevPanelRoot({ children }: { children: ReactNode }) {
     return children;
 }
 
@@ -77,27 +77,24 @@ function DevPanelSidebar({
     onClose,
     onRequestChange,
 }: {
-    target?: DevPanelTarget;
-    snapshot?: RoomSnapshotProjection;
+    target: DevPanelTarget;
+    snapshot: RoomSnapshotProjection;
     onClose(): void;
     onRequestChange(deviceId: string, isPending: boolean): void;
 }) {
-    const { actions, client, closeButtonRef, loadError } = useDevPanel(target?.deviceId);
-    const device = snapshot?.devices.find((candidate) => candidate.deviceId === target?.deviceId);
-    const isCommandActive =
-        snapshot?.activeCommands.some((command) => command.deviceId === target?.deviceId) ?? false;
+    const { actions, client, closeButtonRef, loadError } = useDevPanel(target.deviceId);
+    const device = snapshot.devices.find((candidate) => candidate.deviceId === target.deviceId);
+    const isCommandActive = snapshot.activeCommands.some(
+        (command) => command.deviceId === target.deviceId,
+    );
     const request = useScenarioActionRequest({
         client,
-        definition: target?.definition ?? emptyDefinition,
+        definition: target.definition,
         isCommandActive,
-        onRequestChange: (isPending) => {
-            if (target) {
-                onRequestChange(target.deviceId, isPending);
-            }
-        },
+        onRequestChange: (isPending) => onRequestChange(target.deviceId, isPending),
     });
 
-    if (!target || !client) {
+    if (!client) {
         return null;
     }
 
@@ -286,14 +283,6 @@ export const DevPanel = Object.assign(DevPanelRoot, {
     Sidebar: DevPanelSidebar,
     Trigger: DevPanelTrigger,
 });
-
-const emptyDefinition: ScenarioDefinition = {
-    title: '',
-    description: '',
-    pendingLabel: '',
-    lockDeviceControlWhileRequest: false,
-    sections: [],
-};
 
 function hasOfflineBlockedAction(definition: ScenarioDefinition): boolean {
     return definition.sections.some((section) =>
