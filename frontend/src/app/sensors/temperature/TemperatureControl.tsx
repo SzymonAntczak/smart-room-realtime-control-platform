@@ -1,8 +1,7 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { CircleCheck, Thermometer, WifiOff } from 'lucide-react';
+import type { ReactNode } from 'react';
 
-import type { DeviceScenarioTarget } from '../../dev/device-scenarios/device-scenario-target';
-import { DeviceScenarioTrigger } from '../../dev/device-scenarios/DeviceScenarioTrigger';
 import { Alert, type AlertVariant } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
@@ -11,15 +10,11 @@ import styles from './TemperatureControl.module.css';
 
 export function TemperatureControl({
     device,
-    showDevScenarioPanel = false,
-    activeDevScenarioDeviceId,
-    onOpenDevScenario,
+    headerAction,
     realtimeUncertain = false,
 }: {
     device: DeviceProjection;
-    showDevScenarioPanel?: boolean;
-    activeDevScenarioDeviceId?: string;
-    onOpenDevScenario?(target: DeviceScenarioTarget): void;
+    headerAction?: ReactNode;
     realtimeUncertain?: boolean;
 }) {
     if (device.role !== 'temperature-sensor') {
@@ -35,20 +30,7 @@ export function TemperatureControl({
             status={formatAvailability(reading.availability)}
             statusIcon={availabilityIcon(reading.availability)}
             statusTone={availabilityTone(reading.availability)}
-            headerAction={
-                showDevScenarioPanel ? (
-                    <DeviceScenarioTrigger
-                        deviceId={reading.sensorId}
-                        expanded={activeDevScenarioDeviceId === reading.sensorId}
-                        onClick={() =>
-                            onOpenDevScenario?.({
-                                kind: 'temperature',
-                                deviceId: reading.sensorId,
-                            })
-                        }
-                    />
-                ) : undefined
-            }
+            headerAction={headerAction}
             bottomAlert={<Alert {...cardAlert(reading, realtimeUncertain)} />}
         >
             <div className={styles.reading} aria-label="Current temperature">

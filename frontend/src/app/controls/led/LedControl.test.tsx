@@ -62,14 +62,17 @@ describe('LedControl', () => {
         expect(screen.getByText('No current alerts.')).toBeInTheDocument();
     });
 
-    it('renders the dev-only scenario control only when enabled', () => {
-        const { rerender } = render(<LedControl device={createLed()} />);
+    it('renders a supplied neutral header action and locks interaction when requested', () => {
+        render(
+            <LedControl
+                device={createLed()}
+                headerAction={<button type="button">Extra action</button>}
+                interactionLocked
+            />,
+        );
 
-        expect(screen.queryByRole('button', { name: 'Dev scenarios' })).not.toBeInTheDocument();
-
-        rerender(<LedControl device={createLed()} showDevScenarioPanel />);
-
-        expect(screen.getByRole('button', { name: 'Dev scenarios' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Extra action' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
     });
 });
 

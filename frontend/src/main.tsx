@@ -1,12 +1,24 @@
 import './globals.css';
 
-import { StrictMode } from 'react';
+import { type ComponentType, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './app/App';
 
-createRoot(document.getElementById('root') as HTMLElement).render(
-    <StrictMode>
-        <App />
-    </StrictMode>,
-);
+async function bootstrap(): Promise<void> {
+    let Root: ComponentType = App;
+
+    if (import.meta.env.DEV) {
+        const { AppDev } = await import('./app/dev/AppDev');
+
+        Root = AppDev;
+    }
+
+    createRoot(document.getElementById('root') as HTMLElement).render(
+        <StrictMode>
+            <Root />
+        </StrictMode>,
+    );
+}
+
+void bootstrap();

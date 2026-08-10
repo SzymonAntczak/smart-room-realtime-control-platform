@@ -2,19 +2,18 @@ import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { createDeviceScenarioClient } from './device-scenario-client';
-import type { DeviceScenarioTarget } from './device-scenario-target';
 
-export function useDeviceScenarioSidebar(target: DeviceScenarioTarget | undefined) {
+export function useDevPanel(deviceId: string | undefined) {
     const closeButtonRef = useRef<HTMLButtonElement>(null);
     const [actions, setActions] = useState<readonly DeviceScenarioAction[]>();
     const [loadError, setLoadError] = useState<string>();
     const client = useMemo(
-        () => (target ? createDeviceScenarioClient(target.deviceId) : undefined),
-        [target?.deviceId],
+        () => (deviceId ? createDeviceScenarioClient(deviceId) : undefined),
+        [deviceId],
     );
 
     useEffect(() => {
-        if (!target || !client) {
+        if (!deviceId || !client) {
             return;
         }
 
@@ -22,15 +21,9 @@ export function useDeviceScenarioSidebar(target: DeviceScenarioTarget | undefine
         let isCurrent = true;
         setActions(undefined);
         setLoadError(undefined);
-        const loadScenarios = client.getScenarios;
 
-        if (!loadScenarios) {
-            setLoadError(`Development scenarios are unavailable for ${target.deviceId}.`);
-
-            return;
-        }
-
-        void loadScenarios()
+        void client
+            .getScenarios()
             .then((result) => {
                 if (isCurrent) {
                     setActions(result.scenarios.map((scenario) => scenario.action));
@@ -38,14 +31,14 @@ export function useDeviceScenarioSidebar(target: DeviceScenarioTarget | undefine
             })
             .catch(() => {
                 if (isCurrent) {
-                    setLoadError(`Development scenarios are unavailable for ${target.deviceId}.`);
+                    setLoadError(`Development scenarios are unavailable for ${deviceId}.`);
                 }
             });
 
         return () => {
             isCurrent = false;
         };
-    }, [client, target?.deviceId]);
+    }, [client, deviceId]);
 
     return { actions, client, closeButtonRef, loadError };
 }

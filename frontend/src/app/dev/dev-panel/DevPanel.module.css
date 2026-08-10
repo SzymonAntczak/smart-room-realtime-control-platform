@@ -1,0 +1,187 @@
+.drawer {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-end: 0;
+    z-index: 2;
+    display: grid;
+    align-content: start;
+    gap: var(--space-5);
+    inline-size: min(100%, 28rem);
+    overflow-y: auto;
+    border-inline-start: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-panel);
+    padding: var(--space-6);
+}
+
+.close,
+.action,
+.trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    font-weight: var(--font-weight-bold);
+}
+
+.close {
+    justify-self: end;
+    padding: var(--space-2) var(--space-3);
+}
+
+.action {
+    padding: var(--space-3);
+}
+
+.trigger {
+    inline-size: 2rem;
+    block-size: 2rem;
+    padding: 0;
+}
+
+.close:hover,
+.action:hover:not(:disabled),
+.trigger:hover {
+    border-color: var(--color-action-primary);
+}
+
+.close:focus-visible,
+.action:focus-visible,
+.trigger:focus-visible {
+    outline: 0.1875rem solid var(--color-info-text);
+    outline-offset: 0.125rem;
+}
+
+.action:disabled {
+    color: var(--color-text-subtle);
+    cursor: wait;
+}
+
+.triggerLabel {
+    position: absolute;
+    inline-size: 0.0625rem;
+    block-size: 0.0625rem;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.panel {
+    max-inline-size: 34rem;
+    border: var(--border-width-thin) dashed var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    padding: var(--space-6);
+}
+
+.eyebrow {
+    margin: 0;
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-label-sm);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.panel h2 {
+    margin: var(--space-2) 0;
+    font-size: var(--font-size-heading-md);
+}
+
+.description {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: 1.5;
+}
+
+.section,
+.diagnostics {
+    border-block-start: var(--border-width-thin) solid var(--color-border);
+}
+
+.section {
+    padding-block-start: var(--space-3);
+}
+
+.section h3,
+.diagnostics h3 {
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-label-md);
+}
+
+.actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+
+.status {
+    margin-block: var(--space-4) 0;
+}
+
+.diagnostics {
+    margin-block-start: var(--space-6);
+    padding-block-start: var(--space-5);
+}
+
+.diagnosticsHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.diagnosticsHeader h3,
+.diagnosticsHeader p,
+.diagnostics > p {
+    margin: 0;
+}
+
+.diagnosticsHeader p,
+.diagnostics > p,
+.diagnosticsList {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.diagnosticsList {
+    display: grid;
+    gap: var(--space-3);
+    margin-block: var(--space-4) 0;
+    margin-inline: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.diagnosticsList li {
+    display: grid;
+    gap: var(--space-1);
+    border-inline-start: var(--border-width-thin) solid var(--color-border-strong);
+    padding-inline-start: var(--space-3);
+}
+
+.diagnosticsList strong {
+    color: var(--color-text);
+}
+
+.diagnosticsList time {
+    color: var(--color-text-subtle);
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 32.5rem) {
+    .drawer,
+    .panel {
+        padding: var(--space-5);
+    }
+
+    .actions {
+        grid-template-columns: 1fr;
+    }
+}

@@ -1,9 +1,0 @@
-.section {
-    border-block-start: var(--border-width-thin) solid var(--color-border);
-    padding-block-start: var(--space-3);
-}
-
-.section h3 {
-    margin: 0 0 var(--space-3);
-    font-size: var(--font-size-label-md);
-}

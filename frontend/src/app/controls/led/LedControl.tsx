@@ -4,9 +4,8 @@ import type {
 } from '@smart-room/contracts/commands';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { Lightbulb, LightbulbOff, Power } from 'lucide-react';
+import type { ReactNode } from 'react';
 
-import type { DeviceScenarioTarget } from '../../dev/device-scenarios/device-scenario-target';
-import { DeviceScenarioTrigger } from '../../dev/device-scenarios/DeviceScenarioTrigger';
 import { Alert, type AlertVariant } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
@@ -17,37 +16,25 @@ export function LedControl({
     device,
     activeCommand,
     recentCommand,
-    showDevScenarioPanel = false,
-    isSelectingScenario = false,
-    activeDevScenarioDeviceId,
-    onOpenDevScenario,
+    headerAction,
+    interactionLocked = false,
     realtimeUncertain = false,
 }: {
-    device?: DeviceProjection;
+    device: DeviceProjection;
     activeCommand?: ActiveCommandProjection;
     recentCommand?: TerminalCommandProjection;
-    showDevScenarioPanel?: boolean;
-    isSelectingScenario?: boolean;
-    activeDevScenarioDeviceId?: string;
-    onOpenDevScenario?(target: DeviceScenarioTarget): void;
+    headerAction?: ReactNode;
+    interactionLocked?: boolean;
     realtimeUncertain?: boolean;
 }) {
     const { requestPower, submitting, transportError } = useLedCommandRequest(device?.deviceId);
-
-    if (!device) {
-        return (
-            <ControlCard title="Main LED" status="Unknown">
-                <p className={styles.message}>No LED device is available yet.</p>
-            </ControlCard>
-        );
-    }
 
     if (device.role !== 'led-output') {
         return null;
     }
 
     const isBlocked = device.commandAvailability.policy === 'block' || realtimeUncertain;
-    const isBusy = submitting || isSelectingScenario || activeCommand !== undefined;
+    const isBusy = submitting || interactionLocked || activeCommand !== undefined;
     const hasReportedPower = isPowerState(device.reportedState.power);
     const isOn = device.reportedState.power === 'on';
     const PowerIcon = isOn ? Lightbulb : LightbulbOff;
@@ -64,20 +51,7 @@ export function LedControl({
                       ? 'danger'
                       : 'warning'
             }
-            headerAction={
-                showDevScenarioPanel ? (
-                    <DeviceScenarioTrigger
-                        deviceId={device.deviceId}
-                        expanded={activeDevScenarioDeviceId === device.deviceId}
-                        onClick={() =>
-                            onOpenDevScenario?.({
-                                kind: 'led',
-                                deviceId: device.deviceId,
-                            })
-                        }
-                    />
-                ) : undefined
-            }
+            headerAction={headerAction}
             bottomAlert={
                 <Alert
                     {...getCardAlert({

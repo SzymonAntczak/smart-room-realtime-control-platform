@@ -23,6 +23,10 @@ enough to render documented behavior honestly.
   nested or helper components into their own clearly named files; keep only
   types, constants and non-component helpers that directly support that one
   component in the same module.
+- Exception: a compound component may keep its tightly coupled child components
+  in the same `.tsx` file when they form one cohesive public API. Keep the
+  children private or expose them only through the compound component, and use
+  one colocated CSS Module for that compound feature.
 - Keep derived UI state explicit and testable.
 - Avoid duplicating realtime state into local component state unless there is a
   clear interaction reason.

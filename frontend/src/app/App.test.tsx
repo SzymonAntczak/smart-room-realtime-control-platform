@@ -17,20 +17,20 @@ describe('App', () => {
         expect(screen.getByText('Connecting to realtime room stream...')).toBeInTheDocument();
     });
 
-    it('does not render development scenario controls outside the development build', () => {
-        render(<App showDevScenarioPanel={false} />);
+    it('does not render development scenario controls', () => {
+        render(<App />);
 
         expect(screen.queryByText('Dev scenarios')).not.toBeInTheDocument();
     });
 
     it('renders supported device cards from one room snapshot and maps LED commands by device', () => {
-        render(<App showDevScenarioPanel />);
+        render(<App />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
         expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Main LED' })).toBeInTheDocument();
         expect(screen.getByText(/Requested: On/)).toBeInTheDocument();
-        expect(screen.getAllByText('Dev scenarios')).toHaveLength(2);
+        expect(screen.queryByText('Dev scenarios')).not.toBeInTheDocument();
     });
 
     it('keeps the temperature view visible and marks it uncertain while reconnecting', () => {
