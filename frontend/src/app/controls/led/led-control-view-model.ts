@@ -73,7 +73,7 @@ export function toLedControlViewModel({
             ? [
                   {
                       kind: 'command-confirmed' as const,
-                      time: terminalTimestamp(recentCommand).slice(11, 19),
+                      time: terminalTimestamp(recentCommand),
                   },
               ]
             : []),

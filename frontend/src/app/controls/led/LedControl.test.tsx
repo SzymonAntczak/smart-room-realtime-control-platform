@@ -1,9 +1,13 @@
 import type { ActiveCommandProjection } from '@smart-room/contracts/commands';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { LedControl } from './LedControl';
+
+const formatTimestamp = vi.hoisted(() => vi.fn(() => 'formatted local timestamp'));
+
+vi.mock('../../../i18n/time', () => ({ formatTimestamp }));
 
 describe('LedControl', () => {
     it('keeps reported power confirmed while an on command is pending', () => {
@@ -78,6 +82,27 @@ describe('LedControl', () => {
         expect(screen.getByRole('button', { name: 'Extra action' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
     });
+});
+
+it('formats a confirmed command timestamp for the browser before rendering it', () => {
+    render(
+        <LedControl
+            device={createLed()}
+            recentCommand={{
+                commandId: 'cmd-1',
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                status: 'confirmed',
+                requestedState: { power: 'on' },
+                requestedAt: '2026-08-06T12:00:00Z',
+                dispatchedAt: '2026-08-06T12:00:01Z',
+                confirmedAt: '2026-08-06T12:00:06Z',
+            }}
+        />,
+    );
+
+    expect(formatTimestamp).toHaveBeenCalledWith('2026-08-06T12:00:06Z');
+    expect(screen.getByText(/formatted local timestamp/)).toBeInTheDocument();
 });
 
 function createLed(): DeviceProjection {

@@ -7,6 +7,10 @@ import { ledScenarioDefinition, temperatureScenarioDefinition } from '../scenari
 
 import { DevPanel } from './DevPanel';
 
+const formatTimestamp = vi.hoisted(() => vi.fn(() => 'formatted local timestamp'));
+
+vi.mock('../../../i18n/time', () => ({ formatTimestamp }));
+
 describe('DevPanel.Sidebar', () => {
     afterEach(() => vi.unstubAllGlobals());
 
@@ -192,6 +196,48 @@ describe('DevPanel.Sidebar', () => {
             'Żądanie sterowania scenariuszem nie powiodło się.',
         );
     });
+});
+
+it('formats diagnostic timestamps for the browser before rendering them', async () => {
+    vi.stubGlobal(
+        'fetch',
+        vi
+            .fn()
+            .mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        deviceId: 'temp-desk',
+                        scenarios: [{ action: 'pause_telemetry' }],
+                    }),
+                ),
+            )
+            .mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        ignoredEvents: [
+                            {
+                                diagnosticId: 'diagnostic-1',
+                                reason: 'invalid_payload',
+                                observedAt: '2026-08-06T12:00:00Z',
+                            },
+                        ],
+                    }),
+                ),
+            ),
+    );
+    render(
+        <DevPanel.Sidebar
+            target={{ definition: temperatureScenarioDefinition, deviceId: 'temp-desk' }}
+            snapshot={createSnapshot()}
+            onClose={() => undefined}
+            onRequestChange={() => undefined}
+        />,
+    );
+
+    await userEvent.setup().click(await screen.findByRole('button', { name: /diagnostyk/ }));
+
+    expect(formatTimestamp).toHaveBeenCalledWith('2026-08-06T12:00:00Z');
+    expect(await screen.findByText('formatted local timestamp')).toBeInTheDocument();
 });
 
 function createSnapshot(): RoomSnapshotProjection {

@@ -10,13 +10,18 @@ export const pl = {
         },
     },
     dashboard: {
+        devices: {
+            ledMain: 'Główne LED',
+            temperatureDesk: 'Temperatura biurka',
+            temperatureWindow: 'Temperatura okna',
+        },
         realtime: {
             connecting: 'Łączenie ze strumieniem pokoju w czasie rzeczywistym…',
             reconnecting: 'Ponowne łączenie ze strumieniem pokoju w czasie rzeczywistym…',
         },
         led: {
             alert: {
-                commandConfirmed: 'Polecenie potwierdzone o {{time}} UTC.',
+                commandConfirmed: 'Polecenie potwierdzone o {{time}}.',
                 commandTimedOut: 'Upłynął limit czasu polecenia: {{reason}}.',
                 degraded: 'Stan LED jest pogorszony.',
                 offline: 'LED jest offline{{reason}}',
@@ -37,14 +42,17 @@ export const pl = {
             unknown: 'Nieznane',
         },
         temperature: {
+            units: {
+                celsius: '°C',
+            },
             alert: {
                 degraded: 'Stan czujnika temperatury jest pogorszony.',
-                lastReading: 'Ostatni odczyt: {{time}} UTC.',
+                lastReading: 'Ostatni odczyt: {{time}}.',
                 noReading: 'Nie otrzymano jeszcze odczytu.',
                 offline: 'Czujnik temperatury jest offline{{reason}}',
                 realtimeReconnecting:
                     'Strumień czasu rzeczywistego ponownie się łączy. Wyświetlany jest ostatni prawidłowy odczyt temperatury.',
-                stale: 'Telemetria temperatury jest nieaktualna. Wyświetlany jest ostatni znany odczyt z {{time}} UTC.',
+                stale: 'Telemetria temperatury jest nieaktualna. Wyświetlany jest ostatni znany odczyt z {{time}}.',
             },
             current: 'Aktualna temperatura',
         },

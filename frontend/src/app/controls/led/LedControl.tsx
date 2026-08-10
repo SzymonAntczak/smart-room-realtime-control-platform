@@ -7,6 +7,8 @@ import { Lightbulb, LightbulbOff, Power } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { formatTimestamp } from '../../../i18n/time';
+import { getDeviceDisplayName } from '../../shared/device-presentation';
 import { Alert } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
@@ -49,7 +51,7 @@ export function LedControl({
 
     return (
         <ControlCard
-            title={device.name}
+            title={getDeviceDisplayName(device, (key) => t(key, { ns: 'dashboard' }))}
             titleId={`led-heading-${device.deviceId}`}
             status={t(`availability.${viewModel.availability}`, { ns: 'common' })}
             statusTone={viewModel.availabilityTone}
@@ -121,6 +123,9 @@ function formatAlert(t: ReturnType<typeof useTranslation>['t'], message: LedAler
                 power: t(`led.${message.power}`, { ns: 'dashboard' }),
             });
         case 'command-confirmed':
-            return t('led.alert.commandConfirmed', { ns: 'dashboard', time: message.time });
+            return t('led.alert.commandConfirmed', {
+                ns: 'dashboard',
+                time: formatTimestamp(message.time),
+            });
     }
 }

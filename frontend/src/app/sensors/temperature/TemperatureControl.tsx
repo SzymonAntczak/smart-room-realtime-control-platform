@@ -3,6 +3,8 @@ import { CircleCheck, Thermometer, WifiOff } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { formatTimestamp } from '../../../i18n/time';
+import { getDeviceDisplayName } from '../../shared/device-presentation';
 import { Alert, type AlertVariant } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
@@ -28,7 +30,7 @@ export function TemperatureControl({
 
     return (
         <ControlCard
-            title={reading.sensorName}
+            title={getDeviceDisplayName(device, (key) => t(key, { ns: 'dashboard' }))}
             titleId={`sensor-heading-${reading.sensorId}`}
             status={t(`availability.${reading.availability}`, { ns: 'common' })}
             statusIcon={availabilityIcon(reading.availability)}
@@ -47,7 +49,11 @@ export function TemperatureControl({
                     strokeWidth={1.75}
                 />
                 <span className={styles.value}>{reading.value?.toFixed(1) ?? '—'}</span>
-                <span className={styles.unit}>{reading.unit ?? ''}</span>
+                <span className={styles.unit}>
+                    {reading.unit
+                        ? t(`temperature.units.${reading.unit}`, { ns: 'dashboard' })
+                        : ''}
+                </span>
             </div>
         </ControlCard>
     );
@@ -92,7 +98,7 @@ function cardAlert(
         reading.freshness === 'stale' && reading.recordedAt
             ? t('temperature.alert.stale', {
                   ns: 'dashboard',
-                  time: reading.recordedAt.slice(11, 19),
+                  time: formatTimestamp(reading.recordedAt),
               })
             : undefined,
         realtimeUncertain
@@ -108,7 +114,7 @@ function cardAlert(
         ? {
               message: t('temperature.alert.lastReading', {
                   ns: 'dashboard',
-                  time: reading.recordedAt.slice(11, 19),
+                  time: formatTimestamp(reading.recordedAt),
               }),
               variant: 'info',
           }

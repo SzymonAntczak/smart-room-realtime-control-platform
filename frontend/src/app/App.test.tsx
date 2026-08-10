@@ -29,8 +29,9 @@ describe('App', () => {
         render(<App />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
-        expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: 'Main LED' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Temperatura okna' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Główne LED' })).toBeInTheDocument();
         expect(screen.getByText(/Zażądano: Włączone/)).toBeInTheDocument();
         expect(screen.queryByText('Scenariusze programistyczne')).not.toBeInTheDocument();
     });
@@ -44,7 +45,7 @@ describe('App', () => {
         );
         act(() => MockWebSocket.latest().emitError());
 
-        expect(screen.getByRole('heading', { name: 'Desk Temperature' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
         expect(
             screen.getByText(
                 'Strumień czasu rzeczywistego ponownie się łączy. Wyświetlany jest ostatni prawidłowy odczyt temperatury.',
@@ -115,7 +116,7 @@ function getRealtimeEventType(data: unknown): string {
 }
 
 function createRoomSnapshotMessage({
-    devices = [temperatureDevice(), ledDevice()],
+    devices = [temperatureDevice(), windowTemperatureDevice(), ledDevice()],
     activeCommands = [pendingCommand()],
 }: {
     devices?: unknown[];
@@ -161,6 +162,14 @@ function temperatureDevice() {
         observationStatus: {
             temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
         },
+    };
+}
+
+function windowTemperatureDevice() {
+    return {
+        ...temperatureDevice(),
+        deviceId: 'temp-window',
+        name: 'Window Temperature',
     };
 }
 

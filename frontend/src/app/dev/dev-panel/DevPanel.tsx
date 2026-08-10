@@ -19,6 +19,8 @@ import {
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { formatTimestamp } from '../../../i18n/time';
+
 import styles from './DevPanel.module.css';
 import type {
     ScenarioActionDefinition,
@@ -285,7 +287,9 @@ function DevPanelDiagnostics({
                             <strong>{event.reason}</strong>
                             <span>{event.eventType ?? t('diagnostics.unknownEvent')}</span>
                             <span>{event.deviceId ?? t('diagnostics.noDevice')}</span>
-                            <time dateTime={event.observedAt}>{formatTime(event.observedAt)}</time>
+                            <time dateTime={event.observedAt}>
+                                {formatTimestamp(event.observedAt)}
+                            </time>
                         </li>
                     ))}
                 </ol>
@@ -315,8 +319,4 @@ function isBlocked(
         (isOffline && action.blockedWhen?.includes('offline')) ||
         (isCommandActive && action.blockedWhen?.includes('active-command')),
     );
-}
-
-function formatTime(timestamp: string): string {
-    return `${timestamp.slice(11, 19)} UTC`;
 }
