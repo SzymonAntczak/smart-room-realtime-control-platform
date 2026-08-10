@@ -1,18 +1,3 @@
-.cards {
-    display: contents;
-}
-
-.cards > * {
-    grid-column: span 6;
-    inline-size: 100%;
-}
-
-@media (max-width: 80rem) {
-    .cards > * {
-        grid-column: span 12;
-    }
-}
-
 .reading {
     display: flex;
     align-items: baseline;
@@ -25,7 +10,7 @@
 }
 
 .value {
-    font-size: var(--font-size-display-lg);
+    font-size: clamp(var(--font-size-display-md), 14cqi, var(--font-size-display-lg));
     font-weight: var(--font-weight-extra-bold);
     line-height: var(--line-height-solid);
     font-variant-numeric: tabular-nums;
@@ -52,20 +37,4 @@
     font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-bold);
     line-height: var(--line-height-relaxed);
-}
-
-@media (max-width: 52rem) {
-    .cards {
-        grid-template-columns: minmax(0, 1fr);
-    }
-}
-
-@media (max-width: 32.5rem) {
-    .cards > * {
-        grid-column: span 4;
-    }
-
-    .value {
-        font-size: var(--font-size-display-md);
-    }
 }
