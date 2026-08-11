@@ -27,9 +27,9 @@ read-only evidence when useful.
 9. Compare test intent against documented behavior, changed behavior and
    realistic failure modes.
 10. Synthesize delegated evidence, resolve duplicate findings and classify
-   findings when useful: code drift, doc drift, structure drift,
-   contract drift, projection drift, test gap, weak test, redundant test,
-   decision gap, or AI-config drift.
+    findings when useful: code drift, doc drift, structure drift,
+    contract drift, projection drift, test gap, weak test, redundant test,
+    decision gap, or AI-config drift.
 11. Lead with concrete findings ordered by severity.
 12. Cite files and lines when possible.
 13. Include open questions or assumptions when they affect confidence.

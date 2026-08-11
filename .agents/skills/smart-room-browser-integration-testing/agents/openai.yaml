@@ -1,0 +1,4 @@
+interface:
+    display_name: 'Smart Room Browser Integration Testing'
+    short_description: 'Add deterministic Playwright UI scenarios'
+    default_prompt: 'Use $smart-room-browser-integration-testing to add a deterministic browser scenario.'

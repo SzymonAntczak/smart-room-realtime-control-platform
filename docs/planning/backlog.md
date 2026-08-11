@@ -83,7 +83,7 @@ an ADR as part of the related change.
       Done when: the late state report updates observed power but the earlier
       timed-out outcome remains visible and is not retroactively confirmed.
 
-- [ ] Add a `smart-room-browser-integration-testing` skill after the mock BFF
+- [x] Add a `smart-room-browser-integration-testing` skill after the mock BFF
       and LED scenarios establish a stable implementation pattern. Scope it to
       Playwright, the BFF contract boundary, deterministic SSE scenario control
       and relevant verification; do not duplicate durable system behavior.

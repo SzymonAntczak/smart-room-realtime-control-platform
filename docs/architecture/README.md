@@ -32,7 +32,7 @@ behavior:
 | [Reliability and testing](reliability-and-testing.md) | Failure modes, observability, recovery behavior and test strategy.                                                |
 | [Architecture examples](examples.md)                  | Concrete flows for command confirmation, timeout, availability/health/freshness recovery and projection behavior. |
 | [System context](system-context.md)                   | High-level component context diagram.                                                                             |
-| [AI collaboration model](ai-collaboration.md)         | Source-of-truth hierarchy for docs, AGENTS.md files, skills and subagent research passes.                        |
+| [AI collaboration model](ai-collaboration.md)         | Source-of-truth hierarchy for docs, AGENTS.md files, skills and subagent research passes.                         |
 
 ## Rules To Preserve
 
