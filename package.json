@@ -21,6 +21,7 @@
         "test:frontend": "npm run test --workspace @smart-room/frontend",
         "test:contracts": "npm run test --workspace @smart-room/contracts",
         "test:simulator": "npm run test --workspace @smart-room/simulator",
+        "typecheck:browser": "npm run typecheck:browser --workspace @smart-room/frontend",
         "typecheck": "npm run typecheck --workspace @smart-room/contracts && npm run typecheck --workspace @smart-room/backend && npm run typecheck --workspace @smart-room/frontend && npm run typecheck --workspace @smart-room/simulator"
     },
     "devDependencies": {

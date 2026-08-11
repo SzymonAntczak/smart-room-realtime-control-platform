@@ -13,7 +13,7 @@ an ADR as part of the related change.
       screenshot and video artifacts only when a test fails.
       Done when: `npm run test:browser` starts and runs one empty smoke test.
 
-- [ ] Add `frontend/tsconfig.browser-tests.json` and a dedicated typecheck
+- [x] Add `frontend/tsconfig.browser-tests.json` and a dedicated typecheck
       script for Playwright specs, the mock BFF and Playwright configuration.
       Keep browser-test and Node test-harness types out of the production
       frontend TypeScript program.

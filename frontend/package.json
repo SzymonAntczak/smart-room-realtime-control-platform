@@ -10,6 +10,7 @@
         "format:write": "prettier --write .",
         "build": "tsc --noEmit && vite build",
         "typecheck": "tsc --noEmit",
+        "typecheck:browser": "tsc --project tsconfig.browser-tests.json --noEmit",
         "test": "vitest run"
     },
     "dependencies": {
