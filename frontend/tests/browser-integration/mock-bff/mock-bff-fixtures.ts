@@ -6,6 +6,10 @@ import type { DeviceProjection, RoomSnapshotProjection } from '@smart-room/contr
 import type { CommandsUpdatedMessage, DeviceUpdatedMessage } from '@smart-room/contracts/realtime';
 
 const fixtureTimestamp = '2026-06-08T09:30:00Z';
+const commandRequestedAt = '2026-06-08T09:30:01Z';
+const commandDispatchedAt = '2026-06-08T09:30:02Z';
+const commandConfirmedAt = '2026-06-08T09:30:03Z';
+const ledCommandId = 'mock-command-1';
 
 export function createOnlineLedDeviceProjection(): DeviceProjection {
     return {
@@ -34,6 +38,51 @@ export function createOnlineLedRoomSnapshot(): RoomSnapshotProjection {
         devices: [createOnlineLedDeviceProjection()],
         activeCommands: [],
         recentCommands: [],
+    };
+}
+
+export function createPendingLedCommand(): ActiveCommandProjection {
+    return {
+        commandId: ledCommandId,
+        deviceId: 'led-main',
+        commandType: 'set.power',
+        status: 'pending',
+        requestedState: { power: 'on' },
+        requestedAt: commandRequestedAt,
+        dispatchedAt: commandDispatchedAt,
+    };
+}
+
+export function createPendingLedDeviceProjection(): DeviceProjection {
+    return {
+        ...createOnlineLedDeviceProjection(),
+        activeCommandId: ledCommandId,
+    };
+}
+
+export function createConfirmedLedCommand(): TerminalCommandProjection {
+    return {
+        commandId: ledCommandId,
+        deviceId: 'led-main',
+        commandType: 'set.power',
+        status: 'confirmed',
+        requestedState: { power: 'on' },
+        requestedAt: commandRequestedAt,
+        dispatchedAt: commandDispatchedAt,
+        confirmedAt: commandConfirmedAt,
+    };
+}
+
+export function createConfirmedLedDeviceProjection(): DeviceProjection {
+    return {
+        ...createOnlineLedDeviceProjection(),
+        reportedState: { power: 'on' },
+        observationStatus: {
+            power: {
+                freshness: 'fresh',
+                lastObservedAt: commandConfirmedAt,
+            },
+        },
     };
 }
 

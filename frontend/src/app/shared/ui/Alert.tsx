@@ -5,7 +5,15 @@ import styles from './Alert.module.css';
 
 export type AlertVariant = 'info' | 'warning' | 'error';
 
-export function Alert({ message, variant = 'info' }: { message?: string; variant?: AlertVariant }) {
+export function Alert({
+    message,
+    variant = 'info',
+    testId,
+}: {
+    message?: string;
+    variant?: AlertVariant;
+    testId?: string;
+}) {
     const { t } = useTranslation('common');
     const displayMessage = message || t('alert.none');
 
@@ -15,6 +23,7 @@ export function Alert({ message, variant = 'info' }: { message?: string; variant
     return (
         <p
             className={styles.alert}
+            data-testid={testId}
             data-variant={variant}
             role={variant === 'info' ? undefined : 'alert'}
         >

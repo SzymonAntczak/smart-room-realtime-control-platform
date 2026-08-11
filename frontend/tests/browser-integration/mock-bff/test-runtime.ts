@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 
-const bffUrl = 'http://127.0.0.1:4311/health';
-const frontendUrl = 'http://127.0.0.1:5174';
+import { browserTestRuntime, browserTestUrls, mockBffUrls } from '../browser-test-runtime';
+
 const readinessTimeoutMs = 30_000;
 
 export default async function startBrowserTestRuntime(): Promise<() => Promise<void>> {
@@ -12,7 +12,7 @@ export default async function startBrowserTestRuntime(): Promise<() => Promise<v
     let frontend: ChildProcess | undefined;
 
     try {
-        await waitForReady(bffUrl);
+        await waitForReady(mockBffUrls.health);
 
         const startedFrontend = startProcess(
             [
@@ -21,19 +21,19 @@ export default async function startBrowserTestRuntime(): Promise<() => Promise<v
                 '--config',
                 'frontend/vite.config.ts',
                 '--host',
-                '127.0.0.1',
+                browserTestRuntime.host,
                 '--port',
-                '5174',
+                String(browserTestRuntime.frontendPort),
                 '--strictPort',
             ],
             {
-                VITE_ROOM_COMMAND_URL: 'http://127.0.0.1:4311/room/commands',
-                VITE_ROOM_REALTIME_URL: 'http://127.0.0.1:4311/room/realtime',
+                VITE_ROOM_COMMAND_URL: mockBffUrls.commands,
+                VITE_ROOM_REALTIME_URL: mockBffUrls.realtime,
             },
         );
         frontend = startedFrontend;
 
-        await waitForReady(frontendUrl);
+        await waitForReady(browserTestUrls.frontend);
 
         return async () => {
             await Promise.all([stopProcess(startedFrontend), stopProcess(mockBff)]);

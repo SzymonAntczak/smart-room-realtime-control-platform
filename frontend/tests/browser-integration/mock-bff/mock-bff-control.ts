@@ -2,19 +2,17 @@ import type { APIRequestContext } from '@playwright/test';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
 
-const mockBffControlUrl = 'http://127.0.0.1:4311/test/room';
+import { mockBffUrls } from '../browser-test-runtime';
 
 export async function resetMockRoom(request: APIRequestContext): Promise<void> {
-    await assertControlResponse(await request.post(`${mockBffControlUrl}/reset`));
+    await assertControlResponse(await request.post(mockBffUrls.reset));
 }
 
 export async function setMockRoomSnapshot(
     request: APIRequestContext,
     snapshot: RoomSnapshotProjection,
 ): Promise<void> {
-    await assertControlResponse(
-        await request.put(`${mockBffControlUrl}/snapshot`, { data: snapshot }),
-    );
+    await assertControlResponse(await request.put(mockBffUrls.snapshot, { data: snapshot }));
 }
 
 export async function publishMockRoomUpdate(
@@ -22,7 +20,7 @@ export async function publishMockRoomUpdate(
     message: Exclude<RoomRealtimeServerMessage, { messageType: 'room.snapshot' }>,
 ): Promise<void> {
     await assertControlResponse(
-        await request.post(`${mockBffControlUrl}/realtime`, { data: message }),
+        await request.post(mockBffUrls.scenarioRealtime, { data: message }),
     );
 }
 

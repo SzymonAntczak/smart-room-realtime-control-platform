@@ -1,11 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
+import { browserTestRuntime, browserTestUrls, mockBffPaths } from '../browser-test-runtime';
+
 import { parseMockSetPowerCommandRequest, serializeMockSseMessage } from './mock-bff-contracts';
 import { MockRoomScenario } from './mock-room-scenario';
 
-const host = '127.0.0.1';
-const port = 4311;
-const frontendOrigin = 'http://127.0.0.1:5174';
 const realtimeStreams = new Set<ServerResponse>();
 const roomScenario = new MockRoomScenario();
 let nextCommandId = 1;
@@ -14,8 +13,8 @@ const server = createServer((request, response) => {
     void handleRequest(request, response);
 });
 
-server.listen(port, host, () => {
-    process.stdout.write(`Mock BFF listening at http://${host}:${port}\n`);
+server.listen(browserTestRuntime.mockBffPort, browserTestRuntime.host, () => {
+    process.stdout.write(`Mock BFF listening at ${browserTestUrls.mockBff}\n`);
 });
 
 process.once('SIGINT', stopServer);
@@ -30,26 +29,27 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         return;
     }
 
-    if (request.method === 'GET' && request.url === '/health') {
+    if (request.method === 'GET' && request.url === mockBffPaths.health) {
         respondJson(response, 200, { status: 'ready' });
 
         return;
     }
 
-    if (request.method === 'GET' && request.url === '/room/realtime') {
+    if (request.method === 'GET' && request.url === mockBffPaths.realtime) {
         openRealtimeStream(request, response);
 
         return;
     }
 
-    if (request.method === 'POST' && request.url === '/test/room/reset') {
+    if (request.method === 'POST' && request.url === mockBffPaths.reset) {
         roomScenario.reset();
+        nextCommandId = 1;
         respondJson(response, 204, undefined);
 
         return;
     }
 
-    if (request.method === 'PUT' && request.url === '/test/room/snapshot') {
+    if (request.method === 'PUT' && request.url === mockBffPaths.snapshot) {
         try {
             roomScenario.setSnapshot(parseJson(await readRequestBody(request)));
             respondJson(response, 204, undefined);
@@ -60,7 +60,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         return;
     }
 
-    if (request.method === 'POST' && request.url === '/test/room/realtime') {
+    if (request.method === 'POST' && request.url === mockBffPaths.scenarioRealtime) {
         try {
             const message = roomScenario.applyUpdate(parseJson(await readRequestBody(request)));
             publishSseMessage(message);
@@ -72,7 +72,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         return;
     }
 
-    if (request.method === 'POST' && request.url === '/room/commands') {
+    if (request.method === 'POST' && request.url === mockBffPaths.commands) {
         try {
             parseMockSetPowerCommandRequest(await readRequestBody(request));
         } catch (error) {
@@ -98,7 +98,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 }
 
 function setCorsHeaders(response: ServerResponse): void {
-    response.setHeader('access-control-allow-origin', frontendOrigin);
+    response.setHeader('access-control-allow-origin', browserTestUrls.frontend);
     response.setHeader('access-control-allow-methods', 'GET, POST, PUT, OPTIONS');
     response.setHeader('access-control-allow-headers', 'content-type');
 }

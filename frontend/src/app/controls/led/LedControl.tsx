@@ -62,6 +62,7 @@ export function LedControl({
                         .map((message) => formatAlert(t, message))
                         .join(' ')}
                     variant={viewModel.alert.variant}
+                    testId={`${device.deviceId}-command-status`}
                 />
             }
         >
@@ -81,7 +82,7 @@ export function LedControl({
             <div className={styles.actions} aria-label={t('led.controls', { ns: 'dashboard' })}>
                 <button
                     type="button"
-                    data-testid="led-main-power-toggle"
+                    data-testid={`${device.deviceId}-power-toggle`}
                     aria-label={
                         viewModel.isOn
                             ? t('led.turnOff', { ns: 'dashboard' })

@@ -60,7 +60,7 @@ an ADR as part of the related change.
       Done when: browser scenarios can arrange BFF-level state without
       simulator-native messages or frontend-state injection.
 
-- [ ] Add a browser test for accepted command and immediate confirmation.
+- [x] Add a browser test for accepted command and immediate confirmation.
       Done when: it proves that the old confirmed power remains visible while
       pending and the new power becomes confirmed only after the matching
       realtime update.
