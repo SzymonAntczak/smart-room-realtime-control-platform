@@ -91,7 +91,7 @@ an ADR as part of the related change.
       new browser scenario can follow it without adding frontend-state injection
       or timing-dependent assertions.
 
-- [ ] Document `npm run test:browser` in the frontend/repository test guidance
+- [x] Document `npm run test:browser` in the frontend/repository test guidance
       and add it to CI when CI is introduced.
       Done when: contributors can run the deterministic Stage 3.5 reference
       suite locally and inspect artifacts for a failing browser test.

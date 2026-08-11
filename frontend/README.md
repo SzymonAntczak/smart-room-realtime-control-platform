@@ -48,6 +48,19 @@ npm run format
 
 Use `npm run format:write` only when intentionally updating formatting.
 
+Run the deterministic browser-integration suite from the repository root,
+not from `frontend/`:
+
+```powershell
+npm run test:browser
+```
+
+It starts only the Vite frontend and a test-local mocked BFF; it does not start
+the production backend or simulator. If Chromium is not installed yet, run
+`npm run install:browser` from the repository root first. Failed tests retain
+Playwright trace, screenshot and video artifacts in
+`test-results/frontend-integration`.
+
 ## Verification Focus
 
 Before finishing frontend work, prefer the narrowest useful checks and make sure

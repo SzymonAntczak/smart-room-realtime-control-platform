@@ -36,3 +36,23 @@ its default local dev URL.
 
 `shared` exposes the local `@smart-room/contracts` workspace, which owns
 runtime dependencies used by platform contracts, such as TypeBox.
+
+## Tests
+
+Run the deterministic frontend browser-integration reference suite from the
+repository root:
+
+```bash
+npm run test:browser
+```
+
+The suite starts only the Vite frontend and a test-local mocked BFF; it does
+not start the production backend or simulator. Install the Chromium browser
+binary first when it is not already available:
+
+```bash
+npm run install:browser
+```
+
+When a browser test fails, Playwright retains its trace, screenshot and video
+artifacts in `test-results/frontend-integration`.
