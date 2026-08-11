@@ -32,15 +32,22 @@ export function TemperatureControl({
         <ControlCard
             title={getDeviceDisplayName(device, (key) => t(key, { ns: 'dashboard' }))}
             titleId={`sensor-heading-${reading.sensorId}`}
+            testId={`${reading.sensorId}-temperature-card`}
             status={t(`availability.${reading.availability}`, { ns: 'common' })}
             statusIcon={availabilityIcon(reading.availability)}
             statusTone={availabilityTone(reading.availability)}
             headerAction={headerAction}
-            bottomAlert={<Alert {...cardAlert(reading, realtimeUncertain, t)} />}
+            bottomAlert={
+                <Alert
+                    {...cardAlert(reading, realtimeUncertain, t)}
+                    testId={`${reading.sensorId}-temperature-alert`}
+                />
+            }
         >
             <div
                 className={styles.reading}
                 aria-label={t('temperature.current', { ns: 'dashboard' })}
+                data-testid={`${reading.sensorId}-temperature-reading`}
             >
                 <Thermometer
                     aria-hidden="true"

@@ -11,6 +11,8 @@ import {
     createDeviceUpdatedMessage,
     createOnlineLedDeviceProjection,
     createOnlineLedRoomSnapshot,
+    createOnlineTemperatureRoomSnapshot,
+    createTemperatureDeviceUpdatedMessage,
 } from './mock-bff-fixtures';
 import { MockRoomScenario } from './mock-room-scenario';
 
@@ -57,6 +59,19 @@ describe('mock BFF shared-contract boundary', () => {
         expect(commandsUpdate.revision).toBe(2);
         expect(() => serializeMockSseMessage(deviceUpdate)).not.toThrow();
         expect(() => serializeMockSseMessage(commandsUpdate)).not.toThrow();
+    });
+
+    it('accepts a multi-sensor temperature snapshot and applies its device update', () => {
+        const scenario = new MockRoomScenario();
+        const roomSnapshot = createOnlineTemperatureRoomSnapshot();
+
+        expect(assertMockRoomSnapshot(roomSnapshot)).toEqual(roomSnapshot);
+        scenario.setSnapshot(roomSnapshot);
+
+        expect(() => scenario.applyUpdate(createTemperatureDeviceUpdatedMessage(0))).not.toThrow();
+        const snapshotMessage = scenario.snapshotMessage();
+
+        expect(snapshotMessage.payload.devices).toHaveLength(2);
     });
 
     it('rejects a revision gap before changing the room scenario', () => {

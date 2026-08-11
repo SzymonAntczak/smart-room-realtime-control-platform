@@ -86,6 +86,13 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         return;
     }
 
+    if (request.method === 'POST' && request.url === mockBffPaths.disconnectRealtime) {
+        closeRealtimeStreams();
+        respondJson(response, 204, undefined);
+
+        return;
+    }
+
     if (request.method === 'POST' && request.url === mockBffPaths.commands) {
         try {
             parseMockSetPowerCommandRequest(await readRequestBody(request));
@@ -163,6 +170,12 @@ function publishSseMessage(message: unknown): void {
     }
 }
 
+function closeRealtimeStreams(): void {
+    for (const response of realtimeStreams) {
+        response.end();
+    }
+}
+
 function parseJson(body: string): unknown {
     try {
         return JSON.parse(body);
@@ -193,9 +206,7 @@ function respondJson(response: ServerResponse, statusCode: number, body: unknown
 }
 
 function stopServer(): void {
-    for (const response of realtimeStreams) {
-        response.end();
-    }
+    closeRealtimeStreams();
 
     server.close(() => {
         process.exit(0);

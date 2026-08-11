@@ -12,6 +12,10 @@ const commandConfirmedAt = '2026-06-08T09:30:03Z';
 const commandFailedAt = '2026-06-08T09:30:03Z';
 const commandTimedOutAt = '2026-06-08T09:30:07Z';
 const lateReportAt = '2026-06-08T09:30:08Z';
+const temperatureUpdatedAt = '2026-06-08T09:31:00Z';
+const temperatureOfflineAt = '2026-06-08T09:33:00Z';
+const temperatureRecoveredAt = '2026-06-08T09:34:00Z';
+const temperatureFreshAfterRecoveryAt = '2026-06-08T09:35:00Z';
 const ledCommandId = 'mock-command-1';
 
 export function createOnlineLedDeviceProjection(): DeviceProjection {
@@ -41,6 +45,93 @@ export function createOnlineLedRoomSnapshot(): RoomSnapshotProjection {
         devices: [createOnlineLedDeviceProjection()],
         activeCommands: [],
         recentCommands: [],
+    };
+}
+
+export function createOnlineTemperatureDeviceProjection(): DeviceProjection {
+    return {
+        deviceId: 'temp-desk',
+        name: 'Desk Temperature',
+        role: 'temperature-sensor',
+        availability: 'online',
+        availabilityChangedAt: fixtureTimestamp,
+        health: 'healthy',
+        healthChangedAt: fixtureTimestamp,
+        reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
+        observationStatus: {
+            temperature: { freshness: 'fresh', lastObservedAt: fixtureTimestamp },
+        },
+        commandAvailability: { policy: 'block', reason: 'read_only_device' },
+    };
+}
+
+export function createOnlineWindowTemperatureDeviceProjection(): DeviceProjection {
+    return {
+        ...createOnlineTemperatureDeviceProjection(),
+        deviceId: 'temp-window',
+        name: 'Window Temperature',
+        reportedState: { temperature: 20.1, temperatureUnit: 'celsius' },
+    };
+}
+
+export function createOnlineTemperatureRoomSnapshot(): RoomSnapshotProjection {
+    return {
+        roomName: 'Smart Room',
+        updatedAt: fixtureTimestamp,
+        devices: [
+            createOnlineTemperatureDeviceProjection(),
+            createOnlineWindowTemperatureDeviceProjection(),
+        ],
+        activeCommands: [],
+        recentCommands: [],
+    };
+}
+
+export function createFreshTemperatureDeviceProjection(): DeviceProjection {
+    return {
+        ...createOnlineTemperatureDeviceProjection(),
+        reportedState: { temperature: 22.8, temperatureUnit: 'celsius' },
+        observationStatus: {
+            temperature: { freshness: 'fresh', lastObservedAt: temperatureUpdatedAt },
+        },
+    };
+}
+
+export function createStaleTemperatureDeviceProjection(): DeviceProjection {
+    return {
+        ...createFreshTemperatureDeviceProjection(),
+        observationStatus: {
+            temperature: { freshness: 'stale', lastObservedAt: temperatureUpdatedAt },
+        },
+    };
+}
+
+export function createOfflineTemperatureDeviceProjection(): DeviceProjection {
+    return {
+        ...createStaleTemperatureDeviceProjection(),
+        availability: 'offline',
+        availabilityChangedAt: temperatureOfflineAt,
+        availabilityReason: 'transport_disconnected',
+    };
+}
+
+export function createRecoveredTemperatureDeviceProjection(): DeviceProjection {
+    return {
+        ...createStaleTemperatureDeviceProjection(),
+        availabilityChangedAt: temperatureRecoveredAt,
+    };
+}
+
+export function createFreshTemperatureAfterRecoveryDeviceProjection(): DeviceProjection {
+    return {
+        ...createRecoveredTemperatureDeviceProjection(),
+        reportedState: { temperature: 23.1, temperatureUnit: 'celsius' },
+        observationStatus: {
+            temperature: {
+                freshness: 'fresh',
+                lastObservedAt: temperatureFreshAfterRecoveryAt,
+            },
+        },
     };
 }
 
@@ -141,6 +232,13 @@ export function createDeviceUpdatedMessage(
         sentAt: fixtureTimestamp,
         payload: device,
     };
+}
+
+export function createTemperatureDeviceUpdatedMessage(
+    previousRevision: number,
+    device: DeviceProjection = createOnlineTemperatureDeviceProjection(),
+): DeviceUpdatedMessage {
+    return createDeviceUpdatedMessage(previousRevision, device);
 }
 
 export function createCommandsUpdatedMessage(

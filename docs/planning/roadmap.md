@@ -96,7 +96,7 @@ deployment posture with cloud operations, fleet management or full monitoring.
 | Stage 2   | Reliable simulated temperature slice      | Temperature shows availability, stale observations, recovery, history and failure signals                 |
 | Stage 2.5 | Dev scenario controls                     | Manual simulator controls make reliability scenarios demonstrable                                         |
 | Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator                                   |
-| Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                                                   |
+| Stage 3.5 | Frontend integration test reference suite | Browser tests validate every currently supported device role against a mocked BFF                         |
 | Stage 4   | Simulator platform readiness              | Telemetry, diagnostics and a repeatable local demo make the simulator slice a complete platform reference |
 | Stage 4.5 | LAN security foundation                   | Secure LAN access and MQTT identities are established without burdening the loopback development path     |
 | Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes the normal local simulator transport boundary and establishes root-level E2E            |
@@ -229,7 +229,9 @@ hardware integration.
 ## Stage 3.5 - Frontend Integration Test Reference Suite
 
 Stage 3.5 adds browser-level frontend integration tests after the simulated LED
-reference slice and before the first hardware integration.
+reference slice and before the first hardware integration. It covers every
+device role supported at this point: the temperature read path and the LED
+command path.
 
 The goal is to verify the user-visible control loop against a controlled,
 mocked BFF contract, without coupling tests to simulator or backend internals.
@@ -245,16 +247,21 @@ Expected outcome:
 - the test suite starts the frontend and drives the UI in a real browser,
 - a mocked BFF deterministically supplies initial snapshots, realtime updates
   and command responses for each test scenario,
-- tests assert requested versus confirmed state, command progress, visible
+- LED tests assert requested versus confirmed state, command progress, visible
   failures and bounded command-outcome history through user-visible behavior,
 - the mocked scenarios cover normal, delayed, rejected, timed-out and
   late-report flows for the LED command loop,
+- temperature tests cover the documented read-path reliability states through
+  user-visible behavior: fresh and stale observations, explicit availability
+  loss and recovery, and realtime reconnection while retaining the last valid
+  snapshot,
 - tests use the BFF contract boundary rather than simulator-native messages or
   direct frontend state injection.
 
-Stage 3.5 is complete when the browser suite protects the documented LED
-control-loop behavior with deterministic mocked BFF scenarios. End-to-end
-verification with the real backend is a later, separate stage.
+Stage 3.5 is complete when deterministic mocked-BFF browser suites protect the
+documented user-visible behavior of every currently supported device role: the
+temperature read path and LED control loop. End-to-end verification with the
+real backend is a later, separate stage.
 
 ## Stage 4 - Simulator Platform Readiness
 

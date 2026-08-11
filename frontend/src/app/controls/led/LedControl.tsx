@@ -53,6 +53,7 @@ export function LedControl({
         <ControlCard
             title={getDeviceDisplayName(device, (key) => t(key, { ns: 'dashboard' }))}
             titleId={`led-heading-${device.deviceId}`}
+            testId={`${device.deviceId}-led-card`}
             status={t(`availability.${viewModel.availability}`, { ns: 'common' })}
             statusTone={viewModel.availabilityTone}
             headerAction={headerAction}

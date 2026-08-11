@@ -8,6 +8,11 @@ an ADR as part of the related change.
 
 ### Stage 3.5 - Frontend Integration Test Reference Suite
 
+Stage 3.5 is complete only when browser-integration suites cover every device
+role currently supported by the Dashboard: the temperature read path and the
+LED command path. These suites use the mocked-BFF boundary; they do not replace
+the backend, simulator or manual acceptance coverage for those slices.
+
 - [x] Add `@playwright/test`, the browser binaries and a root `test:browser`
       script. Configure the suite for headless Chromium and retain trace,
       screenshot and video artifacts only when a test fails.
@@ -82,6 +87,25 @@ an ADR as part of the related change.
 - [x] Add a browser test for a late report after timeout.
       Done when: the late state report updates observed power but the earlier
       timed-out outcome remains visible and is not retroactively confirmed.
+
+- [x] Add deterministic temperature fixtures to the mocked BFF, including an
+      online `temp-desk` snapshot and revision-linked updates for telemetry,
+      availability and realtime reconnection scenarios.
+      Done when: a browser scenario can arrange each documented temperature
+      read-path state through schema-valid BFF snapshots and SSE messages,
+      without simulator-native messages or frontend-state injection.
+
+- [x] Add `temperature-reliability.spec.ts` as the temperature browser suite.
+      Cover fresh telemetry, stale observations while availability remains
+      online, explicit offline and recovery followed by a fresh observation,
+      and realtime reconnection that retains the last valid snapshot.
+      Done when: every scenario asserts the documented user-visible state with
+      deterministic mock-BFF control and no arbitrary wall-clock waits.
+
+- [x] Verify the Stage 3.5 completion gate: `npm run test:browser` runs both
+      the LED command and temperature reliability specs against the mocked BFF.
+      Done when: the browser suite protects the documented behavior of every
+      device role supported before Stage 4.
 
 - [x] Add a `smart-room-browser-integration-testing` skill after the mock BFF
       and LED scenarios establish a stable implementation pattern. Scope it to

@@ -1,5 +1,8 @@
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
+import type {
+    RoomRealtimeServerMessage,
+    RoomSnapshotMessage,
+} from '@smart-room/contracts/realtime';
 
 import { assertMockRoomSnapshot, assertMockSseMessage } from './mock-bff-contracts';
 import { createOnlineLedRoomSnapshot } from './mock-bff-fixtures';
@@ -17,7 +20,7 @@ export class MockRoomScenario {
         this.#revision = 0;
     }
 
-    snapshotMessage(): RoomRealtimeServerMessage {
+    snapshotMessage(): RoomSnapshotMessage {
         return {
             messageType: 'room.snapshot',
             revision: 0,

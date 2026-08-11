@@ -16,6 +16,7 @@ interface ControlCardProps {
     statusAriaLive?: 'off' | 'polite' | 'assertive';
     statusRole?: 'status';
     titleId?: string;
+    testId: string;
 }
 
 export function ControlCard({
@@ -29,9 +30,10 @@ export function ControlCard({
     statusAriaLive = 'polite',
     statusRole = 'status',
     titleId,
+    testId,
 }: ControlCardProps) {
     return (
-        <section className={styles.card} aria-labelledby={titleId}>
+        <section className={styles.card} aria-labelledby={titleId} data-testid={testId}>
             <div className={styles.header}>
                 <div>
                     <h2 id={titleId}>{title}</h2>
@@ -41,6 +43,7 @@ export function ControlCard({
                     <span
                         className={styles.status}
                         data-tone={statusTone}
+                        data-testid={`${testId}-status`}
                         role={statusRole}
                         aria-live={statusAriaLive}
                     >

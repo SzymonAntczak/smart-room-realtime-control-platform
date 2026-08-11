@@ -21,6 +21,7 @@ export const mockBffPaths = {
     rejectNextCommand: '/test/room/commands/reject-next',
     snapshot: '/test/room/snapshot',
     scenarioRealtime: '/test/room/realtime',
+    disconnectRealtime: '/test/room/realtime/disconnect',
 } as const;
 
 export const mockBffUrls = {
@@ -31,4 +32,5 @@ export const mockBffUrls = {
     rejectNextCommand: `${browserTestUrls.mockBff}${mockBffPaths.rejectNextCommand}`,
     snapshot: `${browserTestUrls.mockBff}${mockBffPaths.snapshot}`,
     scenarioRealtime: `${browserTestUrls.mockBff}${mockBffPaths.scenarioRealtime}`,
+    disconnectRealtime: `${browserTestUrls.mockBff}${mockBffPaths.disconnectRealtime}`,
 } as const;

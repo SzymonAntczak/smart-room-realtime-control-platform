@@ -28,6 +28,10 @@ export async function publishMockRoomUpdate(
     );
 }
 
+export async function disconnectMockRealtime(request: APIRequestContext): Promise<void> {
+    await assertControlResponse(await request.post(mockBffUrls.disconnectRealtime));
+}
+
 async function assertControlResponse(
     response: Awaited<ReturnType<APIRequestContext['post']>>,
 ): Promise<void> {
