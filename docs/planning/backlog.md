@@ -6,119 +6,120 @@ an ADR as part of the related change.
 
 ## Open Follow-ups
 
-### Stage 3.5 - Frontend Integration Test Reference Suite
+### Stage 4 - Simulator Platform Readiness
 
-Stage 3.5 is complete only when browser-integration suites cover every device
-role currently supported by the Dashboard: the temperature read path and the
-LED command path. These suites use the mocked-BFF boundary; they do not replace
-the backend, simulator or manual acceptance coverage for those slices.
+Stage 4 turns the existing temperature and LED reference slices into a
+trustworthy local platform. The target is durable, bounded history and
+explainable operation without full event sourcing or a new MQTT runtime.
 
-- [x] Add `@playwright/test`, the browser binaries and a root `test:browser`
-      script. Configure the suite for headless Chromium and retain trace,
-      screenshot and video artifacts only when a test fails.
-      Done when: `npm run test:browser` starts and runs one empty smoke test.
+#### Architecture and persistence
 
-- [x] Add `frontend/tsconfig.browser-tests.json` and a dedicated typecheck
-      script for Playwright specs, the mock BFF and Playwright configuration.
-      Keep browser-test and Node test-harness types out of the production
-      frontend TypeScript program.
-      Done when: browser-test type errors fail independently of the frontend
-      application typecheck.
+- [ ] Record the Stage 4 storage and observability ADR.
+      Define SQLite as the local storage implementation; distinguish accepted
+      facts, raw telemetry, quarantined inputs, persisted current projections
+      and JSON operational logs. Update the affected architecture documents,
+      realtime ADR and roadmap to state that diagnostics are API/log based, not
+      a Dashboard feature.
+      Done when: retention, ordering, storage-failure behavior, restart recovery
+      and transport responsibilities are unambiguous.
 
-- [x] Extend ESLint for browser-test files and the Node-based mock BFF. Apply
-      Playwright-specific rules only in the browser-test scope and keep the
-      production frontend lint configuration unchanged.
-      Done when: the browser suite and mock BFF lint with their appropriate
-      globals and test rules, including rejection of focused or skipped tests
-      in the committed suite.
+- [ ] Add a replaceable backend storage port and SQLite migrations.
+      Use local `node:sqlite`, a gitignored database file and schema-versioned,
+      deterministic migrations. Store accepted facts, telemetry, quarantine and
+      the latest room projection; add indexes for device/time history reads.
+      Done when: an empty or prior database migrates safely and tests can create
+      isolated temporary databases.
 
-- [x] Extend the root `AGENTS.md` with general test-boundary and deterministic
-      synchronization guidance, and `frontend/AGENTS.md` with
-      browser-integration-test guidance. State the test location, mocked-BFF
-      boundary, shared-contract validation, accessible locators, deterministic
-      synchronization and the prohibition on direct frontend-state injection,
-      simulator-native messages and arbitrary time waits. Leave backend and
-      simulator instructions unchanged because their local test guidance is
-      already sufficient.
-      Done when: the instructions complement the ADR without redefining command
-      or reliability behavior owned by architecture documentation.
+- [ ] Persist accepted facts atomically before publishing their effects.
+      In one transaction append the fact, write telemetry when applicable,
+      enforce retention, and persist the derived room projection. On SQLite
+      failure, do not update the renderable projection or emit realtime updates;
+      write a correlated operational error log instead.
+      Done when: tests prove fail-closed behavior, transaction rollback,
+      exclusion of ignored inputs and preservation of late-report semantics.
 
-- [x] Add Playwright configuration that starts the Vite frontend on a dedicated
-      test port with `VITE_ROOM_REALTIME_URL` and `VITE_ROOM_COMMAND_URL`
-      targeting the mocked BFF.
-      Done when: a browser test loads the frontend from the test server; neither
-      the production backend nor the simulator is started.
+- [ ] Restore runtime state and command timers from SQLite at startup.
+      Rehydrate the latest projection and active commands. Reschedule the
+      remaining command timeout, or emit a terminal timeout immediately when
+      its deadline passed during downtime.
+      Done when: restart tests retain state/history and never reconfirm a command
+      that was already timed out.
 
-- [x] Create a test-local mocked BFF server with `GET /room/realtime` as a
-      persistent SSE endpoint and `POST /room/commands` as the command endpoint.
-      Done when: a test can connect to SSE and make one command request through
-      the same URLs the frontend uses in production.
+#### Observability and contracts
 
-- [x] Validate mock-BFF snapshots, SSE messages and received command requests
-      with the shared TypeBox contracts.
-      Done when: invalid fixtures and unexpected `set.power` requests fail the
-      test harness before they can make a UI assertion pass.
+- [ ] Configure structured backend logging.
+      Configure Fastify/Pino for JSON stdout with `LOG_LEVEL`, correlation
+      fields (`eventId`, `commandId`, `deviceId`, `source`, `reason`) and
+      redaction of authentication/cookie fields. Logs must not become the domain
+      history or a database table.
+      Done when: startup, migration, rejected input, command handling and
+      storage failure are logged safely and can be correlated with facts.
 
-- [x] Add deterministic LED fixtures: an online `led-main` snapshot, valid
-      revision sequencing, and helpers for `commands.updated` and
-      `device.updated` messages.
-      Done when: browser scenarios can arrange BFF-level state without
-      simulator-native messages or frontend-state injection.
+- [ ] Define shared history contracts and validation.
+      Add TypeBox schemas for a bounded newest-first recent-event feed,
+      cursor-based raw telemetry pages and durable diagnostics. Preserve the
+      separate 20-entry `recentCommands` contract.
+      Done when: contract tests reject malformed, unordered, over-limit,
+      timestamp-inconsistent and dangling entries.
 
-- [x] Add a browser test for accepted command and immediate confirmation.
-      Done when: it proves that the old confirmed power remains visible while
-      pending and the new power becomes confirmed only after the matching
-      realtime update.
+- [ ] Apply Stage 4 retention rules in storage reads and writes.
+      Retain data for at most 30 days and enforce hard caps: 10,000 raw telemetry
+      samples per device, 5,000 accepted facts and 1,000 quarantine records.
+      Do not aggregate old raw telemetry; the 10,000-sample cap is the effective
+      telemetry window at the current one-second simulator cadence.
+      Done when: deterministic tests prove time- and count-based eviction and
+      newest/oldest ordering at every boundary.
 
-- [x] Add a browser test for delayed confirmation.
-      Done when: the test holds the command pending until an explicit mock-BFF
-      release, shows visible progress and locked interaction, then confirms the
-      update without wall-clock waiting.
+- [ ] Extend the BFF with history APIs and revision-linked SSE.
+      Add the telemetry history endpoint for a selected device and retain the
+      existing diagnostics endpoint as the technical inspection surface. Send a
+      recent-event baseline in `room.snapshot`, then validated contiguous SSE
+      updates for significant events and new telemetry readings.
+      Done when: BFF and client tests prove reconnect baselines, cursor handling,
+      malformed-message rejection and preservation of the last valid view.
 
-- [x] Add a browser test for explicit command rejection.
-      Done when: a rejected command response produces an understandable visible
-      failure and does not change confirmed power.
+#### Dashboard and simulator scenarios
 
-- [x] Add a browser test for command timeout.
-      Done when: an accepted command later receives a `timed_out` projection,
-      the reported power remains unchanged, and the terminal outcome stays
-      visible.
+- [ ] Add a permanently visible Dashboard feed of significant facts.
+      Render availability and health changes, command lifecycle facts and LED
+      state reports with device, time and command context. Exclude individual
+      telemetry readings from this feed.
+      Done when: a user can explain availability, health and a command outcome
+      without interpreting raw payloads or opening logs.
 
-- [x] Add a browser test for a late report after timeout.
-      Done when: the late state report updates observed power but the earlier
-      timed-out outcome remains visible and is not retroactively confirmed.
+- [ ] Add telemetry details to temperature device cards.
+      Add a telemetry trigger that opens a device-specific view with a trend
+      chart and accessible value/time/unit table. Fetch its baseline over HTTP
+      and append new readings from SSE up to the 10,000-record limit.
+      Done when: a new simulator reading appears in both chart and table without
+      manual refresh, while stale/offline labels remain honest.
 
-- [x] Add deterministic temperature fixtures to the mocked BFF, including an
-      online `temp-desk` snapshot and revision-linked updates for telemetry,
-      availability and realtime reconnection scenarios.
-      Done when: a browser scenario can arrange each documented temperature
-      read-path state through schema-valid BFF snapshots and SSE messages,
-      without simulator-native messages or frontend-state injection.
+- [ ] Complete API-based diagnostics and development scenarios.
+      Persist bounded quarantine metadata behind `GET /diagnostics`; add
+      development-only malformed and future-dated input scenarios alongside
+      duplicate and invalid input. Every resulting observation must still use
+      the normal adapter, processor and persistence path.
+      Done when: duplicate, malformed and future-dated inputs are explainable by
+      diagnostics API and logs but cannot affect projection, history or feed.
 
-- [x] Add `temperature-reliability.spec.ts` as the temperature browser suite.
-      Cover fresh telemetry, stale observations while availability remains
-      online, explicit offline and recovery followed by a fresh observation,
-      and realtime reconnection that retains the last valid snapshot.
-      Done when: every scenario asserts the documented user-visible state with
-      deterministic mock-BFF control and no arbitrary wall-clock waits.
+#### Verification and acceptance
 
-- [x] Verify the Stage 3.5 completion gate: `npm run test:browser` runs both
-      the LED command and temperature reliability specs against the mocked BFF.
-      Done when: the browser suite protects the documented behavior of every
-      device role supported before Stage 4.
+- [ ] Extend backend, contract and frontend tests for Stage 4 behavior.
+      Cover migrations, transactions, failure closure, retention, restart/timeout
+      recovery, HTTP cursors, SSE revisions, feed rendering and telemetry
+      details. Add mocked-BFF Playwright coverage without starting the real
+      backend or simulator.
+      Done when: browser tests use schema-valid fixtures and deterministic
+      synchronization, with no state injection or arbitrary waits.
 
-- [x] Add a `smart-room-browser-integration-testing` skill after the mock BFF
-      and LED scenarios establish a stable implementation pattern. Scope it to
-      Playwright, the BFF contract boundary, deterministic SSE scenario control
-      and relevant verification; do not duplicate durable system behavior.
-      Done when: the skill refers to the ADR and architecture sources, and a
-      new browser scenario can follow it without adding frontend-state injection
-      or timing-dependent assertions.
+- [ ] Write and execute the Stage 4 local acceptance checklist and walkthrough.
+      Cover normal telemetry, stale/offline/recovery, degraded/recovered health,
+      confirmation/rejection/timeout/late report, history persistence after
+      restart and API/log diagnostics for ignored inputs.
+      Done when: a reviewer can run the simulator route without hardware, follow
+      the walkthrough and find a dated record with the verification commands.
 
-- [x] Document `npm run test:browser` in the frontend/repository test guidance
-      and add it to CI when CI is introduced.
-      Done when: contributors can run the deterministic Stage 3.5 reference
-      suite locally and inspect artifacts for a failing browser test.
+### Stage 6 - Physical LED Actuation
 
 - [ ] Implement physical LED actuation according to the external-actuation ADR
       before Stage 6 hardware acceptance. A physical state report must update
