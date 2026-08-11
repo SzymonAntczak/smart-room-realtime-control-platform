@@ -99,7 +99,7 @@ deployment posture with cloud operations, fleet management or full monitoring.
 | Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                                                   |
 | Stage 4   | Simulator platform readiness              | Telemetry, diagnostics and a repeatable local demo make the simulator slice a complete platform reference |
 | Stage 4.5 | LAN security foundation                   | Secure LAN access and MQTT identities are established without burdening the loopback development path     |
-| Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes the normal local simulator transport boundary                                           |
+| Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes the normal local simulator transport boundary and establishes root-level E2E            |
 | Stage 6   | ESP32 / ESPHome source                    | Environmental telemetry and on/off control use MQTT from minimal custom hardware                          |
 | Stage 7   | Standalone MQTT device source             | A second, native MQTT device validates independent adapter and physical-actuation behavior                |
 | Stage 8   | Dashboard source-parity gate              | All three MQTT runtime sources work concurrently with equivalent visibility and control guarantees        |
@@ -346,10 +346,14 @@ Expected outcome:
 - development scenario controls invoke simulator behavior through a dev-only
   backend boundary, while every resulting observation returns through MQTT;
 - direct calls remain available only for isolated domain and adapter tests.
+- a root-level full-runtime end-to-end suite exercises the frontend, real BFF,
+  local Mosquitto broker and MQTT simulator together without a mocked BFF or an
+  alternate transport path.
 
 Stage 5 is complete when the MQTT simulator provides the supported sensor and
-on/off behavior through the ordinary local runtime, while transport-specific
-failure behavior remains explicit.
+on/off behavior through the ordinary local runtime, transport-specific failure
+behavior remains explicit, and the first root-level end-to-end suite protects
+that runtime path.
 
 ## Stage 6 - ESP32 / ESPHome Source
 
@@ -365,7 +369,9 @@ Expected outcome:
 - UI commands remain pending until a matching ESP32 state report arrives,
 - physical disconnect, broker loss, delayed report and recovery are visible in
   availability, freshness, command history and logs,
-- a manual acceptance checklist covers temperature, humidity and `set.power`.
+- a manual acceptance checklist covers temperature, humidity and `set.power`,
+- root-level end-to-end scenarios extend the Stage 5 suite to the ESP32 source
+  without introducing an alternate runtime path.
 
 Stage 6 is complete when the ESP32 source can run beside the MQTT simulator
 without changing the Dashboard's control or reliability semantics.
@@ -385,7 +391,9 @@ Expected outcome:
 - the UI and history distinguish the source and show the same command,
   availability and freshness semantics as for the ESP32 and simulator sources,
 - the adapter handles broker reconnect, retained bootstrap messages, malformed
-  native payloads and duplicate delivery explicitly.
+  native payloads and duplicate delivery explicitly,
+- root-level end-to-end scenarios extend the same suite to the standalone
+  source without bypassing its MQTT adapter.
 
 Stage 7 is complete when a standalone device is a second independently shaped
 MQTT source, not a special path that bypasses the platform model.
@@ -412,7 +420,9 @@ Expected outcome:
 - source-specific and shared failures, especially `broker_unavailable`, are
   understandable in the UI and repeatable in a local acceptance run,
 - contract, domain, adapter, transport-integration and browser tests cover the
-  intended boundary at the appropriate level.
+  intended boundary at the appropriate level,
+- the root-level end-to-end suite covers the MQTT simulator, ESP32/ESPHome and
+  standalone source together through their ordinary runtime paths.
 
 Stage 8 is complete when all three runtime sources are useful together in one Dashboard
 and the user can explain their state, events, commands and failure causes.

@@ -27,13 +27,16 @@ an ADR as part of the related change.
       globals and test rules, including rejection of focused or skipped tests
       in the committed suite.
 
-- [ ] Extend `frontend/AGENTS.md` with browser-integration-test guidance.
-      State the test location, the mocked-BFF boundary, shared-contract
-      validation, accessible locators, deterministic synchronization and the
-      prohibition on direct frontend-state injection, simulator-native messages
-      and arbitrary time waits.
-      Done when: the local instructions complement the ADR without redefining
-      command or reliability behavior owned by architecture documentation.
+- [x] Extend the root `AGENTS.md` with general test-boundary and deterministic
+      synchronization guidance, and `frontend/AGENTS.md` with
+      browser-integration-test guidance. State the test location, mocked-BFF
+      boundary, shared-contract validation, accessible locators, deterministic
+      synchronization and the prohibition on direct frontend-state injection,
+      simulator-native messages and arbitrary time waits. Leave backend and
+      simulator instructions unchanged because their local test guidance is
+      already sufficient.
+      Done when: the instructions complement the ADR without redefining command
+      or reliability behavior owned by architecture documentation.
 
 - [ ] Add Playwright configuration that starts the Vite frontend on a dedicated
       test port with `VITE_ROOM_REALTIME_URL` and `VITE_ROOM_COMMAND_URL`

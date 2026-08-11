@@ -158,6 +158,28 @@ enough to render documented behavior honestly.
 - Prioritize tests for documented user-visible behavior over implementation
   details.
 
+## Browser Integration Tests
+
+- Place Playwright specs under `frontend/tests/browser-integration`.
+- Start only the Vite frontend and a test-local mocked BFF. The frontend must
+  use the production-facing HTTP and SSE URLs against that BFF; do not start the
+  production backend or simulator.
+- Treat the mocked BFF as the browser suite's runtime boundary. Validate its
+  snapshots, realtime messages and received command requests with contracts
+  from `shared` before a UI assertion can rely on them.
+- Drive and assert the UI through accessible browser locators. Synchronize with
+  observable UI state, assertions or explicit mocked-BFF scenario control; do
+  not use arbitrary time waits.
+- Do not inject React or other frontend state directly, and do not use
+  simulator-native messages to arrange a browser scenario.
+- Follow [ADR: Playwright for Frontend Integration Tests](../docs/decisions/adr-playwright-frontend-integration-tests.md)
+  and [Reliability and Testing](../docs/architecture/reliability-and-testing.md)
+  for the binding test boundary and system behavior. Do not redefine command
+  lifecycle or reliability semantics here.
+- These instructions apply only to this frontend browser-integration suite.
+  Future root-level full-runtime end-to-end tests are a separate suite and do
+  not inherit the mocked-BFF requirement.
+
 ## Behavior Checks
 
 Before treating frontend behavior work as done, verify the relevant architecture

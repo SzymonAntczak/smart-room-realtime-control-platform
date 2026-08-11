@@ -100,6 +100,15 @@ explicitly.
 ## Test Quality
 
 - Treat tests as protection for system behavior, not as coverage decoration.
+- Choose the lowest test layer that credibly protects the risk; use a broader
+  boundary only when the behavior depends on it.
+- Exercise the public boundary appropriate to the test layer instead of
+  bypassing it without a test-specific reason.
+- Control time, data and synchronization deterministically. Do not use
+  arbitrary waits where an observable event, assertion or explicit test seam
+  can establish readiness.
+- Validate data crossing shared contract boundaries with the owning shared
+  contract before it can make a downstream assertion pass.
 - Prefer tests that exercise documented behavior, domain invariants, failure
   modes and user-visible reliability risks.
 - Cover important negative and boundary cases when they affect the touched
@@ -110,3 +119,14 @@ explicitly.
   implementation details, or do not fail when the behavior is broken.
 - Avoid redundant tests that repeat the same scenario without covering a
   distinct risk.
+
+## Browser Test Scope
+
+- Classify a browser test before changing it. Frontend browser integration tests
+  use the mocked-BFF boundary and follow `frontend/AGENTS.md`.
+- Full-runtime end-to-end tests are a separate root-level suite. They exercise
+  the frontend, real BFF and the documented runtime path together; do not mock
+  the BFF or bypass the runtime transport.
+- Do not apply the browser-integration requirement to avoid the backend or
+  simulator to full-runtime end-to-end tests. Read the relevant architecture
+  documentation and accepted ADR before changing either suite.
