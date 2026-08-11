@@ -8,6 +8,7 @@ export default defineConfig({
     use: {
         baseURL: 'http://127.0.0.1:5174',
         headless: true,
+        locale: 'pl-PL',
         screenshot: 'only-on-failure',
         trace: 'retain-on-failure',
         video: 'retain-on-failure',

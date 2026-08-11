@@ -1,16 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
-import {
-    assertMockRoomSnapshot,
-    assertMockSseMessage,
-    parseMockSetPowerCommandRequest,
-    serializeMockSseMessage,
-} from './mock-bff-contracts';
+import { parseMockSetPowerCommandRequest, serializeMockSseMessage } from './mock-bff-contracts';
+import { MockRoomScenario } from './mock-room-scenario';
 
 const host = '127.0.0.1';
 const port = 4311;
 const frontendOrigin = 'http://127.0.0.1:5174';
 const realtimeStreams = new Set<ServerResponse>();
+const roomScenario = new MockRoomScenario();
 let nextCommandId = 1;
 
 const server = createServer((request, response) => {
@@ -45,6 +42,36 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         return;
     }
 
+    if (request.method === 'POST' && request.url === '/test/room/reset') {
+        roomScenario.reset();
+        respondJson(response, 204, undefined);
+
+        return;
+    }
+
+    if (request.method === 'PUT' && request.url === '/test/room/snapshot') {
+        try {
+            roomScenario.setSnapshot(parseJson(await readRequestBody(request)));
+            respondJson(response, 204, undefined);
+        } catch (error) {
+            respondScenarioError(response, error);
+        }
+
+        return;
+    }
+
+    if (request.method === 'POST' && request.url === '/test/room/realtime') {
+        try {
+            const message = roomScenario.applyUpdate(parseJson(await readRequestBody(request)));
+            publishSseMessage(message);
+            respondJson(response, 204, undefined);
+        } catch (error) {
+            respondScenarioError(response, error);
+        }
+
+        return;
+    }
+
     if (request.method === 'POST' && request.url === '/room/commands') {
         try {
             parseMockSetPowerCommandRequest(await readRequestBody(request));
@@ -72,7 +99,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
 function setCorsHeaders(response: ServerResponse): void {
     response.setHeader('access-control-allow-origin', frontendOrigin);
-    response.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+    response.setHeader('access-control-allow-methods', 'GET, POST, PUT, OPTIONS');
     response.setHeader('access-control-allow-headers', 'content-type');
 }
 
@@ -84,6 +111,7 @@ function openRealtimeStream(request: IncomingMessage, response: ServerResponse):
     });
     response.flushHeaders();
     realtimeStreams.add(response);
+    response.write(serializeMockSseMessage(roomScenario.snapshotMessage()));
 
     request.on('close', () => {
         realtimeStreams.delete(response);
@@ -91,17 +119,26 @@ function openRealtimeStream(request: IncomingMessage, response: ServerResponse):
     });
 }
 
-export function publishRoomSnapshot(snapshot: unknown): void {
-    assertMockRoomSnapshot(snapshot);
-}
-
-export function publishSseMessage(message: unknown): void {
-    const validatedMessage = assertMockSseMessage(message);
-    const serializedMessage = serializeMockSseMessage(validatedMessage);
+function publishSseMessage(message: unknown): void {
+    const serializedMessage = serializeMockSseMessage(message);
 
     for (const response of realtimeStreams) {
         response.write(serializedMessage);
     }
+}
+
+function parseJson(body: string): unknown {
+    try {
+        return JSON.parse(body);
+    } catch {
+        throw new Error('Mock BFF scenario request body was not valid JSON.');
+    }
+}
+
+function respondScenarioError(response: ServerResponse, error: unknown): void {
+    respondJson(response, 400, {
+        message: error instanceof Error ? error.message : 'Mock BFF scenario request was invalid.',
+    });
 }
 
 async function readRequestBody(request: IncomingMessage): Promise<string> {

@@ -54,7 +54,7 @@ an ADR as part of the related change.
       Done when: invalid fixtures and unexpected `set.power` requests fail the
       test harness before they can make a UI assertion pass.
 
-- [ ] Add deterministic LED fixtures: an online `led-main` snapshot, valid
+- [x] Add deterministic LED fixtures: an online `led-main` snapshot, valid
       revision sequencing, and helpers for `commands.updated` and
       `device.updated` messages.
       Done when: browser scenarios can arrange BFF-level state without

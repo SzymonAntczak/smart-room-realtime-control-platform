@@ -170,6 +170,19 @@ enough to render documented behavior honestly.
 - Drive and assert the UI through accessible browser locators. Synchronize with
   observable UI state, assertions or explicit mocked-BFF scenario control; do
   not use arbitrary time waits.
+- Declare a fixed browser locale. Do not make browser scenarios depend on full
+  translated sentences; cover translations in i18n or component tests instead.
+- Prefer roles, accessible names and ARIA state for browser locators. Use a
+  named `data-testid` only to identify a stable domain element when semantics
+  alone are insufficient, and still assert its role or ARIA state when that is
+  the user-visible behavior. Do not use CSS selectors or DOM structure.
+- Separate mock-BFF unit tests protect only harness validity: fixtures,
+  shared-contract validation, SSE formatting and revision sequencing. Playwright
+  may use its test-only scenario controls to arrange BFF state, but must assert
+  dashboard behavior rather than mock endpoint responses or mock implementation details.
+- Browser-integration tests do not verify BFF behavior. They assume the mocked
+  BFF provides schema-valid, revision-consistent frontend-facing responses;
+  production BFF behavior belongs to backend and full-runtime end-to-end tests.
 - Do not inject React or other frontend state directly, and do not use
   simulator-native messages to arrange a browser scenario.
 - Follow [ADR: Playwright for Frontend Integration Tests](../docs/decisions/adr-playwright-frontend-integration-tests.md)
