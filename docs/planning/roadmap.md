@@ -99,7 +99,7 @@ deployment posture with cloud operations, fleet management or full monitoring.
 | Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                                                   |
 | Stage 4   | Simulator platform readiness              | Telemetry, diagnostics and a repeatable local demo make the simulator slice a complete platform reference |
 | Stage 4.5 | LAN security foundation                   | Secure LAN access and MQTT identities are established without burdening the loopback development path     |
-| Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes the normal local simulator transport boundary                                             |
+| Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes the normal local simulator transport boundary                                           |
 | Stage 6   | ESP32 / ESPHome source                    | Environmental telemetry and on/off control use MQTT from minimal custom hardware                          |
 | Stage 7   | Standalone MQTT device source             | A second, native MQTT device validates independent adapter and physical-actuation behavior                |
 | Stage 8   | Dashboard source-parity gate              | All three MQTT runtime sources work concurrently with equivalent visibility and control guarantees        |

@@ -27,26 +27,31 @@ files while planning.
    not delegate automatically.
 7. Derive independently verifiable acceptance criteria from binding behavior and
    the requested outcome. Give every criterion a stable ID and cite its source.
-8. Turn each criterion into concise Given / When / Then scenarios at the lowest
-   appropriate layer: contract, unit/state model, adapter, BFF, runtime
-   integration or frontend UI.
+8. Turn each criterion into concise scenario statements using the
+   Given / When / Then structure in the language of the plan. Use the literal
+   English labels only in English plans; for example, write Polish scenarios
+   as `Zakładając / gdy / wtedy`. Choose the lowest appropriate layer:
+   contract, unit/state model, adapter, BFF, runtime integration or frontend UI.
 9. Return an implementation-ready plan with this structure:
-
-   1. Goal and scope
-   2. Confirmed behavior and constraints
-   3. Files and symbols to change
-   4. Ordered implementation steps
-   5. Acceptance criteria
-   6. Test scenarios and verification
-   7. Risks, assumptions and human decisions
-   8. Evidence reviewed
+    1. Goal and scope
+    2. Confirmed behavior and constraints
+    3. Files and symbols to change
+    4. Ordered implementation steps
+    5. Acceptance criteria
+    6. Test scenarios and verification
+    7. Risks, assumptions and human decisions
+    8. Evidence reviewed
 
 ## Output conventions
 
 - Acceptance criterion: `AC-N: <observable outcome> — Source: <path and
-  section, or human decision>.`
-- Test scenario: `AC-N / Scenario N: Given <precondition>, when <action>, then
-  <observable result>. Layer: <test layer>. Protects: <risk or behavior>.`
+section, or human decision>.`
+- Test scenario: write the scenario's structure in the plan language. For an
+  English plan: `AC-N / Scenario N: Given <precondition>, when <action>, then
+<observable result>. Layer: <test layer>. Protects: <risk or behavior>.`;
+  for a Polish plan: `AC-N / Scenariusz N: Zakładając <warunek wstępny>, gdy
+<akcja>, wtedy <obserwowalny rezultat>. Warstwa: <warstwa testowa>.
+Chroni przed: <ryzyko lub zachowanie>.`
 - Explain why every proposed file change is needed. Cite paths and symbols, and
   include line references when they materially remove ambiguity.
 - If the task is too small to justify a full planning pass, say so and provide

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Smart Room Frontend Implementation"
-  short_description: "Implement reliable React realtime control UX"
-  default_prompt: "Use $smart-room-frontend-implementation to implement this Smart Room frontend change."
+    display_name: 'Smart Room Frontend Implementation'
+    short_description: 'Implement reliable React realtime control UX'
+    default_prompt: 'Use $smart-room-frontend-implementation to implement this Smart Room frontend change.'
