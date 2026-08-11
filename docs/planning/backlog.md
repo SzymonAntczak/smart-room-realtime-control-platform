@@ -38,7 +38,7 @@ an ADR as part of the related change.
       Done when: the instructions complement the ADR without redefining command
       or reliability behavior owned by architecture documentation.
 
-- [ ] Add Playwright configuration that starts the Vite frontend on a dedicated
+- [x] Add Playwright configuration that starts the Vite frontend on a dedicated
       test port with `VITE_ROOM_REALTIME_URL` and `VITE_ROOM_COMMAND_URL`
       targeting the mocked BFF.
       Done when: a browser test loads the frontend from the test server; neither
