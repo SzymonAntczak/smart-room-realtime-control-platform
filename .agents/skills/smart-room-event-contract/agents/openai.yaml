@@ -1,0 +1,4 @@
+interface:
+  display_name: "Smart Room Event Contract"
+  short_description: "Design and verify events, commands, and state"
+  default_prompt: "Use $smart-room-event-contract to implement this Smart Room event or command change."

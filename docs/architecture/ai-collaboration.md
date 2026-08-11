@@ -62,8 +62,14 @@ the relevant source document.
 
 ## Subagents
 
-Subagents should be used primarily for focused review, validation and independent
-checks.
+Subagents should be used primarily for focused, independent exploration,
+review, validation and checks. The main agent remains the owner of interactive
+planning: it gathers user decisions and produces the final implementation plan.
+
+When an independent read-heavy pass would materially improve planning
+confidence, the main agent should explain the proposed subagent role and ask
+the user for permission before delegating. It should not delegate automatically
+only because a task appears difficult.
 
 Subagents should:
 

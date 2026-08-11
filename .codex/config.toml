@@ -5,7 +5,6 @@ sandbox_mode = "workspace-write"
 project_doc_max_bytes = 65536
 
 [agents]
-max_threads = 4
+max_concurrent_threads_per_session = 4
 default_subagent_model = "gpt-5.6-terra"
 default_subagent_reasoning_effort = "medium"
-max_depth = 1

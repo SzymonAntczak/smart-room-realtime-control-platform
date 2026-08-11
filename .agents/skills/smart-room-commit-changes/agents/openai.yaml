@@ -1,0 +1,4 @@
+interface:
+  display_name: "Smart Room Commit Changes"
+  short_description: "Review, stage, verify, and commit Smart Room work"
+  default_prompt: "Use $smart-room-commit-changes to prepare and create a clean commit for these changes."

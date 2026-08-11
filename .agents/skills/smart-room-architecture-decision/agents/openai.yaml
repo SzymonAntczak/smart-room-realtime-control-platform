@@ -1,0 +1,4 @@
+interface:
+  display_name: "Smart Room Architecture Decision"
+  short_description: "Deliberate architecture and ADR decision support"
+  default_prompt: "Use $smart-room-architecture-decision to prepare options for this Smart Room architecture decision."
