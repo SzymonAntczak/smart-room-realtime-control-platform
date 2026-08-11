@@ -37,6 +37,12 @@ AI is an implementation assistant here, not the owner of the architecture.
 - Keep changes small and explainable.
 - Avoid broad refactors unless they directly support the requested change.
 
+## Code Review Rules
+
+- For Smart Room code reviews, use the `smart-room-review-workflow` skill as
+  the review procedure. The repository instructions and binding documentation
+  above remain the review criteria; do not duplicate them in the review rules.
+
 ## TypeScript
 
 - Prefer `unknown` over `any`.
