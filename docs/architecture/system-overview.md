@@ -75,12 +75,13 @@ The exact hardware models and UI layout can change. The stable MVP goal is to
 exercise the control loop, state model and reliability behavior with a small set
 of understandable devices.
 
-For deterministic development and domain tests, the simulator may communicate
-directly with a simulator adapter in-process. This route is not a production
-device transport. Production-like sources communicate through a local MQTT
-broker: the MQTT-backed simulator, ESP32/ESPHome and standalone MQTT-capable
-devices. Backend-owned source adapters may use different native topics and
-payloads, but must produce the same platform contracts.
+Once MQTT is introduced, simulator and device runtime traffic communicates
+through a local MQTT broker: the MQTT-backed simulator, ESP32/ESPHome and
+standalone MQTT-capable devices. This is the normal local development and
+end-to-end route, not only a deployment-like option. Backend-owned source
+adapters may use different native topics and payloads, but must produce the
+same platform contracts. Direct simulator or adapter invocation is limited to
+isolated domain and adapter test seams; it is not an application runtime.
 
 ## Main Components
 
@@ -234,10 +235,9 @@ commands to native MQTT commands.
 If the backend loses its required broker connection, every device available
 only through that MQTT source becomes `offline` with the reason
 `broker_unavailable`; its commands are blocked. This expresses that the
-platform cannot reach the device through its required production transport. A
-backend reconnect alone does not restore `online`: a later trustworthy device
-availability signal is required. The direct simulator route is unaffected
-because it is explicitly a development-only source.
+platform cannot reach the device through its required transport. A backend
+reconnect alone does not restore `online`: a later trustworthy device
+availability signal is required.
 
 ## Local-First Assumption
 

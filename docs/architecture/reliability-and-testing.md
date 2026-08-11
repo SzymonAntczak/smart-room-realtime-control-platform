@@ -39,8 +39,9 @@ backend tests; they do not yet have a manual scenario control.
 
 MQTT-backed slices additionally cover broker unavailable and reconnect,
 subscription recovery, malformed native payloads, duplicate delivery and
-retained-message bootstrap. These are transport-integration scenarios; the
-direct simulator path remains the faster domain-test route.
+retained-message bootstrap. These scenarios run through the normal local
+simulator runtime. Isolated domain and adapter tests may use direct test seams
+without maintaining a second end-to-end route.
 
 ## Observability
 
@@ -115,9 +116,11 @@ Initial scenarios:
 - degraded health recovers without rewriting availability or freshness
 - future-dated report is ignored and a later time-valid report refreshes the observation
 
-### MQTT Transport Integration Tests
+### MQTT Runtime And Transport Tests
 
-Run the real local broker only where transport behavior is under test. Verify:
+After Stage 5, run the real local broker for every simulator runtime or
+end-to-end test. Direct seams are limited to isolated domain and adapter tests.
+In addition to normal command and observation flows, verify:
 
 - the MQTT simulator, ESP32/ESPHome and standalone-device adapters translate their own
   native payloads to the shared platform contract;

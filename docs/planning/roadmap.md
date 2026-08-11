@@ -39,8 +39,8 @@ Each device or capability should move through the same delivery rhythm:
 
 For the initial environment-sensor and on/off-output roles, "real hardware"
 means more than one physical proof point. Before the device scope grows, the
-same Dashboard must work concurrently with the direct development simulator,
-the MQTT-backed simulator, an ESP32 device and a standalone MQTT device. This
+same Dashboard must work concurrently with the MQTT-backed simulator, an ESP32
+device and a standalone MQTT device. This
 is the source-parity gate described below.
 
 The current reference slice is the simulated temperature sensor read path. It
@@ -74,11 +74,12 @@ boundaries, not to add a broader collection of shallow device cards. Motion,
 ambient light, buttons as a separate input role and every other device role are
 explicitly deferred. They may be planned only after the parity gate is met.
 
-The direct simulator-to-adapter route remains a development and deterministic
-test path. All production-like device sources use MQTT through the local
-broker: the MQTT simulator, ESP32/ESPHome and standalone MQTT-capable devices.
-Their native topics and payloads need not match; backend-owned adapters
-translate each source into the shared platform contract.
+After Stage 5, the MQTT simulator is the normal local development and
+end-to-end path. All runtime device sources use MQTT through the local broker:
+the MQTT simulator, ESP32/ESPHome and standalone MQTT-capable devices. Their
+native topics and payloads need not match; backend-owned adapters translate
+each source into the shared platform contract. Direct invocation is retained
+only as an isolated test seam for domain logic and adapter translation.
 
 At the roadmap level, "production ready" means reliability-first for a local
 project slice: clear contracts, explicit uncertainty and failure states,
@@ -98,10 +99,10 @@ deployment posture with cloud operations, fleet management or full monitoring.
 | Stage 3.5 | Frontend integration test reference suite | Browser tests validate UI behavior against a mocked BFF                                                   |
 | Stage 4   | Simulator platform readiness              | Telemetry, diagnostics and a repeatable local demo make the simulator slice a complete platform reference |
 | Stage 4.5 | LAN security foundation                   | Secure LAN access and MQTT identities are established without burdening the loopback development path     |
-| Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes a real transport boundary while the direct simulator path remains intact                |
+| Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes the normal local simulator transport boundary                                             |
 | Stage 6   | ESP32 / ESPHome source                    | Environmental telemetry and on/off control use MQTT from minimal custom hardware                          |
 | Stage 7   | Standalone MQTT device source             | A second, native MQTT device validates independent adapter and physical-actuation behavior                |
-| Stage 8   | Dashboard source-parity gate              | All four sources work concurrently with equivalent visibility and control guarantees                      |
+| Stage 8   | Dashboard source-parity gate              | All three MQTT runtime sources work concurrently with equivalent visibility and control guarantees        |
 | Stage 9   | Cross-source scenes and packaging         | Explainable multi-device behavior and a final portfolio-ready narrative build on validated sources        |
 | Future    | New device roles                          | Motion, ambient light or other roles are considered only after Stage 9                                    |
 
@@ -235,9 +236,9 @@ mocked BFF contract, without coupling tests to simulator or backend internals.
 This stage does not start the production backend or simulator and is not an
 end-to-end test of the full runtime. Its scenarios and user-visible assertions
 should become the reference for a later end-to-end suite against the real
-backend and then hardware-backed adapters. The choice between Playwright and
-Cypress belongs to implementation planning; the durable requirement is
-browser-level verification of the user-facing contract.
+backend and then hardware-backed adapters. Playwright is the accepted runner;
+the durable requirement is browser-level verification of the user-facing
+contract.
 
 Expected outcome:
 
@@ -257,10 +258,10 @@ verification with the real backend is a later, separate stage.
 
 ## Stage 4 - Simulator Platform Readiness
 
-Stage 4 completes the platform on the direct simulator route before MQTT or
-hardware add new transport and adapter concerns. It turns the temperature and
-LED reference slices into a complete local system that can be tested,
-diagnosed and demonstrated on its own terms.
+Stage 4 completes the platform on the simulator route before MQTT or hardware
+add new transport and adapter concerns. It turns the temperature and LED
+reference slices into a complete local system that can be tested, diagnosed and
+demonstrated on its own terms.
 
 Expected outcome:
 
@@ -290,8 +291,8 @@ to this reference rather than redefining its user-visible semantics.
 
 Stage 4.5 establishes the minimum security posture for a platform that remains
 local-first but is intentionally reachable from a trusted LAN. It is a boundary
-before the MQTT and hardware stages, not a reason to turn the direct simulator
-or deterministic tests into deployment-like environments.
+before the MQTT and hardware stages, while preserving explicit isolated test
+seams for deterministic domain and adapter tests.
 
 The goal is to protect the frontend-facing BFF, its realtime connection and
 the local MQTT broker without introducing cloud identity or Internet exposure.
@@ -301,8 +302,9 @@ decisions before implementation.
 Expected outcome:
 
 - the runtime has explicit `dev` and `lan` profiles: `dev` remains loopback-only
-  and keeps the direct simulator and deterministic tests usable without broker,
-  LAN credentials or deployment certificates;
+  and keeps isolated deterministic tests free of LAN credentials or deployment
+  certificates; after Stage 5 its normal simulator runtime uses the local
+  broker;
 - the LAN profile uses HTTPS and WSS, requires local user authentication,
   session-based access, CSRF protection for state-changing requests and
   backend-enforced authorization for reads, diagnostics, commands and realtime
@@ -315,23 +317,24 @@ Expected outcome:
   restricts publish and subscribe access to the minimum required topic scope;
 - automated tests and a local LAN acceptance run demonstrate rejected
   unauthenticated or unauthorized access, rejected cross-device MQTT access,
-  and preservation of the fast direct-simulator development path.
+  and preservation of isolated fast domain and adapter tests.
 
 Stage 4.5 is complete when LAN access has an explicit, tested security boundary
-and the direct simulator remains a frictionless development and deterministic
-test route. Stage 5 must not introduce the MQTT-backed simulator runtime until
-this foundation and its relevant architectural decisions are complete.
+and isolated deterministic tests remain frictionless. Stage 5 must not
+introduce the MQTT-backed simulator runtime until this foundation and its
+relevant architectural decisions are complete.
 
 ## Stage 5 - MQTT-Backed Simulator Runtime
 
-Stage 5 introduces MQTT as a production-like transport boundary without
-replacing the direct simulator route used by development and deterministic
-tests. It builds on the LAN security foundation established in Stage 4.5.
+Stage 5 makes MQTT the normal local simulator transport boundary. It builds on
+the LAN security foundation established in Stage 4.5. Direct calls remain only
+isolated test seams, not an alternate simulator runtime.
 
 Expected outcome:
 
-- the same simulator device model can run directly through its existing adapter
-  or publish simulator-native MQTT messages through local Mosquitto,
+- the simulator device model publishes simulator-native MQTT messages through
+  local Mosquitto and receives simulator-native MQTT commands through the same
+  boundary,
 - a backend MQTT simulator adapter validates topics and payloads before it
   creates the same platform events and receives the same platform commands,
 - broker reconnect, malformed payload, duplicate delivery, retained state and
@@ -340,11 +343,13 @@ Expected outcome:
   reason `broker_unavailable` and blocks their commands,
 - reconnecting the backend to the broker does not restore a device to `online`
   until new trustworthy device availability evidence arrives,
-- the direct path remains the fast reference for domain and adapter tests.
+- development scenario controls invoke simulator behavior through a dev-only
+  backend boundary, while every resulting observation returns through MQTT;
+- direct calls remain available only for isolated domain and adapter tests.
 
-Stage 5 is complete when the MQTT simulator and direct simulator produce the
-same platform-level behavior for the supported sensor and on/off roles, while
-transport-specific failure behavior remains explicit.
+Stage 5 is complete when the MQTT simulator provides the supported sensor and
+on/off behavior through the ordinary local runtime, while transport-specific
+failure behavior remains explicit.
 
 ## Stage 6 - ESP32 / ESPHome Source
 
@@ -362,7 +367,7 @@ Expected outcome:
   availability, freshness, command history and logs,
 - a manual acceptance checklist covers temperature, humidity and `set.power`.
 
-Stage 6 is complete when the ESP32 source can run beside both simulator routes
+Stage 6 is complete when the ESP32 source can run beside the MQTT simulator
 without changing the Dashboard's control or reliability semantics.
 
 ## Stage 7 - Standalone MQTT Device Source
@@ -390,7 +395,6 @@ MQTT source, not a special path that bypasses the platform model.
 Stage 8 proves the platform rather than adding another device role. The local
 Dashboard runs the following sources concurrently:
 
-- direct in-process simulator (development-only route),
 - MQTT-backed simulator,
 - ESP32 / ESPHome,
 - standalone MQTT-capable device.
@@ -410,7 +414,7 @@ Expected outcome:
 - contract, domain, adapter, transport-integration and browser tests cover the
   intended boundary at the appropriate level.
 
-Stage 8 is complete when all four sources are useful together in one Dashboard
+Stage 8 is complete when all three runtime sources are useful together in one Dashboard
 and the user can explain their state, events, commands and failure causes.
 
 ## Stage 9 - Cross-Source Scenes and Packaging

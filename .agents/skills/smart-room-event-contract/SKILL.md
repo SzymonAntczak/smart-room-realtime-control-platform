@@ -17,6 +17,9 @@ Read these before changing behavior:
 - `docs/architecture/reliability-and-testing.md`
 - `docs/decisions/adr-command-correlation-confirmation-and-concurrency.md`
 - `docs/decisions/adr-device-command-confirmation-and-health-policy.md`
+- `docs/decisions/adr-mqtt-source-parity-before-device-expansion.md` when the
+  affected boundary includes MQTT runtime traffic, simulator scenarios or
+  source availability.
 
 ## Workflow
 

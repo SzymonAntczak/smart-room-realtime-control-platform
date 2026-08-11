@@ -13,6 +13,7 @@ Use simulator/AGENTS.md as local operating guidance. In particular, check
 simulator changes against:
 
 - docs/decisions/adr-event-simulator-before-real-devices.md
+- docs/decisions/adr-mqtt-source-parity-before-device-expansion.md
 - docs/architecture/control-loop.md
 - docs/architecture/devices.md
 - docs/architecture/events-and-commands.md

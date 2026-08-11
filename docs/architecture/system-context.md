@@ -5,12 +5,7 @@ Room platform.
 
 ```mermaid
 flowchart LR
-    subgraph development[Development-only Source]
-        direction TB
-        directSimulator[Direct Event Simulator]
-    end
-
-    subgraph mqttDevices[Production-like MQTT Sources]
+    subgraph mqttDevices[MQTT Runtime Sources]
         direction TB
         mqttSimulator[MQTT Event Simulator]
         esp32[ESP32 / ESPHome]
@@ -21,7 +16,6 @@ flowchart LR
 
     subgraph adapters[Backend Adapters]
         direction TB
-        directAdapter[Direct Simulator Adapter]
         mqttSimulatorAdapter[MQTT Simulator Adapter]
         espHomeAdapter[ESPHome MQTT Adapter]
         standaloneAdapter[Standalone MQTT Device Adapter]
@@ -48,12 +42,10 @@ flowchart LR
         user[User]
     end
 
-    directSimulator <-->|simulator-native messages / commands| directAdapter
     mqttSimulator <-->|simulator-native MQTT| broker
     esp32 <-->|ESPHome MQTT| broker
     standaloneDevice <-->|device-native MQTT| broker
 
-    directAdapter -->|platform events| processor
     broker <-->|MQTT| mqttSimulatorAdapter
     broker <-->|MQTT| espHomeAdapter
     broker <-->|MQTT| standaloneAdapter
@@ -64,21 +56,28 @@ flowchart LR
     readModel -->|snapshots / updates| api
     api -->|server-to-client SSE projections| ui
     ui -->|HTTP command requests| api
+    ui -->|dev scenario requests| api
     ui <--> user
 
     api -->|command requests| processor
-    processor -->|platform commands| directAdapter
+    api -->|dev-only scenario control| mqttSimulator
     processor -->|platform commands| mqttSimulatorAdapter
     processor -->|platform commands| espHomeAdapter
     processor -->|platform commands| standaloneAdapter
 ```
 
-In the broader target model, the direct simulator route remains a
-development-only source for deterministic tests. The production-like runtime
-introduces Mosquitto between sources and their backend adapters. The MQTT
-simulator, ESP32/ESPHome and standalone MQTT devices are allowed to have different native topics
-and payloads; each backend-owned adapter translates them to and from the same
-platform contracts. The frontend does not depend on a source protocol.
+Once MQTT is introduced, Mosquitto is between every simulator or device runtime
+source and its backend adapter. The MQTT simulator, ESP32/ESPHome and standalone
+MQTT devices are allowed to have different native topics and payloads; each
+backend-owned adapter translates them to and from the same platform contracts.
+The frontend does not depend on a source protocol.
+
+Development scenario requests are a separate dev-only BFF-to-simulator control
+boundary. They may bypass MQTT because they configure test behavior rather than
+representing a device command. Any observation caused by a scenario still
+returns from the simulator through MQTT. Direct calls to adapters or simulator
+models are limited to isolated unit-test seams and are not shown as runtime
+sources.
 
 The broker is a required transport dependency for MQTT-backed devices. On a
 backend-to-broker disconnect, devices available only through that dependency

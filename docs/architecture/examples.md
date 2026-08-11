@@ -13,23 +13,23 @@ flowchart LR
     ui -->|command request| backend[Event Processor]
     backend -->|state updates| ui
 
-    simulator[Event Simulator] -->|simulator-native messages| simAdapter[Backend Simulator Adapter]
+    simulator[Event Simulator] <-->|simulator-native MQTT| broker[(Local MQTT Broker)]
+    broker <-->|MQTT| simAdapter[Backend MQTT Simulator Adapter]
     simAdapter -->|platform events| backend
     backend -->|platform commands| simAdapter
-    simAdapter -->|simulator-native commands| simulator
 
     backend -->|raw events and snapshots| storage[(Telemetry Storage)]
 
-    hardware[Hardware Device later] -.->|device-native messages| hwAdapter[Backend Hardware Adapter]
+    hardware[Hardware Device later] <-.->|device-native MQTT| broker
+    broker <-.->|MQTT| hwAdapter[Backend Hardware Adapter]
     hwAdapter -.->|platform events| backend
     backend -.->|platform commands| hwAdapter
-    hwAdapter -.->|device-native commands| hardware
 ```
 
-This is the first useful backend-backed vertical slice. The simulator behaves
-like a real device source behind a backend adapter: it emits simulator-native
-messages, consumes simulator-native commands and exercises failure modes before
-hardware is introduced.
+After Stage 5, the simulator behaves like a real device source through the
+local MQTT broker. It emits simulator-native MQTT messages, consumes
+simulator-native MQTT commands and exercises failure modes before hardware is
+introduced.
 
 ## Successful Command Confirmation
 
@@ -39,6 +39,7 @@ sequenceDiagram
     participant UI as Realtime Frontend
     participant EP as Event Processor
     participant SA as Simulator Adapter
+    participant B as Local MQTT Broker
     participant S as Event Simulator
     participant Store as Telemetry Storage
 
@@ -46,11 +47,13 @@ sequenceDiagram
     UI->>EP: set.power command
     EP->>Store: command.requested(commandId)
     EP->>SA: dispatch set.power(commandId)
-    SA->>S: simulator-native power command
+    SA->>B: simulator-native MQTT power command
+    B->>S: simulator-native MQTT power command
     EP->>Store: command.dispatched(commandId)
     EP-->>UI: requestedState=on, command=pending
 
-    S-->>SA: simulator-native state report(power=on)
+    S-->>B: simulator-native MQTT state report(power=on)
+    B-->>SA: simulator-native MQTT state report(power=on)
     SA-->>EP: device.state.reported(power=on)
     EP->>EP: match report to pending set.power rule
     EP->>Store: command.confirmed(commandId)
@@ -68,6 +71,7 @@ sequenceDiagram
     participant UI as Realtime Frontend
     participant EP as Event Processor
     participant SA as Simulator Adapter
+    participant B as Local MQTT Broker
     participant S as Event Simulator
     participant Store as Telemetry Storage
 
@@ -75,7 +79,8 @@ sequenceDiagram
     UI->>EP: set.power command
     EP->>Store: command.requested(commandId)
     EP->>SA: dispatch set.power(commandId)
-    SA->>S: simulator-native power command
+    SA->>B: simulator-native MQTT power command
+    B->>S: simulator-native MQTT power command
     EP->>Store: command.dispatched(commandId)
     EP-->>UI: requestedState=on, command=pending
 
@@ -96,13 +101,15 @@ sequenceDiagram
     participant UI as Realtime Frontend
     participant EP as Event Processor
     participant SA as Simulator Adapter
+    participant B as Local MQTT Broker
     participant S as Event Simulator
     participant Store as Telemetry Storage
 
     UI->>EP: set.power on for led-main
     EP->>Store: command.requested(cmd-123)
     EP->>SA: dispatch set.power(cmd-123)
-    SA->>S: simulator-native power command
+    SA->>B: simulator-native MQTT power command
+    B->>S: simulator-native MQTT power command
     EP->>Store: command.dispatched(cmd-123)
     EP-->>UI: command=pending
 
@@ -111,7 +118,8 @@ sequenceDiagram
     EP->>Store: command.timed_out(cmd-123)
     EP-->>UI: reportedState=off, requestedState=on, command=timed_out
 
-    S-->>SA: simulator-native state report(power=on)
+    S-->>B: simulator-native MQTT state report(power=on)
+    B-->>SA: simulator-native MQTT state report(power=on)
     SA-->>EP: device.state.reported(power=on)
     EP->>Store: device.state.reported(power=on)
     EP-->>UI: reportedState=on, command=timed_out

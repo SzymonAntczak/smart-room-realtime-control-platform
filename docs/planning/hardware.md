@@ -43,6 +43,6 @@ voltage to a breadboard, Dupont wires or an exposed relay module.
 ## Purchase Gate
 
 Before buying another device, complete Stage 8: the Dashboard must show the
-direct simulator, MQTT simulator, ESP32 and a standalone MQTT-capable device
+MQTT simulator, ESP32 and a standalone MQTT-capable device
 concurrently with applicable telemetry or reported state, events, logs and
 honest command state. Cross-source scenes are introduced in Stage 9.

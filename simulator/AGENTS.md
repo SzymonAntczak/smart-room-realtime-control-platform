@@ -12,6 +12,7 @@ Follow the root `AGENTS.md`, the architecture docs and accepted ADRs. In
 particular, keep the simulator aligned with:
 
 - `docs/decisions/adr-event-simulator-before-real-devices.md`
+- `docs/decisions/adr-mqtt-source-parity-before-device-expansion.md`
 - `docs/architecture/control-loop.md`
 - `docs/architecture/events-and-commands.md`
 - `docs/architecture/reliability-and-testing.md`
