@@ -70,16 +70,16 @@ an ADR as part of the related change.
       release, shows visible progress and locked interaction, then confirms the
       update without wall-clock waiting.
 
-- [ ] Add a browser test for explicit command rejection.
+- [x] Add a browser test for explicit command rejection.
       Done when: a rejected command response produces an understandable visible
       failure and does not change confirmed power.
 
-- [ ] Add a browser test for command timeout.
+- [x] Add a browser test for command timeout.
       Done when: an accepted command later receives a `timed_out` projection,
       the reported power remains unchanged, and the terminal outcome stays
       visible.
 
-- [ ] Add a browser test for a late report after timeout.
+- [x] Add a browser test for a late report after timeout.
       Done when: the late state report updates observed power but the earlier
       timed-out outcome remains visible and is not retroactively confirmed.
 

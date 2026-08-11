@@ -8,6 +8,10 @@ export async function resetMockRoom(request: APIRequestContext): Promise<void> {
     await assertControlResponse(await request.post(mockBffUrls.reset));
 }
 
+export async function rejectNextMockCommand(request: APIRequestContext): Promise<void> {
+    await assertControlResponse(await request.post(mockBffUrls.rejectNextCommand));
+}
+
 export async function setMockRoomSnapshot(
     request: APIRequestContext,
     snapshot: RoomSnapshotProjection,

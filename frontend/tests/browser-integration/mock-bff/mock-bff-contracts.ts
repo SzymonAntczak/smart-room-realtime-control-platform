@@ -1,4 +1,6 @@
 import {
+    type RejectedCommandResponse,
+    rejectedCommandResponseSchema,
     type SetPowerCommandRequest,
     setPowerCommandRequestSchema,
 } from '@smart-room/contracts/commands';
@@ -37,6 +39,14 @@ export function parseMockSetPowerCommandRequest(body: string): SetPowerCommandRe
 
     if (!isSchema(setPowerCommandRequestSchema, value)) {
         throw new Error('Mock BFF command request did not match the shared set.power contract.');
+    }
+
+    return value;
+}
+
+export function assertMockRejectedCommandResponse(value: unknown): RejectedCommandResponse {
+    if (!isSchema(rejectedCommandResponseSchema, value)) {
+        throw new Error('Mock BFF rejected command response did not match the shared contract.');
     }
 
     return value;

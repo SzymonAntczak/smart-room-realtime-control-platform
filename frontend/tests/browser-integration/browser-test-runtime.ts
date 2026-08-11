@@ -18,6 +18,7 @@ export const mockBffPaths = {
     realtime: '/room/realtime',
     commands: '/room/commands',
     reset: '/test/room/reset',
+    rejectNextCommand: '/test/room/commands/reject-next',
     snapshot: '/test/room/snapshot',
     scenarioRealtime: '/test/room/realtime',
 } as const;
@@ -27,6 +28,7 @@ export const mockBffUrls = {
     realtime: `${browserTestUrls.mockBff}${mockBffPaths.realtime}`,
     commands: `${browserTestUrls.mockBff}${mockBffPaths.commands}`,
     reset: `${browserTestUrls.mockBff}${mockBffPaths.reset}`,
+    rejectNextCommand: `${browserTestUrls.mockBff}${mockBffPaths.rejectNextCommand}`,
     snapshot: `${browserTestUrls.mockBff}${mockBffPaths.snapshot}`,
     scenarioRealtime: `${browserTestUrls.mockBff}${mockBffPaths.scenarioRealtime}`,
 } as const;

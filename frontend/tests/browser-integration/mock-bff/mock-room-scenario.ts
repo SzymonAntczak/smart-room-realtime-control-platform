@@ -26,6 +26,10 @@ export class MockRoomScenario {
         };
     }
 
+    currentRevision(): number {
+        return this.#revision;
+    }
+
     applyUpdate(message: unknown): RoomRealtimeServerMessage {
         const update = assertMockSseMessage(message);
 

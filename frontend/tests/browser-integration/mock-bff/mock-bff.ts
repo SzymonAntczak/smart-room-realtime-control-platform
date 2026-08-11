@@ -2,12 +2,18 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 
 import { browserTestRuntime, browserTestUrls, mockBffPaths } from '../browser-test-runtime';
 
-import { parseMockSetPowerCommandRequest, serializeMockSseMessage } from './mock-bff-contracts';
+import {
+    assertMockRejectedCommandResponse,
+    parseMockSetPowerCommandRequest,
+    serializeMockSseMessage,
+} from './mock-bff-contracts';
+import { createCommandsUpdatedMessage, createFailedLedCommand } from './mock-bff-fixtures';
 import { MockRoomScenario } from './mock-room-scenario';
 
 const realtimeStreams = new Set<ServerResponse>();
 const roomScenario = new MockRoomScenario();
 let nextCommandId = 1;
+let rejectNextCommand = false;
 
 const server = createServer((request, response) => {
     void handleRequest(request, response);
@@ -44,6 +50,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (request.method === 'POST' && request.url === mockBffPaths.reset) {
         roomScenario.reset();
         nextCommandId = 1;
+        rejectNextCommand = false;
         respondJson(response, 204, undefined);
 
         return;
@@ -56,6 +63,13 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         } catch (error) {
             respondScenarioError(response, error);
         }
+
+        return;
+    }
+
+    if (request.method === 'POST' && request.url === mockBffPaths.rejectNextCommand) {
+        rejectNextCommand = true;
+        respondJson(response, 204, undefined);
 
         return;
     }
@@ -86,10 +100,32 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
             return;
         }
 
-        respondJson(response, 202, {
-            commandId: `mock-command-${nextCommandId++}`,
-            status: 'accepted',
-        });
+        const commandId = `mock-command-${nextCommandId++}`;
+
+        if (rejectNextCommand) {
+            rejectNextCommand = false;
+            const failedCommand = createFailedLedCommand(commandId);
+            const update = roomScenario.applyUpdate(
+                createCommandsUpdatedMessage(roomScenario.currentRevision(), {
+                    recentCommands: [failedCommand],
+                }),
+            );
+            publishSseMessage(update);
+            respondJson(
+                response,
+                409,
+                assertMockRejectedCommandResponse({
+                    commandId: failedCommand.commandId,
+                    status: 'rejected',
+                    reason: failedCommand.reason,
+                    message: failedCommand.message,
+                }),
+            );
+
+            return;
+        }
+
+        respondJson(response, 202, { commandId, status: 'accepted' });
 
         return;
     }

@@ -9,6 +9,9 @@ const fixtureTimestamp = '2026-06-08T09:30:00Z';
 const commandRequestedAt = '2026-06-08T09:30:01Z';
 const commandDispatchedAt = '2026-06-08T09:30:02Z';
 const commandConfirmedAt = '2026-06-08T09:30:03Z';
+const commandFailedAt = '2026-06-08T09:30:03Z';
+const commandTimedOutAt = '2026-06-08T09:30:07Z';
+const lateReportAt = '2026-06-08T09:30:08Z';
 const ledCommandId = 'mock-command-1';
 
 export function createOnlineLedDeviceProjection(): DeviceProjection {
@@ -81,6 +84,47 @@ export function createConfirmedLedDeviceProjection(): DeviceProjection {
             power: {
                 freshness: 'fresh',
                 lastObservedAt: commandConfirmedAt,
+            },
+        },
+    };
+}
+
+export function createFailedLedCommand(commandId: string): TerminalCommandProjection {
+    return {
+        commandId,
+        deviceId: 'led-main',
+        commandType: 'set.power',
+        status: 'failed',
+        requestedState: { power: 'on' },
+        requestedAt: commandRequestedAt,
+        failedAt: commandFailedAt,
+        reason: 'command_already_active',
+        message: 'Device already has an active command.',
+    };
+}
+
+export function createTimedOutLedCommand(): TerminalCommandProjection {
+    return {
+        commandId: ledCommandId,
+        deviceId: 'led-main',
+        commandType: 'set.power',
+        status: 'timed_out',
+        requestedState: { power: 'on' },
+        requestedAt: commandRequestedAt,
+        dispatchedAt: commandDispatchedAt,
+        timedOutAt: commandTimedOutAt,
+        reason: 'confirmation_not_received',
+    };
+}
+
+export function createLateReportedLedDeviceProjection(): DeviceProjection {
+    return {
+        ...createOnlineLedDeviceProjection(),
+        reportedState: { power: 'on' },
+        observationStatus: {
+            power: {
+                freshness: 'fresh',
+                lastObservedAt: lateReportAt,
             },
         },
     };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    assertMockRejectedCommandResponse,
     assertMockRoomSnapshot,
     parseMockSetPowerCommandRequest,
     serializeMockSseMessage,
@@ -104,5 +105,23 @@ describe('mock BFF shared-contract boundary', () => {
                 }),
             ),
         ).toThrow('command request did not match the shared set.power contract');
+    });
+
+    it('accepts only a shared-contract rejected command response', () => {
+        expect(
+            assertMockRejectedCommandResponse({
+                commandId: 'mock-command-1',
+                status: 'rejected',
+                reason: 'command_already_active',
+                message: 'Device already has an active command.',
+            }),
+        ).toMatchObject({ status: 'rejected' });
+        expect(() =>
+            assertMockRejectedCommandResponse({
+                commandId: 'mock-command-1',
+                status: 'rejected',
+                reason: 'command_already_active',
+            }),
+        ).toThrow('rejected command response did not match the shared contract');
     });
 });
