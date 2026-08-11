@@ -44,7 +44,7 @@ an ADR as part of the related change.
       Done when: a browser test loads the frontend from the test server; neither
       the production backend nor the simulator is started.
 
-- [ ] Create a test-local mocked BFF server with `GET /room/realtime` as a
+- [x] Create a test-local mocked BFF server with `GET /room/realtime` as a
       persistent SSE endpoint and `POST /room/commands` as the command endpoint.
       Done when: a test can connect to SSE and make one command request through
       the same URLs the frontend uses in production.

@@ -4,6 +4,7 @@ const host = '127.0.0.1';
 const port = 4311;
 const frontendOrigin = 'http://127.0.0.1:5174';
 const realtimeStreams = new Set<ServerResponse>();
+let nextCommandId = 1;
 
 const server = createServer((request, response) => {
     setCorsHeaders(response);
@@ -28,8 +29,9 @@ const server = createServer((request, response) => {
 
     if (request.method === 'POST' && request.url === '/room/commands') {
         request.resume();
-        respondJson(response, 501, {
-            message: 'Mock BFF command scenarios are not configured yet.',
+        respondJson(response, 202, {
+            commandId: `mock-command-${nextCommandId++}`,
+            status: 'accepted',
         });
 
         return;
