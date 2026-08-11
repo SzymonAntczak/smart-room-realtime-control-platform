@@ -1,5 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
+import {
+    assertMockRoomSnapshot,
+    assertMockSseMessage,
+    parseMockSetPowerCommandRequest,
+    serializeMockSseMessage,
+} from './mock-bff-contracts';
+
 const host = '127.0.0.1';
 const port = 4311;
 const frontendOrigin = 'http://127.0.0.1:5174';
@@ -7,6 +14,17 @@ const realtimeStreams = new Set<ServerResponse>();
 let nextCommandId = 1;
 
 const server = createServer((request, response) => {
+    void handleRequest(request, response);
+});
+
+server.listen(port, host, () => {
+    process.stdout.write(`Mock BFF listening at http://${host}:${port}\n`);
+});
+
+process.once('SIGINT', stopServer);
+process.once('SIGTERM', stopServer);
+
+async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     setCorsHeaders(response);
 
     if (request.method === 'OPTIONS') {
@@ -28,7 +46,19 @@ const server = createServer((request, response) => {
     }
 
     if (request.method === 'POST' && request.url === '/room/commands') {
-        request.resume();
+        try {
+            parseMockSetPowerCommandRequest(await readRequestBody(request));
+        } catch (error) {
+            respondJson(response, 400, {
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Mock BFF command request was invalid.',
+            });
+
+            return;
+        }
+
         respondJson(response, 202, {
             commandId: `mock-command-${nextCommandId++}`,
             status: 'accepted',
@@ -38,14 +68,7 @@ const server = createServer((request, response) => {
     }
 
     respondJson(response, 404, { message: 'Mock BFF route not found.' });
-});
-
-server.listen(port, host, () => {
-    process.stdout.write(`Mock BFF listening at http://${host}:${port}\n`);
-});
-
-process.once('SIGINT', stopServer);
-process.once('SIGTERM', stopServer);
+}
 
 function setCorsHeaders(response: ServerResponse): void {
     response.setHeader('access-control-allow-origin', frontendOrigin);
@@ -66,6 +89,29 @@ function openRealtimeStream(request: IncomingMessage, response: ServerResponse):
         realtimeStreams.delete(response);
         response.end();
     });
+}
+
+export function publishRoomSnapshot(snapshot: unknown): void {
+    assertMockRoomSnapshot(snapshot);
+}
+
+export function publishSseMessage(message: unknown): void {
+    const validatedMessage = assertMockSseMessage(message);
+    const serializedMessage = serializeMockSseMessage(validatedMessage);
+
+    for (const response of realtimeStreams) {
+        response.write(serializedMessage);
+    }
+}
+
+async function readRequestBody(request: IncomingMessage): Promise<string> {
+    const chunks: Buffer[] = [];
+
+    for await (const chunk of request) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+
+    return Buffer.concat(chunks).toString('utf8');
 }
 
 function respondJson(response: ServerResponse, statusCode: number, body: unknown): void {

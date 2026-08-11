@@ -4,6 +4,7 @@ export default defineConfig({
     globalSetup: './frontend/tests/browser-integration/mock-bff/test-runtime.ts',
     outputDir: 'test-results/frontend-integration',
     testDir: 'frontend/tests/browser-integration',
+    testMatch: '**/*.spec.ts',
     use: {
         baseURL: 'http://127.0.0.1:5174',
         headless: true,

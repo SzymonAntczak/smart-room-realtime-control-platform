@@ -49,7 +49,7 @@ an ADR as part of the related change.
       Done when: a test can connect to SSE and make one command request through
       the same URLs the frontend uses in production.
 
-- [ ] Validate mock-BFF snapshots, SSE messages and received command requests
+- [x] Validate mock-BFF snapshots, SSE messages and received command requests
       with the shared TypeBox contracts.
       Done when: invalid fixtures and unexpected `set.power` requests fail the
       test harness before they can make a UI assertion pass.
