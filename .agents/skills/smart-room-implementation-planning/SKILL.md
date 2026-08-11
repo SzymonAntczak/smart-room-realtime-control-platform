@@ -21,10 +21,11 @@ files while planning.
    ambiguity.
 5. When a material ambiguity affects the plan and can be resolved now, ask the
    user one focused question before completing the plan.
-6. When a read-heavy exploration, architecture review or test/reliability review
-   would materially improve confidence, explain the proposed subagent role and
-   its expected value, then ask the user for permission before delegating. Do
-   not delegate automatically.
+6. When independent, read-heavy exploration would materially improve
+   confidence, delegate up to two read-only passes without separate permission.
+   Use them for documentation research, execution-path mapping, test evidence
+   or established-pattern research; do not delegate user decisions, plan
+   synthesis, dependent work or a small clear task.
 7. Derive independently verifiable acceptance criteria from binding behavior and
    the requested outcome. Give every criterion a stable ID and cite its source.
 8. Turn each criterion into concise scenario statements using the
@@ -41,6 +42,13 @@ files while planning.
     6. Test scenarios and verification
     7. Risks, assumptions and human decisions
     8. Evidence reviewed
+
+## Delegated Evidence
+
+Give each subagent one bounded research question and ask for binding sources,
+observed facts with file references, concrete risks or gaps, uncertainties and
+confidence. Keep user interaction, architectural decisions and the final plan
+in the main thread.
 
 ## Output conventions
 

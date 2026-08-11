@@ -1,12 +1,13 @@
 ---
 name: smart-room-review-workflow
-description: Use for read-only Smart Room reviews, including architecture conformance, frontend conformance, control reliability, AI configuration, test gaps, documentation drift, decision gaps, and reusable reviewer output structure.
+description: Use for read-only Smart Room reviews, including architecture conformance, frontend conformance, control reliability, AI configuration, test gaps, documentation drift, decision gaps, and reusable review output structure.
 ---
 
 # Smart Room Review Workflow
 
-Use this skill to keep Smart Room reviews consistent across subagents and manual
-review work.
+Use this skill to lead Smart Room reviews consistently. The main agent owns the
+scope, finding severity and final report; subagents supply only focused,
+read-only evidence when useful.
 
 ## Workflow
 
@@ -15,17 +16,31 @@ review work.
 3. Treat `docs/architecture` and accepted ADRs as binding for system behavior.
 4. Treat `docs/planning` as directional context unless promoted to architecture
    or an accepted ADR.
-5. Inspect the touched files and nearby ownership boundary.
-6. Inspect the relevant tests with the same behavior boundary in mind.
-7. Compare test intent against documented behavior, changed behavior and
+5. Decide whether independent read-heavy evidence would materially improve
+   confidence. Delegate at most three read-only passes; skip delegation for a
+   small, clear review or dependent work.
+6. Give each pass one distinct question, the relevant boundary and an expected
+   evidence summary. Suitable passes include architecture, reliability,
+   frontend, simulator and AI-configuration research.
+7. Inspect the touched files and nearby ownership boundary.
+8. Inspect the relevant tests with the same behavior boundary in mind.
+9. Compare test intent against documented behavior, changed behavior and
    realistic failure modes.
-8. Classify findings when useful: code drift, doc drift, structure drift,
+10. Synthesize delegated evidence, resolve duplicate findings and classify
+   findings when useful: code drift, doc drift, structure drift,
    contract drift, projection drift, test gap, weak test, redundant test,
    decision gap, or AI-config drift.
-9. Lead with concrete findings ordered by severity.
-10. Cite files and lines when possible.
-11. Include open questions or assumptions when they affect confidence.
-12. End with a short suggested-actions section when there are findings.
+11. Lead with concrete findings ordered by severity.
+12. Cite files and lines when possible.
+13. Include open questions or assumptions when they affect confidence.
+14. End with a short suggested-actions section when there are findings.
+
+## Delegated Evidence
+
+Ask each subagent to return only: binding sources checked, observations with
+file references, concrete risks or gaps, and confidence. Do not ask a subagent
+to assign final severity, produce the final review or create an implementation
+plan.
 
 ## Review Boundary
 

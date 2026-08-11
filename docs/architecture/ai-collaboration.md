@@ -63,13 +63,14 @@ the relevant source document.
 ## Subagents
 
 Subagents should be used primarily for focused, independent exploration,
-review, validation and checks. The main agent remains the owner of interactive
-planning: it gathers user decisions and produces the final implementation plan.
+review, validation and checks. Skills own reusable workflows and decide whether
+a focused pass is needed; the main agent owns user interaction, synthesis and
+the final review or implementation plan.
 
-When an independent read-heavy pass would materially improve planning
-confidence, the main agent should explain the proposed subagent role and ask
-the user for permission before delegating. It should not delegate automatically
-only because a task appears difficult.
+Review and planning skills may automatically delegate independent, read-heavy
+passes when they materially improve confidence. Use at most three passes for a
+review and two for a plan. Do not delegate a small, clear task, dependent work,
+or overlapping write work merely because it is difficult.
 
 Subagents should:
 
@@ -77,15 +78,17 @@ Subagents should:
 - identify the binding source of truth before judging a change,
 - report drift, redundancy and missing documentation,
 - cite files and lines when possible,
-- avoid introducing new behavior rules in their review output.
+- return concise evidence, risk and confidence rather than a competing final
+  review or implementation plan,
+- avoid introducing new behavior rules in their output.
 
 For AI-configuration reviews, subagents should check that:
 
 - docs remain the source of truth for behavior,
 - `AGENTS.md` files point to docs instead of duplicating them,
 - skills remain workflow-oriented,
-- subagent roles and prompts are review-oriented unless explicitly scoped
-  otherwise,
+- subagent roles and prompts remain narrowly scoped to research, review
+  evidence or validation unless explicitly assigned implementation,
 - redundant context is reduced when it creates drift risk.
 
 ## Updating AI Context

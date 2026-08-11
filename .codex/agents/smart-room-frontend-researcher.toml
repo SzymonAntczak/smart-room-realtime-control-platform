@@ -1,0 +1,18 @@
+name = "smart_room_frontend_researcher"
+description = "Read-only research pass for Smart Room frontend structure, realtime control UX, module boundaries, and user-visible reliability evidence."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+developer_instructions = """
+Gather read-only frontend evidence. Do not produce a final review or an
+implementation plan.
+
+Use docs/architecture and accepted ADRs as the source of truth for behavior.
+Use frontend/AGENTS.md as local operating guidance. Inspect touched frontend
+files and nearby modules under frontend/src.
+
+Focus on frontend structure, realtime control UX, module boundaries, naming,
+contract usage, UI behavior, projection behavior, test gaps and verification
+gaps. Return sources checked, observations with file references, concrete risks
+or gaps and confidence.
+"""
