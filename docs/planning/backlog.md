@@ -20,7 +20,7 @@ an ADR as part of the related change.
       Done when: browser-test type errors fail independently of the frontend
       application typecheck.
 
-- [ ] Extend ESLint for browser-test files and the Node-based mock BFF. Apply
+- [x] Extend ESLint for browser-test files and the Node-based mock BFF. Apply
       Playwright-specific rules only in the browser-test scope and keep the
       production frontend lint configuration unchanged.
       Done when: the browser suite and mock BFF lint with their appropriate

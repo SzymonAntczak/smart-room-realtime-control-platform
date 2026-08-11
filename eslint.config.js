@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import globals from 'globals';
 import checkFile from 'eslint-plugin-check-file';
+import playwright from 'eslint-plugin-playwright';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
@@ -8,6 +9,8 @@ import tseslint from 'typescript-eslint';
 
 const frontendSourceFiles = ['frontend/**/*.{ts,tsx}'];
 const frontendAppComponents = ['frontend/src/app/**/*.tsx', '**/src/app/**/*.tsx'];
+const browserIntegrationSpecFiles = ['**/tests/browser-integration/**/*.spec.ts'];
+const mockBffSourceFiles = ['**/tests/browser-integration/mock-bff/**/*.ts'];
 const nodeSourceFiles = ['backend/**/*.ts', 'simulator/**/*.ts'];
 const nodeScriptFiles = ['scripts/**/*.mjs'];
 const sharedSourceFiles = ['shared/**/*.ts'];
@@ -94,6 +97,24 @@ export default tseslint.config(
                     ignoreMiddleExtensions: true,
                 },
             ],
+        },
+    },
+    {
+        files: browserIntegrationSpecFiles,
+        ...playwright.configs['flat/recommended'],
+        rules: {
+            ...playwright.configs['flat/recommended'].rules,
+            'playwright/no-focused-test': 'error',
+            'playwright/no-skipped-test': 'error',
+        },
+    },
+    {
+        files: mockBffSourceFiles,
+        languageOptions: {
+            ecmaVersion: 2022,
+            globals: {
+                ...globals.node,
+            },
         },
     },
     {
