@@ -8,7 +8,7 @@ an ADR as part of the related change.
 
 ### Stage 3.5 - Frontend Integration Test Reference Suite
 
-- [ ] Add `@playwright/test`, the browser binaries and a root `test:browser`
+- [x] Add `@playwright/test`, the browser binaries and a root `test:browser`
       script. Configure the suite for headless Chromium and retain trace,
       screenshot and video artifacts only when a test fails.
       Done when: `npm run test:browser` starts and runs one empty smoke test.
