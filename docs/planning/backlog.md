@@ -65,7 +65,7 @@ an ADR as part of the related change.
       pending and the new power becomes confirmed only after the matching
       realtime update.
 
-- [ ] Add a browser test for delayed confirmation.
+- [x] Add a browser test for delayed confirmation.
       Done when: the test holds the command pending until an explicit mock-BFF
       release, shows visible progress and locked interaction, then confirms the
       update without wall-clock waiting.
