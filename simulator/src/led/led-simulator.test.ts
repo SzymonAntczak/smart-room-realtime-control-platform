@@ -35,6 +35,7 @@ describe('createLedSimulator', () => {
         expect(simulator.getObservedPower()).toBe('on');
         expect(reports).toEqual([
             {
+                messageId: expect.any(String),
                 messageType: 'led.state.reported',
                 deviceId: 'led-main-native',
                 sequence: 1,
@@ -55,6 +56,7 @@ describe('createLedSimulator', () => {
 
         expect(rejections).toEqual([
             {
+                messageId: expect.any(String),
                 messageType: 'led.command.rejected',
                 commandId: 'cmd-1',
                 deviceId: 'led-main-native',

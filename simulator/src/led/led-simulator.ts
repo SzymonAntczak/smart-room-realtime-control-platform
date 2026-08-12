@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { assertValidDeviceNativeTimestamp } from '../device-native-timestamp';
 
 export type LedPower = 'on' | 'off';
@@ -13,6 +15,7 @@ export interface LedSetPowerCommand {
 }
 
 export interface LedStateReport {
+    readonly messageId: string;
     readonly messageType: 'led.state.reported';
     readonly deviceId: string;
     readonly sequence: number;
@@ -23,6 +26,7 @@ export interface LedStateReport {
 }
 
 export interface LedCommandRejection {
+    readonly messageId: string;
     readonly messageType: 'led.command.rejected';
     readonly commandId: string;
     readonly deviceId: string;
@@ -30,6 +34,7 @@ export interface LedCommandRejection {
     readonly rejectedAt: string;
 }
 export interface LedAvailabilityReport {
+    readonly messageId: string;
     readonly messageType: 'led.availability.changed';
     readonly deviceId: string;
     readonly availability: 'online' | 'offline';
@@ -37,6 +42,7 @@ export interface LedAvailabilityReport {
     readonly reportedAt: string;
 }
 export interface LedHealthReport {
+    readonly messageId: string;
     readonly messageType: 'led.health.changed';
     readonly deviceId: string;
     readonly health: 'healthy' | 'degraded';
@@ -48,6 +54,7 @@ export interface LedHealthReport {
 export interface LedSimulatorConfig {
     readonly deviceId: string;
     readonly initialPower: LedPower;
+    readonly generateMessageId?: () => string;
 }
 
 export type LedCommandListener = (command: LedSetPowerCommand) => void;
@@ -88,6 +95,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
     const healthListeners = new Set<LedHealthListener>();
     let observedPower = config.initialPower;
     let stateReportSequence = 0;
+    const generateMessageId = config.generateMessageId ?? randomUUID;
     let observedAvailability: LedAvailabilityReport['previousAvailability'] = 'unknown';
     let observedHealth: LedHealthReport['previousHealth'] = 'unknown';
 
@@ -127,6 +135,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
             observedPower = power;
 
             const report: LedStateReport = {
+                messageId: generateMessageId(),
                 messageType: 'led.state.reported',
                 deviceId: config.deviceId,
                 sequence: ++stateReportSequence,
@@ -142,6 +151,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
             assertTimestamp(rejectedAt, 'LED command rejection rejectedAt');
 
             const rejection: LedCommandRejection = {
+                messageId: generateMessageId(),
                 messageType: 'led.command.rejected',
                 commandId: command.commandId,
                 deviceId: config.deviceId,
@@ -155,6 +165,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
         reportAvailability(availability, reportedAt) {
             assertTimestamp(reportedAt, 'LED availability reportedAt');
             const report: LedAvailabilityReport = {
+                messageId: generateMessageId(),
                 messageType: 'led.availability.changed',
                 deviceId: config.deviceId,
                 availability,
@@ -170,6 +181,7 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
             assertNonEmpty(reason, 'LED health reason');
             assertTimestamp(reportedAt, 'LED health reportedAt');
             const report: LedHealthReport = {
+                messageId: generateMessageId(),
                 messageType: 'led.health.changed',
                 deviceId: config.deviceId,
                 health,

@@ -244,6 +244,12 @@ This bounds memory, but high event volume can shorten the effective retention
 window. The guarantee ends when the process restarts; durable deduplication is
 a future storage responsibility.
 
+When a source can redeliver a native fact, its adapter must derive a globally
+unique platform `eventId` from the fact's stable source identity and configured
+source/device namespace. A replay is therefore deduplicable independently of
+how many later messages the adapter received, without colliding with the same
+native identity from another device or source.
+
 ## Naming Rules
 
 - Event names should use past-tense facts, for example `command.dispatched`.

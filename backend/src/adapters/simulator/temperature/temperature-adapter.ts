@@ -5,16 +5,15 @@ import type {
 } from '@smart-room/contracts/events';
 import type { TemperatureSensorSimulator } from '@smart-room/simulator';
 
-import type { EventIdGenerator, PlatformEventSink } from '../../../platform/ports/event-sink';
+import type { PlatformEventSink } from '../../../platform/ports/event-sink';
 
 export interface SimulatorTemperatureAdapterConfig {
     sensor: TemperatureSensorSimulator;
     nativeSensorId: string;
     platformDeviceId: string;
-    generateEventId: EventIdGenerator;
-    emitEvent: PlatformEventSink<TelemetryReadingRecordedEvent>;
-    emitAvailabilityEvent?: PlatformEventSink<DeviceAvailabilityChangedEvent>;
-    emitHealthEvent?: PlatformEventSink<DeviceHealthChangedEvent>;
+    emitEvent: PlatformEventSink<
+        TelemetryReadingRecordedEvent | DeviceAvailabilityChangedEvent | DeviceHealthChangedEvent
+    >;
 }
 
 export interface SimulatorTemperatureAdapter {
@@ -25,27 +24,15 @@ export function createSimulatorTemperatureAdapter({
     sensor,
     nativeSensorId,
     platformDeviceId,
-    generateEventId,
     emitEvent,
-    emitAvailabilityEvent,
-    emitHealthEvent,
 }: SimulatorTemperatureAdapterConfig): SimulatorTemperatureAdapter {
-    const replayableEventsBySequence = new Map<number, TelemetryReadingRecordedEvent>();
     const unsubscribe = sensor.onReading((reading) => {
         if (reading.sensorId !== nativeSensorId) {
             return;
         }
 
-        const replayedEvent = replayableEventsBySequence.get(reading.sequence);
-
-        if (replayedEvent) {
-            emitEvent(replayedEvent);
-
-            return;
-        }
-
         const event: TelemetryReadingRecordedEvent = {
-            eventId: generateEventId(),
+            eventId: toPlatformEventId(nativeSensorId, reading.messageId),
             eventType: 'telemetry.reading.recorded',
             occurredAt: reading.recordedAt,
             source: 'simulator-adapter',
@@ -57,8 +44,6 @@ export function createSimulatorTemperatureAdapter({
             },
         };
 
-        replayableEventsBySequence.set(reading.sequence, event);
-        trimReplayableEvents(replayableEventsBySequence);
         emitEvent(event);
     });
     const unsubscribeFromAvailability = sensor.onAvailability((report) => {
@@ -66,8 +51,8 @@ export function createSimulatorTemperatureAdapter({
             return;
         }
 
-        emitAvailabilityEvent?.({
-            eventId: generateEventId(),
+        emitEvent({
+            eventId: toPlatformEventId(nativeSensorId, report.messageId),
             eventType: 'device.availability.changed',
             occurredAt: report.reportedAt,
             source: 'simulator-adapter',
@@ -84,8 +69,8 @@ export function createSimulatorTemperatureAdapter({
             return;
         }
 
-        emitHealthEvent?.({
-            eventId: generateEventId(),
+        emitEvent({
+            eventId: toPlatformEventId(nativeSensorId, report.messageId),
             eventType: 'device.health.changed',
             occurredAt: report.reportedAt,
             source: 'simulator-adapter',
@@ -107,16 +92,6 @@ export function createSimulatorTemperatureAdapter({
     };
 }
 
-function trimReplayableEvents(eventsBySequence: Map<number, TelemetryReadingRecordedEvent>): void {
-    const replayEventLimit = 2;
-
-    while (eventsBySequence.size > replayEventLimit) {
-        const oldestSequence = eventsBySequence.keys().next().value;
-
-        if (oldestSequence === undefined) {
-            return;
-        }
-
-        eventsBySequence.delete(oldestSequence);
-    }
+function toPlatformEventId(nativeDeviceId: string, messageId: string): string {
+    return `simulator-adapter:${nativeDeviceId}:${messageId}`;
 }

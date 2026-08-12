@@ -81,6 +81,7 @@ describe('createTemperatureSensorRuntime', () => {
 
         expect(readings).toEqual([
             {
+                messageId: expect.any(String),
                 messageType: 'temperature.reading',
                 sensorId: 'temp-desk',
                 sequence: 0,

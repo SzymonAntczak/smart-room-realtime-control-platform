@@ -27,7 +27,6 @@ describe('LED command path', () => {
             led: simulator,
             nativeLedId: 'led-main-native',
             platformDeviceId: 'led-main',
-            generateEventId: () => 'evt-led-report-1',
             emitEvent(event) {
                 results.push(processor.processEvent(event));
             },

@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
+
 import { assertValidDeviceNativeTimestamp } from '../device-native-timestamp';
 
 type NonEmptyReadingPattern = readonly [number, ...number[]];
 
 export interface TemperatureReadingMessage {
+    readonly messageId: string;
     readonly messageType: 'temperature.reading';
     readonly sensorId: string;
     readonly sequence: number;
@@ -11,6 +14,7 @@ export interface TemperatureReadingMessage {
     readonly recordedAt: string;
 }
 export interface TemperatureAvailabilityMessage {
+    readonly messageId: string;
     readonly messageType: 'temperature.availability.changed';
     readonly sensorId: string;
     readonly availability: 'online' | 'offline';
@@ -18,6 +22,7 @@ export interface TemperatureAvailabilityMessage {
     readonly reportedAt: string;
 }
 export interface TemperatureHealthMessage {
+    readonly messageId: string;
     readonly messageType: 'temperature.health.changed';
     readonly sensorId: string;
     readonly health: 'healthy' | 'degraded';
@@ -30,6 +35,7 @@ export interface TemperatureSensorConfig {
     sensorId: string;
     baseTemperature: number;
     readingPattern: NonEmptyReadingPattern;
+    generateMessageId?: () => string;
 }
 
 export type TemperatureReadingListener = (message: TemperatureReadingMessage) => void;
@@ -62,6 +68,7 @@ export function createTemperatureSensorSimulator(
     const availabilityListeners = new Set<TemperatureAvailabilityListener>();
     const healthListeners = new Set<TemperatureHealthListener>();
     let nextSequence = 0;
+    const generateMessageId = config.generateMessageId ?? randomUUID;
     let observedAvailability: TemperatureAvailabilityMessage['previousAvailability'] = 'unknown';
     let observedHealth: TemperatureHealthMessage['previousHealth'] = 'unknown';
 
@@ -90,6 +97,7 @@ export function createTemperatureSensorSimulator(
             nextSequence += 1;
 
             const message: TemperatureReadingMessage = {
+                messageId: generateMessageId(),
                 messageType: 'temperature.reading',
                 sensorId: config.sensorId,
                 sequence,
@@ -109,6 +117,7 @@ export function createTemperatureSensorSimulator(
         reportAvailability(availability, reportedAt) {
             assertValidIsoTimestamp(reportedAt, 'Temperature availability reportedAt');
             const message: TemperatureAvailabilityMessage = {
+                messageId: generateMessageId(),
                 messageType: 'temperature.availability.changed',
                 sensorId: config.sensorId,
                 availability,
@@ -127,6 +136,7 @@ export function createTemperatureSensorSimulator(
             assertNonEmpty(reason, 'Temperature health reason');
             assertValidIsoTimestamp(reportedAt, 'Temperature health reportedAt');
             const message: TemperatureHealthMessage = {
+                messageId: generateMessageId(),
                 messageType: 'temperature.health.changed',
                 sensorId: config.sensorId,
                 health,

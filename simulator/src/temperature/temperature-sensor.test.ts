@@ -18,6 +18,7 @@ describe('createTemperatureSensorSimulator', () => {
         const reading = sensor.tick('2026-06-08T09:30:00Z');
 
         expect(reading).toEqual({
+            messageId: expect.any(String),
             messageType: 'temperature.reading',
             sensorId: 'temp-desk',
             sequence: 0,

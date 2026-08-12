@@ -13,6 +13,7 @@ describe('createLedScenario', () => {
         expect(reports).toHaveLength(1);
         expect(reports).toEqual([
             {
+                messageId: expect.any(String),
                 messageType: 'led.state.reported',
                 deviceId: 'led-main-native',
                 sequence: 1,
@@ -34,6 +35,7 @@ describe('createLedScenario', () => {
         timer.advanceBy(1);
         expect(reports).toEqual([
             {
+                messageId: expect.any(String),
                 messageType: 'led.state.reported',
                 deviceId: 'led-main-native',
                 sequence: 1,
@@ -76,6 +78,7 @@ describe('createLedScenario', () => {
         timer.advanceBy(1);
         expect(reports).toEqual([
             {
+                messageId: expect.any(String),
                 messageType: 'led.state.reported',
                 deviceId: 'led-main-native',
                 sequence: 1,

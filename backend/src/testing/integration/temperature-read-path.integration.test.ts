@@ -1,7 +1,4 @@
-import type {
-    PlatformEventEnvelope,
-    TelemetryReadingRecordedEvent,
-} from '@smart-room/contracts/events';
+import type { PlatformEvent } from '@smart-room/contracts/events';
 import { createTemperatureSensorScenario } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
@@ -14,6 +11,53 @@ import {
 import { createRoomProjector } from '../../platform/read-model/room-projection';
 
 describe('temperature read path integration', () => {
+    it('accepts facts from different native devices that share a message id', () => {
+        const devices: DeviceDefinition[] = [
+            { deviceId: 'temp-a', name: 'Temperature A', role: 'temperature-sensor' },
+            { deviceId: 'temp-b', name: 'Temperature B', role: 'temperature-sensor' },
+        ];
+        const processor = createEventProcessor({
+            devices,
+            roomProjector: createRoomProjector({
+                devices,
+                initialUpdatedAt: '2026-06-08T09:29:59Z',
+            }),
+            clock: { now: () => '2026-06-08T09:30:00Z' },
+        });
+        const results: EventProcessingResult[] = [];
+        const sensorA = createTemperatureSensorScenario({
+            sensorId: 'temp-a-native',
+            baseTemperature: 20,
+            readingPattern: [0],
+            generateMessageId: () => 'shared-message',
+        });
+        const sensorB = createTemperatureSensorScenario({
+            sensorId: 'temp-b-native',
+            baseTemperature: 21,
+            readingPattern: [0],
+            generateMessageId: () => 'shared-message',
+        });
+
+        for (const [sensor, nativeSensorId, platformDeviceId] of [
+            [sensorA, 'temp-a-native', 'temp-a'],
+            [sensorB, 'temp-b-native', 'temp-b'],
+        ] as const) {
+            createSimulatorTemperatureAdapter({
+                sensor,
+                nativeSensorId,
+                platformDeviceId,
+                emitEvent(event) {
+                    results.push(processor.processEvent(event));
+                },
+            });
+        }
+
+        sensorA.tick('2026-06-08T09:30:00Z');
+        sensorB.tick('2026-06-08T09:30:00Z');
+
+        expect(results.map((result) => result.status)).toEqual(['accepted', 'accepted']);
+    });
+
     it('projects a simulator temperature reading into room state', () => {
         const readPath = createTemperatureReadPath({
             eventIds: ['evt-temperature-1'],
@@ -131,7 +175,7 @@ describe('temperature read path integration', () => {
 
     it('rejects replayed native readings as duplicate platform events', () => {
         const readPath = createTemperatureReadPath({
-            eventIds: ['evt-temperature-1', 'evt-temperature-replay'],
+            eventIds: ['evt-temperature-1'],
             readingPattern: [0.5],
         });
 
@@ -152,18 +196,15 @@ describe('temperature read path integration', () => {
 
     it('ignores invalid telemetry without changing the last accepted state', () => {
         const readPath = createTemperatureReadPath({
-            eventIds: ['evt-temperature-1'],
+            eventIds: ['evt-temperature-1', 'evt-temperature-invalid'],
             readingPattern: [0.5],
         });
 
         readPath.sensor.tick('2026-06-08T09:30:00Z');
 
-        const result = readPath.processEvent(
-            createInvalidTemperatureEvent({
-                eventId: 'evt-temperature-invalid',
-                occurredAt: '2026-06-08T09:30:01Z',
-            }),
-        );
+        readPath.sensor.emitInvalidReading('2026-06-08T09:30:01Z');
+
+        const result = readPath.lastResult();
 
         expect(result).toMatchObject({
             status: 'ignored',
@@ -190,10 +231,20 @@ function createTemperatureReadPath({
             role: 'temperature-sensor',
         },
     ];
+    const pendingEventIds = [...eventIds];
     const sensor = createTemperatureSensorScenario({
         sensorId: 'temp-desk-native',
         baseTemperature: 22,
         readingPattern,
+        generateMessageId() {
+            const eventId = pendingEventIds.shift();
+
+            if (!eventId) {
+                throw new Error('No deterministic message id configured for this reading.');
+            }
+
+            return eventId;
+        },
     });
     const projector = createRoomProjector({
         initialUpdatedAt: '2026-06-08T09:29:59Z',
@@ -206,22 +257,12 @@ function createTemperatureReadPath({
         clock: { now: () => processingNow },
     });
     const results: EventProcessingResult[] = [];
-    const pendingEventIds = [...eventIds];
 
     createSimulatorTemperatureAdapter({
         sensor,
         nativeSensorId: 'temp-desk-native',
         platformDeviceId: 'temp-desk',
-        generateEventId() {
-            const eventId = pendingEventIds.shift();
-
-            if (!eventId) {
-                throw new Error('No deterministic event id configured for this reading.');
-            }
-
-            return eventId;
-        },
-        emitEvent(event: TelemetryReadingRecordedEvent) {
+        emitEvent(event: PlatformEvent) {
             processingNow = event.occurredAt;
             results.push(processor.processEvent(event));
         },
@@ -249,23 +290,5 @@ function createTemperatureReadPath({
 
             return result;
         },
-    };
-}
-
-function createInvalidTemperatureEvent(
-    overrides: Partial<PlatformEventEnvelope> = {},
-): PlatformEventEnvelope {
-    return {
-        eventId: 'evt-temperature-invalid',
-        eventType: 'telemetry.reading.recorded',
-        occurredAt: '2026-06-08T09:30:01Z',
-        source: 'simulator-adapter',
-        deviceId: 'temp-desk',
-        payload: {
-            metric: 'temperature',
-            value: Number.NaN,
-            unit: 'celsius',
-        },
-        ...overrides,
     };
 }

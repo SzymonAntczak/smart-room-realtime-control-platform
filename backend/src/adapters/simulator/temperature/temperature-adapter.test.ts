@@ -1,212 +1,271 @@
-import type { TelemetryReadingRecordedEvent } from '@smart-room/contracts/events';
-import {
-    createTemperatureSensorSimulator,
-    type TemperatureReadingMessage,
-    type TemperatureSensorSimulator,
+import type { PlatformEvent } from '@smart-room/contracts/events';
+import type {
+    TemperatureAvailabilityListener,
+    TemperatureAvailabilityMessage,
+    TemperatureHealthListener,
+    TemperatureHealthMessage,
+    TemperatureReadingListener,
+    TemperatureReadingMessage,
+    TemperatureSensorSimulator,
 } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
+
+import { createEventProcessor } from '../../../platform/event-processing/event-processor';
+import { createRoomProjector } from '../../../platform/read-model/room-projection';
 
 import { createSimulatorTemperatureAdapter } from './temperature-adapter';
 
 describe('createSimulatorTemperatureAdapter', () => {
-    it('emits a platform telemetry event for a native temperature reading', () => {
-        const sensor = createTemperatureSensorSimulator({
-            sensorId: 'temp-desk-native',
-            baseTemperature: 22,
-            readingPattern: [0.5],
+    it('lets the processor deduplicate replayed availability and health facts', () => {
+        const sensor = createControllableSensor();
+        const devices = [
+            { deviceId: 'temp-platform', name: 'Temperature', role: 'temperature-sensor' },
+        ] as const;
+        const processor = createEventProcessor({
+            devices: [...devices],
+            roomProjector: createRoomProjector({
+                devices: [...devices],
+                initialUpdatedAt: '2026-06-08T09:29:59Z',
+            }),
+            clock: { now: () => '2026-06-08T09:30:00Z' },
         });
-        const emittedEvents: TelemetryReadingRecordedEvent[] = [];
-
+        const results: ReturnType<typeof processor.processEvent>[] = [];
         createSimulatorTemperatureAdapter({
-            sensor,
-            nativeSensorId: 'temp-desk-native',
-            platformDeviceId: 'temp-desk',
-            generateEventId: () => 'evt-temperature-1',
-            emitEvent: (event) => emittedEvents.push(event),
+            sensor: sensor.simulator,
+            nativeSensorId: 'temp-native',
+            platformDeviceId: 'temp-platform',
+            emitEvent: (event) => results.push(processor.processEvent(event)),
+        });
+        const availabilityFact = availability('availability-1');
+        const healthFact = health('health-1');
+        sensor.emitAvailability(availabilityFact);
+        sensor.emitAvailability(availabilityFact);
+        sensor.emitHealth(healthFact);
+        sensor.emitHealth(healthFact);
+
+        expect(results.map((result) => result.status)).toEqual([
+            'accepted',
+            'ignored',
+            'accepted',
+            'ignored',
+        ]);
+        expect(
+            results
+                .filter((result) => result.status === 'ignored')
+                .every((result) => result.reason === 'duplicate_event'),
+        ).toBe(true);
+    });
+
+    it('translates readings, availability and health through one event sink', () => {
+        const sensor = createControllableSensor();
+        const events: PlatformEvent[] = [];
+        createSimulatorTemperatureAdapter({
+            sensor: sensor.simulator,
+            nativeSensorId: 'temp-native',
+            platformDeviceId: 'temp-platform',
+            emitEvent: (event) => events.push(event),
         });
 
-        sensor.tick('2026-06-08T09:30:00Z');
+        sensor.emitReading(reading('reading-1'));
+        sensor.emitAvailability(availability('availability-1'));
+        sensor.emitHealth(health('health-1'));
 
-        expect(emittedEvents).toEqual([
+        expect(events).toEqual([
             {
-                eventId: 'evt-temperature-1',
+                eventId: 'simulator-adapter:temp-native:reading-1',
                 eventType: 'telemetry.reading.recorded',
                 occurredAt: '2026-06-08T09:30:00Z',
                 source: 'simulator-adapter',
-                deviceId: 'temp-desk',
+                deviceId: 'temp-platform',
+                payload: { metric: 'temperature', value: 22.5, unit: 'celsius' },
+            },
+            {
+                eventId: 'simulator-adapter:temp-native:availability-1',
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-06-08T09:30:00Z',
+                source: 'simulator-adapter',
+                deviceId: 'temp-platform',
                 payload: {
-                    metric: 'temperature',
-                    value: 22.5,
-                    unit: 'celsius',
+                    previousAvailability: 'unknown',
+                    availability: 'online',
+                    reason: 'simulator_reported',
                 },
             },
-        ]);
-    });
-
-    it('uses the injected event id generator for each emitted reading', () => {
-        const sensor = createTemperatureSensorSimulator({
-            sensorId: 'temp-desk-native',
-            baseTemperature: 22,
-            readingPattern: [0, 0.2],
-        });
-        const eventIds = ['evt-temperature-1', 'evt-temperature-2'];
-        const emittedEvents: TelemetryReadingRecordedEvent[] = [];
-
-        createSimulatorTemperatureAdapter({
-            sensor,
-            nativeSensorId: 'temp-desk-native',
-            platformDeviceId: 'temp-desk',
-            generateEventId: () => {
-                const eventId = eventIds.shift();
-
-                if (!eventId) {
-                    throw new Error('No deterministic event id configured for this reading.');
-                }
-
-                return eventId;
+            {
+                eventId: 'simulator-adapter:temp-native:health-1',
+                eventType: 'device.health.changed',
+                occurredAt: '2026-06-08T09:30:00Z',
+                source: 'simulator-adapter',
+                deviceId: 'temp-platform',
+                payload: { previousHealth: 'unknown', health: 'healthy', reason: 'recovered' },
             },
-            emitEvent: (event) => emittedEvents.push(event),
-        });
-
-        sensor.tick('2026-06-08T09:30:00Z');
-        sensor.tick('2026-06-08T09:30:01Z');
-
-        expect(emittedEvents.map((event) => event.eventId)).toEqual([
-            'evt-temperature-1',
-            'evt-temperature-2',
         ]);
     });
 
-    it('stops emitting platform events after stop', () => {
-        const sensor = createTemperatureSensorSimulator({
-            sensorId: 'temp-desk-native',
-            baseTemperature: 22,
-            readingPattern: [0],
+    it('preserves native message identity after later readings', () => {
+        const sensor = createControllableSensor();
+        const events: PlatformEvent[] = [];
+        createSimulatorTemperatureAdapter({
+            sensor: sensor.simulator,
+            nativeSensorId: 'temp-native',
+            platformDeviceId: 'temp-platform',
+            emitEvent: (event) => events.push(event),
         });
-        const emittedEvents: TelemetryReadingRecordedEvent[] = [];
+        const first = reading('reading-1', 1);
+        sensor.emitReading(first);
+        sensor.emitReading(reading('reading-2', 2));
+        sensor.emitReading(reading('reading-3', 3));
+        sensor.emitReading(reading('reading-4', 4));
+        sensor.emitReading(first);
+
+        expect(events.map((event) => event.eventId)).toEqual([
+            'simulator-adapter:temp-native:reading-1',
+            'simulator-adapter:temp-native:reading-2',
+            'simulator-adapter:temp-native:reading-3',
+            'simulator-adapter:temp-native:reading-4',
+            'simulator-adapter:temp-native:reading-1',
+        ]);
+    });
+
+    it('keeps distinct native facts with identical contents distinct', () => {
+        const sensor = createControllableSensor();
+        const events: PlatformEvent[] = [];
+        createSimulatorTemperatureAdapter({
+            sensor: sensor.simulator,
+            nativeSensorId: 'temp-native',
+            platformDeviceId: 'temp-platform',
+            emitEvent: (event) => events.push(event),
+        });
+        sensor.emitReading(reading('reading-1'));
+        sensor.emitReading(reading('reading-2'));
+
+        expect(events.map((event) => event.eventId)).toEqual([
+            'simulator-adapter:temp-native:reading-1',
+            'simulator-adapter:temp-native:reading-2',
+        ]);
+    });
+
+    it('rejects foreign readings, availability and health before emission', () => {
+        const sensor = createControllableSensor();
+        const events: PlatformEvent[] = [];
+        createSimulatorTemperatureAdapter({
+            sensor: sensor.simulator,
+            nativeSensorId: 'temp-native',
+            platformDeviceId: 'temp-platform',
+            emitEvent: (event) => events.push(event),
+        });
+        sensor.emitReading({ ...reading('reading-1'), sensorId: 'foreign' });
+        sensor.emitAvailability({ ...availability('availability-1'), sensorId: 'foreign' });
+        sensor.emitHealth({ ...health('health-1'), sensorId: 'foreign' });
+
+        expect(events).toEqual([]);
+    });
+
+    it('unsubscribes every native stream after stop', () => {
+        const sensor = createControllableSensor();
+        const events: PlatformEvent[] = [];
         const adapter = createSimulatorTemperatureAdapter({
-            sensor,
-            nativeSensorId: 'temp-desk-native',
-            platformDeviceId: 'temp-desk',
-            generateEventId: () => 'evt-temperature-1',
-            emitEvent: (event) => emittedEvents.push(event),
+            sensor: sensor.simulator,
+            nativeSensorId: 'temp-native',
+            platformDeviceId: 'temp-platform',
+            emitEvent: (event) => events.push(event),
         });
-
-        sensor.tick('2026-06-08T09:30:00Z');
         adapter.stop();
-        sensor.tick('2026-06-08T09:30:01Z');
+        sensor.emitReading(reading('reading-1'));
+        sensor.emitAvailability(availability('availability-1'));
+        sensor.emitHealth(health('health-1'));
 
-        expect(emittedEvents).toHaveLength(1);
-        expect(emittedEvents[0]?.occurredAt).toBe('2026-06-08T09:30:00Z');
-    });
-
-    it('rejects an unexpected native sensor before event generation or replay caching', () => {
-        const nativeSensor = createControllableNativeSensor();
-        const emittedEvents: TelemetryReadingRecordedEvent[] = [];
-        let generatedEventCount = 0;
-
-        createSimulatorTemperatureAdapter({
-            sensor: nativeSensor.sensor,
-            nativeSensorId: 'temp-desk-native',
-            platformDeviceId: 'temp-desk',
-            generateEventId: () => {
-                generatedEventCount += 1;
-
-                return 'evt-temperature-1';
-            },
-            emitEvent: (event) => emittedEvents.push(event),
-        });
-
-        nativeSensor.emit(createReading({ sensorId: 'unexpected-native', sequence: 3 }));
-        nativeSensor.emit(createReading({ sensorId: 'temp-desk-native', sequence: 3 }));
-
-        expect(generatedEventCount).toBe(1);
-        expect(emittedEvents).toEqual([
-            expect.objectContaining({
-                eventId: 'evt-temperature-1',
-                deviceId: 'temp-desk',
-            }),
-        ]);
-    });
-
-    it('replays a matching native reading with its original platform event', () => {
-        const nativeSensor = createControllableNativeSensor();
-        const emittedEvents: TelemetryReadingRecordedEvent[] = [];
-        let generatedEventCount = 0;
-
-        createSimulatorTemperatureAdapter({
-            sensor: nativeSensor.sensor,
-            nativeSensorId: 'temp-desk-native',
-            platformDeviceId: 'temp-desk',
-            generateEventId: () => {
-                generatedEventCount += 1;
-
-                return 'evt-temperature-1';
-            },
-            emitEvent: (event) => emittedEvents.push(event),
-        });
-
-        const reading = createReading({ sensorId: 'temp-desk-native', sequence: 3 });
-        nativeSensor.emit(reading);
-        nativeSensor.emit(reading);
-
-        expect(generatedEventCount).toBe(1);
-        expect(emittedEvents).toHaveLength(2);
-        expect(emittedEvents[1]).toBe(emittedEvents[0]);
+        expect(events).toEqual([]);
     });
 });
 
-function createControllableNativeSensor(): {
-    sensor: TemperatureSensorSimulator;
-    emit(reading: TemperatureReadingMessage): void;
+function createControllableSensor(): {
+    simulator: TemperatureSensorSimulator;
+    emitReading(message: TemperatureReadingMessage): void;
+    emitAvailability(message: TemperatureAvailabilityMessage): void;
+    emitHealth(message: TemperatureHealthMessage): void;
 } {
-    const listeners = new Set<(reading: TemperatureReadingMessage) => void>();
+    const readings = new Set<TemperatureReadingListener>();
+    const availabilities = new Set<TemperatureAvailabilityListener>();
+    const healths = new Set<TemperatureHealthListener>();
 
     return {
-        sensor: {
+        simulator: {
             onReading(listener) {
-                listeners.add(listener);
+                readings.add(listener);
 
-                return () => listeners.delete(listener);
+                return () => readings.delete(listener);
             },
-            tick(recordedAt) {
-                return createReading({ recordedAt });
+            onAvailability(listener) {
+                availabilities.add(listener);
+
+                return () => availabilities.delete(listener);
             },
-            onAvailability() {
-                return () => false;
+            onHealth(listener) {
+                healths.add(listener);
+
+                return () => healths.delete(listener);
             },
-            onHealth() {
-                return () => false;
+            tick() {
+                return reading('unused');
             },
             reportAvailability() {
-                throw new Error('Availability reports are outside this adapter test seam.');
+                return availability('unused');
             },
             reportHealth() {
-                throw new Error('Health reports are outside this adapter test seam.');
+                return health('unused');
             },
             reset() {},
         },
-        emit(reading) {
-            for (const listener of listeners) {
-                listener(reading);
+        emitReading(message) {
+            for (const listener of readings) {
+                listener(message);
+            }
+        },
+        emitAvailability(message) {
+            for (const listener of availabilities) {
+                listener(message);
+            }
+        },
+        emitHealth(message) {
+            for (const listener of healths) {
+                listener(message);
             }
         },
     };
 }
 
-function createReading({
-    sensorId = 'temp-desk-native',
-    sequence = 0,
-    recordedAt = '2026-06-08T09:30:00Z',
-}: Partial<
-    Pick<TemperatureReadingMessage, 'sensorId' | 'sequence' | 'recordedAt'>
->): TemperatureReadingMessage {
+function reading(messageId: string, sequence = 1): TemperatureReadingMessage {
     return {
+        messageId,
         messageType: 'temperature.reading',
-        sensorId,
+        sensorId: 'temp-native',
         sequence,
         value: 22.5,
         unit: 'celsius',
-        recordedAt,
+        recordedAt: '2026-06-08T09:30:00Z',
+    };
+}
+
+function availability(messageId: string): TemperatureAvailabilityMessage {
+    return {
+        messageId,
+        messageType: 'temperature.availability.changed',
+        sensorId: 'temp-native',
+        previousAvailability: 'unknown',
+        availability: 'online',
+        reportedAt: '2026-06-08T09:30:00Z',
+    };
+}
+
+function health(messageId: string): TemperatureHealthMessage {
+    return {
+        messageId,
+        messageType: 'temperature.health.changed',
+        sensorId: 'temp-native',
+        previousHealth: 'unknown',
+        health: 'healthy',
+        reason: 'recovered',
+        reportedAt: '2026-06-08T09:30:00Z',
     };
 }

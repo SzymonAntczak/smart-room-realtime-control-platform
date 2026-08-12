@@ -63,6 +63,7 @@ describe('createTemperatureSensorScenario', () => {
         const replayedReading = scenario.replayLastReading();
 
         expect(replayedReading).toEqual({
+            messageId: expect.any(String),
             messageType: 'temperature.reading',
             sensorId: 'temp-desk-native',
             sequence: 0,

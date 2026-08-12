@@ -13,7 +13,7 @@ import type {
     LedStateReportListener,
 } from '@smart-room/simulator';
 
-import type { EventIdGenerator, PlatformEventSink } from '../../../platform/ports/event-sink';
+import type { PlatformEventSink } from '../../../platform/ports/event-sink';
 
 export type PlatformSetPowerCommand = SetPowerCommandRequest & {
     commandId: string;
@@ -22,8 +22,8 @@ export type PlatformSetPowerCommand = SetPowerCommandRequest & {
 export interface LedCommandTransport {
     onStateReport(listener: LedStateReportListener): () => void;
     onCommandRejection(listener: LedCommandRejectionListener): () => void;
-    onAvailability?(listener: LedAvailabilityListener): () => void;
-    onHealth?(listener: LedHealthListener): () => void;
+    onAvailability(listener: LedAvailabilityListener): () => void;
+    onHealth(listener: LedHealthListener): () => void;
     receive(command: LedSetPowerCommand): void;
 }
 
@@ -31,7 +31,6 @@ export interface SimulatorLedAdapterConfig {
     led: LedCommandTransport;
     nativeLedId: string;
     platformDeviceId: string;
-    generateEventId: EventIdGenerator;
     emitEvent: PlatformEventSink<
         | DeviceStateReportedEvent
         | CommandFailedEvent
@@ -49,26 +48,16 @@ export function createSimulatorLedAdapter({
     led,
     nativeLedId,
     platformDeviceId,
-    generateEventId,
     emitEvent,
 }: SimulatorLedAdapterConfig): SimulatorLedAdapter {
-    const replayableEventsBySequence = new Map<number, DeviceStateReportedEvent>();
     let hasStopped = false;
     const unsubscribeFromStateReports = led.onStateReport((report) => {
         if (report.deviceId !== nativeLedId) {
             return;
         }
 
-        const replayedEvent = replayableEventsBySequence.get(report.sequence);
-
-        if (replayedEvent) {
-            emitEvent(replayedEvent);
-
-            return;
-        }
-
         const event: DeviceStateReportedEvent = {
-            eventId: generateEventId(),
+            eventId: toPlatformEventId(nativeLedId, report.messageId),
             eventType: 'device.state.reported',
             occurredAt: report.reportedAt,
             source: 'simulator-adapter',
@@ -78,8 +67,6 @@ export function createSimulatorLedAdapter({
                 reportedAt: report.reportedAt,
             },
         };
-        replayableEventsBySequence.set(report.sequence, event);
-        trimReplayableEvents(replayableEventsBySequence);
         emitEvent(event);
     });
     const unsubscribeFromCommandRejections = led.onCommandRejection((rejection) => {
@@ -88,7 +75,7 @@ export function createSimulatorLedAdapter({
         }
 
         emitEvent({
-            eventId: generateEventId(),
+            eventId: toPlatformEventId(nativeLedId, rejection.messageId),
             eventType: 'command.failed',
             occurredAt: rejection.rejectedAt,
             source: 'simulator-adapter',
@@ -100,13 +87,13 @@ export function createSimulatorLedAdapter({
             },
         });
     });
-    const unsubscribeFromAvailability = led.onAvailability?.((report) => {
+    const unsubscribeFromAvailability = led.onAvailability((report) => {
         if (report.deviceId !== nativeLedId) {
             return;
         }
 
         emitEvent({
-            eventId: generateEventId(),
+            eventId: toPlatformEventId(nativeLedId, report.messageId),
             eventType: 'device.availability.changed',
             occurredAt: report.reportedAt,
             source: 'simulator-adapter',
@@ -118,13 +105,13 @@ export function createSimulatorLedAdapter({
             },
         });
     });
-    const unsubscribeFromHealth = led.onHealth?.((report) => {
+    const unsubscribeFromHealth = led.onHealth((report) => {
         if (report.deviceId !== nativeLedId) {
             return;
         }
 
         emitEvent({
-            eventId: generateEventId(),
+            eventId: toPlatformEventId(nativeLedId, report.messageId),
             eventType: 'device.health.changed',
             occurredAt: report.reportedAt,
             source: 'simulator-adapter',
@@ -159,22 +146,12 @@ export function createSimulatorLedAdapter({
             hasStopped = true;
             unsubscribeFromStateReports();
             unsubscribeFromCommandRejections();
-            unsubscribeFromAvailability?.();
-            unsubscribeFromHealth?.();
+            unsubscribeFromAvailability();
+            unsubscribeFromHealth();
         },
     };
 }
 
-function trimReplayableEvents(eventsBySequence: Map<number, DeviceStateReportedEvent>): void {
-    const replayEventLimit = 2;
-
-    while (eventsBySequence.size > replayEventLimit) {
-        const oldestSequence = eventsBySequence.keys().next().value;
-
-        if (oldestSequence === undefined) {
-            return;
-        }
-
-        eventsBySequence.delete(oldestSequence);
-    }
+function toPlatformEventId(nativeDeviceId: string, messageId: string): string {
+    return `simulator-adapter:${nativeDeviceId}:${messageId}`;
 }

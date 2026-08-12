@@ -535,14 +535,7 @@ export function createTemperatureRoomRuntime({
             sensor: sensorEntry.sensor,
             nativeSensorId: sensorEntry.definition.nativeSensorId,
             platformDeviceId: sensorEntry.definition.deviceId,
-            generateEventId,
             emitEvent(event) {
-                processPlatformEvent(event);
-            },
-            emitAvailabilityEvent(event) {
-                processPlatformEvent(event);
-            },
-            emitHealthEvent(event) {
                 processPlatformEvent(event);
             },
         });
@@ -560,7 +553,6 @@ export function createTemperatureRoomRuntime({
             led,
             nativeLedId: 'led-main-native',
             platformDeviceId: 'led-main',
-            generateEventId,
             emitEvent(event) {
                 processPlatformEvent(event);
             },
