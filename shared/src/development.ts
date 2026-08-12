@@ -79,45 +79,72 @@ export function isIgnoredEventReason(value: unknown): value is IgnoredEventReaso
 export const deviceScenarioActionSchema = Type.Union(
     deviceScenarioActions.map((action) => Type.Literal(action)),
 );
-export const deviceScenarioRequestSchema = Type.Object({
-    action: deviceScenarioActionSchema,
-});
-export const deviceScenarioParamsSchema = Type.Object({ deviceId: nonEmptyStringSchema });
-export const deviceScenarioDescriptorSchema = Type.Object({
-    action: deviceScenarioActionSchema,
-});
-export const deviceScenarioListSchema = Type.Object({
-    deviceId: nonEmptyStringSchema,
-    scenarios: Type.Array(deviceScenarioDescriptorSchema),
-});
-export const deviceScenarioResultSchema = Type.Object({
-    action: deviceScenarioActionSchema,
-    status: Type.Literal('completed'),
-});
-export const apiErrorResponseSchema = Type.Object({
-    error: nonEmptyStringSchema,
-    message: nonEmptyStringSchema,
-});
-const ignoredEventDiagnosticSchema = Type.Object({
-    diagnosticId: nonEmptyStringSchema,
-    reason: Type.Union(ignoredEventReasons.map((reason) => Type.Literal(reason))),
-    observedAt: isoTimestampSchema,
-    eventId: Type.Optional(Type.String()),
-    eventType: Type.Optional(Type.String()),
-    source: Type.Optional(Type.String()),
-    deviceId: Type.Optional(Type.String()),
-    commandId: Type.Optional(Type.String()),
-    occurredAt: Type.Optional(isoTimestampSchema),
-});
-export const eventProcessingDiagnosticsSnapshotSchema = Type.Object({
-    ignoredEvents: Type.Array(ignoredEventDiagnosticSchema),
-    deduplicationEvictions: Type.Optional(
-        Type.Array(
-            Type.Object({
-                diagnosticId: nonEmptyStringSchema,
-                evictedEventId: nonEmptyStringSchema,
-                observedAt: isoTimestampSchema,
-            }),
+export const deviceScenarioRequestSchema = Type.Object(
+    {
+        action: deviceScenarioActionSchema,
+    },
+    { additionalProperties: false },
+);
+export const deviceScenarioParamsSchema = Type.Object(
+    { deviceId: nonEmptyStringSchema },
+    { additionalProperties: false },
+);
+export const deviceScenarioDescriptorSchema = Type.Object(
+    {
+        action: deviceScenarioActionSchema,
+    },
+    { additionalProperties: false },
+);
+export const deviceScenarioListSchema = Type.Object(
+    {
+        deviceId: nonEmptyStringSchema,
+        scenarios: Type.Array(deviceScenarioDescriptorSchema),
+    },
+    { additionalProperties: false },
+);
+export const deviceScenarioResultSchema = Type.Object(
+    {
+        action: deviceScenarioActionSchema,
+        status: Type.Literal('completed'),
+    },
+    { additionalProperties: false },
+);
+export const apiErrorResponseSchema = Type.Object(
+    {
+        error: nonEmptyStringSchema,
+        message: nonEmptyStringSchema,
+    },
+    { additionalProperties: false },
+);
+const ignoredEventDiagnosticSchema = Type.Object(
+    {
+        diagnosticId: nonEmptyStringSchema,
+        reason: Type.Union(ignoredEventReasons.map((reason) => Type.Literal(reason))),
+        observedAt: isoTimestampSchema,
+        eventId: Type.Optional(Type.String()),
+        eventType: Type.Optional(Type.String()),
+        source: Type.Optional(Type.String()),
+        deviceId: Type.Optional(Type.String()),
+        commandId: Type.Optional(Type.String()),
+        occurredAt: Type.Optional(isoTimestampSchema),
+    },
+    { additionalProperties: false },
+);
+export const eventProcessingDiagnosticsSnapshotSchema = Type.Object(
+    {
+        ignoredEvents: Type.Array(ignoredEventDiagnosticSchema),
+        deduplicationEvictions: Type.Optional(
+            Type.Array(
+                Type.Object(
+                    {
+                        diagnosticId: nonEmptyStringSchema,
+                        evictedEventId: nonEmptyStringSchema,
+                        observedAt: isoTimestampSchema,
+                    },
+                    { additionalProperties: false },
+                ),
+            ),
         ),
-    ),
-});
+    },
+    { additionalProperties: false },
+);

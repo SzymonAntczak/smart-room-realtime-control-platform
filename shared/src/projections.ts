@@ -44,16 +44,22 @@ const deviceStateSchema = Type.Record(
     Type.String(),
     Type.Union([Type.String(), Type.Number(), Type.Boolean()]),
 );
-const commandAvailabilitySchema = Type.Object({
-    policy: Type.Union(commandAvailabilityPolicies.map((policy) => Type.Literal(policy))),
-    reason: Type.Optional(Type.String()),
-});
+const commandAvailabilitySchema = Type.Object(
+    {
+        policy: Type.Union(commandAvailabilityPolicies.map((policy) => Type.Literal(policy))),
+        reason: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+);
 const observationStatusSchema = Type.Record(
     Type.String(),
-    Type.Object({
-        freshness: Type.Union(observationFreshnessStates.map((value) => Type.Literal(value))),
-        lastObservedAt: Type.Optional(isoTimestampSchema),
-    }),
+    Type.Object(
+        {
+            freshness: Type.Union(observationFreshnessStates.map((value) => Type.Literal(value))),
+            lastObservedAt: Type.Optional(isoTimestampSchema),
+        },
+        { additionalProperties: false },
+    ),
 );
 export const deviceProjectionSchema = Type.Object(
     {

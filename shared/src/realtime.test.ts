@@ -184,6 +184,34 @@ describe('realtime schemas', () => {
         ).toBe(false);
     });
 
+    it('rejects undocumented fields in nested realtime projections', () => {
+        const update = createDeviceUpdatedMessage();
+
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    commandAvailability: { ...update.payload.commandAvailability, legacy: true },
+                },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    observationStatus: {
+                        temperature: {
+                            ...update.payload.observationStatus.temperature,
+                            legacy: true,
+                        },
+                    },
+                },
+            }),
+        ).toBe(false);
+    });
+
     it('rejects a snapshot containing removed root event history', () => {
         const snapshot = createSnapshotWithActiveCommands([]);
         snapshot.revision = 0;
@@ -255,6 +283,20 @@ describe('realtime schemas', () => {
                         requestedState: { power: 'on' },
                         requestedAt: '2026-06-08T09:30:00Z',
                         confirmedAt: '2026-06-08T09:30:01Z',
+                    },
+                ]),
+            ),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage(
+                createSnapshotWithActiveCommands([
+                    {
+                        commandId: 'cmd-idle',
+                        deviceId: 'led-main',
+                        commandType: 'set.power',
+                        status: 'idle',
+                        requestedState: { power: 'on' },
+                        requestedAt: '2026-06-08T09:30:00Z',
                     },
                 ]),
             ),
@@ -652,4 +694,3 @@ function createCommandUpdateForProjectionTest(command: Record<string, unknown>) 
         },
     };
 }
-

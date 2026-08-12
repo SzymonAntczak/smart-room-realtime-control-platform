@@ -3,15 +3,6 @@ import { Type } from '@sinclair/typebox';
 import type { PowerState } from './devices';
 import { nonEmptyStringSchema } from './validation';
 
-export const commandStatuses = [
-    'idle',
-    'accepted',
-    'pending',
-    'confirmed',
-    'failed',
-    'timed_out',
-] as const;
-export type CommandStatus = (typeof commandStatuses)[number];
 export const commandTypes = ['set.power'] as const;
 export type CommandType = (typeof commandTypes)[number];
 export const commandRequestedByValues = ['user', 'automation'] as const;
@@ -62,17 +53,11 @@ export type TimedOutCommandProjection = CommandProjectionBase & {
     timedOutAt: string;
     reason: string;
 };
-export type IdleCommandProjection = CommandProjectionBase & { status: 'idle' };
 export type ActiveCommandProjection = AcceptedCommandProjection | PendingCommandProjection;
 export type TerminalCommandProjection =
     | ConfirmedCommandProjection
     | FailedCommandProjection
     | TimedOutCommandProjection;
-export type CommandProjection =
-    | ActiveCommandProjection
-    | TerminalCommandProjection
-    | IdleCommandProjection;
-
 export const powerStateSchema = Type.Union([Type.Literal('on'), Type.Literal('off')]);
 export const powerStateProjectionSchema = Type.Object(
     { power: powerStateSchema },
