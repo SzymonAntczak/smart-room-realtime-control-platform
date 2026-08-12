@@ -1,4 +1,3 @@
-import type { SetPowerCommandRequest } from '@smart-room/contracts/commands';
 import type {
     CommandFailedEvent,
     DeviceAvailabilityChangedEvent,
@@ -14,10 +13,9 @@ import type {
 } from '@smart-room/simulator';
 
 import type { PlatformEventSink } from '../../../platform/ports/event-sink';
+import type { SetPowerCommandDispatcher } from '../../../platform/ports/set-power-command-dispatcher';
 
-export type PlatformSetPowerCommand = SetPowerCommandRequest & {
-    commandId: string;
-};
+export type { PlatformSetPowerCommand } from '../../../platform/ports/set-power-command-dispatcher';
 
 export interface LedCommandTransport {
     onStateReport(listener: LedStateReportListener): () => void;
@@ -39,8 +37,7 @@ export interface SimulatorLedAdapterConfig {
     >;
 }
 
-export interface SimulatorLedAdapter {
-    dispatch(command: PlatformSetPowerCommand): void;
+export interface SimulatorLedAdapter extends SetPowerCommandDispatcher {
     stop(): void;
 }
 

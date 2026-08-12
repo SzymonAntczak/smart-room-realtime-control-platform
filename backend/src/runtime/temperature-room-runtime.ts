@@ -14,7 +14,7 @@ import type {
     DeviceScenarioResult,
 } from '@smart-room/contracts/development';
 import { ledScenarioActions, temperatureScenarioActions } from '@smart-room/contracts/development';
-import type { CommandFailedEvent, PlatformEvent } from '@smart-room/contracts/events';
+import type { PlatformEvent } from '@smart-room/contracts/events';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     type Clock,
@@ -29,13 +29,16 @@ import {
 
 import {
     createSimulatorLedAdapter,
-    type PlatformSetPowerCommand,
     type SimulatorLedAdapter,
 } from '../adapters/simulator/led/led-adapter';
 import {
     createSimulatorTemperatureAdapter,
     type SimulatorTemperatureAdapter,
 } from '../adapters/simulator/temperature/temperature-adapter';
+import {
+    type CommandTimer,
+    createSetPowerCommandController,
+} from '../platform/command-processing/set-power-command-controller';
 import {
     createEventProcessingDiagnostics,
     type EventProcessingDiagnosticsSnapshot,
@@ -59,11 +62,7 @@ export interface TemperatureRoomRuntimeConfig {
     ledScenario?: LedScenarioName;
     ledScenarioScheduler?: LedScenarioScheduler;
     commandTimer?: CommandTimer;
-}
-
-export interface CommandTimer {
-    setTimeout(callback: () => void, delayMs: number): unknown;
-    clearTimeout(timerHandle: unknown): void;
+    generateCommandId?: () => string;
 }
 
 interface TemperatureSensorDefinition extends DeviceDefinition {
@@ -83,7 +82,6 @@ export interface TemperatureRoomRuntime {
     requestCommand(
         request: SetPowerCommandRequest,
     ): AcceptedCommandResponse | RejectedCommandResponse;
-    dispatchLedCommand(command: PlatformSetPowerCommand): void;
 }
 
 export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
@@ -134,6 +132,7 @@ export function createTemperatureRoomRuntime({
     ledScenario = 'confirm_immediately',
     ledScenarioScheduler = realLedScenarioScheduler,
     commandTimer = realCommandTimer,
+    generateCommandId = randomUUID,
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
     const sensors = defaultSensors.map((definition) => ({
         definition,
@@ -183,7 +182,24 @@ export function createTemperatureRoomRuntime({
     let hasStarted = false;
     let snapshotBroadcastTimerHandle: unknown | undefined;
     let lastPublishedSnapshot: RoomSnapshotProjection | undefined;
-    const commandTimeoutHandles = new Map<string, unknown>();
+    const commandController = createSetPowerCommandController({
+        dispatchCommand: {
+            dispatch(command) {
+                if (!hasStarted || !ledAdapter) {
+                    throw new Error('The LED adapter is not available.');
+                }
+
+                ledAdapter.dispatch(command);
+            },
+        },
+        emitEvent: processPlatformEvent,
+        getRoomSnapshot: getCurrentRoomSnapshot,
+        clock,
+        commandTimer,
+        dispatchTarget: 'simulator-adapter',
+        generateCommandId,
+        generateEventId,
+    });
 
     return {
         start() {
@@ -193,10 +209,7 @@ export function createTemperatureRoomRuntime({
 
             hasStarted = true;
             const startedLed = attachLedScenario('off');
-            startedLed.reportAvailability(
-                'online',
-                new Date(Date.parse(clock.now()) + 1).toISOString(),
-            );
+            startedLed.reportAvailability('online', clock.now());
             processPlatformEvent({
                 eventId: generateEventId(),
                 eventType: 'device.state.reported',
@@ -208,14 +221,11 @@ export function createTemperatureRoomRuntime({
                     reportedAt: clock.now(),
                 },
             });
-            reschedulePendingCommands();
+            commandController.reschedulePendingCommands();
 
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter = createAdapter(sensorEntry);
-                sensorEntry.sensor.reportAvailability(
-                    'online',
-                    new Date(Date.parse(clock.now()) + 1).toISOString(),
-                );
+                sensorEntry.sensor.reportAvailability('online', clock.now());
                 sensorEntry.sensor.tick(clock.now());
             }
 
@@ -247,11 +257,7 @@ export function createTemperatureRoomRuntime({
             led?.stop();
             led = undefined;
 
-            for (const timerHandle of commandTimeoutHandles.values()) {
-                commandTimer.clearTimeout(timerHandle);
-            }
-
-            commandTimeoutHandles.clear();
+            commandController.stop();
             hasStarted = false;
         },
         getRoomSnapshot() {
@@ -307,27 +313,13 @@ export function createTemperatureRoomRuntime({
                 }
 
                 if (action === 'degrade_device') {
-                    led?.reportHealth(
-                        'degraded',
-                        'command_blocked',
-                        nextTransitionAt(deviceId, 'healthChangedAt'),
-                    );
+                    led?.reportHealth('degraded', 'command_blocked', clock.now());
                 } else if (action === 'recover_device') {
-                    led?.reportHealth(
-                        'healthy',
-                        'recovered',
-                        nextTransitionAt(deviceId, 'healthChangedAt'),
-                    );
+                    led?.reportHealth('healthy', 'recovered', clock.now());
                 } else if (action === 'disconnect_device') {
-                    led?.reportAvailability(
-                        'offline',
-                        nextTransitionAt(deviceId, 'availabilityChangedAt'),
-                    );
+                    led?.reportAvailability('offline', clock.now());
                 } else if (action === 'reconnect_device') {
-                    led?.reportAvailability(
-                        'online',
-                        nextTransitionAt(deviceId, 'availabilityChangedAt'),
-                    );
+                    led?.reportAvailability('online', clock.now());
                 } else {
                     led?.setNextCommandScenario(action as LedScenarioName);
                 }
@@ -342,21 +334,13 @@ export function createTemperatureRoomRuntime({
             }
 
             if (action === 'disconnect_device') {
-                sensorEntry.sensor.disconnect(nextTransitionAt(deviceId, 'availabilityChangedAt'));
+                sensorEntry.sensor.disconnect(clock.now());
             } else if (action === 'reconnect_device') {
-                sensorEntry.sensor.reconnect(nextTransitionAt(deviceId, 'availabilityChangedAt'));
+                sensorEntry.sensor.reconnect(clock.now());
             } else if (action === 'degrade_device') {
-                sensorEntry.sensor.reportHealth(
-                    'degraded',
-                    'partial_data',
-                    nextTransitionAt(deviceId, 'healthChangedAt'),
-                );
+                sensorEntry.sensor.reportHealth('degraded', 'partial_data', clock.now());
             } else if (action === 'recover_device') {
-                sensorEntry.sensor.reportHealth(
-                    'healthy',
-                    'recovered',
-                    nextTransitionAt(deviceId, 'healthChangedAt'),
-                );
+                sensorEntry.sensor.reportHealth('healthy', 'recovered', clock.now());
             } else {
                 if (sensorEntry.sensor.isOffline()) {
                     throw Object.assign(
@@ -374,101 +358,7 @@ export function createTemperatureRoomRuntime({
             };
         },
         requestCommand(request) {
-            const commandId = randomUUID();
-            const snapshot = getCurrentRoomSnapshot();
-            const device = snapshot.devices.find(
-                (candidate) => candidate.deviceId === request.deviceId,
-            );
-
-            if (!hasStarted || !ledAdapter || !device) {
-                return rejected(
-                    commandId,
-                    'unsupported_command',
-                    'Device does not support this command.',
-                );
-            }
-
-            if (device.commandAvailability.policy === 'block') {
-                return rejected(
-                    commandId,
-                    device.commandAvailability.reason ?? 'command_unavailable',
-                    'Commands are not available for this device.',
-                );
-            }
-
-            if (request.deviceId !== 'led-main') {
-                return rejected(
-                    commandId,
-                    'unsupported_command',
-                    'Device does not support this command.',
-                );
-            }
-
-            if (snapshot.activeCommands.some((command) => command.deviceId === request.deviceId)) {
-                processPlatformEvent(rejectedCommandEvent(commandId, request, clock.now()));
-
-                return rejected(
-                    commandId,
-                    'command_already_active',
-                    'Device already has an active command.',
-                );
-            }
-
-            const requestedAt = clock.now();
-            processPlatformEvent({
-                eventId: generateEventId(),
-                eventType: 'command.requested',
-                occurredAt: requestedAt,
-                source: 'backend',
-                deviceId: request.deviceId,
-                commandId,
-                payload: {
-                    commandType: request.commandType,
-                    requestedState: request.requestedState,
-                    requestedBy: 'user',
-                },
-            });
-            processPlatformEvent({
-                eventId: generateEventId(),
-                eventType: 'command.dispatched',
-                occurredAt: clock.now(),
-                source: 'backend',
-                deviceId: request.deviceId,
-                commandId,
-                payload: { commandType: request.commandType, target: 'simulator-adapter' },
-            });
-
-            try {
-                ledAdapter.dispatch({ ...request, commandId });
-            } catch {
-                processPlatformEvent({
-                    eventId: generateEventId(),
-                    eventType: 'command.failed',
-                    occurredAt: clock.now(),
-                    source: 'backend',
-                    deviceId: request.deviceId,
-                    commandId,
-                    payload: {
-                        reason: 'dispatch_failed',
-                        message: 'The command could not be dispatched to the device adapter.',
-                    },
-                });
-
-                throw new Error('Command dispatch failed.');
-            }
-
-            scheduleTimeout(commandId, request.deviceId);
-
-            return { commandId, status: 'accepted' };
-        },
-        dispatchLedCommand(command) {
-            if (!hasStarted || !ledAdapter) {
-                throw new Error(
-                    'Temperature room runtime must be started before dispatching LED commands.',
-                );
-            }
-
-            ledAdapter.dispatch(command);
+            return commandController.requestCommand(request);
         },
     };
 
@@ -515,19 +405,6 @@ export function createTemperatureRoomRuntime({
         >;
 
         scenarioHandlers[action](observedAt);
-    }
-
-    function nextTransitionAt(
-        deviceId: string,
-        field: 'availabilityChangedAt' | 'healthChangedAt',
-    ): string {
-        const current = getCurrentRoomSnapshot().devices.find(
-            (device) => device.deviceId === deviceId,
-        );
-
-        return new Date(
-            Math.max(Date.parse(clock.now()), Date.parse(current?.[field] ?? clock.now()) + 1),
-        ).toISOString();
     }
 
     function createAdapter(sensorEntry: (typeof sensors)[number]): SimulatorTemperatureAdapter {
@@ -584,16 +461,7 @@ export function createTemperatureRoomRuntime({
 
         if (
             previousSnapshot &&
-            snapshot.devices.every((device) => {
-                const previous = previousSnapshot.devices.find(
-                    (candidate) => candidate.deviceId === device.deviceId,
-                );
-
-                return (
-                    JSON.stringify(previous?.observationStatus) ===
-                    JSON.stringify(device.observationStatus)
-                );
-            })
+            !hasObservationStatusChange(previousSnapshot, snapshot)
         ) {
             return;
         }
@@ -609,67 +477,11 @@ export function createTemperatureRoomRuntime({
             : undefined;
         const result = processor.processEvent(event);
         diagnostics.recordProcessingResult(event, result);
+        commandController.onEventProcessed(activeCommandIdBeforeEvent, event, result);
 
         if (result.status === 'accepted') {
-            clearCompletedCommandTimeout(activeCommandIdBeforeEvent, result.state.activeCommands);
-            clearCompletedCommandTimeout(event.commandId, result.state.activeCommands);
             notifySnapshotListeners(result.evaluatedAt);
         }
-    }
-
-    function scheduleTimeout(commandId: string, deviceId: string): void {
-        const active = getCurrentRoomSnapshot().activeCommands.find(
-            (command) => command.commandId === commandId && command.status === 'pending',
-        );
-
-        if (!active || active.status !== 'pending') {
-            return;
-        }
-
-        const remainingMs = Math.max(
-            0,
-            5_000 - (Date.parse(clock.now()) - Date.parse(active.dispatchedAt)),
-        );
-        commandTimeoutHandles.set(
-            commandId,
-            commandTimer.setTimeout(() => {
-                commandTimeoutHandles.delete(commandId);
-                processPlatformEvent({
-                    eventId: generateEventId(),
-                    eventType: 'command.timed_out',
-                    occurredAt: clock.now(),
-                    source: 'backend',
-                    deviceId,
-                    commandId,
-                    payload: { timeoutMs: 5_000, reason: 'confirmation_not_received' },
-                });
-            }, remainingMs),
-        );
-    }
-
-    function reschedulePendingCommands(): void {
-        for (const command of getCurrentRoomSnapshot().activeCommands) {
-            if (command.status === 'pending') {
-                scheduleTimeout(command.commandId, command.deviceId);
-            }
-        }
-    }
-
-    function clearCompletedCommandTimeout(
-        commandId: string | undefined,
-        activeCommands: RoomSnapshotProjection['activeCommands'],
-    ): void {
-        if (!commandId || activeCommands.some((command) => command.commandId === commandId)) {
-            return;
-        }
-
-        const timerHandle = commandTimeoutHandles.get(commandId);
-
-        if (timerHandle !== undefined) {
-            commandTimer.clearTimeout(timerHandle);
-        }
-
-        commandTimeoutHandles.delete(commandId);
     }
 
     function getCurrentRoomSnapshot(): RoomSnapshotProjection {
@@ -677,31 +489,6 @@ export function createTemperatureRoomRuntime({
     }
 }
 
-function rejected(commandId: string, reason: string, message: string): RejectedCommandResponse {
-    return { commandId, status: 'rejected', reason, message };
-}
-
-function rejectedCommandEvent(
-    commandId: string,
-    request: SetPowerCommandRequest,
-    occurredAt: string,
-): CommandFailedEvent {
-    return {
-        eventId: randomUUID(),
-        eventType: 'command.failed',
-        occurredAt,
-        source: 'backend',
-        deviceId: request.deviceId,
-        commandId,
-        payload: {
-            reason: 'command_already_active',
-            message: 'Device already has an active command.',
-            commandType: request.commandType,
-            requestedState: request.requestedState,
-            requestedAt: occurredAt,
-        },
-    };
-}
 
 const realTimer: TimerScheduler<ReturnType<typeof setInterval>> = {
     setInterval(callback, intervalMs) {
@@ -752,4 +539,32 @@ function toRoomSnapshot(
         activeCommands: projection.activeCommands,
         recentCommands: projection.recentCommands,
     };
+}
+
+function hasObservationStatusChange(
+    previous: RoomSnapshotProjection,
+    next: RoomSnapshotProjection,
+): boolean {
+    const previousByDeviceId = new Map(
+        previous.devices.map((device) => [device.deviceId, device.observationStatus]),
+    );
+
+    return next.devices.some((device) => {
+        const previousStatus = previousByDeviceId.get(device.deviceId);
+        const nextEntries = Object.entries(device.observationStatus);
+
+        if (!previousStatus || Object.keys(previousStatus).length !== nextEntries.length) {
+            return true;
+        }
+
+        return nextEntries.some(([capability, status]) => {
+            const previousCapability = previousStatus[capability];
+
+            return (
+                !previousCapability ||
+                previousCapability.freshness !== status.freshness ||
+                previousCapability.lastObservedAt !== status.lastObservedAt
+            );
+        });
+    });
 }

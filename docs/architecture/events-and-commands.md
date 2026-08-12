@@ -67,6 +67,10 @@ An equal or older transition is retained for history and diagnostics but does
 not regress current state. Its `previousAvailability` or `previousHealth` is a
 producer-reported fact, not a precondition for a newer transition.
 
+The projection's bootstrap `unknown` timestamp is a baseline rather than a
+device fact. Its first availability or health fact may have the same timestamp;
+once evidence exists, equal or older transitions remain non-applying.
+
 ## Initial Event Types
 
 | Event type                    | Purpose                                                               |

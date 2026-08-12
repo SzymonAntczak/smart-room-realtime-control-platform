@@ -58,6 +58,8 @@ export interface RoomProjector {
     applyCommandDispatched(event: CommandDispatchedEvent): RoomProjection;
     applyCommandFailed(event: CommandFailedEvent): RoomProjection;
     applyCommandTimedOut(event: CommandTimedOutEvent): RoomProjection;
+    hasAvailabilityEvidence(deviceId: string): boolean;
+    hasHealthEvidence(deviceId: string): boolean;
     getProjection(options?: ProjectionEvaluationOptions): RoomProjection;
 }
 
@@ -79,6 +81,8 @@ export function createRoomProjector({
     );
     const activeByDeviceId = new Map<string, ActiveCommandProjection>();
     const recent: TerminalCommandProjection[] = [];
+    const availabilityEvidenceReceived = new Set<string>();
+    const healthEvidenceReceived = new Set<string>();
     let updatedAt = initialUpdatedAt;
 
     return {
@@ -137,7 +141,11 @@ export function createRoomProjector({
         applyDeviceAvailabilityChanged(event) {
             const current = requireDevice(event.deviceId);
 
-            if (!isLater(event.occurredAt, current.availabilityChangedAt)) {
+            if (
+                !isLater(event.occurredAt, current.availabilityChangedAt) &&
+                (availabilityEvidenceReceived.has(event.deviceId) ||
+                    isEarlier(event.occurredAt, current.availabilityChangedAt))
+            ) {
                 return build(event.occurredAt);
             }
 
@@ -162,13 +170,18 @@ export function createRoomProjector({
             }
 
             projections.set(event.deviceId, next);
+            availabilityEvidenceReceived.add(event.deviceId);
 
             return build(event.occurredAt);
         },
         applyDeviceHealthChanged(event) {
             const current = requireDevice(event.deviceId);
 
-            if (!isLater(event.occurredAt, current.healthChangedAt)) {
+            if (
+                !isLater(event.occurredAt, current.healthChangedAt) &&
+                (healthEvidenceReceived.has(event.deviceId) ||
+                    isEarlier(event.occurredAt, current.healthChangedAt))
+            ) {
                 return build(event.occurredAt);
             }
 
@@ -193,6 +206,7 @@ export function createRoomProjector({
             }
 
             projections.set(event.deviceId, next);
+            healthEvidenceReceived.add(event.deviceId);
 
             return build(event.occurredAt);
         },
@@ -305,6 +319,12 @@ export function createRoomProjector({
 
             return build(event.occurredAt);
         },
+        hasAvailabilityEvidence(deviceId) {
+            return availabilityEvidenceReceived.has(deviceId);
+        },
+        hasHealthEvidence(deviceId) {
+            return healthEvidenceReceived.has(deviceId);
+        },
         getProjection(options = {}) {
             return build(options.evaluatedAt ?? updatedAt);
         },
@@ -412,6 +432,10 @@ function withObservation(
 
 function isLater(value: string, reference: string): boolean {
     return Date.parse(value) > Date.parse(reference);
+}
+
+function isEarlier(value: string, reference: string): boolean {
+    return Date.parse(value) < Date.parse(reference);
 }
 
 function isOnOrAfter(value: string, reference: string): boolean {

@@ -71,6 +71,10 @@ diagnostics but cannot regress the projection. `previousAvailability` and
 applying a newer transition because a dropped earlier transition must not leave
 the projection stuck.
 
+Bootstrap `unknown` is a projection baseline, not accepted availability or
+health evidence. The first fact for either dimension may use the same timestamp
+as its baseline; only subsequent equal or earlier facts are non-applying.
+
 Freshness describes the confidence in an observed state, not reachability. A
 capability that has a configured freshness policy exposes an entry in
 `observationStatus`, keyed by capability. Each entry contains `freshness` as

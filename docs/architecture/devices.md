@@ -201,6 +201,11 @@ corresponding `availabilityChangedAt` or `healthChangedAt`; an equal or older
 transition remains diagnosable but cannot regress current state. The event's
 previous-value field is descriptive, not a transition precondition.
 
+The bootstrap `unknown` values are projection baselines, not accepted device
+facts. The first availability or health fact may therefore use the same
+timestamp as the baseline and establishes that dimension's evidence. Every
+subsequent transition follows the strictly-later ordering rule above.
+
 An availability change blocks only new commands. An existing `accepted` or
 `pending` command remains active until the adapter emits `command.failed` or the
 normal timeout expires; the availability change must not silently rewrite it.

@@ -1,10 +1,8 @@
 import type { Clock, LedScenarioScheduler } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
-import {
-    type CommandTimer,
-    createTemperatureRoomRuntime,
-} from '../../runtime/temperature-room-runtime';
+import type { CommandTimer } from '../../platform/command-processing/set-power-command-controller';
+import { createTemperatureRoomRuntime } from '../../runtime/temperature-room-runtime';
 
 describe('LED command reference loop', () => {
     it('keeps normal, delayed, rejected, timed-out and late-report outcomes explainable', () => {

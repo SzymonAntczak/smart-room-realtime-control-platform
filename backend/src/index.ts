@@ -1,7 +1,6 @@
 export {
     createSimulatorLedAdapter,
     type LedCommandTransport,
-    type PlatformSetPowerCommand,
     type SimulatorLedAdapter,
     type SimulatorLedAdapterConfig,
 } from './adapters/simulator/led/led-adapter';
@@ -27,6 +26,16 @@ export {
 } from './platform/event-processing/event-processor';
 export { createRoomBffServer, type RoomBffConfig } from './api/room-bff';
 export { type EventIdGenerator, type PlatformEventSink } from './platform/ports/event-sink';
+export {
+    type PlatformSetPowerCommand,
+    type SetPowerCommandDispatcher,
+} from './platform/ports/set-power-command-dispatcher';
+export {
+    createSetPowerCommandController,
+    type CommandTimer,
+    type SetPowerCommandController,
+    type SetPowerCommandControllerConfig,
+} from './platform/command-processing/set-power-command-controller';
 export {
     createRoomProjector,
     type RoomProjection,

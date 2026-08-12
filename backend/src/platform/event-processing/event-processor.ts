@@ -135,7 +135,14 @@ export function createEventProcessor({
                     return ignored('invalid_payload');
                 }
 
-                if (isStaleTransition(event.occurredAt, event.deviceId, 'availabilityChangedAt')) {
+                if (
+                    isStaleTransition(
+                        event.occurredAt,
+                        event.deviceId,
+                        'availabilityChangedAt',
+                        !roomProjector.hasAvailabilityEvidence(event.deviceId),
+                    )
+                ) {
                     return ignored('stale_device_transition');
                 }
 
@@ -150,7 +157,14 @@ export function createEventProcessor({
                     return ignored('invalid_payload');
                 }
 
-                if (isStaleTransition(event.occurredAt, event.deviceId, 'healthChangedAt')) {
+                if (
+                    isStaleTransition(
+                        event.occurredAt,
+                        event.deviceId,
+                        'healthChangedAt',
+                        !roomProjector.hasHealthEvidence(event.deviceId),
+                    )
+                ) {
                     return ignored('stale_device_transition');
                 }
 
@@ -240,6 +254,7 @@ export function createEventProcessor({
                 occurredAt: string,
                 deviceId: string,
                 timestampField: 'availabilityChangedAt' | 'healthChangedAt',
+                allowEqualBootstrap: boolean,
             ): boolean {
                 const projectedDevice = roomProjector
                     .getProjection()
@@ -247,7 +262,9 @@ export function createEventProcessor({
 
                 return (
                     projectedDevice !== undefined &&
-                    Date.parse(occurredAt) <= Date.parse(projectedDevice[timestampField])
+                    (allowEqualBootstrap
+                        ? Date.parse(occurredAt) < Date.parse(projectedDevice[timestampField])
+                        : Date.parse(occurredAt) <= Date.parse(projectedDevice[timestampField]))
                 );
             }
 

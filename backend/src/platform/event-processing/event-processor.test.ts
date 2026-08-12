@@ -52,6 +52,38 @@ describe('createEventProcessor', () => {
             healthReason: 'partial_data',
         });
     });
+    it('rejects first availability and health evidence older than the bootstrap timestamp', () => {
+        const room = processor();
+        const olderAt = '2026-06-08T09:29:58Z';
+
+        const availabilityResult = room.processEvent({
+            eventId: 'availability-older',
+            eventType: 'device.availability.changed',
+            occurredAt: olderAt,
+            source: 'simulator-adapter',
+            deviceId: 'temp-desk',
+            payload: {
+                previousAvailability: 'unknown',
+                availability: 'online',
+                reason: 'simulator_started',
+            },
+        });
+        const healthResult = room.processEvent({
+            eventId: 'health-older',
+            eventType: 'device.health.changed',
+            occurredAt: olderAt,
+            source: 'simulator-adapter',
+            deviceId: 'temp-desk',
+            payload: { previousHealth: 'unknown', health: 'healthy', reason: 'started' },
+        });
+
+        expect(availabilityResult).toMatchObject({
+            status: 'ignored',
+            reason: 'stale_device_transition',
+        });
+        expect(healthResult).toMatchObject({ status: 'ignored', reason: 'stale_device_transition' });
+        expect(healthResult.state.devices[0]).toMatchObject({ availability: 'unknown', health: 'unknown' });
+    });
     it('keeps equal-timestamp transitions diagnosable instead of regressing the projection', () => {
         const room = processor();
         room.processEvent({

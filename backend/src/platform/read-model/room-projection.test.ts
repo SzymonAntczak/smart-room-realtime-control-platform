@@ -49,6 +49,43 @@ describe('createRoomProjector', () => {
             commandAvailability: { reason: 'read_only_device' },
         });
     });
+    it('accepts first availability and health evidence at the bootstrap timestamp', () => {
+        const room = createRoomProjector({ devices: [device], initialUpdatedAt: at });
+
+        room.applyDeviceAvailabilityChanged(availability('online', at));
+        room.applyDeviceHealthChanged({
+            eventId: 'health-bootstrap',
+            eventType: 'device.health.changed',
+            occurredAt: at,
+            source: 'simulator-adapter',
+            deviceId: device.deviceId,
+            payload: { previousHealth: 'unknown', health: 'healthy', reason: 'started' },
+        });
+
+        expect(room.getProjection().devices[0]).toMatchObject({
+            availability: 'online',
+            health: 'healthy',
+        });
+    });
+    it('does not apply first availability or health evidence older than the bootstrap timestamp', () => {
+        const room = createRoomProjector({ devices: [device], initialUpdatedAt: at });
+        const olderAt = '2026-06-08T09:29:59Z';
+
+        room.applyDeviceAvailabilityChanged(availability('online', olderAt));
+        room.applyDeviceHealthChanged({
+            eventId: 'health-older',
+            eventType: 'device.health.changed',
+            occurredAt: olderAt,
+            source: 'simulator-adapter',
+            deviceId: device.deviceId,
+            payload: { previousHealth: 'unknown', health: 'healthy', reason: 'started' },
+        });
+
+        expect(room.getProjection().devices[0]).toMatchObject({
+            availability: 'unknown',
+            health: 'unknown',
+        });
+    });
     it('changes freshness without inferring availability from telemetry age', () => {
         const room = projector();
         room.applyDeviceAvailabilityChanged(availability('online'));

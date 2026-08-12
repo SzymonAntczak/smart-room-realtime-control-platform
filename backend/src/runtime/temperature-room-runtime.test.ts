@@ -79,7 +79,7 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.runDeviceScenario('temp-window', 'pause_telemetry');
             clock.advanceBy(1000);
             timer.run(2);
-            timer.run(3);
+            timer.run(1);
 
             expect(device(runtime, 'temp-desk')?.reportedState).toEqual({
                 temperature: 22.2,
@@ -146,6 +146,34 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('does not publish unchanged freshness and publishes one snapshot for a freshness transition', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            snapshotBroadcastIntervalMs: 1000,
+            clock,
+            timer,
+            generateEventId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+
+            timer.run(1);
+            expect(snapshots).toHaveLength(0);
+
+            clock.advanceBy(2_501);
+            timer.run(1);
+            expect(snapshots).toHaveLength(1);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('keeps a paused sensor online while freshness becomes stale and then recovers', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
@@ -200,6 +228,7 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.start();
             const reportedStateBeforeDisconnect = device(runtime, 'temp-window')?.reportedState;
 
+            clock.advanceBy(1);
             runtime.runDeviceScenario('temp-window', 'disconnect_device');
             clock.advanceBy(1_000);
             timer.run(3);
@@ -222,6 +251,7 @@ describe('createTemperatureRoomRuntime', () => {
                 );
             }
 
+            clock.advanceBy(1);
             runtime.runDeviceScenario('temp-window', 'reconnect_device');
 
             expect(device(runtime, 'temp-window')).toMatchObject({
@@ -242,8 +272,9 @@ describe('createTemperatureRoomRuntime', () => {
     });
 
     it('changes temperature health independently of availability and freshness', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
         const runtime = createTemperatureRoomRuntime({
-            clock: createMutableClock('2026-06-08T09:30:00Z'),
+            clock,
             generateEventId: createEventIdGenerator(),
         });
 
@@ -260,6 +291,7 @@ describe('createTemperatureRoomRuntime', () => {
                 observationStatus: before?.observationStatus,
             });
 
+            clock.advanceBy(1);
             runtime.runDeviceScenario('temp-window', 'recover_device');
             expect(device(runtime, 'temp-window')).toMatchObject({
                 availability: 'online',
@@ -306,8 +338,7 @@ describe('createTemperatureRoomRuntime', () => {
             snapshots.length = 0;
             clock.advanceBy(1);
 
-            runtime.dispatchLedCommand({
-                commandId: 'cmd-led-1',
+            runtime.requestCommand({
                 deviceId: 'led-main',
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
@@ -319,8 +350,7 @@ describe('createTemperatureRoomRuntime', () => {
                     commandAvailability: { policy: 'allow' },
                 }),
             );
-            expect(snapshots).toHaveLength(1);
-            expect(snapshots[0]?.devices).toEqual(
+            expect(snapshots.at(-1)?.devices).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({
                         deviceId: 'led-main',
@@ -550,8 +580,7 @@ describe('createTemperatureRoomRuntime', () => {
         });
 
         runtime.start();
-        runtime.dispatchLedCommand({
-            commandId: 'cmd-led-1',
+        runtime.requestCommand({
             deviceId: 'led-main',
             commandType: 'set.power',
             requestedState: { power: 'on' },
