@@ -187,8 +187,8 @@ event processor, read model/projections and in-memory storage.
 The current realtime read contract sends a `room.snapshot` over
 SSE only when the frontend connects or reconnects. It is followed by
 named, revision-linked `device.updated` and `commands.updated` messages. A device projection contains
-current device state, availability, health and applicable freshness; command updates atomically carry the changed
-device plus active and terminal command projections. A future dedicated history
+current device state, availability, health and applicable freshness; command updates atomically carry the complete
+current device collection plus the global active and terminal command projections. A future dedicated history
 slice will define durable event retention and details access. A client reconnects for a new
 snapshot when a delta is malformed or has a revision gap.
 

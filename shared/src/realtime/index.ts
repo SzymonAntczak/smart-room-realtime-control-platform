@@ -41,7 +41,7 @@ export interface CommandsUpdatedMessage {
     revision: number;
     sentAt: string;
     payload: {
-        device: DeviceProjection;
+        devices: DeviceProjection[];
         activeCommands: ActiveCommandProjection[];
         recentCommands: TerminalCommandProjection[];
     };
@@ -74,7 +74,7 @@ export const commandsUpdatedMessageSchema = Type.Object(
         sentAt: isoTimestampSchema,
         payload: Type.Object(
             {
-                device: deviceProjectionSchema,
+                devices: Type.Array(deviceProjectionSchema),
                 activeCommands: Type.Array(activeCommandProjectionSchema),
                 recentCommands: recentCommandProjectionsSchema,
             },
@@ -105,12 +105,13 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
         return (
             value.revision === value.previousRevision + 1 &&
             hasConsistentCommandCollections(
-                [value.payload.device],
+                value.payload.devices,
                 value.payload.activeCommands,
                 value.payload.recentCommands,
             ) &&
-            hasCanonicalDeviceTimestamps(value.payload.device) &&
-            hasValidDeviceSemantics(value.payload.device) &&
+            value.payload.devices.every(
+                (device) => hasCanonicalDeviceTimestamps(device) && hasValidDeviceSemantics(device),
+            ) &&
             hasCanonicalCommandTimestamps(
                 value.payload.activeCommands,
                 value.payload.recentCommands,

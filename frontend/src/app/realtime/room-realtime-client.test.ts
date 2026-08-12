@@ -289,6 +289,77 @@ describe('connectTemperatureRealtime', () => {
         );
     });
 
+    it('applies one atomic command update without losing another device command history', () => {
+        const handlers = createHandlers();
+        const sideDevice = { ...createLedDevice(), deviceId: 'led-side', name: 'Side LED' };
+        const sideCommand = {
+            ...createConfirmedCommand(),
+            commandId: 'cmd-side',
+            deviceId: 'led-side',
+        };
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({ devices: [createLedDevice(), sideDevice] }),
+        );
+        MockWebSocket.latest().emitMessage(
+            createCommandsUpdatedMessage({
+                devices: [createLedDevice('cmd-1'), sideDevice],
+                activeCommands: [createPendingCommand()],
+                recentCommands: [sideCommand],
+            }),
+        );
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                devices: [
+                    expect.objectContaining({ deviceId: 'led-main', activeCommandId: 'cmd-1' }),
+                    expect.objectContaining({ deviceId: 'led-side' }),
+                ],
+                activeCommands: [expect.objectContaining({ commandId: 'cmd-1' })],
+                recentCommands: [expect.objectContaining({ commandId: 'cmd-side' })],
+            }),
+        );
+    });
+
+    it.each([
+        {
+            label: 'removes a configured device',
+            devices: [createLedDevice('cmd-1')],
+        },
+        {
+            label: 'adds an unknown device',
+            devices: [
+                createLedDevice('cmd-1'),
+                { ...createLedDevice(), deviceId: 'led-side', name: 'Side LED' },
+                { ...createLedDevice(), deviceId: 'led-extra', name: 'Extra LED' },
+            ],
+        },
+        {
+            label: 'duplicates a device ID',
+            devices: [
+                createLedDevice('cmd-1'),
+                { ...createLedDevice(), deviceId: 'led-main', name: 'Duplicate LED' },
+            ],
+        },
+    ])('rejects a command update that $label without replacing the valid view', ({ devices }) => {
+        const handlers = createHandlers();
+        const sideDevice = { ...createLedDevice(), deviceId: 'led-side', name: 'Side LED' };
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({ devices: [createLedDevice(), sideDevice] }),
+        );
+        MockWebSocket.latest().emitMessage(
+            createCommandsUpdatedMessage({
+                devices,
+                activeCommands: [createPendingCommand()],
+            }),
+        );
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+    });
+
     it('rejects a non-contiguous command delta without replacing the valid view', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
@@ -544,9 +615,11 @@ function createCommandsUpdatedMessage({
     revision = 1,
     activeCommands = [createPendingCommand()],
     recentCommands = [],
+    devices = [createLedDevice(activeCommands[0]?.commandId)],
 }: {
     previousRevision?: number;
     revision?: number;
+    devices?: RoomSnapshotProjection['devices'];
     activeCommands?: RoomSnapshotProjection['activeCommands'];
     recentCommands?: RoomSnapshotProjection['recentCommands'];
 } = {}): RoomRealtimeServerMessage {
@@ -556,7 +629,7 @@ function createCommandsUpdatedMessage({
         revision,
         sentAt: '2026-06-08T09:30:02Z',
         payload: {
-            device: createLedDevice(activeCommands[0]?.commandId),
+            devices,
             activeCommands,
             recentCommands,
         },

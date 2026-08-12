@@ -44,7 +44,7 @@ test('keeps reported LED power unchanged until an accepted command is confirmed 
     await publishMockRoomUpdate(
         page.request,
         createCommandsUpdatedMessage(0, {
-            device: createPendingLedDeviceProjection(),
+            devices: [createPendingLedDeviceProjection()],
             activeCommands: [createPendingLedCommand()],
         }),
     );
@@ -56,7 +56,7 @@ test('keeps reported LED power unchanged until an accepted command is confirmed 
     await publishMockRoomUpdate(
         page.request,
         createCommandsUpdatedMessage(1, {
-            device: createConfirmedLedDeviceProjection(),
+            devices: [createConfirmedLedDeviceProjection()],
             recentCommands: [createConfirmedLedCommand()],
         }),
     );
@@ -104,7 +104,7 @@ test('keeps reported LED power unchanged and shows the terminal timeout outcome'
     await publishMockRoomUpdate(
         page.request,
         createCommandsUpdatedMessage(0, {
-            device: createPendingLedDeviceProjection(),
+            devices: [createPendingLedDeviceProjection()],
             activeCommands: [createPendingLedCommand()],
         }),
     );
@@ -141,7 +141,7 @@ test('updates observed LED power after a timeout without reconfirming the comman
     await publishMockRoomUpdate(
         page.request,
         createCommandsUpdatedMessage(0, {
-            device: createPendingLedDeviceProjection(),
+            devices: [createPendingLedDeviceProjection()],
             activeCommands: [createPendingLedCommand()],
         }),
     );

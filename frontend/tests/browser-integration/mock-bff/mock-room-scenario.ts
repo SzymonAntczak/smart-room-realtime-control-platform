@@ -59,14 +59,10 @@ function applyUpdateToSnapshot(
     snapshot: RoomSnapshotProjection,
     update: Exclude<RoomRealtimeServerMessage, { messageType: 'room.snapshot' }>,
 ): RoomSnapshotProjection {
-    const device = update.messageType === 'device.updated' ? update.payload : update.payload.device;
-    const devices = snapshot.devices.map((currentDevice) =>
-        currentDevice.deviceId === device.deviceId ? device : currentDevice,
-    );
-
-    if (!snapshot.devices.some((currentDevice) => currentDevice.deviceId === device.deviceId)) {
-        throw new Error(`Mock BFF update references unknown device ${device.deviceId}.`);
-    }
+    const devices =
+        update.messageType === 'device.updated'
+            ? replaceDevice(snapshot.devices, update.payload)
+            : update.payload.devices;
 
     return {
         ...snapshot,
@@ -79,4 +75,17 @@ function applyUpdateToSnapshot(
               }
             : {}),
     };
+}
+
+function replaceDevice(
+    devices: RoomSnapshotProjection['devices'],
+    updatedDevice: RoomSnapshotProjection['devices'][number],
+): RoomSnapshotProjection['devices'] {
+    if (!devices.some((device) => device.deviceId === updatedDevice.deviceId)) {
+        throw new Error(`Mock BFF update references unknown device ${updatedDevice.deviceId}.`);
+    }
+
+    return devices.map((device) =>
+        device.deviceId === updatedDevice.deviceId ? updatedDevice : device,
+    );
 }

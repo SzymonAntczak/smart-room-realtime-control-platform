@@ -197,7 +197,7 @@ describe('realtime schemas', () => {
             isRoomRealtimeServerMessage({
                 ...update,
                 payload: {
-                    device: createLedDevice(),
+                    devices: [createLedDevice()],
                     activeCommands: [],
                     recentCommands: [
                         {
@@ -219,7 +219,7 @@ describe('realtime schemas', () => {
                 ...update,
                 payload: {
                     ...update.payload,
-                    device: { ...update.payload.device, activeCommandId: 'cmd-other' },
+                    devices: [{ ...update.payload.devices[0], activeCommandId: 'cmd-other' }],
                 },
             }),
         ).toBe(false);
@@ -254,11 +254,13 @@ describe('realtime schemas', () => {
                 ...update,
                 payload: {
                     ...update.payload,
-                    device: {
-                        ...update.payload.device,
-                        role: 'temperature-sensor',
-                        commandAvailability: { policy: 'block', reason: 'read_only_device' },
-                    },
+                    devices: [
+                        {
+                            ...update.payload.devices[0],
+                            role: 'temperature-sensor',
+                            commandAvailability: { policy: 'block', reason: 'read_only_device' },
+                        },
+                    ],
                 },
             }),
         ).toBe(false);
@@ -277,7 +279,7 @@ describe('realtime schemas', () => {
             isRoomRealtimeServerMessage({
                 ...update,
                 payload: {
-                    device: createLedDevice(),
+                    devices: [createLedDevice()],
                     activeCommands: [],
                     recentCommands: Array.from({ length: 21 }, (_, index) => ({
                         ...terminalCommand,
@@ -309,7 +311,7 @@ describe('realtime schemas', () => {
             isRoomRealtimeServerMessage({
                 ...update,
                 payload: {
-                    device: createLedDevice(),
+                    devices: [createLedDevice()],
                     activeCommands: [],
                     recentCommands: [
                         {
@@ -695,7 +697,7 @@ function createCommandsUpdatedMessage() {
         revision: 5,
         sentAt: '2026-06-08T09:30:01Z',
         payload: {
-            device: createLedDevice('cmd-1'),
+            devices: [createLedDevice('cmd-1')],
             activeCommands: [
                 {
                     commandId: 'cmd-1',

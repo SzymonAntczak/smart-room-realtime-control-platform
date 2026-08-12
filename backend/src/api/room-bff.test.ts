@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 
-import type { TemperatureScenarioAction } from '@smart-room/contracts/development';
+import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
 import type { FastifyInstance } from 'fastify';
@@ -139,6 +139,23 @@ describe('createRoomBffServer', () => {
         await expect(malformed.json()).resolves.toMatchObject({ error: 'invalid_request' });
         expect(nonJson.status).toBe(415);
         await expect(nonJson.json()).resolves.toMatchObject({ error: 'unsupported_media_type' });
+    });
+
+    it('keeps command validation errors in the API error contract when a query is present', async () => {
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/room/commands?source=dashboard`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId: 'led-main', commandType: 'set.level' }),
+        });
+
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toEqual({
+            error: 'invalid_request',
+            message: 'Request body does not match a supported command.',
+        });
     });
 
     it('maps active-command rejection to 409', async () => {
@@ -519,6 +536,37 @@ describe('createRoomBffServer', () => {
         });
     });
 
+    it('streams global command collections atomically for multiple controllable devices', async () => {
+        const harness = createRoomBffHarness({
+            roomSnapshot: createTwoLedRoomSnapshot('accepted'),
+            sentAt: ['2026-06-08T09:30:01Z', '2026-06-08T09:30:03Z'],
+        });
+        const server = await listen(createRoomBffServer(harness.config));
+        openServers.push(server);
+        const stream = await connectSse(server);
+        openStreams.push(stream);
+        await readRealtimeMessage(stream);
+
+        harness.publishRoomSnapshot(createTwoLedRoomSnapshot('confirmed'));
+
+        await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
+            messageType: 'commands.updated',
+            previousRevision: 0,
+            revision: 1,
+            payload: {
+                devices: expect.arrayContaining([
+                    expect.objectContaining({ deviceId: 'led-main' }),
+                    expect.objectContaining({ deviceId: 'led-side' }),
+                ]),
+                activeCommands: [],
+                recentCommands: expect.arrayContaining([
+                    expect.objectContaining({ commandId: 'cmd-led-1', status: 'confirmed' }),
+                    expect.objectContaining({ commandId: 'cmd-led-side', status: 'confirmed' }),
+                ]),
+            },
+        });
+    });
+
     it('streams only the changed device delta from the two-sensor runtime', async () => {
         const runtime = createTemperatureRoomRuntime({ intervalMs: 10_000 });
         runtime.start();
@@ -613,7 +661,7 @@ function createScenarioBffConfig(actions: Array<{ deviceId: string; action: stri
                 ? { deviceId, scenarios: [{ action: 'pause_telemetry' as const }] }
                 : undefined;
         },
-        runDeviceScenario(deviceId: string, action: TemperatureScenarioAction) {
+        runDeviceScenario(deviceId: string, action: DeviceScenarioAction) {
             actions.push({ deviceId, action });
 
             return { action, status: 'completed' } as const;
@@ -763,6 +811,42 @@ function createLedRoomSnapshot({
                       },
                   ]
                 : [],
+    };
+}
+
+function createTwoLedRoomSnapshot(status: 'accepted' | 'confirmed'): RoomSnapshotProjection {
+    const snapshot = createLedRoomSnapshot({ status });
+    const sideCommand = {
+        commandId: 'cmd-led-side',
+        deviceId: 'led-side',
+        commandType: 'set.power' as const,
+        requestedState: { power: 'off' as const },
+        requestedAt: '2026-06-08T09:29:58Z',
+        dispatchedAt: '2026-06-08T09:29:59Z',
+        confirmedAt: '2026-06-08T09:30:00Z',
+        status: 'confirmed' as const,
+    };
+
+    return {
+        ...snapshot,
+        devices: [
+            ...snapshot.devices,
+            {
+                deviceId: 'led-side',
+                name: 'Side LED',
+                role: 'led-output',
+                availability: 'online',
+                availabilityChangedAt: '2026-06-08T09:30:00Z',
+                health: 'healthy',
+                healthChangedAt: '2026-06-08T09:30:00Z',
+                reportedState: { power: 'off' },
+                commandAvailability: { policy: 'allow' },
+                observationStatus: {
+                    power: { freshness: 'unknown', lastObservedAt: '2026-06-08T09:30:00Z' },
+                },
+            },
+        ],
+        recentCommands: [...snapshot.recentCommands, sideCommand],
     };
 }
 

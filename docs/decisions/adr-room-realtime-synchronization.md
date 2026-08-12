@@ -78,12 +78,12 @@ avoids a generic JSON-patch contract whose semantics would be harder to
 validate and explain.
 
 Command slices use a named `commands.updated` delta for command lifecycle
-changes. Its payload contains the affected device together with the complete
-`activeCommands` and `recentCommands` collections, applied atomically at the
-next contiguous revision. In the initial LED slice, all command projections
-refer to that affected controllable device; this lets the boundary validate its
-`activeCommandId` relation without relying on a partially applied client cache.
-Device removal requires either a named removal delta or an explicit static-device rule.
+changes. Its payload contains the complete current device collection together
+with the complete `activeCommands` and `recentCommands` collections, applied
+atomically at the next contiguous revision. This keeps every command reference
+and each device's `activeCommandId` valid even when one projection update changes
+commands for multiple devices. Device removal requires either a named removal
+delta or an explicit static-device rule.
 
 This makes development-time breaking changes explicit and inexpensive, but it
 means an older local producer or consumer must be updated together with the
@@ -101,4 +101,4 @@ versioning decision and its rollout plan are complete.
 - A device card loads only its own dev scenarios when its control is opened.
 - Command deltas reject a non-contiguous revision, a dangling command-device
   reference, duplicate command IDs, overlapping active commands, or a mismatch
-  between the affected device's `activeCommandId` and `activeCommands`.
+  between any device's `activeCommandId` and `activeCommands`.

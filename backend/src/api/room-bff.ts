@@ -1,5 +1,3 @@
-import type { ServerResponse } from 'node:http';
-
 import {
     type AcceptedCommandResponse,
     acceptedCommandResponseSchema,
@@ -23,15 +21,19 @@ import {
     type RoomSnapshotProjection,
     roomSnapshotProjectionSchema,
 } from '@smart-room/contracts/projections';
-import {
-    isRoomRealtimeServerMessage,
-    isRoomSnapshotProjection,
-    type RoomRealtimeServerMessage,
-} from '@smart-room/contracts/realtime';
-import { isSchema, normalizeIsoTimestamp } from '@smart-room/contracts/validation';
+import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
+import { isSchema } from '@smart-room/contracts/validation';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
+
+import {
+    isJsonMediaType,
+    setCorsHeaders,
+    writeInvalidServerResponse,
+    writeJson,
+} from './room-bff-http';
+import { startRoomRealtimeStream } from './room-bff-sse';
 
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
@@ -103,53 +105,8 @@ export function createRoomBffServer({
         void response.send(error);
     });
 
-    server.get('/room/realtime', (request, response) => {
-        if (request.method !== 'GET') {
-            response.header('Allow', 'GET, OPTIONS');
-            writeJson(response, 405, {
-                error: 'method_not_allowed',
-                message: 'Only GET is supported for this route.',
-            });
-
-            return;
-        }
-
-        response.hijack();
-        const stream = response.raw;
-        stream.writeHead(200, {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'text/event-stream; charset=utf-8',
-            'Cache-Control': 'no-cache, no-transform',
-            Connection: 'keep-alive',
-        });
-        stream.flushHeaders();
-        let baseline = getRoomSnapshot();
-        let revision = 0;
-        let isBaselineSent = false;
-        const unsubscribe = subscribeRoomSnapshot((snapshot) => {
-            if (!isBaselineSent) {
-                baseline = snapshot;
-
-                return;
-            }
-
-            if (!hasSameDeviceSet(baseline, snapshot)) {
-                stream.end();
-
-                return;
-            }
-
-            revision = sendRoomDeltas(stream, baseline, snapshot, revision, now);
-            baseline = snapshot;
-        });
-        const cleanup = once(unsubscribe);
-
-        stream.once('close', cleanup);
-        stream.once('error', cleanup);
-
-        baseline = getRoomSnapshot();
-        sendRoomSnapshot(stream, baseline, now);
-        isBaselineSent = true;
+    server.get('/room/realtime', (_, response) => {
+        startRoomRealtimeStream(response, { getRoomSnapshot, subscribeRoomSnapshot, now });
     });
 
     server.get(
@@ -422,26 +379,6 @@ function isScenarioConflictError(error: unknown): error is Error & { code: 'scen
     return error instanceof Error && 'code' in error && error.code === 'scenario_conflict';
 }
 
-function setCorsHeaders(response: FastifyReply): void {
-    response.header('Access-Control-Allow-Origin', '*');
-    response.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    response.header('Access-Control-Allow-Headers', 'Content-Type');
-}
-
-function writeJson(response: FastifyReply, statusCode: number, body: unknown): void {
-    void response
-        .code(statusCode)
-        .type('application/json')
-        .send(body as Record<string, unknown>);
-}
-
-function writeInvalidServerResponse(response: FastifyReply): void {
-    writeJson(response, 500, {
-        error: 'invalid_server_response',
-        message: 'Server produced a response that does not match the transport contract.',
-    });
-}
-
 function isInvalidJsonBodyError(error: unknown): boolean {
     return (
         error instanceof Error && 'code' in error && error.code === 'FST_ERR_CTP_INVALID_JSON_BODY'
@@ -453,11 +390,11 @@ function isInvalidScenarioRequestError(error: unknown): boolean {
 }
 
 function isDeviceScenarioRequest(request: FastifyRequest): boolean {
-    return request.url.startsWith('/dev/devices/') && request.url.endsWith('/scenarios');
+    return request.routeOptions.url === '/dev/devices/:deviceId/scenarios';
 }
 
 function isCommandRequest(request: FastifyRequest): boolean {
-    return request.url === '/room/commands';
+    return request.routeOptions.url === '/room/commands';
 }
 
 function isCommandRequestResult(value: unknown): value is CommandRequestResult {
@@ -471,223 +408,6 @@ function commandRejectionStatus(result: RejectedCommandResponse): 409 | 422 {
     return result.reason === 'command_already_active' ? 409 : 422;
 }
 
-function isJsonMediaType(contentType: string | undefined): boolean {
-    return contentType?.split(';', 1)[0]?.trim().toLowerCase() === 'application/json';
-}
-
-function sendRoomSnapshot(
-    stream: ServerResponse,
-    snapshot: RoomSnapshotProjection,
-    now: () => string,
-): void {
-    if (stream.writableEnded || stream.destroyed) {
-        return;
-    }
-
-    const sentAt = normalizeIsoTimestamp(now());
-
-    if (!sentAt) {
-        stream.end();
-
-        return;
-    }
-
-    const message: RoomRealtimeServerMessage = {
-        messageType: 'room.snapshot',
-        revision: 0,
-        sentAt,
-        payload: snapshot,
-    };
-
-    if (!isRoomRealtimeServerMessage(message)) {
-        stream.end();
-
-        return;
-    }
-
-    try {
-        if (!stream.write(formatSseMessage(message))) {
-            stream.end();
-        }
-    } catch {
-        stream.end();
-    }
-}
-
-function sendRoomDeltas(
-    stream: ServerResponse,
-    previous: RoomSnapshotProjection,
-    next: RoomSnapshotProjection,
-    revision: number,
-    now: () => string,
-): number {
-    const previousDevices = new Map(previous.devices.map((device) => [device.deviceId, device]));
-    const nextDevices = new Map(next.devices.map((device) => [device.deviceId, device]));
-    const commandDeviceIds = changedCommandDeviceIds(previous, next);
-
-    for (const device of next.devices) {
-        if (commandDeviceIds.has(device.deviceId)) {
-            continue;
-        }
-
-        if (sameJson(previousDevices.get(device.deviceId), device)) {
-            continue;
-        }
-
-        const sentAt = normalizeIsoTimestamp(now());
-
-        if (!sentAt) {
-            stream.end();
-
-            return revision;
-        }
-
-        revision = sendRealtimeMessage(
-            stream,
-            {
-                messageType: 'device.updated',
-                previousRevision: revision,
-                revision: revision + 1,
-                sentAt,
-                payload: device,
-            },
-            revision,
-        );
-    }
-
-    for (const deviceId of commandDeviceIds) {
-        const device = nextDevices.get(deviceId);
-
-        if (!device) {
-            stream.end();
-
-            return revision;
-        }
-
-        const sentAt = normalizeIsoTimestamp(now());
-
-        if (!sentAt) {
-            stream.end();
-
-            return revision;
-        }
-
-        revision = sendRealtimeMessage(
-            stream,
-            {
-                messageType: 'commands.updated',
-                previousRevision: revision,
-                revision: revision + 1,
-                sentAt,
-                payload: {
-                    device,
-                    activeCommands: next.activeCommands.filter(
-                        (command) => command.deviceId === deviceId,
-                    ),
-                    recentCommands: next.recentCommands.filter(
-                        (command) => command.deviceId === deviceId,
-                    ),
-                },
-            },
-            revision,
-        );
-    }
-
-    return revision;
-}
-
-function changedCommandDeviceIds(
-    previous: RoomSnapshotProjection,
-    next: RoomSnapshotProjection,
-): Set<string> {
-    const deviceIds = new Set<string>();
-    const previousCommands = [...previous.activeCommands, ...previous.recentCommands];
-    const nextCommands = [...next.activeCommands, ...next.recentCommands];
-    const commandIds = new Set([
-        ...previousCommands.map((command) => command.commandId),
-        ...nextCommands.map((command) => command.commandId),
-    ]);
-
-    for (const commandId of commandIds) {
-        const previousCommand = previousCommands.find((command) => command.commandId === commandId);
-        const nextCommand = nextCommands.find((command) => command.commandId === commandId);
-
-        if (!sameJson(previousCommand, nextCommand)) {
-            if (previousCommand) {
-                deviceIds.add(previousCommand.deviceId);
-            }
-
-            if (nextCommand) {
-                deviceIds.add(nextCommand.deviceId);
-            }
-        }
-    }
-
-    return deviceIds;
-}
-
-function sendRealtimeMessage(
-    stream: ServerResponse,
-    message: RoomRealtimeServerMessage,
-    previousRevision: number,
-): number {
-    if (stream.writableEnded || stream.destroyed || !isRoomRealtimeServerMessage(message)) {
-        stream.end();
-
-        return previousRevision;
-    }
-
-    try {
-        if (!stream.write(formatSseMessage(message))) {
-            stream.end();
-
-            return previousRevision;
-        }
-
-        return message.messageType === 'room.snapshot' ? 0 : message.revision;
-    } catch {
-        stream.end();
-
-        return previousRevision;
-    }
-}
-
-function formatSseMessage(message: RoomRealtimeServerMessage): string {
-    return `event: ${message.messageType}\ndata: ${JSON.stringify(message)}\n\n`;
-}
-
-function sameJson(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function hasSameDeviceSet(previous: RoomSnapshotProjection, next: RoomSnapshotProjection): boolean {
-    if (previous.devices.length !== next.devices.length) {
-        return false;
-    }
-
-    const previousDeviceIds = new Set(previous.devices.map((device) => device.deviceId));
-    const nextDeviceIds = new Set(next.devices.map((device) => device.deviceId));
-
-    return (
-        previousDeviceIds.size === previous.devices.length &&
-        nextDeviceIds.size === next.devices.length &&
-        next.devices.every((device) => previousDeviceIds.has(device.deviceId))
-    );
-}
-
 function realClock(): string {
     return new Date().toISOString();
-}
-
-function once(callback: () => void): () => void {
-    let hasRun = false;
-
-    return () => {
-        if (hasRun) {
-            return;
-        }
-
-        hasRun = true;
-        callback();
-    };
 }

@@ -244,11 +244,11 @@ export function createTemperatureDeviceUpdatedMessage(
 export function createCommandsUpdatedMessage(
     previousRevision: number,
     {
-        device = createOnlineLedDeviceProjection(),
+        devices = [createOnlineLedDeviceProjection()],
         activeCommands = [],
         recentCommands = [],
     }: {
-        device?: DeviceProjection;
+        devices?: DeviceProjection[];
         activeCommands?: ActiveCommandProjection[];
         recentCommands?: TerminalCommandProjection[];
     } = {},
@@ -258,6 +258,6 @@ export function createCommandsUpdatedMessage(
         previousRevision,
         revision: previousRevision + 1,
         sentAt: fixtureTimestamp,
-        payload: { device, activeCommands, recentCommands },
+        payload: { devices, activeCommands, recentCommands },
     };
 }

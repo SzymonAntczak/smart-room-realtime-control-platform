@@ -28,14 +28,10 @@ export const deviceScenarioActions = [
     ...ledScenarioActions,
 ] as const;
 export type DeviceScenarioAction = (typeof deviceScenarioActions)[number];
-/** @deprecated Use DeviceScenarioAction for device-scoped dev controls. */
-export type TemperatureScenarioAction = DeviceScenarioAction;
 export interface DeviceScenarioResult {
     readonly action: DeviceScenarioAction;
     readonly status: 'completed';
 }
-/** @deprecated Use DeviceScenarioResult for device-scoped dev controls. */
-export type TemperatureScenarioResult = DeviceScenarioResult;
 export interface DeviceScenarioDescriptor {
     readonly action: DeviceScenarioAction;
 }
@@ -98,10 +94,6 @@ export const deviceScenarioResultSchema = Type.Object({
     action: deviceScenarioActionSchema,
     status: Type.Literal('completed'),
 });
-/** @deprecated Use deviceScenarioRequestSchema. */
-export const temperatureScenarioRequestSchema = deviceScenarioRequestSchema;
-/** @deprecated Use deviceScenarioResultSchema. */
-export const temperatureScenarioResultSchema = deviceScenarioResultSchema;
 export const apiErrorResponseSchema = Type.Object({
     error: nonEmptyStringSchema,
     message: nonEmptyStringSchema,

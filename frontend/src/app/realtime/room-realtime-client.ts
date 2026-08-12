@@ -1,6 +1,7 @@
 import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     isRoomRealtimeServerMessage,
+    isRoomSnapshotProjection,
     type RoomRealtimeServerMessage,
     roomRealtimeServerMessageTypes,
 } from '@smart-room/contracts/realtime';
@@ -159,22 +160,23 @@ export function connectRoomRealtime(
             }
 
             case 'commands.updated': {
-                const deviceIndex = roomSnapshot.devices.findIndex(
-                    (device) => device.deviceId === message.payload.device.deviceId,
-                );
-
-                if (deviceIndex === -1) {
-                    throw new Error('Realtime update references an unknown device.');
+                if (!hasSameDeviceSet(roomSnapshot.devices, message.payload.devices)) {
+                    throw new Error('Realtime command update changed the configured device set.');
                 }
 
-                const devices = [...roomSnapshot.devices];
-                devices[deviceIndex] = message.payload.device;
                 roomSnapshot = {
                     ...roomSnapshot,
-                    devices,
+                    devices: message.payload.devices,
                     activeCommands: message.payload.activeCommands,
                     recentCommands: message.payload.recentCommands,
                 };
+
+                if (!isRoomSnapshotProjection(roomSnapshot)) {
+                    throw new Error(
+                        'Realtime command update did not produce a valid room snapshot.',
+                    );
+                }
+
                 break;
             }
         }
@@ -183,6 +185,24 @@ export function connectRoomRealtime(
 
         return roomSnapshot;
     }
+}
+
+function hasSameDeviceSet(
+    currentDevices: RoomSnapshotProjection['devices'],
+    updatedDevices: RoomSnapshotProjection['devices'],
+): boolean {
+    if (currentDevices.length !== updatedDevices.length) {
+        return false;
+    }
+
+    const currentDeviceIds = new Set(currentDevices.map((device) => device.deviceId));
+    const updatedDeviceIds = new Set(updatedDevices.map((device) => device.deviceId));
+
+    return (
+        currentDeviceIds.size === currentDevices.length &&
+        updatedDeviceIds.size === updatedDevices.length &&
+        updatedDevices.every((device) => currentDeviceIds.has(device.deviceId))
+    );
 }
 
 function validateRenderableDevices(snapshot: RoomSnapshotProjection): void {
