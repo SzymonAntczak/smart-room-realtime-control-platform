@@ -15,26 +15,34 @@ explainable operation without full event sourcing or a new MQTT runtime.
 #### Architecture and persistence
 
 - [ ] Record the Stage 4 storage and observability ADR.
-      Define SQLite as the local storage implementation; distinguish accepted
-      facts, raw telemetry, quarantined inputs, persisted current projections
-      and JSON operational logs. Update the affected architecture documents,
-      realtime ADR and roadmap to state that diagnostics are API/log based, not
-      a Dashboard feature.
+      Define direct `node:sqlite` (`DatabaseSync`) behind a replaceable backend
+      storage port, with Node `>=24.15 <25` as the supported runtime. Record
+      its synchronous release-candidate trade-off and the conditions for
+      reassessing it. Distinguish significant facts, raw telemetry,
+      quarantined inputs, persisted current projections and JSON operational
+      logs. Update the affected architecture documents, realtime ADR and
+      roadmap so diagnostics are a technical API/log surface, not a Dashboard
+      requirement.
       Done when: retention, ordering, storage-failure behavior, restart recovery
-      and transport responsibilities are unambiguous.
+      and transport responsibilities are unambiguous; the decision also defines
+      the durable-deduplication horizon and SQLite connection settings.
 
 - [ ] Add a replaceable backend storage port and SQLite migrations.
-      Use local `node:sqlite`, a gitignored database file and schema-versioned,
-      deterministic migrations. Store accepted facts, telemetry, quarantine and
-      the latest room projection; add indexes for device/time history reads.
+      Use local `node:sqlite`, a gitignored database file, WAL mode and
+      schema-versioned deterministic migrations. Store significant facts, raw
+      telemetry, quarantine and the latest room projection; add indexes for
+      device/metric/time history reads. Use prepared, parameterized statements
+      and short transactions; do not add an ORM or query builder.
       Done when: an empty or prior database migrates safely and tests can create
       isolated temporary databases.
 
 - [ ] Persist accepted facts atomically before publishing their effects.
-      In one transaction append the fact, write telemetry when applicable,
-      enforce retention, and persist the derived room projection. On SQLite
-      failure, do not update the renderable projection or emit realtime updates;
-      write a correlated operational error log instead.
+      In one transaction persist either a significant fact or a telemetry
+      sample, enforce the applicable retention and durable deduplication, and
+      persist the derived room projection. A telemetry event remains an
+      accepted platform fact but is not duplicated into significant history.
+      On SQLite failure, do not update the renderable projection or emit
+      realtime updates; write a correlated operational error log instead.
       Done when: tests prove fail-closed behavior, transaction rollback,
       exclusion of ignored inputs and preservation of late-report semantics.
 
@@ -57,16 +65,21 @@ explainable operation without full event sourcing or a new MQTT runtime.
 
 - [ ] Define shared history contracts and validation.
       Add TypeBox schemas for a bounded newest-first recent-event feed,
-      cursor-based raw telemetry pages and durable diagnostics. Preserve the
-      separate 20-entry `recentCommands` contract.
+      cursor-based raw telemetry pages, bounded trend-history responses and
+      durable diagnostics. Trend queries take a time range and rendering-point
+      limit; when raw data exceeds that limit, the backend downsamples at read
+      time without replacing stored raw samples. Preserve the separate 20-entry
+      `recentCommands` contract.
       Done when: contract tests reject malformed, unordered, over-limit,
       timestamp-inconsistent and dangling entries.
 
 - [ ] Apply Stage 4 retention rules in storage reads and writes.
-      Retain data for at most 30 days and enforce hard caps: 10,000 raw telemetry
-      samples per device, 5,000 accepted facts and 1,000 quarantine records.
-      Do not aggregate old raw telemetry; the 10,000-sample cap is the effective
-      telemetry window at the current one-second simulator cadence.
+      Retain data for at most 30 days and enforce independent hard caps:
+      10,000 raw telemetry samples per device, 5,000 significant facts and
+      1,000 quarantine records. Do not aggregate or replace old raw telemetry;
+      at the normal ten-second simulator cadence, 10,000 samples retain about
+      27.8 hours per device. Retained event IDs define the bounded
+      durable-deduplication guarantee.
       Done when: deterministic tests prove time- and count-based eviction and
       newest/oldest ordering at every boundary.
 
@@ -74,11 +87,26 @@ explainable operation without full event sourcing or a new MQTT runtime.
       Add the telemetry history endpoint for a selected device and retain the
       existing diagnostics endpoint as the technical inspection surface. Send a
       recent-event baseline in `room.snapshot`, then validated contiguous SSE
-      updates for significant events and new telemetry readings.
+      updates for significant events and new telemetry readings. On reconnect,
+      retain the snapshot-baseline model and fetch telemetry gaps through HTTP;
+      do not add SSE replay or `Last-Event-ID` semantics.
       Done when: BFF and client tests prove reconnect baselines, cursor handling,
       malformed-message rejection and preservation of the last valid view.
 
 #### Dashboard and simulator scenarios
+
+- [ ] Make freshness policy device- and capability-specific.
+      Each periodic-observation device definition declares its expected
+      reporting interval; the room projector centrally derives freshness as
+      `stale` only after `3 × expectedIntervalMs` without a newer accepted
+      observation. Keep availability independent. Configure the two simulator
+      temperature sensors for their own normal cadences, starting with ten
+      seconds for the desk sensor and twenty seconds for the window sensor.
+      Keep the development-only `emit_next_reading` scenario as an immediate
+      observation through the ordinary runtime path.
+      Done when: deterministic tests prove that different device intervals use
+      different stale thresholds, a delayed report does not alter availability,
+      and a manually emitted reading restores freshness.
 
 - [ ] Add a permanently visible Dashboard feed of significant facts.
       Render availability and health changes, command lifecycle facts and LED
@@ -90,7 +118,10 @@ explainable operation without full event sourcing or a new MQTT runtime.
 - [ ] Add telemetry details to temperature device cards.
       Add a telemetry trigger that opens a device-specific view with a trend
       chart and accessible value/time/unit table. Fetch its baseline over HTTP
-      and append new readings from SSE up to the 10,000-record limit.
+      and append new readings from SSE only up to a bounded rendering limit;
+      raw history remains cursor-paginated in SQLite rather than held in
+      frontend memory. On realtime reconnect, re-fetch the needed history range
+      before continuing live appends.
       Done when: a new simulator reading appears in both chart and table without
       manual refresh, while stale/offline labels remain honest.
 
@@ -98,7 +129,10 @@ explainable operation without full event sourcing or a new MQTT runtime.
       Persist bounded quarantine metadata behind `GET /diagnostics`; add
       development-only malformed and future-dated input scenarios alongside
       duplicate and invalid input. Every resulting observation must still use
-      the normal adapter, processor and persistence path.
+      the normal adapter, processor and persistence path. Diagnostics are
+      verified via the technical API and structured logs, not a new Dashboard
+      or frontend contract; the existing dev-panel diagnostic affordance may
+      remain a development convenience.
       Done when: duplicate, malformed and future-dated inputs are explainable by
       diagnostics API and logs but cannot affect projection, history or feed.
 
@@ -106,8 +140,10 @@ explainable operation without full event sourcing or a new MQTT runtime.
 
 - [ ] Extend backend, contract and frontend tests for Stage 4 behavior.
       Cover migrations, transactions, failure closure, retention, restart/timeout
-      recovery, HTTP cursors, SSE revisions, feed rendering and telemetry
-      details. Add mocked-BFF Playwright coverage without starting the real
+      recovery, durable deduplication, HTTP cursors, bounded trend responses,
+      SSE revisions, feed rendering and telemetry details. Cover per-device
+      cadence and `3 × expectedIntervalMs` freshness with injected clocks and
+      timers. Add mocked-BFF Playwright coverage without starting the real
       backend or simulator.
       Done when: browser tests use schema-valid fixtures and deterministic
       synchronization, with no state injection or arbitrary waits.
@@ -115,7 +151,9 @@ explainable operation without full event sourcing or a new MQTT runtime.
 - [ ] Write and execute the Stage 4 local acceptance checklist and walkthrough.
       Cover normal telemetry, stale/offline/recovery, degraded/recovered health,
       confirmation/rejection/timeout/late report, history persistence after
-      restart and API/log diagnostics for ignored inputs.
+      restart and API/log diagnostics for ignored inputs. Demonstrate normal
+      telemetry at each configured device cadence, then freshness changing after
+      the corresponding per-device threshold without changing availability.
       Done when: a reviewer can run the simulator route without hardware, follow
       the walkthrough and find a dated record with the verification commands.
 
