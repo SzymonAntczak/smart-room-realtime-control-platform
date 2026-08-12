@@ -1,8 +1,8 @@
 import { Type } from '@sinclair/typebox';
 
-import { commandRequestedByValues, powerStateProjectionSchema } from '../commands';
-import { deviceAvailabilityStates, deviceOperationalHealthStates } from '../devices';
-import { isoTimestampSchema, nonEmptyStringSchema } from '../validation';
+import { commandRequestedByValues, powerStateProjectionSchema } from './commands';
+import { deviceAvailabilityStates, deviceOperationalHealthStates } from './devices';
+import { isoTimestampSchema, nonEmptyStringSchema } from './validation';
 
 export const platformEventSources = ['simulator-adapter', 'hardware-adapter', 'backend'] as const;
 export type PlatformEventSource = (typeof platformEventSources)[number];

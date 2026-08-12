@@ -4,13 +4,13 @@
     "version": "0.1.0",
     "type": "module",
     "exports": {
-        "./commands": "./src/commands/index.ts",
-        "./development": "./src/development/index.ts",
-        "./devices": "./src/devices/index.ts",
-        "./events": "./src/events/index.ts",
-        "./projections": "./src/projections/index.ts",
-        "./realtime": "./src/realtime/index.ts",
-        "./validation": "./src/validation/index.ts"
+        "./commands": "./src/commands.ts",
+        "./development": "./src/development.ts",
+        "./devices": "./src/devices.ts",
+        "./events": "./src/events.ts",
+        "./projections": "./src/projections.ts",
+        "./realtime": "./src/realtime.ts",
+        "./validation": "./src/validation.ts"
     },
     "scripts": {
         "lint": "eslint ../shared --config ../eslint.config.js",

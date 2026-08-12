@@ -1,4 +1,5 @@
 export const deviceAvailabilityStates = ['online', 'offline', 'unknown'] as const;
+
 export type DeviceAvailability = (typeof deviceAvailabilityStates)[number];
 
 export const deviceOperationalHealthStates = ['healthy', 'degraded', 'unknown'] as const;

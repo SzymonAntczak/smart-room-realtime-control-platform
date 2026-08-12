@@ -1,51 +1,20 @@
 import { type Static, Type } from '@sinclair/typebox';
 
-import type { ActiveCommandProjection, TerminalCommandProjection } from '../commands';
 import {
     activeCommandProjectionSchema,
-    type DeviceProjection,
     deviceProjectionSchema,
     recentCommandProjectionsSchema,
     type RoomSnapshotProjection,
     roomSnapshotProjectionSchema,
     type terminalCommandProjectionSchema,
-} from '../projections';
-import { canonicalUtcTimestampSchema, isoTimestampSchema, isSchema } from '../validation';
-
-export type RoomRealtimeServerMessage =
-    | RoomSnapshotMessage
-    | DeviceUpdatedMessage
-    | CommandsUpdatedMessage;
+} from './projections';
+import { canonicalUtcTimestampSchema, isoTimestampSchema, isSchema } from './validation';
 
 export const roomRealtimeServerMessageTypes = [
     'room.snapshot',
     'device.updated',
     'commands.updated',
 ] as const;
-export interface RoomSnapshotMessage {
-    messageType: 'room.snapshot';
-    revision: 0;
-    sentAt: string;
-    payload: RoomSnapshotProjection;
-}
-export interface DeviceUpdatedMessage {
-    messageType: 'device.updated';
-    previousRevision: number;
-    revision: number;
-    sentAt: string;
-    payload: DeviceProjection;
-}
-export interface CommandsUpdatedMessage {
-    messageType: 'commands.updated';
-    previousRevision: number;
-    revision: number;
-    sentAt: string;
-    payload: {
-        devices: DeviceProjection[];
-        activeCommands: ActiveCommandProjection[];
-        recentCommands: TerminalCommandProjection[];
-    };
-}
 
 export const roomRealtimeServerMessageSchema = Type.Object(
     {
@@ -88,6 +57,11 @@ export const roomRealtimeServerMessageUnionSchema = Type.Union([
     deviceUpdatedMessageSchema,
     commandsUpdatedMessageSchema,
 ]);
+
+export type RoomSnapshotMessage = Static<typeof roomRealtimeServerMessageSchema>;
+export type DeviceUpdatedMessage = Static<typeof deviceUpdatedMessageSchema>;
+export type CommandsUpdatedMessage = Static<typeof commandsUpdatedMessageSchema>;
+export type RoomRealtimeServerMessage = Static<typeof roomRealtimeServerMessageUnionSchema>;
 
 export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealtimeServerMessage {
     if (
@@ -147,9 +121,9 @@ function hasConsistentCommandCollections(
     activeCommands: Static<typeof activeCommandProjectionSchema>[],
     recentCommands: Static<typeof terminalCommandProjectionSchema>[],
 ): boolean {
-    const deviceIds = new Set(devices.map((device) => device.deviceId));
+    const devicesById = new Map(devices.map((device) => [device.deviceId, device]));
 
-    if (deviceIds.size !== devices.length) {
+    if (devicesById.size !== devices.length) {
         return false;
     }
 
@@ -158,10 +132,7 @@ function hasConsistentCommandCollections(
 
     for (const command of activeCommands) {
         if (
-            !deviceIds.has(command.deviceId) ||
-            !isSetPowerCapableDevice(
-                devices.find((device) => device.deviceId === command.deviceId),
-            ) ||
+            !isSetPowerCapableDevice(devicesById.get(command.deviceId)) ||
             activeCommandByDeviceId.has(command.deviceId) ||
             commandIds.has(command.commandId)
         ) {
@@ -174,11 +145,9 @@ function hasConsistentCommandCollections(
 
     for (const command of recentCommands) {
         if (
-            !deviceIds.has(command.deviceId) ||
+            !devicesById.has(command.deviceId) ||
             (command.status !== 'failed' &&
-                !isSetPowerCapableDevice(
-                    devices.find((device) => device.deviceId === command.deviceId),
-                )) ||
+                !isSetPowerCapableDevice(devicesById.get(command.deviceId))) ||
             commandIds.has(command.commandId)
         ) {
             return false;

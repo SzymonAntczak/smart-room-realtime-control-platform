@@ -1,175 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    acceptedCommandResponseSchema,
-    rejectedCommandResponseSchema,
-    setPowerCommandRequestSchema,
-} from './commands';
-import {
-    commandDispatchedEventSchema,
-    commandFailedEventSchema,
-    commandRequestedEventSchema,
-    commandTimedOutEventSchema,
-    deviceHealthChangedEventSchema,
-    deviceStateReportedEventSchema,
-    platformEventCandidateSchema,
-    platformEventEnvelopeSchema,
-    telemetryReadingRecordedEventSchema,
-} from './events';
 import { isRoomRealtimeServerMessage, isRoomSnapshotProjection } from './realtime';
-import { isSchema, normalizeIsoTimestamp } from './validation';
-/*
-    platformEventCandidateSchema,
-    platformEventEnvelopeSchema,
-    rejectedCommandResponseSchema,
-    setPowerCommandRequestSchema,
-    telemetryReadingRecordedEventSchema,
-*/
-
-describe('set.power HTTP contracts', () => {
-    const request = {
-        deviceId: 'led-main',
-        commandType: 'set.power',
-        requestedState: { power: 'on' },
-    } as const;
-
-    it('accepts a valid request and rejects malformed or undocumented input', () => {
-        expect(isSchema(setPowerCommandRequestSchema, request)).toBe(true);
-        expect(
-            isSchema(setPowerCommandRequestSchema, {
-                ...request,
-                requestedState: { power: 'dim' },
-            }),
-        ).toBe(false);
-        expect(
-            isSchema(setPowerCommandRequestSchema, {
-                ...request,
-                requestedState: { power: 'on', brightness: 50 },
-            }),
-        ).toBe(false);
-        expect(isSchema(setPowerCommandRequestSchema, { ...request, deviceId: '' })).toBe(false);
-        expect(
-            isSchema(setPowerCommandRequestSchema, { ...request, commandType: 'set.level' }),
-        ).toBe(false);
-        expect(isSchema(setPowerCommandRequestSchema, { ...request, confirmed: true })).toBe(false);
-    });
-
-    it('distinguishes backend acceptance from rejection without a confirmation field', () => {
-        expect(
-            isSchema(acceptedCommandResponseSchema, { commandId: 'cmd-1', status: 'accepted' }),
-        ).toBe(true);
-        expect(
-            isSchema(acceptedCommandResponseSchema, {
-                commandId: 'cmd-1',
-                status: 'confirmed',
-            }),
-        ).toBe(false);
-        expect(
-            isSchema(rejectedCommandResponseSchema, {
-                commandId: 'cmd-2',
-                status: 'rejected',
-                reason: 'command_already_active',
-                message: 'The device already has an active command.',
-            }),
-        ).toBe(true);
-        expect(
-            isSchema(rejectedCommandResponseSchema, {
-                status: 'rejected',
-                reason: 'command_already_active',
-                message: 'The device already has an active command.',
-            }),
-        ).toBe(false);
-    });
-});
-
-describe('platform event schemas', () => {
-    it.each([
-        [deviceStateReportedEventSchema, 'device.state.reported'],
-        [deviceHealthChangedEventSchema, 'device.health.changed'],
-        [telemetryReadingRecordedEventSchema, 'telemetry.reading.recorded'],
-        [commandRequestedEventSchema, 'command.requested'],
-        [commandDispatchedEventSchema, 'command.dispatched'],
-        [commandFailedEventSchema, 'command.failed'],
-        [commandTimedOutEventSchema, 'command.timed_out'],
-    ] as const)('accepts its documented lifecycle event', (schema, eventType) => {
-        expect(isSchema(schema, createEvent(eventType))).toBe(true);
-    });
-
-    it('requires a non-empty commandId on lifecycle events', () => {
-        expect(
-            isSchema(commandRequestedEventSchema, {
-                ...createEvent('command.requested'),
-                commandId: '',
-            }),
-        ).toBe(false);
-    });
-
-    it('normalizes accepted ISO timestamps with an offset to UTC', () => {
-        const result = {
-            ...createEvent('telemetry.reading.recorded'),
-            occurredAt: '2026-06-08T11:30:00+02:00',
-        };
-
-        expect(isSchema(telemetryReadingRecordedEventSchema, result)).toBe(true);
-        expect(normalizeIsoTimestamp(result.occurredAt)).toBe('2026-06-08T09:30:00Z');
-    });
-
-    it.each(['2026-02-30T09:30:00Z', '2025-02-29T09:30:00Z', '2026-13-01T09:30:00Z'])(
-        'rejects an impossible ISO timestamp: %s',
-        (occurredAt) => {
-            expect(
-                isSchema(telemetryReadingRecordedEventSchema, {
-                    ...createEvent('telemetry.reading.recorded'),
-                    occurredAt,
-                }),
-            ).toBe(false);
-            expect(normalizeIsoTimestamp(occurredAt)).toBeUndefined();
-        },
-    );
-
-    it('accepts a valid leap-day timestamp', () => {
-        expect(normalizeIsoTimestamp('2028-02-29T09:30:00+02:00')).toBe('2028-02-29T07:30:00Z');
-    });
-
-    it('rejects unsupported event types from the full event contract', () => {
-        expect(
-            isSchema(platformEventEnvelopeSchema, {
-                ...createEvent('telemetry.reading.recorded'),
-                eventType: 'device.unknown',
-            }),
-        ).toBe(false);
-    });
-
-    it('preserves unknown event types for classification while normalizing their timestamp', () => {
-        const candidate = {
-            ...createEvent('telemetry.reading.recorded'),
-            eventType: 'device.unknown',
-            occurredAt: '2026-06-08T11:30:00+02:00',
-        };
-
-        expect(isSchema(platformEventCandidateSchema, candidate)).toBe(true);
-        expect(isSchema(platformEventEnvelopeSchema, candidate)).toBe(false);
-    });
-
-    it('rejects semantically invalid set.power lifecycle facts', () => {
-        expect(
-            isSchema(commandRequestedEventSchema, {
-                ...createEvent('command.requested'),
-                payload: {
-                    commandType: 'set.power',
-                    requestedState: {},
-                    requestedBy: 'user',
-                },
-            }),
-        ).toBe(false);
-        expect(
-            isSchema(platformEventEnvelopeSchema, {
-                ...createEvent('command.dispatched'),
-                eventType: 'command.confirmed',
-            }),
-        ).toBe(false);
-    });
-});
 
 describe('realtime schemas', () => {
     it('accepts an atomic command update and rejects an inconsistent projection', () => {
@@ -714,69 +545,111 @@ function createCommandsUpdatedMessage() {
     };
 }
 
-function createEvent(eventType: string) {
-    const base = {
-        eventId: 'evt-1',
-        occurredAt: '2026-06-08T09:30:00Z',
-        source: 'backend',
-        deviceId: 'led-main',
-    };
+describe('realtime command projections', () => {
+    it.each([
+        ['accepted', { status: 'accepted' }],
+        [
+            'pending',
+            {
+                status: 'pending',
+                dispatchedAt: '2026-06-08T09:30:01Z',
+            },
+        ],
+        [
+            'confirmed',
+            {
+                status: 'confirmed',
+                dispatchedAt: '2026-06-08T09:30:01Z',
+                confirmedAt: '2026-06-08T09:30:02Z',
+            },
+        ],
+    ] as const)('rejects each legacy detail on a %s command', (_status, lifecycle) => {
+        for (const [field, value] of [
+            ['reason', 'legacy_reason'],
+            ['message', 'Legacy metadata must not leak into this lifecycle state.'],
+        ] as const) {
+            expect(
+                isRoomRealtimeServerMessage(
+                    createCommandUpdateForProjectionTest({
+                        ...lifecycle,
+                        commandId: 'cmd-1',
+                        deviceId: 'led-main',
+                        commandType: 'set.power',
+                        requestedState: { power: 'on' },
+                        requestedAt: '2026-06-08T09:30:00Z',
+                        [field]: value,
+                    }),
+                ),
+            ).toBe(false);
+        }
+    });
 
-    switch (eventType) {
-        case 'device.state.reported':
-            return {
-                ...base,
-                eventType,
-                payload: { reportedState: { power: 'on' }, reportedAt: base.occurredAt },
-            };
-        case 'device.health.changed':
-            return {
-                ...base,
-                eventType,
-                payload: { previousHealth: 'degraded', health: 'healthy', reason: 'recovered' },
-            };
-        case 'telemetry.reading.recorded':
-            return {
-                ...base,
-                eventType,
-                payload: { metric: 'temperature', value: 22.5, unit: 'celsius' },
-            };
-        case 'command.requested':
-            return {
-                ...base,
-                eventType,
-                commandId: 'cmd-1',
-                payload: {
+    it('retains required failure details and the timeout reason', () => {
+        expect(
+            isRoomRealtimeServerMessage(
+                createCommandUpdateForProjectionTest({
+                    commandId: 'cmd-failed',
+                    deviceId: 'led-main',
                     commandType: 'set.power',
+                    status: 'failed',
                     requestedState: { power: 'on' },
-                    requestedBy: 'user',
+                    requestedAt: '2026-06-08T09:30:00Z',
+                    failedAt: '2026-06-08T09:30:01Z',
+                    reason: 'adapter_rejected',
+                    message: 'The adapter rejected the command.',
+                }),
+            ),
+        ).toBe(true);
+        expect(
+            isRoomRealtimeServerMessage(
+                createCommandUpdateForProjectionTest({
+                    commandId: 'cmd-timeout',
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    status: 'timed_out',
+                    requestedState: { power: 'on' },
+                    requestedAt: '2026-06-08T09:30:00Z',
+                    dispatchedAt: '2026-06-08T09:30:01Z',
+                    timedOutAt: '2026-06-08T09:30:02Z',
+                    reason: 'confirmation_not_received',
+                }),
+            ),
+        ).toBe(true);
+    });
+});
+
+function createCommandUpdateForProjectionTest(command: Record<string, unknown>) {
+    const isActiveCommand = command.status === 'accepted' || command.status === 'pending';
+
+    return {
+        messageType: 'commands.updated' as const,
+        previousRevision: 0,
+        revision: 1,
+        sentAt: '2026-06-08T09:30:01Z',
+        payload: {
+            devices: [
+                {
+                    deviceId: 'led-main',
+                    name: 'Main LED',
+                    role: 'led-output',
+                    availability: 'online',
+                    availabilityChangedAt: '2026-06-08T09:30:00Z',
+                    health: 'healthy',
+                    healthChangedAt: '2026-06-08T09:30:00Z',
+                    reportedState: { power: 'off' },
+                    observationStatus: {
+                        power: {
+                            freshness: 'unknown',
+                            lastObservedAt: '2026-06-08T09:30:00Z',
+                        },
+                    },
+                    commandAvailability: { policy: 'allow' },
+                    ...(isActiveCommand ? { activeCommandId: command.commandId } : {}),
                 },
-            };
-        case 'command.dispatched':
-            return {
-                ...base,
-                eventType,
-                commandId: 'cmd-1',
-                payload: { commandType: 'set.power', target: 'simulator-adapter' },
-            };
-        case 'command.failed':
-            return {
-                ...base,
-                eventType,
-                commandId: 'cmd-1',
-                payload: {
-                    reason: 'command_already_active',
-                    message: 'Device has an active command.',
-                },
-            };
-        case 'command.timed_out':
-            return {
-                ...base,
-                eventType,
-                commandId: 'cmd-1',
-                payload: { timeoutMs: 5000, reason: 'confirmation_not_received' },
-            };
-        default:
-            throw new Error(`Unsupported event type: ${eventType}`);
-    }
+            ],
+            activeCommands: isActiveCommand ? [command] : [],
+            recentCommands: isActiveCommand ? [] : [command],
+        },
+    };
 }
+

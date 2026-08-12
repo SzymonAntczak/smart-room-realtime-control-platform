@@ -1,7 +1,7 @@
 import { type Static, Type } from '@sinclair/typebox';
 
-import type { ActiveCommandProjection, TerminalCommandProjection } from '../commands';
-import { powerStateProjectionSchema } from '../commands';
+import type { ActiveCommandProjection, TerminalCommandProjection } from './commands';
+import { powerStateProjectionSchema } from './commands';
 import {
     type CommandAvailability,
     commandAvailabilityPolicies,
@@ -14,8 +14,8 @@ import {
     type DeviceState,
     type ObservationFreshness,
     observationFreshnessStates,
-} from '../devices';
-import { isoTimestampSchema, nonEmptyStringSchema } from '../validation';
+} from './devices';
+import { isoTimestampSchema, nonEmptyStringSchema } from './validation';
 
 export interface DeviceProjection {
     deviceId: string;
@@ -79,8 +79,6 @@ const commandProjectionBaseShape = {
     commandType: Type.Literal('set.power'),
     requestedState: powerStateProjectionSchema,
     requestedAt: isoTimestampSchema,
-    reason: Type.Optional(Type.String()),
-    message: Type.Optional(Type.String()),
 };
 export const activeCommandProjectionSchema = Type.Union([
     Type.Object(

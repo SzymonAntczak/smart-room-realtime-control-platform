@@ -1,7 +1,7 @@
 import { Type } from '@sinclair/typebox';
 
-import type { PowerState } from '../devices';
-import { nonEmptyStringSchema } from '../validation';
+import type { PowerState } from './devices';
+import { nonEmptyStringSchema } from './validation';
 
 export const commandStatuses = [
     'idle',
@@ -38,8 +38,6 @@ interface CommandProjectionBase {
     commandType: 'set.power';
     requestedState: { power: PowerState };
     requestedAt: string;
-    reason?: string;
-    message?: string;
 }
 export type AcceptedCommandProjection = CommandProjectionBase & { status: 'accepted' };
 export type PendingCommandProjection = CommandProjectionBase & {
@@ -51,14 +49,14 @@ export type ConfirmedCommandProjection = CommandProjectionBase & {
     dispatchedAt: string;
     confirmedAt: string;
 };
-export type FailedCommandProjection = Omit<CommandProjectionBase, 'reason' | 'message'> & {
+export type FailedCommandProjection = CommandProjectionBase & {
     status: 'failed';
     dispatchedAt?: string;
     failedAt: string;
     reason: string;
     message: string;
 };
-export type TimedOutCommandProjection = Omit<CommandProjectionBase, 'reason'> & {
+export type TimedOutCommandProjection = CommandProjectionBase & {
     status: 'timed_out';
     dispatchedAt: string;
     timedOutAt: string;

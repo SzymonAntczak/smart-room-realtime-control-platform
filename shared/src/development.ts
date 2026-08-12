@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox';
 
-import { isoTimestampSchema, nonEmptyStringSchema } from '../validation';
+import { isoTimestampSchema, nonEmptyStringSchema } from './validation';
 
 export const deviceConnectionScenarioActions = ['disconnect_device', 'reconnect_device'] as const;
 export const deviceHealthScenarioActions = ['degrade_device', 'recover_device'] as const;
