@@ -66,7 +66,7 @@ reliability, freshness, command lifecycle and UI semantics from scratch.
 The project deliberately freezes product breadth after Stage 3. Until the
 source-parity gate is complete, the only device roles are:
 
-- an environmental sensor providing temperature and humidity telemetry;
+- a temperature sensor providing temperature telemetry;
 - an on/off output controlled through `set.power`.
 
 The goal is to make these two roles credible across transport and hardware

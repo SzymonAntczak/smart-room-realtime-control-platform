@@ -7,7 +7,9 @@ export function useLedCommandRequest(deviceId: string | undefined) {
     const { t } = useTranslation('dashboard');
     const requestInFlight = useRef(false);
     const [submitting, setSubmitting] = useState(false);
-    const [transportError, setTransportError] = useState<string>();
+    const [transportError, setTransportError] = useState<
+        { commandId: string; message: string } | undefined
+    >();
 
     async function requestPower(power: 'on' | 'off'): Promise<void> {
         if (!deviceId || requestInFlight.current) {
@@ -26,15 +28,20 @@ export function useLedCommandRequest(deviceId: string | undefined) {
             });
 
             if (result.status === 'rejected') {
-                setTransportError(result.message);
+                setTransportError({ commandId: result.commandId, message: result.message });
             }
         } catch {
-            setTransportError(t('led.commandRequestFailed'));
+            setTransportError({ commandId: 'transport', message: t('led.commandRequestFailed') });
         } finally {
             requestInFlight.current = false;
             setSubmitting(false);
         }
     }
 
-    return { requestPower, submitting, transportError };
+    return {
+        requestPower,
+        submitting,
+        transportError: transportError?.message,
+        transportErrorCommandId: transportError?.commandId,
+    };
 }

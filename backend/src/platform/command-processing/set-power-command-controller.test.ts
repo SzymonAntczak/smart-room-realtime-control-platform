@@ -2,6 +2,8 @@ import type { PlatformEvent } from '@smart-room/contracts/events';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { describe, expect, it } from 'vitest';
 
+import type { EventProcessingResult } from '../event-processing/event-processor';
+
 import { createSetPowerCommandController } from './set-power-command-controller';
 
 describe('createSetPowerCommandController', () => {
@@ -21,7 +23,10 @@ describe('createSetPowerCommandController', () => {
             ],
             emitEvent(event) {
                 events.push(event);
+
+                return acceptedEvent();
             },
+            createDispatchScope: immediateDispatchScope,
             getRoomSnapshot: () => availableLedSnapshot,
             clock: { now: () => '2026-08-05T10:00:00Z' },
             commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
@@ -38,7 +43,6 @@ describe('createSetPowerCommandController', () => {
         ).toEqual({ commandId: 'cmd-led-1', status: 'accepted' });
         expect(events.map((event) => event.eventType)).toEqual([
             'command.requested',
-            'command.dispatched',
             'command.failed',
         ]);
         expect(events.at(-1)).toMatchObject({
@@ -64,7 +68,10 @@ describe('createSetPowerCommandController', () => {
             ],
             emitEvent(event) {
                 events.push(event);
+
+                return acceptedEvent();
             },
+            createDispatchScope: immediateDispatchScope,
             getRoomSnapshot: () => availableLedSnapshotFor('led-reading'),
             clock: { now: () => '2026-08-05T10:00:00Z' },
             commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
@@ -98,7 +105,10 @@ describe('createSetPowerCommandController', () => {
             routes: [],
             emitEvent(event) {
                 events.push(event);
+
+                return acceptedEvent();
             },
+            createDispatchScope: immediateDispatchScope,
             getRoomSnapshot: () => availableLedSnapshotFor('led-unrouted'),
             clock: { now: () => '2026-08-05T10:00:00Z' },
             commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
@@ -130,12 +140,50 @@ describe('createSetPowerCommandController', () => {
         expect(() =>
             createSetPowerCommandController({
                 routes: [route, route],
-                emitEvent: () => undefined,
+                emitEvent: () => acceptedEvent(),
+                createDispatchScope: immediateDispatchScope,
                 getRoomSnapshot: () => availableLedSnapshot,
                 clock: { now: () => '2026-08-05T10:00:00Z' },
                 commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
             }),
         ).toThrow('Duplicate set.power command route for led-main.');
+    });
+
+    it('does not dispatch when the requested lifecycle event is rejected', () => {
+        const dispatchedCommands: unknown[] = [];
+        const controller = createSetPowerCommandController({
+            routes: [
+                {
+                    deviceId: 'led-main',
+                    target: 'simulator-adapter',
+                    dispatcher: { dispatch: (command) => dispatchedCommands.push(command) },
+                },
+            ],
+            emitEvent: () => ({
+                status: 'ignored',
+                reason: 'invalid_lifecycle_transition',
+                state: availableLedSnapshot,
+            }),
+            createDispatchScope: immediateDispatchScope,
+            getRoomSnapshot: () => availableLedSnapshot,
+            clock: { now: () => '2026-08-05T10:00:00Z' },
+            commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
+            generateCommandId: () => 'cmd-led-1',
+        });
+
+        expect(
+            controller.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            }),
+        ).toEqual({
+            commandId: 'cmd-led-1',
+            status: 'rejected',
+            reason: 'command_lifecycle_rejected',
+            message: 'The command could not be accepted by the room state.',
+        });
+        expect(dispatchedCommands).toEqual([]);
     });
 });
 
@@ -171,4 +219,21 @@ function createEventIdGenerator(): () => string {
     let index = 0;
 
     return () => `evt-command-${++index}`;
+}
+
+function acceptedEvent(): Extract<EventProcessingResult, { status: 'accepted' }> {
+    return {
+        status: 'accepted',
+        evaluatedAt: '2026-08-05T10:00:00Z',
+        state: availableLedSnapshot,
+    };
+}
+
+function immediateDispatchScope() {
+    return {
+        run<T>(operation: () => T): T {
+            return operation();
+        },
+        flush() {},
+    };
 }

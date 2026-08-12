@@ -53,6 +53,21 @@ describe('createTemperatureSensorScenario', () => {
         ]);
     });
 
+    it('suppresses telemetry when disconnected before its first reading', () => {
+        const scenario = createTemperatureScenario();
+        const readings: TemperatureReadingMessage[] = [];
+        scenario.onReading((reading) => readings.push(reading));
+        scenario.disconnect('2026-06-08T09:30:00Z');
+
+        expect(() => scenario.tick('2026-06-08T09:30:01Z')).toThrow(
+            'Cannot emit temperature telemetry while the sensor is offline.',
+        );
+        expect(() => scenario.emitInvalidReading('2026-06-08T09:30:01Z')).toThrow(
+            'Cannot emit temperature telemetry while the sensor is offline.',
+        );
+        expect(readings).toEqual([]);
+    });
+
     it('replays the last native reading as a duplicate device message', () => {
         const scenario = createTemperatureScenario();
         const readings: TemperatureReadingMessage[] = [];
@@ -94,6 +109,18 @@ describe('createTemperatureSensorScenario', () => {
         expect(readings.map(({ sequence, value }) => ({ sequence, value }))).toEqual([
             { sequence: 0, value: Number.NaN },
             { sequence: 1, value: 22.2 },
+        ]);
+    });
+
+    it('emits a future-dated reading through the native listener boundary', () => {
+        const scenario = createTemperatureScenario();
+        const readings: TemperatureReadingMessage[] = [];
+        scenario.onReading((reading) => readings.push(reading));
+
+        scenario.emitFutureDatedReading('2026-06-08T09:30:02Z');
+
+        expect(readings).toEqual([
+            expect.objectContaining({ sequence: 0, recordedAt: '2026-06-08T09:30:02Z' }),
         ]);
     });
 

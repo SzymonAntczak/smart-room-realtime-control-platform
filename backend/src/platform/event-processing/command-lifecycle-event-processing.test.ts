@@ -157,7 +157,7 @@ function report(power: 'on' | 'off', occurredAt: string): DeviceStateReportedEve
         occurredAt,
         source: 'simulator-adapter',
         deviceId: 'led-main',
-        payload: { reportedState: { power }, reportedAt: occurredAt },
+        payload: { reportedState: { power } },
     };
 }
 

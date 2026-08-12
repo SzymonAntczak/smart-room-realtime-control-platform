@@ -81,11 +81,64 @@ describe('command lifecycle projections', () => {
         expect(projector.getProjection().recentCommands).toEqual([]);
     });
 
-    it('rejects a command before the device has an observed projection', () => {
+    it('accepts a command before the device has an observed projection', () => {
         const projector = createLedProjector();
 
-        expect(() => projector.applyCommandRequested(requested('cmd-1', 'on'))).toThrow(
-            'Cannot project a set.power command for device led-main.',
+        expect(projector.applyCommandRequested(requested('cmd-1', 'on')).activeCommands).toEqual([
+            expect.objectContaining({ commandId: 'cmd-1', status: 'accepted' }),
+        ]);
+    });
+
+    it('confirms an immediate adapter report after dispatch is recorded', () => {
+        const projector = createLedProjector();
+        projector.applyDeviceStateReported(report('off'));
+        projector.applyCommandRequested(requested('cmd-1', 'on'));
+        projector.applyDeviceStateReported(report('on', '2026-08-05T10:00:01Z'));
+
+        const projection = projector.applyCommandDispatched(dispatched('cmd-1'));
+
+        expect(projection.activeCommands).toEqual([]);
+        expect(projection.recentCommands).toEqual([
+            expect.objectContaining({ commandId: 'cmd-1', status: 'confirmed' }),
+        ]);
+    });
+
+    it('keeps a pending command when physical state reports a nonmatching value', () => {
+        const projector = createLedProjector();
+        projector.applyDeviceStateReported(report('off'));
+        projector.applyCommandRequested(requested('cmd-1', 'on'));
+        projector.applyCommandDispatched(dispatched('cmd-1'));
+
+        const afterNonmatchingReport = projector.applyDeviceStateReported(
+            report('off', '2026-08-05T10:00:02Z'),
+        );
+
+        expect(afterNonmatchingReport.devices[0]).toEqual(
+            expect.objectContaining({ reportedState: { power: 'off' }, activeCommandId: 'cmd-1' }),
+        );
+        expect(afterNonmatchingReport.activeCommands).toEqual([
+            expect.objectContaining({ commandId: 'cmd-1', status: 'pending' }),
+        ]);
+
+        const afterMatchingReport = projector.applyDeviceStateReported(
+            report('on', '2026-08-05T10:00:03Z'),
+        );
+
+        expect(afterMatchingReport.recentCommands).toEqual([
+            expect.objectContaining({ commandId: 'cmd-1', status: 'confirmed' }),
+        ]);
+    });
+
+    it('ignores an older observation instead of regressing physical state', () => {
+        const projector = createLedProjector();
+        projector.applyDeviceStateReported(report('on', '2026-08-05T10:00:02Z'));
+
+        const projection = projector.applyDeviceStateReported(
+            report('off', '2026-08-05T10:00:01Z'),
+        );
+
+        expect(projection.devices[0]).toEqual(
+            expect.objectContaining({ reportedState: { power: 'on' } }),
         );
     });
 
@@ -180,7 +233,7 @@ function report(
         occurredAt,
         source: 'simulator-adapter',
         deviceId: 'led-main',
-        payload: { reportedState: { power }, reportedAt: occurredAt },
+        payload: { reportedState: { power } },
     };
 }
 

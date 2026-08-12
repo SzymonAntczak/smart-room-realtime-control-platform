@@ -10,6 +10,7 @@ export const temperatureScenarioActions = [
     'replay_last_reading',
     'emit_invalid_reading',
     'emit_next_reading',
+    'emit_future_dated_reading',
     'reset',
     ...deviceConnectionScenarioActions,
     ...deviceHealthScenarioActions,

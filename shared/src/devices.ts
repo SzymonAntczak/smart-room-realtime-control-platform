@@ -8,13 +8,7 @@ export type DeviceOperationalHealth = (typeof deviceOperationalHealthStates)[num
 export const observationFreshnessStates = ['fresh', 'stale', 'unknown'] as const;
 export type ObservationFreshness = (typeof observationFreshnessStates)[number];
 
-export const deviceRoles = [
-    'temperature-sensor',
-    'humidity-sensor',
-    'motion-sensor',
-    'ambient-light-sensor',
-    'led-output',
-] as const;
+export const deviceRoles = ['temperature-sensor', 'led-output'] as const;
 
 export type DeviceRole = (typeof deviceRoles)[number];
 

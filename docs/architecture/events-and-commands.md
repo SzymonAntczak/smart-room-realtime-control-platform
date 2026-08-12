@@ -60,6 +60,12 @@ current projection, event history or deduplication state, but their metadata is
 available through development diagnostics. This prevents a bad device clock
 from advancing `lastObservedAt` and making an old observation appear fresh.
 
+For `device.state.reported`, the envelope `occurredAt` is the canonical device
+observation time. It drives future-skew validation, ordering, freshness and
+confirmation matching. The initial contract intentionally has no duplicate
+payload timestamp; an adapter that later needs both observed and received time
+must introduce and document that distinction explicitly.
+
 Availability and health transitions are ordered independently by their envelope
 `occurredAt`. The event processor updates the corresponding projection only
 when a transition is later than `availabilityChangedAt` or `healthChangedAt`.
@@ -80,7 +86,7 @@ once evidence exists, equal or older transitions remain non-applying.
 | `device.health.changed`       | Device health changed between `healthy`, `degraded` or `unknown`.     |
 | `telemetry.reading.recorded`  | Sensor reading was recorded.                                          |
 | `command.requested`           | User or automation request was accepted as a command.                 |
-| `command.dispatched`          | Backend dispatched a platform command to an adapter.                  |
+| `command.dispatched`          | Backend successfully handed a platform command to an adapter.         |
 | `command.failed`              | Command failure was detected explicitly.                              |
 | `command.timed_out`           | Command did not complete within the allowed time.                     |
 
@@ -94,8 +100,7 @@ The first implementation should keep payloads small and explicit.
 {
     "reportedState": {
         "power": "on"
-    },
-    "reportedAt": "2026-05-21T07:10:01Z"
+    }
 }
 ```
 

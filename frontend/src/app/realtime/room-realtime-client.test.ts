@@ -241,6 +241,25 @@ describe('connectTemperatureRealtime', () => {
         );
     });
 
+    it('rejects a schema-valid device delta that breaks active command references', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({
+                devices: [createLedDevice('cmd-1')],
+                activeCommands: [createPendingCommand()],
+            }),
+        );
+        MockWebSocket.latest().emitMessage({
+            ...createDeviceUpdatedMessage(),
+            payload: createLedDevice('cmd-missing'),
+        });
+
+        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
+        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+    });
+
     it('replaces only the matching device in a multi-device room snapshot', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);

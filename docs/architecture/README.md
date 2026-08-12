@@ -36,13 +36,13 @@ behavior:
 
 ## Rules To Preserve
 
-The completed Stage 2/2.5 implementation is a read-only simulated temperature
-reference slice. It uses the backend adapter, event processor, read-model
-projection and realtime BFF. It exposes independent availability, operational
-health and observation freshness; event history is a later dedicated slice. Development-only controls
-exercise normal and failure scenarios through that same backend-owned path.
-The broader command rules below remain the target model for the later LED
-control slice.
+The completed Stage 2/2.5 temperature slice and Stage 3 LED reference slice
+use backend adapters, event processing, read-model projections and the realtime
+BFF. They expose independent availability, operational health and observation
+freshness; the LED slice also implements command lifecycle, confirmation and
+bounded terminal-command projections. Event history remains a later dedicated
+slice. Development-only controls exercise normal and failure scenarios through
+that same backend-owned path.
 
 - Events are facts that already happened.
 - Commands are requests for something to happen.

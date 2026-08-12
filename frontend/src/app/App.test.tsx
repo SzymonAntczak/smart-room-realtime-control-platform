@@ -53,18 +53,18 @@ describe('App', () => {
         ).toBeInTheDocument();
     });
 
-    it('omits unsupported device roles from the current control view', () => {
+    it('rejects a snapshot with a role outside the current platform contract', () => {
         render(<App />);
         act(() =>
             MockWebSocket.latest().emitMessage(
-                createRoomSnapshotMessage({ devices: [humidityDevice()], activeCommands: [] }),
+                createRoomSnapshotMessage({ devices: [unsupportedDevice()], activeCommands: [] }),
             ),
         );
 
         expect(screen.queryByRole('heading', { name: 'Humidity sensor' })).not.toBeInTheDocument();
         expect(
-            screen.queryByText('Łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
-        ).not.toBeInTheDocument();
+            screen.getByText('Ponowne łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
+        ).toBeInTheDocument();
     });
 });
 
@@ -191,7 +191,7 @@ function ledDevice() {
     };
 }
 
-function humidityDevice() {
+function unsupportedDevice() {
     return {
         deviceId: 'humidity-desk',
         name: 'Humidity sensor',

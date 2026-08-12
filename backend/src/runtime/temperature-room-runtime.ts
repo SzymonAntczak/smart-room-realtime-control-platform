@@ -6,14 +6,15 @@ import type {
     RejectedCommandResponse,
     SetPowerCommandRequest,
 } from '@smart-room/contracts/commands';
-import type {
+import {
     deviceConnectionScenarioActions,
     deviceHealthScenarioActions,
-    DeviceScenarioAction,
-    DeviceScenarioList,
-    DeviceScenarioResult,
+    type DeviceScenarioAction,
+    type DeviceScenarioList,
+    type DeviceScenarioResult,
+    ledScenarioActions,
+    temperatureScenarioActions,
 } from '@smart-room/contracts/development';
-import { ledScenarioActions, temperatureScenarioActions } from '@smart-room/contracts/development';
 import type { PlatformEvent } from '@smart-room/contracts/events';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
@@ -46,6 +47,7 @@ import {
 import {
     createEventProcessor,
     type DeviceDefinition,
+    type EventProcessingResult,
 } from '../platform/event-processing/event-processor';
 import { createRoomProjector, type RoomProjector } from '../platform/read-model/room-projection';
 
@@ -56,6 +58,7 @@ export interface TemperatureRoomRuntimeConfig {
     clock?: Clock;
     timer?: TimerScheduler;
     generateEventId?: () => string;
+    generateNativeMessageId?: () => string;
     diagnosticEventLimit?: number;
     deduplicationRetentionMs?: number;
     deduplicationEntryLimit?: number;
@@ -119,6 +122,17 @@ function isLedScenarioAction(
     return ledScenarioActions.some((candidate) => candidate === action);
 }
 
+function isLedDeviceStateScenarioAction(
+    action: (typeof ledScenarioActions)[number],
+): action is
+    | (typeof deviceConnectionScenarioActions)[number]
+    | (typeof deviceHealthScenarioActions)[number] {
+    return (
+        deviceConnectionScenarioActions.some((candidate) => candidate === action) ||
+        deviceHealthScenarioActions.some((candidate) => candidate === action)
+    );
+}
+
 export function createTemperatureRoomRuntime({
     roomName = 'Smart Room',
     intervalMs = 1000,
@@ -126,6 +140,7 @@ export function createTemperatureRoomRuntime({
     clock = realClock,
     timer,
     generateEventId = randomUUID,
+    generateNativeMessageId = randomUUID,
     diagnosticEventLimit,
     deduplicationRetentionMs,
     deduplicationEntryLimit,
@@ -140,6 +155,7 @@ export function createTemperatureRoomRuntime({
             sensorId: definition.nativeSensorId,
             baseTemperature: definition.baseTemperature,
             readingPattern,
+            generateMessageId: generateNativeMessageId,
         }),
         runtime: undefined as TemperatureSensorRuntime | undefined,
         adapter: undefined as SimulatorTemperatureAdapter | undefined,
@@ -179,6 +195,7 @@ export function createTemperatureRoomRuntime({
 
     const snapshotBroadcastTimer = timer ?? (realTimer as TimerScheduler);
     const snapshotListeners = new Set<RoomSnapshotListener>();
+    let bufferedAdapterEvents: PlatformEvent[] | undefined;
     let hasStarted = false;
     let snapshotBroadcastTimerHandle: unknown | undefined;
     let lastPublishedSnapshot: RoomSnapshotProjection | undefined;
@@ -199,6 +216,32 @@ export function createTemperatureRoomRuntime({
             },
         ],
         emitEvent: processPlatformEvent,
+        createDispatchScope() {
+            if (bufferedAdapterEvents) {
+                throw new Error('A command dispatch scope is already active.');
+            }
+
+            const bufferedEvents: PlatformEvent[] = [];
+
+            return {
+                run(operation) {
+                    bufferedAdapterEvents = bufferedEvents;
+
+                    try {
+                        return operation();
+                    } finally {
+                        bufferedAdapterEvents = undefined;
+                    }
+                },
+                flush() {
+                    for (const event of bufferedEvents) {
+                        processPlatformEvent(event);
+                    }
+
+                    bufferedEvents.length = 0;
+                },
+            };
+        },
         getRoomSnapshot: getCurrentRoomSnapshot,
         clock,
         commandTimer,
@@ -295,6 +338,7 @@ export function createTemperatureRoomRuntime({
                 }
 
                 if (
+                    !isLedDeviceStateScenarioAction(action) &&
                     getCurrentRoomSnapshot().activeCommands.some(
                         (command) => command.deviceId === deviceId,
                     )
@@ -382,6 +426,11 @@ export function createTemperatureRoomRuntime({
             emit_next_reading(observedAt: string) {
                 sensorEntry.sensor.tick(observedAt);
             },
+            emit_future_dated_reading(observedAt: string) {
+                sensorEntry.sensor.emitFutureDatedReading(
+                    new Date(Date.parse(observedAt) + 2_000).toISOString(),
+                );
+            },
             reset(observedAt: string) {
                 sensorEntry.runtime?.stop();
                 sensorEntry.adapter?.stop();
@@ -408,7 +457,7 @@ export function createTemperatureRoomRuntime({
             nativeSensorId: sensorEntry.definition.nativeSensorId,
             platformDeviceId: sensorEntry.definition.deviceId,
             emitEvent(event) {
-                processPlatformEvent(event);
+                receiveAdapterEvent(event);
             },
         });
     }
@@ -420,13 +469,14 @@ export function createTemperatureRoomRuntime({
             scenario: ledScenario,
             clock,
             scheduler: ledScenarioScheduler,
+            generateMessageId: generateNativeMessageId,
         });
         ledAdapter = createSimulatorLedAdapter({
             led,
             nativeLedId: 'led-main-native',
             platformDeviceId: 'led-main',
             emitEvent(event) {
-                processPlatformEvent(event);
+                receiveAdapterEvent(event);
             },
         });
 
@@ -454,17 +504,14 @@ export function createTemperatureRoomRuntime({
         const snapshot = toRoomSnapshot(roomName, roomProjector, evaluatedAt);
         const previousSnapshot = lastPublishedSnapshot;
 
-        if (
-            previousSnapshot &&
-            !hasObservationStatusChange(previousSnapshot, snapshot)
-        ) {
+        if (previousSnapshot && !hasObservationStatusChange(previousSnapshot, snapshot)) {
             return;
         }
 
         notifySnapshotListeners(evaluatedAt);
     }
 
-    function processPlatformEvent(event: PlatformEvent): void {
+    function processPlatformEvent(event: PlatformEvent): EventProcessingResult {
         const activeCommandIdBeforeEvent = event.deviceId
             ? roomProjector
                   .getProjection()
@@ -477,13 +524,24 @@ export function createTemperatureRoomRuntime({
         if (result.status === 'accepted') {
             notifySnapshotListeners(result.evaluatedAt);
         }
+
+        return result;
+    }
+
+    function receiveAdapterEvent(event: PlatformEvent): void {
+        if (bufferedAdapterEvents) {
+            bufferedAdapterEvents.push(event);
+
+            return;
+        }
+
+        processPlatformEvent(event);
     }
 
     function getCurrentRoomSnapshot(): RoomSnapshotProjection {
         return toRoomSnapshot(roomName, roomProjector, clock.now());
     }
 }
-
 
 const realTimer: TimerScheduler<ReturnType<typeof setInterval>> = {
     setInterval(callback, intervalMs) {

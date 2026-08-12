@@ -30,8 +30,9 @@ The architecture is organized around the main domain concepts, not around implem
 The architecture is built in smaller slices before the full smart-room model
 exists. The completed temperature reference slice is a read-only realtime view of two
 simulated temperature sensors, implemented through backend transport, adapter
-translation, event processing and a derived room projection. Command handling
-and durable storage remain later responsibilities.
+translation, event processing and a derived room projection. The completed LED
+reference slice adds command handling, confirmation and bounded terminal-command
+projections; durable event storage remains a later responsibility.
 
 A minimal read path should show:
 
@@ -41,9 +42,9 @@ A minimal read path should show:
 - the last reading time
 - that the value is coming from simulated realtime updates
 
-This read-only slice does not define the long-term command topology. It already
+The temperature slice does not define the long-term command topology. It already
 includes backend adapters, event processing and observation-freshness handling;
-later command slices must preserve the same platform model.
+the LED reference slice preserves that model for the current control loop.
 
 ## Target MVP Scope
 
@@ -51,11 +52,12 @@ The first useful system slice focuses on a small smart-room model.
 
 The active MVP is deliberately limited to:
 
-- one environmental sensor role providing temperature and humidity telemetry;
+- one temperature-sensor role providing temperature telemetry;
 - one controllable on/off output using `set.power`.
 
-Motion, ambient light and separate physical-input roles are deferred until the
-same two roles have passed the source-parity gate across all planned sources.
+Humidity, motion, ambient light and separate physical-input roles are deferred
+until the current temperature and on/off-output roles have passed the
+source-parity gate across all planned sources.
 
 Initial command:
 
@@ -206,10 +208,10 @@ Translate external device protocols into the platform event and command model.
 
 Expected responsibilities:
 
-- translate simulator-native messages into platform events in a later simulator
-  integration slice
-- translate platform commands into simulator-native commands in a later control
-  slice
+- translate simulator-native messages into platform events for the current
+  reference slices
+- translate platform commands into simulator-native commands for the current
+  LED reference slice
 - translate hardware-specific protocols into platform events in later stages
 - send platform commands to physical devices in later stages
 - report acknowledgements, failures and connection health
@@ -260,7 +262,7 @@ diagnostics.
 a debug/read snapshot endpoint, but it is not the frontend fallback path.
 
 The local development runtime also provides scenario controls for pause,
-resume, next-reading, replay, invalid-reading and reset actions. They operate
+resume, next-reading, replay, invalid-reading, future-dated-reading and reset actions. They operate
 the simulator through the normal adapter and event-processing path rather than
 mutating frontend state. They are not product controls and remain disabled
 unless the development scenario flag is set.

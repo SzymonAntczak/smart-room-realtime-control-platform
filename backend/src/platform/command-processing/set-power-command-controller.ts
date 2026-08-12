@@ -13,7 +13,6 @@ import type {
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 
 import type { EventProcessingResult } from '../event-processing/event-processor';
-import type { PlatformEventSink } from '../ports/event-sink';
 import type { SetPowerCommandDispatcher } from '../ports/set-power-command-dispatcher';
 
 const setPowerTimeoutMs = 5_000;
@@ -21,6 +20,11 @@ const setPowerTimeoutMs = 5_000;
 export interface CommandTimer {
     setTimeout(callback: () => void, delayMs: number): unknown;
     clearTimeout(timerHandle: unknown): void;
+}
+
+export interface CommandDispatchScope {
+    run<T>(operation: () => T): T;
+    flush(): void;
 }
 
 export interface SetPowerCommandRoute {
@@ -31,7 +35,8 @@ export interface SetPowerCommandRoute {
 
 export interface SetPowerCommandControllerConfig {
     routes: readonly SetPowerCommandRoute[];
-    emitEvent: PlatformEventSink;
+    emitEvent(event: PlatformEvent): EventProcessingResult;
+    createDispatchScope(): CommandDispatchScope;
     getRoomSnapshot(): RoomSnapshotProjection;
     clock: { now(): string };
     commandTimer: CommandTimer;
@@ -40,7 +45,9 @@ export interface SetPowerCommandControllerConfig {
 }
 
 export interface SetPowerCommandController {
-    requestCommand(request: SetPowerCommandRequest): AcceptedCommandResponse | RejectedCommandResponse;
+    requestCommand(
+        request: SetPowerCommandRequest,
+    ): AcceptedCommandResponse | RejectedCommandResponse;
     reschedulePendingCommands(): void;
     stop(): void;
     onEventProcessed(
@@ -53,6 +60,7 @@ export interface SetPowerCommandController {
 export function createSetPowerCommandController({
     routes,
     emitEvent,
+    createDispatchScope,
     getRoomSnapshot,
     clock,
     commandTimer,
@@ -74,10 +82,16 @@ export function createSetPowerCommandController({
         requestCommand(request) {
             const commandId = generateCommandId();
             const snapshot = getRoomSnapshot();
-            const device = snapshot.devices.find((candidate) => candidate.deviceId === request.deviceId);
+            const device = snapshot.devices.find(
+                (candidate) => candidate.deviceId === request.deviceId,
+            );
 
             if (!device) {
-                return rejected(commandId, 'unsupported_command', 'Device does not support this command.');
+                return rejected(
+                    commandId,
+                    'unsupported_command',
+                    'Device does not support this command.',
+                );
             }
 
             if (device.commandAvailability.policy === 'block') {
@@ -102,11 +116,15 @@ export function createSetPowerCommandController({
             const route = routesByDeviceId.get(request.deviceId);
 
             if (!route) {
-                return rejected(commandId, 'unsupported_command', 'Device does not support this command.');
+                return rejected(
+                    commandId,
+                    'unsupported_command',
+                    'Device does not support this command.',
+                );
             }
 
             const requestedAt = clock.now();
-            emitEvent({
+            const requested = emitEvent({
                 eventId: generateEventId(),
                 eventType: 'command.requested',
                 occurredAt: requestedAt,
@@ -115,18 +133,20 @@ export function createSetPowerCommandController({
                 commandId,
                 payload: { ...request, requestedBy: 'user' },
             });
-            emitEvent({
-                eventId: generateEventId(),
-                eventType: 'command.dispatched',
-                occurredAt: clock.now(),
-                source: 'backend',
-                deviceId: request.deviceId,
-                commandId,
-                payload: { commandType: request.commandType, target: route.target },
-            });
+
+            if (requested.status !== 'accepted') {
+                return rejected(
+                    commandId,
+                    'command_lifecycle_rejected',
+                    'The command could not be accepted by the room state.',
+                );
+            }
+
+            const dispatchScope = createDispatchScope();
+            const dispatchedAt = clock.now();
 
             try {
-                route.dispatcher.dispatch({ ...request, commandId });
+                dispatchScope.run(() => route.dispatcher.dispatch({ ...request, commandId }));
             } catch {
                 emitEvent({
                     eventId: generateEventId(),
@@ -140,10 +160,40 @@ export function createSetPowerCommandController({
                         message: 'The command could not be dispatched to the device adapter.',
                     },
                 });
+                dispatchScope.flush();
 
                 return { commandId, status: 'accepted' };
             }
 
+            const dispatched = emitEvent({
+                eventId: generateEventId(),
+                eventType: 'command.dispatched',
+                occurredAt: dispatchedAt,
+                source: 'backend',
+                deviceId: request.deviceId,
+                commandId,
+                payload: { commandType: request.commandType, target: route.target },
+            });
+
+            if (dispatched.status !== 'accepted') {
+                emitEvent({
+                    eventId: generateEventId(),
+                    eventType: 'command.failed',
+                    occurredAt: clock.now(),
+                    source: 'backend',
+                    deviceId: request.deviceId,
+                    commandId,
+                    payload: {
+                        reason: 'command_lifecycle_rejected',
+                        message: 'The command lifecycle could not record adapter dispatch.',
+                    },
+                });
+                dispatchScope.flush();
+
+                return { commandId, status: 'accepted' };
+            }
+
+            dispatchScope.flush();
             scheduleTimeout(commandId, request.deviceId);
 
             return { commandId, status: 'accepted' };

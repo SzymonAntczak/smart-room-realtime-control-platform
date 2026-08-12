@@ -61,7 +61,6 @@ export function createSimulatorLedAdapter({
             deviceId: platformDeviceId,
             payload: {
                 reportedState: { power: report.reportedState.power },
-                reportedAt: report.reportedAt,
             },
         };
         emitEvent(event);

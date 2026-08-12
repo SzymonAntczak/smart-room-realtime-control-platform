@@ -43,6 +43,7 @@ export const developmentPl = {
                 degrade: 'Pogorsz stan urządzenia',
                 disconnect: 'Oznacz urządzenie jako offline',
                 emitInvalid: 'Wyemituj nieprawidłowy odczyt',
+                emitFutureDated: 'Wyemituj odczyt z przyszłym znacznikiem czasu',
                 emitNext: 'Wyemituj następny odczyt',
                 pause: 'Wstrzymaj telemetrię',
                 reconnect: 'Oznacz urządzenie jako online',

@@ -13,6 +13,7 @@ export interface TemperatureSensorScenario extends TemperatureSensorSimulator {
     isOffline(): boolean;
     replayLastReading(): TemperatureReadingMessage;
     emitInvalidReading(recordedAt: string): TemperatureReadingMessage;
+    emitFutureDatedReading(recordedAt: string): TemperatureReadingMessage;
     reset(): void;
 }
 
@@ -39,7 +40,13 @@ export function createTemperatureSensorScenario(
             return sensor.onHealth(listener);
         },
         tick(recordedAt) {
-            if (offline && lastReading) {
+            if (offline) {
+                if (!lastReading) {
+                    throw new Error(
+                        'Cannot emit temperature telemetry while the sensor is offline.',
+                    );
+                }
+
                 return { ...lastReading };
             }
 
@@ -78,7 +85,13 @@ export function createTemperatureSensorScenario(
             return { ...lastReading };
         },
         emitInvalidReading(recordedAt) {
-            if (offline && lastReading) {
+            if (offline) {
+                if (!lastReading) {
+                    throw new Error(
+                        'Cannot emit temperature telemetry while the sensor is offline.',
+                    );
+                }
+
                 return { ...lastReading };
             }
 
@@ -91,6 +104,23 @@ export function createTemperatureSensorScenario(
             emitReading(invalidReading);
 
             return invalidReading;
+        },
+        emitFutureDatedReading(recordedAt) {
+            if (offline) {
+                if (!lastReading) {
+                    throw new Error(
+                        'Cannot emit temperature telemetry while the sensor is offline.',
+                    );
+                }
+
+                return { ...lastReading };
+            }
+
+            const reading = sensor.tick(recordedAt);
+            lastReading = reading;
+            emitReading(reading);
+
+            return reading;
         },
         reset() {
             sensor.reset();

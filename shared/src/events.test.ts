@@ -115,7 +115,7 @@ function createEvent(eventType: string) {
             return {
                 ...base,
                 eventType,
-                payload: { reportedState: { power: 'on' }, reportedAt: base.occurredAt },
+                payload: { reportedState: { power: 'on' } },
             };
         case 'device.health.changed':
             return {
@@ -168,4 +168,3 @@ function createEvent(eventType: string) {
             throw new Error(`Unsupported event type: ${eventType}`);
     }
 }
-

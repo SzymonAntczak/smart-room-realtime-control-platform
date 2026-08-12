@@ -31,6 +31,7 @@ export function toLedControlViewModel({
     activeCommand,
     recentCommand,
     transportError,
+    transportErrorCommandId,
     realtimeUncertain,
     submitting,
     interactionLocked,
@@ -39,12 +40,15 @@ export function toLedControlViewModel({
     activeCommand?: ActiveCommandProjection;
     recentCommand?: TerminalCommandProjection;
     transportError?: string;
+    transportErrorCommandId?: string;
     realtimeUncertain: boolean;
     submitting: boolean;
     interactionLocked: boolean;
 }): LedControlViewModel {
     const errors: LedAlert[] = [
-        ...(transportError ? [{ kind: 'raw' as const, message: transportError }] : []),
+        ...(transportError && transportErrorCommandId !== recentCommand?.commandId
+            ? [{ kind: 'raw' as const, message: transportError }]
+            : []),
         ...(recentCommand?.status === 'failed'
             ? [{ kind: 'raw' as const, message: recentCommand.message }]
             : []),

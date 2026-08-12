@@ -31,11 +31,12 @@ scenarios through automated tests and development controls where applicable:
 - invalid telemetry payload
 - realtime stream reconnect while retaining the last valid snapshot
 
-Future command slices should add delayed confirmations, command rejection and
-late confirmation after timeout. Degraded health reports must be part of the
-device-state model. Future-dated device
-reports are already rejected by the platform event contract and are covered by
-backend tests; they do not yet have a manual scenario control.
+The completed LED reference slice covers delayed confirmations, command rejection
+and late confirmation after timeout. It also covers an availability change while
+a command is pending and preserves that command until its normal terminal
+outcome. Degraded health reports are part of the device-state model. Future-dated device
+reports are rejected by the platform event contract and can be emitted through
+the development controls to verify the normal simulator-to-diagnostics path.
 
 MQTT-backed slices additionally cover broker unavailable and reconnect,
 subscription recovery, malformed native payloads, duplicate delivery and

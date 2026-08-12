@@ -17,7 +17,6 @@ export interface PlatformEventEnvelope<TEventType extends string = string, TPayl
 }
 export interface DeviceStateReportedPayload {
     reportedState: Record<string, string | number | boolean>;
-    reportedAt: string;
 }
 export interface DeviceHealthChangedPayload {
     previousHealth: (typeof deviceOperationalHealthStates)[number];
@@ -111,7 +110,6 @@ export const platformEventCandidateSchema = Type.Object({
 });
 const deviceStateReportedPayloadSchema = Type.Object({
     reportedState: deviceStateSchema,
-    reportedAt: isoTimestampSchema,
 });
 const deviceHealthChangedPayloadSchema = Type.Object({
     previousHealth: Type.Union(deviceOperationalHealthStates.map((value) => Type.Literal(value))),

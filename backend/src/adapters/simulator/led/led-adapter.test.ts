@@ -45,7 +45,7 @@ describe('createSimulatorLedAdapter', () => {
                 occurredAt: at,
                 source: 'simulator-adapter',
                 deviceId: 'led-platform',
-                payload: { reportedState: { power: 'off' }, reportedAt: at },
+                payload: { reportedState: { power: 'off' } },
             },
         ]);
     });
@@ -132,7 +132,7 @@ describe('createSimulatorLedAdapter', () => {
                 occurredAt: at,
                 source: 'simulator-adapter',
                 deviceId: 'led-platform',
-                payload: { reportedState: { power: 'on' }, reportedAt: at },
+                payload: { reportedState: { power: 'on' } },
             },
             {
                 eventId: 'simulator-adapter:led-native:rejection-1',

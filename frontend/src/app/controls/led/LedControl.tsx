@@ -32,13 +32,15 @@ export function LedControl({
     realtimeUncertain?: boolean;
 }) {
     const { t } = useTranslation(['common', 'dashboard']);
-    const { requestPower, submitting, transportError } = useLedCommandRequest(device.deviceId);
+    const { requestPower, submitting, transportError, transportErrorCommandId } =
+        useLedCommandRequest(device.deviceId);
 
     const viewModel = toLedControlViewModel({
         device,
         activeCommand,
         recentCommand,
         transportError,
+        transportErrorCommandId,
         realtimeUncertain,
         submitting,
         interactionLocked,

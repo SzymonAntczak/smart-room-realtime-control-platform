@@ -146,9 +146,8 @@ export function createEventProcessor({
                     return ignored('stale_device_transition');
                 }
 
-                return acceptEvent(
-                    event as DeviceAvailabilityChangedEvent,
-                    (acceptedEvent) => roomProjector.applyDeviceAvailabilityChanged(acceptedEvent),
+                return acceptEvent(event as DeviceAvailabilityChangedEvent, (acceptedEvent) =>
+                    roomProjector.applyDeviceAvailabilityChanged(acceptedEvent),
                 );
             }
 
@@ -182,10 +181,12 @@ export function createEventProcessor({
                     return ignored('device_metric_mismatch');
                 }
 
-                return acceptObservationEvent(event as TelemetryReadingRecordedEvent, (acceptedEvent) =>
-                    roomProjector.applyTelemetryReadingRecorded(acceptedEvent, {
-                        evaluatedAt: deduplicationCheck.checkedAt,
-                    }),
+                return acceptObservationEvent(
+                    event as TelemetryReadingRecordedEvent,
+                    (acceptedEvent) =>
+                        roomProjector.applyTelemetryReadingRecorded(acceptedEvent, {
+                            evaluatedAt: deduplicationCheck.checkedAt,
+                        }),
                 );
             }
 
@@ -325,23 +326,11 @@ function normalizeEventTimestamps(event: unknown): unknown {
     }
 
     const occurredAt = normalizeIsoTimestamp(event.occurredAt);
-    const payload = normalizeReportedAt(event.payload);
 
     return {
         ...event,
         ...(occurredAt ? { occurredAt } : {}),
-        ...(payload ? { payload } : {}),
     };
-}
-
-function normalizeReportedAt(payload: unknown): Record<string, unknown> | undefined {
-    if (!isRecord(payload)) {
-        return undefined;
-    }
-
-    const reportedAt = normalizeIsoTimestamp(payload.reportedAt);
-
-    return reportedAt ? { ...payload, reportedAt } : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

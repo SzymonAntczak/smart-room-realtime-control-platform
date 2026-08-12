@@ -17,10 +17,7 @@ import type {
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 
 import { commandAvailabilityFor } from './command-availability';
-import {
-    type FreshnessThresholdsByRole,
-    withFreshness,
-} from './observation-freshness';
+import { type FreshnessThresholdsByRole, withFreshness } from './observation-freshness';
 
 export interface DeviceDefinition {
     deviceId: string;
@@ -213,7 +210,7 @@ export function createRoomProjector({
         applyCommandRequested(event) {
             const device = requireDevice(event.deviceId);
 
-            if (device.role !== 'led-output' || !device.observationStatus.power?.lastObservedAt) {
+            if (device.role !== 'led-output') {
                 throw new InvalidLifecycleTransitionError(
                     `Cannot project a set.power command for device ${event.deviceId}.`,
                 );
@@ -242,16 +239,33 @@ export function createRoomProjector({
             const active = requireActive(event.deviceId, event.commandId);
 
             if (active.status !== 'accepted') {
-                throw new InvalidLifecycleTransitionError(`Cannot dispatch command ${event.commandId}.`);
+                throw new InvalidLifecycleTransitionError(
+                    `Cannot dispatch command ${event.commandId}.`,
+                );
             }
 
             assertChronological(event.occurredAt, active.requestedAt, 'dispatch');
-            activeByDeviceId.set(event.deviceId, {
+            const pending = {
                 ...active,
                 status: 'pending',
                 dispatchedAt: event.occurredAt,
-            });
+            } satisfies ActiveCommandProjection;
+            activeByDeviceId.set(event.deviceId, pending);
             updatedAt = event.occurredAt;
+
+            const observation = requireDevice(event.deviceId).observationStatus.power;
+
+            if (
+                observation?.lastObservedAt &&
+                isOnOrAfter(observation.lastObservedAt, pending.dispatchedAt) &&
+                matchesSetPowerCommand(pending, requireDevice(event.deviceId).reportedState)
+            ) {
+                moveToRecent({
+                    ...pending,
+                    status: 'confirmed',
+                    confirmedAt: observation.lastObservedAt,
+                });
+            }
 
             return build(event.occurredAt);
         },
@@ -289,7 +303,9 @@ export function createRoomProjector({
             const active = requireActive(event.deviceId, event.commandId);
 
             if (active.status !== 'pending') {
-                throw new InvalidLifecycleTransitionError(`Cannot time out command ${event.commandId}.`);
+                throw new InvalidLifecycleTransitionError(
+                    `Cannot time out command ${event.commandId}.`,
+                );
             }
 
             if (event.payload.timeoutMs !== ledSetPowerTimeoutMs) {
@@ -428,7 +444,6 @@ function withObservation(
         ),
     };
 }
-
 
 function isLater(value: string, reference: string): boolean {
     return Date.parse(value) > Date.parse(reference);

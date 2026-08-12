@@ -62,6 +62,33 @@ describe('toLedControlViewModel', () => {
         });
     });
 
+    it('does not duplicate a correlated HTTP rejection and terminal command failure', () => {
+        const viewModel = toLedControlViewModel({
+            device: createLed(),
+            recentCommand: {
+                commandId: 'cmd-1',
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+                requestedAt: '2026-08-06T12:00:00Z',
+                dispatchedAt: '2026-08-06T12:00:01Z',
+                status: 'failed',
+                failedAt: '2026-08-06T12:00:02Z',
+                reason: 'command_already_active',
+                message: 'Device already has an active command.',
+            },
+            transportError: 'Device already has an active command.',
+            transportErrorCommandId: 'cmd-1',
+            realtimeUncertain: false,
+            submitting: false,
+            interactionLocked: false,
+        });
+
+        expect(viewModel.alert.messages).toEqual([
+            { kind: 'raw', message: 'Device already has an active command.' },
+        ]);
+    });
+
     it('keeps an unknown bootstrap state disabled without an alert', () => {
         const viewModel = toLedControlViewModel({
             device: {

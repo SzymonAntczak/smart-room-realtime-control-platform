@@ -2,7 +2,6 @@ import { FormatRegistry, type Static, type TSchema, Type } from '@sinclair/typeb
 import { Value } from '@sinclair/typebox/value';
 import { fullFormats } from 'ajv-formats/dist/formats.js';
 
-
 if (!FormatRegistry.Has('date-time')) {
     FormatRegistry.Set('date-time', isRfc3339DateTime);
 }

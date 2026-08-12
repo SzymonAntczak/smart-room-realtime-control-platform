@@ -81,8 +81,14 @@ describe('createEventProcessor', () => {
             status: 'ignored',
             reason: 'stale_device_transition',
         });
-        expect(healthResult).toMatchObject({ status: 'ignored', reason: 'stale_device_transition' });
-        expect(healthResult.state.devices[0]).toMatchObject({ availability: 'unknown', health: 'unknown' });
+        expect(healthResult).toMatchObject({
+            status: 'ignored',
+            reason: 'stale_device_transition',
+        });
+        expect(healthResult.state.devices[0]).toMatchObject({
+            availability: 'unknown',
+            health: 'unknown',
+        });
     });
     it('keeps equal-timestamp transitions diagnosable instead of regressing the projection', () => {
         const room = processor();

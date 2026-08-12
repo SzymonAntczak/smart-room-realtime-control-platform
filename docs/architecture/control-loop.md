@@ -44,7 +44,8 @@ The platform is event-driven, but the user experience is command-driven. The use
    acceptance.
 3. The backend accepts or rejects the command request.
 4. After acceptance, the backend records the requested state as `accepted`.
-5. Once it dispatches the command to an adapter, it marks it as `pending`.
+5. The backend hands the command to an adapter. Once that hand-off succeeds,
+   it records `command.dispatched` and marks the command as `pending`.
 6. A backend adapter translates the platform command into a device-native
    command for the simulator or hardware source.
 7. The device or simulator eventually reports the observed state.

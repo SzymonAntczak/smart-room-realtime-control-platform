@@ -156,7 +156,15 @@ export function connectRoomRealtime(
 
                 const devices = [...roomSnapshot.devices];
                 devices[deviceIndex] = message.payload;
-                roomSnapshot = { ...roomSnapshot, devices };
+                const nextSnapshot = { ...roomSnapshot, devices };
+
+                if (!isRoomSnapshotProjection(nextSnapshot)) {
+                    throw new Error(
+                        'Realtime device update did not produce a valid room snapshot.',
+                    );
+                }
+
+                roomSnapshot = nextSnapshot;
                 break;
             }
 

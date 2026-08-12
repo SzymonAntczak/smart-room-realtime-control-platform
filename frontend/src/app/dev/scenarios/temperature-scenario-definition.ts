@@ -47,6 +47,13 @@ export const temperatureScenarioDefinition = {
                     blockedWhen: telemetryBlockedWhenOffline,
                 },
                 {
+                    action: 'emit_future_dated_reading',
+                    labelKey: 'scenarios.temperature.actions.emitFutureDated',
+                    icon: 'alert',
+                    outcome: 'completed',
+                    blockedWhen: telemetryBlockedWhenOffline,
+                },
+                {
                     action: 'reset',
                     labelKey: 'scenarios.temperature.actions.reset',
                     icon: 'refresh',
