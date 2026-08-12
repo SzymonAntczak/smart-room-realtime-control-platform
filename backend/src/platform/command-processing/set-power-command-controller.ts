@@ -5,7 +5,11 @@ import type {
     RejectedCommandResponse,
     SetPowerCommandRequest,
 } from '@smart-room/contracts/commands';
-import type { CommandFailedEvent, PlatformEvent } from '@smart-room/contracts/events';
+import type {
+    CommandFailedEvent,
+    PlatformEvent,
+    PlatformEventSource,
+} from '@smart-room/contracts/events';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 
 import type { EventProcessingResult } from '../event-processing/event-processor';
@@ -19,13 +23,18 @@ export interface CommandTimer {
     clearTimeout(timerHandle: unknown): void;
 }
 
+export interface SetPowerCommandRoute {
+    deviceId: string;
+    target: PlatformEventSource;
+    dispatcher: SetPowerCommandDispatcher;
+}
+
 export interface SetPowerCommandControllerConfig {
-    dispatchCommand: SetPowerCommandDispatcher;
+    routes: readonly SetPowerCommandRoute[];
     emitEvent: PlatformEventSink;
     getRoomSnapshot(): RoomSnapshotProjection;
     clock: { now(): string };
     commandTimer: CommandTimer;
-    dispatchTarget: 'simulator-adapter' | 'hardware-adapter' | 'backend';
     generateCommandId?: () => string;
     generateEventId?: () => string;
 }
@@ -42,16 +51,24 @@ export interface SetPowerCommandController {
 }
 
 export function createSetPowerCommandController({
-    dispatchCommand,
+    routes,
     emitEvent,
     getRoomSnapshot,
     clock,
     commandTimer,
-    dispatchTarget,
     generateCommandId = randomUUID,
     generateEventId = randomUUID,
 }: SetPowerCommandControllerConfig): SetPowerCommandController {
     const timeoutHandles = new Map<string, unknown>();
+    const routesByDeviceId = new Map<string, SetPowerCommandRoute>();
+
+    for (const route of routes) {
+        if (routesByDeviceId.has(route.deviceId)) {
+            throw new RangeError(`Duplicate set.power command route for ${route.deviceId}.`);
+        }
+
+        routesByDeviceId.set(route.deviceId, route);
+    }
 
     return {
         requestCommand(request) {
@@ -71,10 +88,6 @@ export function createSetPowerCommandController({
                 );
             }
 
-            if (request.deviceId !== 'led-main') {
-                return rejected(commandId, 'unsupported_command', 'Device does not support this command.');
-            }
-
             if (snapshot.activeCommands.some((command) => command.deviceId === request.deviceId)) {
                 const occurredAt = clock.now();
                 emitEvent(rejectedCommandEvent(commandId, request, occurredAt, generateEventId));
@@ -84,6 +97,12 @@ export function createSetPowerCommandController({
                     'command_already_active',
                     'Device already has an active command.',
                 );
+            }
+
+            const route = routesByDeviceId.get(request.deviceId);
+
+            if (!route) {
+                return rejected(commandId, 'unsupported_command', 'Device does not support this command.');
             }
 
             const requestedAt = clock.now();
@@ -103,11 +122,11 @@ export function createSetPowerCommandController({
                 source: 'backend',
                 deviceId: request.deviceId,
                 commandId,
-                payload: { commandType: request.commandType, target: dispatchTarget },
+                payload: { commandType: request.commandType, target: route.target },
             });
 
             try {
-                dispatchCommand.dispatch({ ...request, commandId });
+                route.dispatcher.dispatch({ ...request, commandId });
             } catch {
                 emitEvent({
                     eventId: generateEventId(),

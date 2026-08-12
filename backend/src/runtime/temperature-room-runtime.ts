@@ -183,20 +183,25 @@ export function createTemperatureRoomRuntime({
     let snapshotBroadcastTimerHandle: unknown | undefined;
     let lastPublishedSnapshot: RoomSnapshotProjection | undefined;
     const commandController = createSetPowerCommandController({
-        dispatchCommand: {
-            dispatch(command) {
-                if (!hasStarted || !ledAdapter) {
-                    throw new Error('The LED adapter is not available.');
-                }
+        routes: [
+            {
+                deviceId: 'led-main',
+                target: 'simulator-adapter',
+                dispatcher: {
+                    dispatch(command) {
+                        if (!hasStarted || !ledAdapter) {
+                            throw new Error('The LED adapter is not available.');
+                        }
 
-                ledAdapter.dispatch(command);
+                        ledAdapter.dispatch(command);
+                    },
+                },
             },
-        },
+        ],
         emitEvent: processPlatformEvent,
         getRoomSnapshot: getCurrentRoomSnapshot,
         clock,
         commandTimer,
-        dispatchTarget: 'simulator-adapter',
         generateCommandId,
         generateEventId,
     });
@@ -210,17 +215,7 @@ export function createTemperatureRoomRuntime({
             hasStarted = true;
             const startedLed = attachLedScenario('off');
             startedLed.reportAvailability('online', clock.now());
-            processPlatformEvent({
-                eventId: generateEventId(),
-                eventType: 'device.state.reported',
-                occurredAt: clock.now(),
-                source: 'simulator-adapter',
-                deviceId: 'led-main',
-                payload: {
-                    reportedState: { power: startedLed.getObservedPower() },
-                    reportedAt: clock.now(),
-                },
-            });
+            startedLed.reportCurrentState(clock.now());
             commandController.reschedulePendingCommands();
 
             for (const sensorEntry of sensors) {

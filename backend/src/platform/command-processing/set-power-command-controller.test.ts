@@ -8,18 +8,23 @@ describe('createSetPowerCommandController', () => {
     it('records a synchronous dispatch failure as a terminal lifecycle fact while accepting the request', () => {
         const events: PlatformEvent[] = [];
         const controller = createSetPowerCommandController({
-            dispatchCommand: {
-                dispatch() {
-                    throw new Error('transport unavailable');
+            routes: [
+                {
+                    deviceId: 'led-main',
+                    target: 'simulator-adapter',
+                    dispatcher: {
+                        dispatch() {
+                            throw new Error('transport unavailable');
+                        },
+                    },
                 },
-            },
+            ],
             emitEvent(event) {
                 events.push(event);
             },
             getRoomSnapshot: () => availableLedSnapshot,
             clock: { now: () => '2026-08-05T10:00:00Z' },
             commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
-            dispatchTarget: 'simulator-adapter',
             generateCommandId: () => 'cmd-led-1',
             generateEventId: createEventIdGenerator(),
         });
@@ -40,6 +45,97 @@ describe('createSetPowerCommandController', () => {
             commandId: 'cmd-led-1',
             payload: { reason: 'dispatch_failed' },
         });
+    });
+
+    it('dispatches through the route configured for a device other than led-main', () => {
+        const events: PlatformEvent[] = [];
+        const dispatchedCommands: unknown[] = [];
+        const controller = createSetPowerCommandController({
+            routes: [
+                {
+                    deviceId: 'led-reading',
+                    target: 'hardware-adapter',
+                    dispatcher: {
+                        dispatch(command) {
+                            dispatchedCommands.push(command);
+                        },
+                    },
+                },
+            ],
+            emitEvent(event) {
+                events.push(event);
+            },
+            getRoomSnapshot: () => availableLedSnapshotFor('led-reading'),
+            clock: { now: () => '2026-08-05T10:00:00Z' },
+            commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
+            generateCommandId: () => 'cmd-led-reading-1',
+            generateEventId: createEventIdGenerator(),
+        });
+
+        expect(
+            controller.requestCommand({
+                deviceId: 'led-reading',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            }),
+        ).toEqual({ commandId: 'cmd-led-reading-1', status: 'accepted' });
+        expect(dispatchedCommands).toEqual([
+            expect.objectContaining({ commandId: 'cmd-led-reading-1', deviceId: 'led-reading' }),
+        ]);
+        expect(events).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    eventType: 'command.dispatched',
+                    payload: { commandType: 'set.power', target: 'hardware-adapter' },
+                }),
+            ]),
+        );
+    });
+
+    it('rejects an otherwise available device without a configured route', () => {
+        const events: PlatformEvent[] = [];
+        const controller = createSetPowerCommandController({
+            routes: [],
+            emitEvent(event) {
+                events.push(event);
+            },
+            getRoomSnapshot: () => availableLedSnapshotFor('led-unrouted'),
+            clock: { now: () => '2026-08-05T10:00:00Z' },
+            commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
+            generateCommandId: () => 'cmd-led-unrouted-1',
+        });
+
+        expect(
+            controller.requestCommand({
+                deviceId: 'led-unrouted',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            }),
+        ).toEqual({
+            commandId: 'cmd-led-unrouted-1',
+            status: 'rejected',
+            reason: 'unsupported_command',
+            message: 'Device does not support this command.',
+        });
+        expect(events).toEqual([]);
+    });
+
+    it('rejects duplicate routes when the controller is configured', () => {
+        const route = {
+            deviceId: 'led-main',
+            target: 'simulator-adapter' as const,
+            dispatcher: { dispatch: () => undefined },
+        };
+
+        expect(() =>
+            createSetPowerCommandController({
+                routes: [route, route],
+                emitEvent: () => undefined,
+                getRoomSnapshot: () => availableLedSnapshot,
+                clock: { now: () => '2026-08-05T10:00:00Z' },
+                commandTimer: { setTimeout: () => 1, clearTimeout: () => undefined },
+            }),
+        ).toThrow('Duplicate set.power command route for led-main.');
     });
 });
 
@@ -63,6 +159,13 @@ const availableLedSnapshot: RoomSnapshotProjection = {
     activeCommands: [],
     recentCommands: [],
 };
+
+function availableLedSnapshotFor(deviceId: string): RoomSnapshotProjection {
+    return {
+        ...availableLedSnapshot,
+        devices: availableLedSnapshot.devices.map((device) => ({ ...device, deviceId })),
+    };
+}
 
 function createEventIdGenerator(): () => string {
     let index = 0;

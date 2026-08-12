@@ -4,6 +4,23 @@ import { createLedScenario } from './led-scenarios';
 import type { LedSetPowerCommand, LedStateReport } from './led-simulator';
 
 describe('createLedScenario', () => {
+    it('reports the current observed state as a native fact', () => {
+        const { scenario, reports } = createTestScenario('confirm_immediately', 'on');
+
+        scenario.reportCurrentState('2026-08-05T10:00:00.000Z');
+
+        expect(reports).toEqual([
+            {
+                messageId: expect.any(String),
+                messageType: 'led.state.reported',
+                deviceId: 'led-main-native',
+                sequence: 1,
+                reportedState: { power: 'on' },
+                reportedAt: '2026-08-05T10:00:00.000Z',
+            },
+        ]);
+    });
+
     it('reports matching state immediately for confirm_immediately', () => {
         const { scenario, reports, timer } = createTestScenario('confirm_immediately');
 

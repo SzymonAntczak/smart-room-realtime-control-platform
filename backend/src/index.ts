@@ -33,6 +33,7 @@ export {
 export {
     createSetPowerCommandController,
     type CommandTimer,
+    type SetPowerCommandRoute,
     type SetPowerCommandController,
     type SetPowerCommandControllerConfig,
 } from './platform/command-processing/set-power-command-controller';

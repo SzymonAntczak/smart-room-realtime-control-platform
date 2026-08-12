@@ -10,6 +10,7 @@ import type {
     LedStateReport,
     LedStateReportListener,
 } from '@smart-room/simulator';
+import { createLedScenario } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
 import { createEventProcessor } from '../../../platform/event-processing/event-processor';
@@ -18,6 +19,37 @@ import { createRoomProjector } from '../../../platform/read-model/room-projectio
 import { createSimulatorLedAdapter, type LedCommandTransport } from './led-adapter';
 
 describe('createSimulatorLedAdapter', () => {
+    it('translates a simulator bootstrap state report into an adapter-identified platform event', () => {
+        const led = createLedScenario({
+            deviceId: 'led-native',
+            initialPower: 'off',
+            scenario: 'omit_confirmation',
+            clock: { now: () => at },
+            scheduler: { setTimeout: () => 1, clearTimeout: () => undefined },
+            generateMessageId: () => 'bootstrap-1',
+        });
+        const events: PlatformEvent[] = [];
+        createSimulatorLedAdapter({
+            led,
+            nativeLedId: 'led-native',
+            platformDeviceId: 'led-platform',
+            emitEvent: (event) => events.push(event),
+        });
+
+        led.reportCurrentState(at);
+
+        expect(events).toEqual([
+            {
+                eventId: 'simulator-adapter:led-native:bootstrap-1',
+                eventType: 'device.state.reported',
+                occurredAt: at,
+                source: 'simulator-adapter',
+                deviceId: 'led-platform',
+                payload: { reportedState: { power: 'off' }, reportedAt: at },
+            },
+        ]);
+    });
+
     it('lets the processor deduplicate replayed LED facts', () => {
         const led = controllableLed();
         const devices = [{ deviceId: 'led-platform', name: 'LED', role: 'led-output' }] as const;

@@ -9,6 +9,7 @@ import {
     type LedSetPowerCommand,
     type LedSimulator,
     type LedSimulatorConfig,
+    type LedStateReport,
     type LedStateReportListener,
 } from './led-simulator';
 
@@ -50,6 +51,7 @@ export interface LedScenario extends Pick<LedSimulator, 'getObservedPower'> {
         reason: string,
         reportedAt: string,
     ): LedHealthReport;
+    reportCurrentState(reportedAt: string): LedStateReport;
     setNextCommandScenario(scenario: LedScenarioName): void;
     stop(): void;
 }
@@ -93,6 +95,9 @@ export function createLedScenario<TimerHandle = unknown>({
 
     return {
         ...simulator,
+        reportCurrentState(reportedAt) {
+            return simulator.reportState(simulator.getObservedPower(), reportedAt);
+        },
         setNextCommandScenario(scenario) {
             assertScenario(scenario);
             nextScenario = scenario;
