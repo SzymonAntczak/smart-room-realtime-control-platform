@@ -1,18 +1,20 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { submitLedPowerCommand } from './led-command-client';
 
 export function useLedCommandRequest(deviceId: string | undefined) {
     const { t } = useTranslation('dashboard');
+    const requestInFlight = useRef(false);
     const [submitting, setSubmitting] = useState(false);
     const [transportError, setTransportError] = useState<string>();
 
     async function requestPower(power: 'on' | 'off'): Promise<void> {
-        if (!deviceId) {
+        if (!deviceId || requestInFlight.current) {
             return;
         }
 
+        requestInFlight.current = true;
         setSubmitting(true);
         setTransportError(undefined);
 
@@ -29,6 +31,7 @@ export function useLedCommandRequest(deviceId: string | undefined) {
         } catch {
             setTransportError(t('led.commandRequestFailed'));
         } finally {
+            requestInFlight.current = false;
             setSubmitting(false);
         }
     }

@@ -9,6 +9,7 @@
         "format": "prettier --check .",
         "format:write": "prettier --write .",
         "build": "tsc --noEmit && vite build",
+        "verify:production-bundle": "npm run build && node ./scripts/verify-production-bundle.mjs",
         "typecheck": "tsc --noEmit",
         "typecheck:browser": "tsc --project tsconfig.browser-tests.json --noEmit",
         "test": "vitest run"

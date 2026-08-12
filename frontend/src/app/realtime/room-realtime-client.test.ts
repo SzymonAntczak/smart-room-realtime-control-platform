@@ -101,6 +101,20 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onSnapshot).not.toHaveBeenCalled();
     });
 
+    it.each(createInvalidRenderableDevices())(
+        'rejects $label before passing it to the UI',
+        ({ device }) => {
+            const handlers = createHandlers();
+            connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+
+            MockWebSocket.latest().emitMessage(createRoomSnapshotMessage({ devices: [device] }));
+
+            expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
+            expect(handlers.onSnapshot).not.toHaveBeenCalled();
+            expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
+        },
+    );
+
     it('rejects a snapshot carrying removed history fields', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
@@ -510,6 +524,29 @@ function createHandlers() {
         onSnapshot: vi.fn(),
         onInvalidMessage: vi.fn(),
     };
+}
+
+function createInvalidRenderableDevices(): readonly {
+    label: string;
+    device: RoomSnapshotProjection['devices'][number];
+}[] {
+    return [
+        {
+            label: 'a temperature device without an observation status',
+            device: { ...createTemperatureDevice(), observationStatus: {} },
+        },
+        {
+            label: 'a temperature reading without a timestamp',
+            device: {
+                ...createTemperatureDevice(),
+                observationStatus: { temperature: { freshness: 'unknown' } },
+            },
+        },
+        {
+            label: 'an LED with an unsupported reported power state',
+            device: { ...createLedDevice(), reportedState: { power: 'standby' } },
+        },
+    ];
 }
 
 function createRoomSnapshotMessage({

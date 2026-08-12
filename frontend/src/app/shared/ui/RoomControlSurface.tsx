@@ -1,10 +1,10 @@
-import type { DeviceProjection } from '@smart-room/contracts/projections';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LedControl } from '../../controls/led/LedControl';
 import type { RoomRealtimeState } from '../../realtime/use-room-realtime';
 import { TemperatureControl } from '../../sensors/temperature/TemperatureControl';
+import type { RenderableDeviceProjection } from '../room-rendering';
 
 import styles from './RoomControlSurface.module.css';
 
@@ -18,7 +18,7 @@ export function RoomControlSurface({
     getDeviceExtension,
 }: {
     room: RoomRealtimeState;
-    getDeviceExtension?(device: DeviceProjection): DeviceControlExtension | undefined;
+    getDeviceExtension?(device: RenderableDeviceProjection): DeviceControlExtension | undefined;
 }) {
     const { t } = useTranslation('dashboard');
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;

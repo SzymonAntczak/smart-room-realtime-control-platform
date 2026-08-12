@@ -2,8 +2,8 @@ import type {
     ActiveCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
-import type { DeviceProjection } from '@smart-room/contracts/projections';
 
+import type { LedDeviceProjection } from '../../shared/room-rendering';
 import type { AlertVariant } from '../../shared/ui/Alert';
 
 export type LedAlert =
@@ -18,7 +18,7 @@ export type LedAlert =
     | { readonly kind: 'command-confirmed'; readonly time: string };
 
 export type LedControlViewModel = {
-    availability: DeviceProjection['availability'];
+    availability: LedDeviceProjection['availability'];
     availabilityTone: 'success' | 'danger' | 'warning';
     hasReportedPower: boolean;
     isOn: boolean;
@@ -35,7 +35,7 @@ export function toLedControlViewModel({
     submitting,
     interactionLocked,
 }: {
-    device: DeviceProjection;
+    device: LedDeviceProjection;
     activeCommand?: ActiveCommandProjection;
     recentCommand?: TerminalCommandProjection;
     transportError?: string;
@@ -66,7 +66,7 @@ export function toLedControlViewModel({
     ];
     const information: LedAlert[] = [
         ...(submitting ? [{ kind: 'submitting' as const }] : []),
-        ...(activeCommand && isPowerState(activeCommand.requestedState.power)
+        ...(activeCommand
             ? [{ kind: 'requested' as const, power: activeCommand.requestedState.power }]
             : []),
         ...(recentCommand?.status === 'confirmed'
@@ -79,7 +79,7 @@ export function toLedControlViewModel({
             : []),
     ];
     const messages = [...errors, ...warnings, ...information];
-    const hasReportedPower = isPowerState(device.reportedState.power);
+    const hasReportedPower = device.reportedState.power !== undefined;
 
     return {
         availability: device.availability,
@@ -108,10 +108,6 @@ export function toLedControlViewModel({
                 : {}),
         },
     };
-}
-
-function isPowerState(value: unknown): value is 'on' | 'off' {
-    return value === 'on' || value === 'off';
 }
 
 function terminalTimestamp(command: TerminalCommandProjection) {

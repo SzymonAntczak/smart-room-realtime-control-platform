@@ -2,8 +2,9 @@ import type {
     ActiveCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
-import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { describe, expect, it } from 'vitest';
+
+import type { LedDeviceProjection } from '../../shared/room-rendering';
 
 import { toLedControlViewModel } from './led-control-view-model';
 
@@ -82,7 +83,7 @@ describe('toLedControlViewModel', () => {
     });
 });
 
-function createLed(): DeviceProjection {
+function createLed(): LedDeviceProjection {
     return {
         deviceId: 'led-main',
         name: 'Main LED',

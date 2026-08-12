@@ -1,10 +1,10 @@
-import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { CircleCheck, Thermometer, WifiOff } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../i18n/time';
 import { getDeviceDisplayName } from '../../shared/device-presentation';
+import type { TemperatureSensorDeviceProjection } from '../../shared/room-rendering';
 import { Alert, type AlertVariant } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
@@ -16,15 +16,11 @@ export function TemperatureControl({
     headerAction,
     realtimeUncertain = false,
 }: {
-    device: DeviceProjection;
+    device: TemperatureSensorDeviceProjection;
     headerAction?: ReactNode;
     realtimeUncertain?: boolean;
 }) {
     const { t } = useTranslation(['common', 'dashboard']);
-
-    if (device.role !== 'temperature-sensor') {
-        return null;
-    }
 
     const reading = toTemperatureSensorReading(device);
 

@@ -6,6 +6,8 @@ import {
     roomRealtimeServerMessageTypes,
 } from '@smart-room/contracts/realtime';
 
+import { type RenderableRoomSnapshot, toRenderableRoomSnapshot } from '../shared/room-rendering';
+
 const defaultRoomRealtimeUrl = 'http://localhost:4310/room/realtime';
 const defaultReconnectDelayMs = 1000;
 
@@ -17,7 +19,7 @@ export type RoomRealtimeConnectionStatus =
 
 export interface RoomRealtimeClientHandlers {
     onConnectionStatus(status: RoomRealtimeConnectionStatus): void;
-    onSnapshot(snapshot: RoomSnapshotProjection): void;
+    onSnapshot(snapshot: RenderableRoomSnapshot): void;
     onInvalidMessage(): void;
 }
 
@@ -95,8 +97,7 @@ export function connectRoomRealtime(
                 }
 
                 const snapshot = applyRealtimeMessage(message);
-                validateRenderableDevices(snapshot);
-                handlers.onSnapshot(snapshot);
+                handlers.onSnapshot(toRenderableRoomSnapshot(snapshot));
             } catch {
                 handlers.onInvalidMessage();
                 scheduleReconnect(source);
@@ -203,28 +204,6 @@ function hasSameDeviceSet(
         updatedDeviceIds.size === updatedDevices.length &&
         updatedDevices.every((device) => currentDeviceIds.has(device.deviceId))
     );
-}
-
-function validateRenderableDevices(snapshot: RoomSnapshotProjection): void {
-    for (const device of snapshot.devices) {
-        if (
-            device.role === 'led-output' &&
-            device.reportedState.power !== undefined &&
-            device.reportedState.power !== 'on' &&
-            device.reportedState.power !== 'off'
-        ) {
-            throw new Error('LED data did not match the expected contract.');
-        }
-
-        if (
-            device.role === 'temperature-sensor' &&
-            device.observationStatus.temperature?.lastObservedAt !== undefined &&
-            (typeof device.reportedState.temperature !== 'number' ||
-                device.reportedState.temperatureUnit !== 'celsius')
-        ) {
-            throw new Error('Temperature sensor data did not match the expected contract.');
-        }
-    }
 }
 
 function getRoomRealtimeUrl(): string {

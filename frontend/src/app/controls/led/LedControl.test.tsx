@@ -1,7 +1,8 @@
 import type { ActiveCommandProjection } from '@smart-room/contracts/commands';
-import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+
+import type { LedDeviceProjection } from '../../shared/room-rendering';
 
 import { LedControl } from './LedControl';
 
@@ -105,7 +106,7 @@ it('formats a confirmed command timestamp for the browser before rendering it', 
     expect(screen.getByText(/formatted local timestamp/)).toBeInTheDocument();
 });
 
-function createLed(): DeviceProjection {
+function createLed(): LedDeviceProjection {
     return {
         deviceId: 'led-main',
         name: 'Main LED',

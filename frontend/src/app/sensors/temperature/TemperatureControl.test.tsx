@@ -1,6 +1,7 @@
-import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+
+import type { TemperatureSensorDeviceProjection } from '../../shared/room-rendering';
 
 import { TemperatureControl } from './TemperatureControl';
 
@@ -33,7 +34,7 @@ describe('TemperatureControl', () => {
     });
 });
 
-function createTemperatureSensor(): DeviceProjection {
+function createTemperatureSensor(): TemperatureSensorDeviceProjection {
     return {
         deviceId: 'temp-desk',
         name: 'Desk temperature',

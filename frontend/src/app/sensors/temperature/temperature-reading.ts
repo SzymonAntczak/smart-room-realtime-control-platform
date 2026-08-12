@@ -1,5 +1,4 @@
-import type { DeviceState } from '@smart-room/contracts/devices';
-import type { DeviceProjection } from '@smart-room/contracts/projections';
+import type { TemperatureSensorDeviceProjection } from '../../shared/room-rendering';
 
 export interface TemperatureSensorReading {
     sensorId: string;
@@ -7,31 +6,29 @@ export interface TemperatureSensorReading {
     value?: number;
     unit?: 'celsius';
     recordedAt?: string;
-    availability: DeviceProjection['availability'];
+    availability: TemperatureSensorDeviceProjection['availability'];
     availabilityReason?: string;
-    health: DeviceProjection['health'];
+    health: TemperatureSensorDeviceProjection['health'];
     healthReason?: string;
     freshness: 'fresh' | 'stale' | 'unknown';
 }
 
-export function toTemperatureSensorReading(device: DeviceProjection): TemperatureSensorReading {
+export function toTemperatureSensorReading(
+    device: TemperatureSensorDeviceProjection,
+): TemperatureSensorReading {
     const hasReading =
         typeof device.reportedState.temperature === 'number' &&
         device.reportedState.temperatureUnit === 'celsius' &&
         typeof device.observationStatus.temperature?.lastObservedAt === 'string';
-    const state = device.reportedState as DeviceState & {
-        temperature: number;
-        temperatureUnit: 'celsius';
-    };
 
     return {
         sensorId: device.deviceId,
         sensorName: device.name,
         ...(hasReading
             ? {
-                  value: state.temperature,
-                  unit: state.temperatureUnit,
-                  recordedAt: device.observationStatus.temperature?.lastObservedAt,
+                  value: device.reportedState.temperature,
+                  unit: device.reportedState.temperatureUnit,
+                  recordedAt: device.observationStatus.temperature.lastObservedAt,
               }
             : {}),
         availability: device.availability,

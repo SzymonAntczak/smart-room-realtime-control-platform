@@ -2,13 +2,13 @@ import type {
     ActiveCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
-import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { Lightbulb, LightbulbOff, Power } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../i18n/time';
 import { getDeviceDisplayName } from '../../shared/device-presentation';
+import type { LedDeviceProjection } from '../../shared/room-rendering';
 import { Alert } from '../../shared/ui/Alert';
 import { ControlCard } from '../../shared/ui/ControlCard';
 
@@ -24,7 +24,7 @@ export function LedControl({
     interactionLocked = false,
     realtimeUncertain = false,
 }: {
-    device: DeviceProjection;
+    device: LedDeviceProjection;
     activeCommand?: ActiveCommandProjection;
     recentCommand?: TerminalCommandProjection;
     headerAction?: ReactNode;
@@ -33,10 +33,6 @@ export function LedControl({
 }) {
     const { t } = useTranslation(['common', 'dashboard']);
     const { requestPower, submitting, transportError } = useLedCommandRequest(device.deviceId);
-
-    if (device.role !== 'led-output') {
-        return null;
-    }
 
     const viewModel = toLedControlViewModel({
         device,

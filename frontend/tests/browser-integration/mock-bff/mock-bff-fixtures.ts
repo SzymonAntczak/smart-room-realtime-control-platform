@@ -1,5 +1,6 @@
 import type {
     ActiveCommandProjection,
+    FailedCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
 import type { DeviceProjection, RoomSnapshotProjection } from '@smart-room/contracts/projections';
@@ -180,7 +181,7 @@ export function createConfirmedLedDeviceProjection(): DeviceProjection {
     };
 }
 
-export function createFailedLedCommand(commandId: string): TerminalCommandProjection {
+export function createFailedLedCommand(commandId: string): FailedCommandProjection {
     return {
         commandId,
         deviceId: 'led-main',

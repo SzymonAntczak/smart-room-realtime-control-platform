@@ -1,5 +1,6 @@
-import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { useEffect, useState } from 'react';
+
+import type { RenderableRoomSnapshot } from '../shared/room-rendering';
 
 import { connectRoomRealtime, type RoomRealtimeConnectionStatus } from './room-realtime-client';
 
@@ -11,7 +12,7 @@ export type RoomRealtimeState =
       }
     | {
           status: 'ready';
-          snapshot: RoomSnapshotProjection;
+          snapshot: RenderableRoomSnapshot;
           connectionStatus: Extract<RoomRealtimeConnectionStatus, 'connected' | 'reconnecting'>;
           contractError?: string;
       };

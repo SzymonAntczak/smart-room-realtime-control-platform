@@ -1,7 +1,7 @@
-import type { DeviceProjection } from '@smart-room/contracts/projections';
 import { useState } from 'react';
 
 import { useRoomRealtime } from '../realtime/use-room-realtime';
+import type { RenderableDeviceProjection } from '../shared/room-rendering';
 import { type DeviceControlExtension, RoomControlSurface } from '../shared/ui/RoomControlSurface';
 
 import { DevPanel, type DevPanelTarget } from './dev-panel';
@@ -15,7 +15,9 @@ export function AppDev() {
     );
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;
 
-    function getDeviceExtension(device: DeviceProjection): DeviceControlExtension | undefined {
+    function getDeviceExtension(
+        device: RenderableDeviceProjection,
+    ): DeviceControlExtension | undefined {
         const target = toScenarioTarget(device);
 
         if (!target) {
@@ -83,7 +85,7 @@ export function updateScenarioRequestCounts(
     return next;
 }
 
-function toScenarioTarget(device: DeviceProjection): DevPanelTarget | undefined {
+function toScenarioTarget(device: RenderableDeviceProjection): DevPanelTarget | undefined {
     switch (device.role) {
         case 'temperature-sensor':
             return { definition: temperatureScenarioDefinition, deviceId: device.deviceId };
