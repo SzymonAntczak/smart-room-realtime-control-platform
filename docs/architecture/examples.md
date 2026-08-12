@@ -56,7 +56,7 @@ sequenceDiagram
     B-->>SA: simulator-native MQTT state report(power=on)
     SA-->>EP: device.state.reported(power=on)
     EP->>EP: match report to pending set.power rule
-    EP->>Store: command.confirmed(commandId)
+    EP->>Store: device.state.reported(power=on)
     EP-->>UI: reportedState=on, command=confirmed
 ```
 
@@ -161,8 +161,7 @@ flowchart TD
 
     report[device.state.reported<br/>deviceId=led-main<br/>power=on] --> matcher[Confirmation matcher<br/>set.power exact power match]
     pending --> matcher
-    matcher --> confirmed[command.confirmed<br/>commandId=cmd-123]
-    confirmed --> room[Derived room state<br/>reportedState.power=on<br/>command=confirmed]
+    matcher --> room[Derived room state<br/>reportedState.power=on<br/>command=confirmed]
 ```
 
 Command lifecycle events carry `commandId`. Device state reports remain observed

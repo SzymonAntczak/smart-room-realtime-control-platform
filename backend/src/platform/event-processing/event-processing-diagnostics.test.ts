@@ -104,7 +104,7 @@ describe('createEventProcessingDiagnostics', () => {
         );
         diagnostics.recordProcessingResult(
             createEvent({ eventId: 'evt-2' }),
-            ignored('invalid_payload'),
+            ignored('invalid_lifecycle_transition'),
         );
         diagnostics.recordProcessingResult(
             createEvent({ eventId: 'evt-3' }),
@@ -117,7 +117,7 @@ describe('createEventProcessingDiagnostics', () => {
         ]);
         expect(diagnostics.getSnapshot().ignoredEvents.map((event) => event.reason)).toEqual([
             'unknown_device',
-            'invalid_payload',
+            'invalid_lifecycle_transition',
         ]);
     });
 

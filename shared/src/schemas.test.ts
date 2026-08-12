@@ -6,7 +6,6 @@ import {
     setPowerCommandRequestSchema,
 } from './commands';
 import {
-    commandConfirmedEventSchema,
     commandDispatchedEventSchema,
     commandFailedEventSchema,
     commandRequestedEventSchema,
@@ -90,7 +89,6 @@ describe('platform event schemas', () => {
         [telemetryReadingRecordedEventSchema, 'telemetry.reading.recorded'],
         [commandRequestedEventSchema, 'command.requested'],
         [commandDispatchedEventSchema, 'command.dispatched'],
-        [commandConfirmedEventSchema, 'command.confirmed'],
         [commandFailedEventSchema, 'command.failed'],
         [commandTimedOutEventSchema, 'command.timed_out'],
     ] as const)('accepts its documented lifecycle event', (schema, eventType) => {
@@ -165,12 +163,9 @@ describe('platform event schemas', () => {
             }),
         ).toBe(false);
         expect(
-            isSchema(commandConfirmedEventSchema, {
-                ...createEvent('command.confirmed'),
-                payload: {
-                    confirmationSource: 'command.failed',
-                    matchedState: { power: 'on' },
-                },
+            isSchema(platformEventEnvelopeSchema, {
+                ...createEvent('command.dispatched'),
+                eventType: 'command.confirmed',
             }),
         ).toBe(false);
     });
@@ -761,16 +756,6 @@ function createEvent(eventType: string) {
                 eventType,
                 commandId: 'cmd-1',
                 payload: { commandType: 'set.power', target: 'simulator-adapter' },
-            };
-        case 'command.confirmed':
-            return {
-                ...base,
-                eventType,
-                commandId: 'cmd-1',
-                payload: {
-                    confirmationSource: 'device.state.reported',
-                    matchedState: { power: 'on' },
-                },
             };
         case 'command.failed':
             return {

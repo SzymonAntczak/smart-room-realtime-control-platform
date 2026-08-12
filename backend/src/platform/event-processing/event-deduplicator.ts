@@ -1,3 +1,5 @@
+import { normalizeIsoTimestamp } from '@smart-room/contracts/validation';
+
 export const defaultDeduplicationRetentionMs = 10 * 60 * 1000;
 export const defaultDeduplicationEntryLimit = 1000;
 
@@ -24,11 +26,12 @@ export function createEventDeduplicator({
     retentionMs?: number;
     entryLimit?: number;
 }): EventDeduplicator {
+    assertValidConfig(retentionMs, entryLimit);
     const entries = new Map<string, number>();
 
     return {
         check(eventId) {
-            const checkedAt = clock.now();
+            const checkedAt = readClock();
             removeExpiredEntries(Date.parse(checkedAt));
 
             return {
@@ -70,6 +73,26 @@ export function createEventDeduplicator({
     }
 
     function nowMs(): number {
-        return Date.parse(clock.now());
+        return Date.parse(readClock());
+    }
+
+    function readClock(): string {
+        const timestamp = normalizeIsoTimestamp(clock.now());
+
+        if (!timestamp) {
+            throw new Error('Event deduplication clock returned an invalid ISO timestamp.');
+        }
+
+        return timestamp;
+    }
+}
+
+function assertValidConfig(retentionMs: number, entryLimit: number): void {
+    if (!Number.isFinite(retentionMs) || retentionMs < 0) {
+        throw new Error('Event deduplication retentionMs must be a finite non-negative number.');
+    }
+
+    if (!Number.isSafeInteger(entryLimit) || entryLimit < 1) {
+        throw new Error('Event deduplication entryLimit must be a positive safe integer.');
     }
 }

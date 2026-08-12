@@ -49,6 +49,7 @@ export const ignoredEventReasons = [
     'unsupported_event_type',
     'unknown_device',
     'invalid_payload',
+    'invalid_lifecycle_transition',
     'device_metric_mismatch',
     'future_dated_report',
     'stale_device_transition',

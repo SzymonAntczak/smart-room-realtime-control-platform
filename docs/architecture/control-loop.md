@@ -18,7 +18,7 @@ Device, simulator or external source
   -> device, simulator or external source
   -> device-native confirmation or state report
   -> backend adapter
-  -> platform confirmation event or state report
+  -> platform state report
   -> updated backend read model / projections
   -> backend realtime API / BFF
   -> realtime UI

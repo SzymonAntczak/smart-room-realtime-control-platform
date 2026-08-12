@@ -44,7 +44,7 @@ describe('command lifecycle event processing', () => {
         );
 
         expect(result).toEqual(
-            expect.objectContaining({ status: 'ignored', reason: 'invalid_payload' }),
+            expect.objectContaining({ status: 'ignored', reason: 'invalid_lifecycle_transition' }),
         );
         expect(result.state.activeCommands).toEqual([]);
         expect(result.state.recentCommands).toEqual([]);
@@ -93,7 +93,7 @@ describe('command lifecycle event processing', () => {
         const duplicateFailure = processor.processEvent(failureEvent);
 
         expect(conflictingRequest).toEqual(
-            expect.objectContaining({ status: 'ignored', reason: 'invalid_payload' }),
+            expect.objectContaining({ status: 'ignored', reason: 'invalid_lifecycle_transition' }),
         );
         expect(failure).toEqual(
             expect.objectContaining({
@@ -115,21 +115,24 @@ describe('command lifecycle event processing', () => {
         );
     });
 
-    it('does not accept a direct command.confirmed event for the LED reference slice', () => {
+    it('rejects a repeated dispatch as an invalid lifecycle transition', () => {
         const processor = createLedProcessor();
+        processor.processEvent(report('off', '2026-08-05T10:00:00Z'));
+        processor.processEvent(requested('cmd-1', '2026-08-05T10:00:01Z'));
+        processor.processEvent(dispatched('cmd-1', '2026-08-05T10:00:02Z'));
 
         const result = processor.processEvent({
-            eventId: 'evt-confirmed-1',
-            eventType: 'command.confirmed',
+            eventId: 'evt-dispatched-again',
+            eventType: 'command.dispatched',
             occurredAt: '2026-08-05T10:00:03Z',
             source: 'backend',
             deviceId: 'led-main',
             commandId: 'cmd-1',
-            payload: { confirmationSource: 'device.state.reported', matchedState: { power: 'on' } },
+            payload: { commandType: 'set.power', target: 'simulator-adapter' },
         });
 
         expect(result).toEqual(
-            expect.objectContaining({ status: 'ignored', reason: 'unsupported_event_type' }),
+            expect.objectContaining({ status: 'ignored', reason: 'invalid_lifecycle_transition' }),
         );
     });
 });

@@ -2,7 +2,7 @@ import type {
     ActiveCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
-import type { CommandAvailability, DeviceRole, DeviceState } from '@smart-room/contracts/devices';
+import type { DeviceRole, DeviceState } from '@smart-room/contracts/devices';
 import type {
     CommandDispatchedEvent,
     CommandFailedEvent,
@@ -16,16 +16,19 @@ import type {
 } from '@smart-room/contracts/events';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 
+import { commandAvailabilityFor } from './command-availability';
+import {
+    type FreshnessThresholdsByRole,
+    withFreshness,
+} from './observation-freshness';
+
 export interface DeviceDefinition {
     deviceId: string;
     name: string;
     role: DeviceRole;
 }
 
-export interface DeviceFreshnessThresholds {
-    staleAfterMs: number;
-}
-export type FreshnessThresholdsByRole = Partial<Record<DeviceRole, DeviceFreshnessThresholds>>;
+export type { DeviceFreshnessThresholds, FreshnessThresholdsByRole } from './observation-freshness';
 export interface RoomProjectionConfig {
     devices: DeviceDefinition[];
     initialUpdatedAt: string;
@@ -56,6 +59,13 @@ export interface RoomProjector {
     applyCommandFailed(event: CommandFailedEvent): RoomProjection;
     applyCommandTimedOut(event: CommandTimedOutEvent): RoomProjection;
     getProjection(options?: ProjectionEvaluationOptions): RoomProjection;
+}
+
+export class InvalidLifecycleTransitionError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'InvalidLifecycleTransitionError';
+    }
 }
 
 export function createRoomProjector({
@@ -190,11 +200,15 @@ export function createRoomProjector({
             const device = requireDevice(event.deviceId);
 
             if (device.role !== 'led-output' || !device.observationStatus.power?.lastObservedAt) {
-                throw new Error(`Cannot project a set.power command for device ${event.deviceId}.`);
+                throw new InvalidLifecycleTransitionError(
+                    `Cannot project a set.power command for device ${event.deviceId}.`,
+                );
             }
 
             if (activeByDeviceId.has(event.deviceId)) {
-                throw new Error(`Device ${event.deviceId} already has an active command.`);
+                throw new InvalidLifecycleTransitionError(
+                    `Device ${event.deviceId} already has an active command.`,
+                );
             }
 
             assertUnusedCommandId(event.commandId);
@@ -214,7 +228,7 @@ export function createRoomProjector({
             const active = requireActive(event.deviceId, event.commandId);
 
             if (active.status !== 'accepted') {
-                throw new Error(`Cannot dispatch command ${event.commandId}.`);
+                throw new InvalidLifecycleTransitionError(`Cannot dispatch command ${event.commandId}.`);
             }
 
             assertChronological(event.occurredAt, active.requestedAt, 'dispatch');
@@ -261,11 +275,13 @@ export function createRoomProjector({
             const active = requireActive(event.deviceId, event.commandId);
 
             if (active.status !== 'pending') {
-                throw new Error(`Cannot time out command ${event.commandId}.`);
+                throw new InvalidLifecycleTransitionError(`Cannot time out command ${event.commandId}.`);
             }
 
             if (event.payload.timeoutMs !== ledSetPowerTimeoutMs) {
-                throw new Error(`LED set.power timeout must be ${ledSetPowerTimeoutMs} ms.`);
+                throw new InvalidLifecycleTransitionError(
+                    `LED set.power timeout must be ${ledSetPowerTimeoutMs} ms.`,
+                );
             }
 
             assertChronological(event.occurredAt, active.dispatchedAt, 'timeout');
@@ -274,7 +290,7 @@ export function createRoomProjector({
                 Date.parse(event.occurredAt) - Date.parse(active.dispatchedAt) <
                 ledSetPowerTimeoutMs
             ) {
-                throw new Error(
+                throw new InvalidLifecycleTransitionError(
                     `Command timeout must occur at least ${ledSetPowerTimeoutMs} ms after dispatch.`,
                 );
             }
@@ -311,39 +327,13 @@ export function createRoomProjector({
                 const active = activeByDeviceId.get(device.deviceId);
 
                 return {
-                    ...withFreshness(device, evaluatedAt),
+                    ...withFreshness(device, evaluatedAt, freshnessThresholdsByRole),
                     ...(active ? { activeCommandId: active.commandId } : {}),
                 };
             }),
             activeCommands: [...activeByDeviceId.values()],
             recentCommands: [...recent],
         };
-    }
-
-    function withFreshness(device: DeviceProjection, evaluatedAt: string): DeviceProjection {
-        const threshold = freshnessThresholdsByRole[device.role];
-
-        if (!threshold) {
-            return device;
-        }
-
-        const observationStatus = Object.fromEntries(
-            Object.entries(device.observationStatus).map(([capability, status]) => {
-                if (!status.lastObservedAt) {
-                    return [capability, status];
-                }
-
-                const freshness: 'fresh' | 'stale' =
-                    Date.parse(evaluatedAt) - Date.parse(status.lastObservedAt) >
-                    threshold.staleAfterMs
-                        ? 'stale'
-                        : 'fresh';
-
-                return [capability, { ...status, freshness }];
-            }),
-        );
-
-        return { ...device, observationStatus };
     }
 
     function moveToRecent(command: TerminalCommandProjection): void {
@@ -361,7 +351,7 @@ export function createRoomProjector({
         const active = activeByDeviceId.get(deviceId);
 
         if (!active || active.commandId !== commandId) {
-            throw new Error(`No active command ${commandId}.`);
+            throw new InvalidLifecycleTransitionError(`No active command ${commandId}.`);
         }
 
         return active;
@@ -373,7 +363,7 @@ export function createRoomProjector({
                 (command) => command.commandId === commandId,
             )
         ) {
-            throw new Error(`Command ${commandId} already exists.`);
+            throw new InvalidLifecycleTransitionError(`Command ${commandId} already exists.`);
         }
     }
 }
@@ -419,34 +409,6 @@ function withObservation(
     };
 }
 
-function commandAvailabilityFor(
-    role: DeviceRole,
-    availability: DeviceProjection['availability'],
-    health: DeviceProjection['health'],
-    healthReason?: string,
-): CommandAvailability {
-    if (role !== 'led-output') {
-        return { policy: 'block', reason: 'read_only_device' };
-    }
-
-    if (availability === 'offline') {
-        return { policy: 'block', reason: 'device_offline' };
-    }
-
-    if (availability === 'unknown') {
-        return { policy: 'block', reason: 'availability_unknown' };
-    }
-
-    if (health !== 'degraded') {
-        return { policy: 'allow' };
-    }
-
-    if (healthReason === 'command_blocked') {
-        return { policy: 'block', reason: 'device_degraded' };
-    }
-
-    return { policy: 'allow_with_warning', reason: 'device_degraded' };
-}
 
 function isLater(value: string, reference: string): boolean {
     return Date.parse(value) > Date.parse(reference);
@@ -458,7 +420,7 @@ function isOnOrAfter(value: string, reference: string): boolean {
 
 function assertChronological(value: string, reference: string, action: string): void {
     if (!isOnOrAfter(value, reference)) {
-        throw new Error(`${action} cannot precede its command.`);
+        throw new InvalidLifecycleTransitionError(`${action} cannot precede its command.`);
     }
 }
 
@@ -474,7 +436,9 @@ function toRejectedCommandFailure(event: CommandFailedEvent): TerminalCommandPro
     const { commandType, requestedState, requestedAt } = event.payload;
 
     if (!commandType || !requestedState || !requestedAt) {
-        throw new Error(`No rejected-command context for ${event.commandId}.`);
+        throw new InvalidLifecycleTransitionError(
+            `No rejected-command context for ${event.commandId}.`,
+        );
     }
 
     assertChronological(event.occurredAt, requestedAt, 'failure');

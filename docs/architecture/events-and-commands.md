@@ -8,7 +8,7 @@ This distinction keeps the system auditable and prevents the UI from treating us
 
 Commands are not events. A command represents intent, for example `set.power`.
 The system records facts about that command as events, for example `command.requested`,
-`command.dispatched` and `command.confirmed`.
+`command.dispatched` and `command.failed`.
 
 In other words, the command says "please do this". Command-related events say
 "this part of the command lifecycle happened".
@@ -77,7 +77,6 @@ producer-reported fact, not a precondition for a newer transition.
 | `telemetry.reading.recorded`  | Sensor reading was recorded.                                          |
 | `command.requested`           | User or automation request was accepted as a command.                 |
 | `command.dispatched`          | Backend dispatched a platform command to an adapter.                  |
-| `command.confirmed`           | Command completion was confirmed.                                     |
 | `command.failed`              | Command failure was detected explicitly.                              |
 | `command.timed_out`           | Command did not complete within the allowed time.                     |
 
@@ -144,17 +143,6 @@ The first implementation should keep payloads small and explicit.
 {
     "commandType": "set.power",
     "target": "simulator-adapter"
-}
-```
-
-### `command.confirmed`
-
-```json
-{
-    "confirmationSource": "device.state.reported",
-    "matchedState": {
-        "power": "on"
-    }
 }
 ```
 
@@ -263,3 +251,7 @@ Terminal command projection and history rules are documented in
 [ADR: Command History and Terminal Projections](../decisions/adr-command-history-and-terminal-projections.md).
 Physical actuation and its effect on command outcomes are documented in
 [ADR: External Actuation and Command Outcomes](../decisions/adr-external-actuation-and-command-outcomes.md).
+
+`confirmed` is a terminal command projection, not an input platform event in
+the initial slice. The event processor derives it only when a fresh
+`device.state.reported` fact matches a pending command's confirmation rule.

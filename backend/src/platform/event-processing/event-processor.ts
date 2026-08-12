@@ -20,10 +20,11 @@ import {
 } from '@smart-room/contracts/events';
 import { isSchema, normalizeIsoTimestamp } from '@smart-room/contracts/validation';
 
-import type {
-    DeviceDefinition,
-    RoomProjection,
-    RoomProjector,
+import {
+    type DeviceDefinition,
+    InvalidLifecycleTransitionError,
+    type RoomProjection,
+    type RoomProjector,
 } from '../read-model/room-projection';
 
 import { createEventDeduplicator, type EventDeduplicationClock } from './event-deduplicator';
@@ -56,6 +57,7 @@ export type EventProcessingResult =
               | 'unsupported_event_type'
               | 'unknown_device'
               | 'invalid_payload'
+              | 'invalid_lifecycle_transition'
               | 'device_metric_mismatch'
               | 'future_dated_report'
               | 'stale_device_transition';
@@ -121,7 +123,7 @@ export function createEventProcessor({
                     return ignored('device_metric_mismatch');
                 }
 
-                return acceptEvent(event as DeviceStateReportedEvent, (acceptedEvent) =>
+                return acceptObservationEvent(event as DeviceStateReportedEvent, (acceptedEvent) =>
                     roomProjector.applyDeviceStateReported(acceptedEvent, {
                         evaluatedAt: deduplicationCheck.checkedAt,
                     }),
@@ -137,7 +139,7 @@ export function createEventProcessor({
                     return ignored('stale_device_transition');
                 }
 
-                return acceptDeviceTransition(
+                return acceptEvent(
                     event as DeviceAvailabilityChangedEvent,
                     (acceptedEvent) => roomProjector.applyDeviceAvailabilityChanged(acceptedEvent),
                 );
@@ -152,7 +154,7 @@ export function createEventProcessor({
                     return ignored('stale_device_transition');
                 }
 
-                return acceptDeviceTransition(event as DeviceHealthChangedEvent, (acceptedEvent) =>
+                return acceptEvent(event as DeviceHealthChangedEvent, (acceptedEvent) =>
                     roomProjector.applyDeviceHealthChanged(acceptedEvent),
                 );
             }
@@ -166,7 +168,7 @@ export function createEventProcessor({
                     return ignored('device_metric_mismatch');
                 }
 
-                return acceptEvent(event as TelemetryReadingRecordedEvent, (acceptedEvent) =>
+                return acceptObservationEvent(event as TelemetryReadingRecordedEvent, (acceptedEvent) =>
                     roomProjector.applyTelemetryReadingRecorded(acceptedEvent, {
                         evaluatedAt: deduplicationCheck.checkedAt,
                     }),
@@ -178,7 +180,7 @@ export function createEventProcessor({
                     return ignored('invalid_payload');
                 }
 
-                return acceptCommandEvent(event as CommandRequestedEvent, (acceptedEvent) =>
+                return acceptLifecycleEvent(event as CommandRequestedEvent, (acceptedEvent) =>
                     roomProjector.applyCommandRequested(acceptedEvent),
                 );
             }
@@ -188,7 +190,7 @@ export function createEventProcessor({
                     return ignored('invalid_payload');
                 }
 
-                return acceptCommandEvent(event as CommandDispatchedEvent, (acceptedEvent) =>
+                return acceptLifecycleEvent(event as CommandDispatchedEvent, (acceptedEvent) =>
                     roomProjector.applyCommandDispatched(acceptedEvent),
                 );
             }
@@ -198,7 +200,7 @@ export function createEventProcessor({
                     return ignored('invalid_payload');
                 }
 
-                return acceptCommandEvent(event as CommandFailedEvent, (acceptedEvent) =>
+                return acceptLifecycleEvent(event as CommandFailedEvent, (acceptedEvent) =>
                     roomProjector.applyCommandFailed(acceptedEvent),
                 );
             }
@@ -208,14 +210,14 @@ export function createEventProcessor({
                     return ignored('invalid_payload');
                 }
 
-                return acceptCommandEvent(event as CommandTimedOutEvent, (acceptedEvent) =>
+                return acceptLifecycleEvent(event as CommandTimedOutEvent, (acceptedEvent) =>
                     roomProjector.applyCommandTimedOut(acceptedEvent),
                 );
             }
 
             return ignored('unsupported_event_type');
 
-            function acceptEvent<
+            function acceptObservationEvent<
                 TEvent extends TelemetryReadingRecordedEvent | DeviceStateReportedEvent,
             >(
                 acceptedEvent: TEvent,
@@ -231,16 +233,7 @@ export function createEventProcessor({
                     return ignored('future_dated_report');
                 }
 
-                const deduplicationEvictedEventIds = deduplicator.remember(acceptedEvent.eventId);
-
-                return {
-                    status: 'accepted',
-                    evaluatedAt: deduplicationCheck.checkedAt,
-                    state: apply(acceptedEvent),
-                    ...(deduplicationEvictedEventIds.length > 0
-                        ? { deduplicationEvictedEventIds }
-                        : {}),
-                };
+                return acceptEvent(acceptedEvent, apply);
             }
 
             function isStaleTransition(
@@ -258,7 +251,7 @@ export function createEventProcessor({
                 );
             }
 
-            function acceptCommandEvent<
+            function acceptLifecycleEvent<
                 TEvent extends
                     | CommandRequestedEvent
                     | CommandDispatchedEvent
@@ -269,36 +262,37 @@ export function createEventProcessor({
                 apply: (event: TEvent) => EventProcessorState,
             ): EventProcessingResult {
                 try {
-                    const state = apply(acceptedEvent);
-                    const deduplicationEvictedEventIds = deduplicator.remember(
-                        acceptedEvent.eventId,
-                    );
+                    return acceptEvent(acceptedEvent, apply);
+                } catch (error) {
+                    if (error instanceof InvalidLifecycleTransitionError) {
+                        return ignored('invalid_lifecycle_transition');
+                    }
 
-                    return {
-                        status: 'accepted',
-                        evaluatedAt: deduplicationCheck.checkedAt,
-                        state,
-                        ...(deduplicationEvictedEventIds.length > 0
-                            ? { deduplicationEvictedEventIds }
-                            : {}),
-                    };
-                } catch {
-                    return ignored('invalid_payload');
+                    throw error;
                 }
             }
 
-            function acceptDeviceTransition<
-                TEvent extends DeviceAvailabilityChangedEvent | DeviceHealthChangedEvent,
+            function acceptEvent<
+                TEvent extends
+                    | TelemetryReadingRecordedEvent
+                    | DeviceStateReportedEvent
+                    | DeviceAvailabilityChangedEvent
+                    | DeviceHealthChangedEvent
+                    | CommandRequestedEvent
+                    | CommandDispatchedEvent
+                    | CommandFailedEvent
+                    | CommandTimedOutEvent,
             >(
                 acceptedEvent: TEvent,
                 apply: (event: TEvent) => EventProcessorState,
             ): EventProcessingResult {
+                const state = apply(acceptedEvent);
                 const deduplicationEvictedEventIds = deduplicator.remember(acceptedEvent.eventId);
 
                 return {
                     status: 'accepted',
                     evaluatedAt: deduplicationCheck.checkedAt,
-                    state: apply(acceptedEvent),
+                    state,
                     ...(deduplicationEvictedEventIds.length > 0
                         ? { deduplicationEvictedEventIds }
                         : {}),
