@@ -61,7 +61,7 @@ export function createSimulatorTemperatureAdapter({
         trimReplayableEvents(replayableEventsBySequence);
         emitEvent(event);
     });
-    const unsubscribeFromAvailability = sensor.onAvailability?.((report) => {
+    const unsubscribeFromAvailability = sensor.onAvailability((report) => {
         if (report.sensorId !== nativeSensorId) {
             return;
         }
@@ -79,7 +79,7 @@ export function createSimulatorTemperatureAdapter({
             },
         });
     });
-    const unsubscribeFromHealth = sensor.onHealth?.((report) => {
+    const unsubscribeFromHealth = sensor.onHealth((report) => {
         if (report.sensorId !== nativeSensorId) {
             return;
         }
@@ -101,8 +101,8 @@ export function createSimulatorTemperatureAdapter({
     return {
         stop() {
             unsubscribe();
-            unsubscribeFromAvailability?.();
-            unsubscribeFromHealth?.();
+            unsubscribeFromAvailability();
+            unsubscribeFromHealth();
         },
     };
 }

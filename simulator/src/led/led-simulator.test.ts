@@ -87,6 +87,15 @@ describe('createLedSimulator', () => {
             { previousHealth: 'degraded', health: 'healthy' },
         ]);
     });
+
+    it('accepts RFC 3339 timestamps and rejects non-RFC 3339 timestamps', () => {
+        const simulator = createSimulator();
+
+        expect(() => simulator.reportState('on', '2026-08-05T12:00:00+02:00')).not.toThrow();
+        expect(() => simulator.reportState('on', '2026-08-05 10:00:00Z')).toThrow(
+            'LED state report reportedAt must be an RFC 3339 timestamp with a UTC offset.',
+        );
+    });
 });
 
 function createSimulator() {

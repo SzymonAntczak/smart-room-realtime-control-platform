@@ -29,43 +29,6 @@ describe('createTemperatureSensorScenario', () => {
         ]);
     });
 
-    it('represents a telemetry stop without emitting a reading', () => {
-        const scenario = createTemperatureScenario();
-        const readings: TemperatureReadingMessage[] = [];
-
-        scenario.onReading((reading) => readings.push(reading));
-
-        const pause = scenario.pauseTelemetry('2026-06-08T09:30:03Z');
-
-        expect(pause).toEqual({
-            scenarioEvent: 'telemetry.pause',
-            observedAt: '2026-06-08T09:30:03Z',
-        });
-        expect(readings).toEqual([]);
-    });
-
-    it('recovers with a fresh reading after a telemetry pause', () => {
-        const scenario = createTemperatureScenario();
-        const readings: TemperatureReadingMessage[] = [];
-
-        scenario.onReading((reading) => readings.push(reading));
-
-        scenario.tick('2026-06-08T09:30:00Z');
-        scenario.pauseTelemetry('2026-06-08T09:30:10Z');
-        scenario.tick('2026-06-08T09:30:11Z');
-
-        expect(readings.map(({ sequence, recordedAt }) => ({ sequence, recordedAt }))).toEqual([
-            {
-                sequence: 0,
-                recordedAt: '2026-06-08T09:30:00Z',
-            },
-            {
-                sequence: 1,
-                recordedAt: '2026-06-08T09:30:11Z',
-            },
-        ]);
-    });
-
     it('suppresses periodic telemetry while offline and resumes with the next reading', () => {
         const scenario = createTemperatureScenario();
         const readings: TemperatureReadingMessage[] = [];
@@ -133,19 +96,33 @@ describe('createTemperatureSensorScenario', () => {
         ]);
     });
 
-    it('resets the deterministic sequence and forgets its replayable reading', () => {
+    it('resets state without dropping availability or health subscriptions', () => {
         const scenario = createTemperatureScenario();
         scenario.tick('2026-06-08T09:30:00Z');
+        const availability: unknown[] = [];
+        const health: unknown[] = [];
+        scenario.onAvailability((report) => availability.push(report));
+        scenario.onHealth((report) => health.push(report));
+        scenario.disconnect('2026-06-08T09:30:01Z');
 
         scenario.reset();
 
         expect(() => scenario.replayLastReading()).toThrow(
             'Cannot replay temperature reading before one has been recorded.',
         );
+        expect(scenario.isOffline()).toBe(false);
         expect(scenario.tick('2026-06-08T09:30:01Z')).toMatchObject({
             sequence: 0,
             value: 22,
         });
+        scenario.reportAvailability('online', '2026-06-08T09:30:02Z');
+        scenario.reportHealth('healthy', 'recovered', '2026-06-08T09:30:03Z');
+
+        expect(availability).toMatchObject([
+            { previousAvailability: 'unknown', availability: 'offline' },
+            { previousAvailability: 'unknown', availability: 'online' },
+        ]);
+        expect(health).toMatchObject([{ previousHealth: 'unknown', health: 'healthy' }]);
     });
 });
 

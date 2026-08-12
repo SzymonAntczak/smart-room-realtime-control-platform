@@ -82,14 +82,13 @@ describe('temperature read path integration', () => {
         });
     });
 
-    it('keeps the latest reading visible when telemetry becomes stale', () => {
+    it('keeps the latest reading visible when no further telemetry arrives', () => {
         const readPath = createTemperatureReadPath({
             eventIds: ['evt-temperature-1'],
             readingPattern: [0.5],
         });
 
         readPath.sensor.tick('2026-06-08T09:30:00Z');
-        readPath.sensor.pauseTelemetry('2026-06-08T09:30:02.501Z');
 
         const staleProjection = readPath.getProjection('2026-06-08T09:30:02.501Z');
         expect(staleProjection.devices[0]?.observationStatus.temperature?.freshness).toBe('stale');

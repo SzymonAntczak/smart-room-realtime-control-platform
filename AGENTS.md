@@ -46,6 +46,9 @@ AI is an implementation assistant here, not the owner of the architecture.
 ## TypeScript
 
 - Prefer `unknown` over `any`.
+- Do not use postfix TypeScript non-null assertions (`value!`). Model absence in
+  types and narrow values with type guards instead. This does not prohibit
+  logical negation (`!value`) or inequality (`!==`).
 - Prefer discriminated unions for observable lifecycle and domain states.
 - Use `as const`, `satisfies`, utility types and narrow type guards where they
   clarify intent.

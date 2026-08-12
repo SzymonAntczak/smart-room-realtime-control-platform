@@ -1,3 +1,5 @@
+import { assertValidDeviceNativeTimestamp } from '../device-native-timestamp';
+
 type NonEmptyReadingPattern = readonly [number, ...number[]];
 
 export interface TemperatureReadingMessage {
@@ -36,18 +38,19 @@ export type TemperatureHealthListener = (message: TemperatureHealthMessage) => v
 
 export interface TemperatureSensorSimulator {
     onReading(listener: TemperatureReadingListener): () => void;
-    onAvailability?(listener: TemperatureAvailabilityListener): () => void;
-    onHealth?(listener: TemperatureHealthListener): () => void;
+    onAvailability(listener: TemperatureAvailabilityListener): () => void;
+    onHealth(listener: TemperatureHealthListener): () => void;
     tick(recordedAt: string): TemperatureReadingMessage;
-    reportAvailability?(
+    reportAvailability(
         availability: 'online' | 'offline',
         reportedAt: string,
     ): TemperatureAvailabilityMessage;
-    reportHealth?(
+    reportHealth(
         health: 'healthy' | 'degraded',
         reason: string,
         reportedAt: string,
     ): TemperatureHealthMessage;
+    reset(): void;
 }
 
 export function createTemperatureSensorSimulator(
@@ -139,6 +142,11 @@ export function createTemperatureSensorSimulator(
 
             return message;
         },
+        reset() {
+            nextSequence = 0;
+            observedAvailability = 'unknown';
+            observedHealth = 'unknown';
+        },
     };
 }
 
@@ -165,9 +173,5 @@ function assertValidConfig(config: TemperatureSensorConfig): void {
 }
 
 function assertValidIsoTimestamp(timestamp: string, label: string): void {
-    const parsedTime = Date.parse(timestamp);
-
-    if (!Number.isFinite(parsedTime)) {
-        throw new TypeError(`${label} must be a valid timestamp string.`);
-    }
+    assertValidDeviceNativeTimestamp(timestamp, label);
 }

@@ -141,15 +141,35 @@ describe('createTemperatureSensorSimulator', () => {
         ).toThrow('Temperature readingPattern values must be finite numbers.');
     });
 
-    it('rejects invalid reading timestamps', () => {
+    it('accepts RFC 3339 timestamps with UTC or an explicit offset', () => {
         const sensor = createTemperatureSensorSimulator({
             sensorId: 'temp-desk',
             baseTemperature: 22,
             readingPattern: [0],
         });
 
-        expect(() => sensor.tick('not-a-date')).toThrow(
-            'Temperature reading recordedAt must be a valid timestamp string.',
+        expect(sensor.tick('2026-06-08T09:30:00Z').recordedAt).toBe('2026-06-08T09:30:00Z');
+        expect(sensor.tick('2026-06-08T11:30:00+02:00').recordedAt).toBe(
+            '2026-06-08T11:30:00+02:00',
+        );
+    });
+
+    it.each([
+        'not-a-date',
+        '2026-06-08 09:30:00Z',
+        '2026-02-30T09:30:00Z',
+        '2025-02-29T09:30:00Z',
+        '2026-06-08T09:30:00+24:00',
+        '2026-06-08T09:30:00-01:60',
+    ])('rejects a non-RFC 3339 reading timestamp: %s', (timestamp) => {
+        const sensor = createTemperatureSensorSimulator({
+            sensorId: 'temp-desk',
+            baseTemperature: 22,
+            readingPattern: [0],
+        });
+
+        expect(() => sensor.tick(timestamp)).toThrow(
+            'Temperature reading recordedAt must be an RFC 3339 timestamp with a UTC offset.',
         );
     });
 
@@ -160,10 +180,10 @@ describe('createTemperatureSensorSimulator', () => {
             readingPattern: [0],
         });
         const reports: unknown[] = [];
-        sensor.onAvailability?.((report) => reports.push(report));
+        sensor.onAvailability((report) => reports.push(report));
 
-        sensor.reportAvailability?.('online', '2026-06-08T09:30:00Z');
-        sensor.reportAvailability?.('offline', '2026-06-08T09:30:01Z');
+        sensor.reportAvailability('online', '2026-06-08T09:30:00Z');
+        sensor.reportAvailability('offline', '2026-06-08T09:30:01Z');
 
         expect(reports).toMatchObject([
             { previousAvailability: 'unknown', availability: 'online' },
@@ -178,10 +198,10 @@ describe('createTemperatureSensorSimulator', () => {
             readingPattern: [0],
         });
         const reports: unknown[] = [];
-        sensor.onHealth?.((report) => reports.push(report));
+        sensor.onHealth((report) => reports.push(report));
 
-        sensor.reportHealth?.('degraded', 'partial_data', '2026-06-08T09:30:00Z');
-        sensor.reportHealth?.('healthy', 'recovered', '2026-06-08T09:30:01Z');
+        sensor.reportHealth('degraded', 'partial_data', '2026-06-08T09:30:00Z');
+        sensor.reportHealth('healthy', 'recovered', '2026-06-08T09:30:01Z');
 
         expect(reports).toMatchObject([
             { previousHealth: 'unknown', health: 'degraded', reason: 'partial_data' },

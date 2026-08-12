@@ -84,10 +84,11 @@ describe('createLedScenario', () => {
             },
         ]);
     });
-    it('cancels delayed reports and removes the command handler when stopped', () => {
+    it('cancels every delayed report and removes the command handler when stopped', () => {
         const { scenario, reports, timer } = createTestScenario('confirm_delayed');
 
         scenario.receive(command());
+        scenario.receive(command('off'));
         scenario.stop();
         timer.advanceBy(2_000);
         scenario.receive(command('off'));
@@ -128,23 +129,22 @@ function command(power: 'on' | 'off' = 'on'): LedSetPowerCommand {
 
 function createFakeScheduler() {
     let now = 0;
-    const scheduled: Array<{ dueAt: number; callback: () => void }> = [];
+    let nextHandle = 1;
+    const scheduled = new Map<number, { dueAt: number; callback: () => void }>();
 
     return {
         get delays() {
-            return scheduled.map(({ dueAt }) => dueAt - now);
+            return [...scheduled.values()].map(({ dueAt }) => dueAt - now);
         },
         setTimeout(callback: () => void, delayMs: number) {
-            scheduled.push({ dueAt: now + delayMs, callback });
+            const handle = nextHandle;
+            nextHandle += 1;
+            scheduled.set(handle, { dueAt: now + delayMs, callback });
 
-            return scheduled.length;
+            return handle;
         },
         clearTimeout(handle: number) {
-            const scheduledTimer = scheduled[handle - 1];
-
-            if (scheduledTimer) {
-                scheduled.splice(handle - 1, 1);
-            }
+            scheduled.delete(handle);
         },
         isoNow() {
             return new Date(Date.parse('2026-08-05T10:00:00Z') + now).toISOString();
@@ -153,9 +153,9 @@ function createFakeScheduler() {
             const target = now + durationMs;
 
             while (true) {
-                const next = scheduled
-                    .filter(({ dueAt }) => dueAt <= target)
-                    .sort((left, right) => left.dueAt - right.dueAt)[0];
+                const next = [...scheduled.entries()]
+                    .filter(([, { dueAt }]) => dueAt <= target)
+                    .sort(([, left], [, right]) => left.dueAt - right.dueAt)[0];
 
                 if (!next) {
                     now = target;
@@ -163,9 +163,10 @@ function createFakeScheduler() {
                     return;
                 }
 
-                scheduled.splice(scheduled.indexOf(next), 1);
-                now = next.dueAt;
-                next.callback();
+                const [handle, scheduledTimer] = next;
+                scheduled.delete(handle);
+                now = scheduledTimer.dueAt;
+                scheduledTimer.callback();
             }
         },
     };

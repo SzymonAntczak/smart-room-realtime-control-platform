@@ -172,6 +172,19 @@ function createControllableNativeSensor(): {
             tick(recordedAt) {
                 return createReading({ recordedAt });
             },
+            onAvailability() {
+                return () => false;
+            },
+            onHealth() {
+                return () => false;
+            },
+            reportAvailability() {
+                throw new Error('Availability reports are outside this adapter test seam.');
+            },
+            reportHealth() {
+                throw new Error('Health reports are outside this adapter test seam.');
+            },
+            reset() {},
         },
         emit(reading) {
             for (const listener of listeners) {

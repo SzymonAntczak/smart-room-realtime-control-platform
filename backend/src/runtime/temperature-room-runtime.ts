@@ -212,7 +212,7 @@ export function createTemperatureRoomRuntime({
 
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter = createAdapter(sensorEntry);
-                sensorEntry.sensor.reportAvailability?.(
+                sensorEntry.sensor.reportAvailability(
                     'online',
                     new Date(Date.parse(clock.now()) + 1).toISOString(),
                 );
@@ -346,13 +346,13 @@ export function createTemperatureRoomRuntime({
             } else if (action === 'reconnect_device') {
                 sensorEntry.sensor.reconnect(nextTransitionAt(deviceId, 'availabilityChangedAt'));
             } else if (action === 'degrade_device') {
-                sensorEntry.sensor.reportHealth?.(
+                sensorEntry.sensor.reportHealth(
                     'degraded',
                     'partial_data',
                     nextTransitionAt(deviceId, 'healthChangedAt'),
                 );
             } else if (action === 'recover_device') {
-                sensorEntry.sensor.reportHealth?.(
+                sensorEntry.sensor.reportHealth(
                     'healthy',
                     'recovered',
                     nextTransitionAt(deviceId, 'healthChangedAt'),
@@ -482,12 +482,10 @@ export function createTemperatureRoomRuntime({
         observedAt: string,
     ): void {
         const scenarioHandlers = {
-            pause_telemetry(observedAt: string) {
+            pause_telemetry() {
                 sensorEntry.runtime?.stop();
-                sensorEntry.sensor.pauseTelemetry(observedAt);
             },
-            resume_telemetry(observedAt: string) {
-                sensorEntry.sensor.resumeTelemetry(observedAt);
+            resume_telemetry() {
                 sensorEntry.runtime?.start();
             },
             replay_last_reading() {

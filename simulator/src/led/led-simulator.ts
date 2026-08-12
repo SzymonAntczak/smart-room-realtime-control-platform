@@ -1,3 +1,5 @@
+import { assertValidDeviceNativeTimestamp } from '../device-native-timestamp';
+
 export type LedPower = 'on' | 'off';
 
 export interface LedSetPowerCommand {
@@ -217,9 +219,7 @@ function assertNonEmpty(value: string, label: string): void {
 }
 
 function assertTimestamp(timestamp: string, label: string): void {
-    if (!Number.isFinite(Date.parse(timestamp))) {
-        throw new TypeError(`${label} must be a valid timestamp string.`);
-    }
+    assertValidDeviceNativeTimestamp(timestamp, label);
 }
 
 function emit<Message>(listeners: ReadonlySet<(message: Message) => void>, message: Message): void {
