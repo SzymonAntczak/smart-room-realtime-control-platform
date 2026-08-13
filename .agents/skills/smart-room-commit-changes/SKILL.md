@@ -31,14 +31,22 @@ Use this skill to turn finished work into one or more clean Git commits.
     - group closely related changes into one commit
     - split unrelated changes into separate commits only when the user wants that
     - leave unrelated user changes unstaged
-3. Verify when practical:
+3. Check README impact before staging:
+    - inspect README files in changed directories and relevant parent documentation
+      indexes when changed files affect their structure, scripts, configuration,
+      endpoints or navigation
+    - update affected README files when they no longer describe the committed
+      behavior, and verify their relative Markdown links
+    - record whether README files were updated, checked without changes, or were
+      not relevant to the commit scope
+4. Verify when practical:
     - run the narrowest relevant test, lint, typecheck, or documentation check
     - if no command exists, say that explicitly in the final summary
-4. Stage only intended files.
-5. Re-check staged diff before committing.
-6. Write a concise imperative commit message.
-7. Run `git commit -m "<message>"`.
-8. Report commit hash, commit message, files included, and verification.
+5. Stage only intended files.
+6. Re-check staged diff before committing.
+7. Write a concise imperative commit message.
+8. Run `git commit -m "<message>"`.
+9. Report commit hash, commit message, files included, and verification.
 
 ## Commit Message Style
 
@@ -73,5 +81,6 @@ After committing, include:
 - commit hash
 - commit subject
 - staged/committed files
+- README impact check and any README updates
 - verification performed or why none was run
 - any remaining uncommitted changes

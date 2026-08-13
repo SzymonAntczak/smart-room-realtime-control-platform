@@ -24,16 +24,18 @@ read-only evidence when useful.
    frontend, simulator and AI-configuration research.
 7. Inspect the touched files and nearby ownership boundary.
 8. Inspect the relevant tests with the same behavior boundary in mind.
-9. Compare test intent against documented behavior, changed behavior and
+9. Inspect changed and nearby code for AI-generation artifacts that create a
+   concrete correctness, testability, boundary or maintenance risk.
+10. Compare test intent against documented behavior, changed behavior and
    realistic failure modes.
-10. Synthesize delegated evidence, resolve duplicate findings and classify
+11. Synthesize delegated evidence, resolve duplicate findings and classify
     findings when useful: code drift, doc drift, structure drift,
     contract drift, projection drift, test gap, weak test, redundant test,
-    decision gap, or AI-config drift.
-11. Lead with concrete findings ordered by severity.
-12. Cite files and lines when possible.
-13. Include open questions or assumptions when they affect confidence.
-14. End with a short suggested-actions section when there are findings.
+    decision gap, AI-config drift, or AI artifact.
+12. Lead with concrete findings ordered by severity.
+13. Cite files and lines when possible.
+14. Include open questions or assumptions when they affect confidence.
+15. End with a short suggested-actions section when there are findings.
 
 ## Delegated Evidence
 
@@ -51,5 +53,14 @@ plan.
   risk.
 - Report decision gaps when behavior appears durable but has not been promoted
   to architecture docs or an ADR.
+- Report AI artifacts only when supported by concrete evidence and a meaningful
+  risk. Inspect for debug logging, dead commented code, stale placeholders or
+  stubs, unused generated files, and comments that contradict the code.
+- Also inspect for generated-code patterns such as redundant abstractions,
+  artificial indirection, needless duplication or inconsistent local patterns
+  when they make correctness, testing, module boundaries or maintenance worse.
+- Do not report a TODO, FIXME, placeholder marker or stylistic preference by
+  itself; explain the concrete risk and classify substantiated findings as
+  `AI artifact`.
 - Do not treat planning-only ideas as drift.
 - Do not turn a review into implementation planning unless the user asks.
