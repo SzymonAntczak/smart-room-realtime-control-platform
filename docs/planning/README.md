@@ -28,4 +28,5 @@ system rule, move it or restate it in the architecture or decision documents.
 - [Smart Room roadmap](roadmap.md)
 - [Required hardware](hardware.md)
 - [Temperature reliability slice checklist](temperature-reliability-slice.md)
+- [LED command reference slice checklist](led-command-reference-slice.md)
 - [Working backlog](backlog.md)

@@ -11,12 +11,14 @@ the backend; one shared sidebar swaps temperature or LED content for the card
 that opened it.
 
 `VITE_BFF_URL` configures the shared HTTP origin for development scenarios and
-diagnostics. `VITE_ROOM_REALTIME_URL` independently configures the SSE endpoint.
+diagnostics. `VITE_ROOM_REALTIME_URL` independently configures the SSE endpoint,
+and `VITE_ROOM_COMMAND_URL` configures the LED command endpoint. Each has a
+localhost default for the local BFF.
 
 ## Source Of Truth
 
 - Frontend working rules: [AGENTS.md](AGENTS.md)
-- Shared platform contracts: [../shared/src/contracts.ts](../shared/src/contracts.ts)
+- Shared platform contracts: [../shared/src](../shared/src)
 - Architecture model: [../docs/architecture](../docs/architecture)
 - Accepted decisions: [../docs/decisions](../docs/decisions)
 
@@ -44,9 +46,12 @@ npm run lint
 npm run typecheck
 npm test
 npm run format
+npm run build
 ```
 
 Use `npm run format:write` only when intentionally updating formatting.
+Use `npm run verify:production-bundle` when a change could affect which modules
+reach the production bundle, especially the development-only UI.
 
 Run the deterministic browser-integration suite from the repository root,
 not from `frontend/`:

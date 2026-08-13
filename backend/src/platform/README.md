@@ -10,6 +10,8 @@ control model rather than to one external source.
 - `read-model/` owns backend projections derived from accepted platform events.
   The realtime API/BFF reads these projections instead of interpreting raw
   device-native messages.
+- `command-processing/` owns platform command admission and dispatch rules
+  before a source-specific adapter receives a command.
 - `ports/` contains small interfaces shared by adapters and platform modules,
   such as event sinks and ID generators.
 

@@ -12,8 +12,9 @@ fact remains deduplicable without an adapter-local replay cache.
 
 ## Contents
 
-- `simulator/` contains adapters for simulator-native messages.
+- `simulator/` contains temperature and LED adapters for simulator-native
+  messages.
 
-The current simulator temperature adapter is the first read-path translation
-example. Detailed adapter rules live in `backend/AGENTS.md` and the architecture
-docs.
+The simulator adapters provide the current read-path and command/confirmation
+translation examples. Detailed adapter rules live in `backend/AGENTS.md` and
+the architecture docs.

@@ -39,5 +39,10 @@ The in-memory event deduplicator can be configured at server startup with
 `DEDUPLICATION_ENTRY_LIMIT` (default `1000`). Both values must be positive safe
 integers; an invalid value prevents the server from starting.
 
+`npm run dev` from the repository root enables development-only device scenario
+endpoints automatically. When starting the backend directly, set
+`ENABLE_DEV_SCENARIOS=true` to expose those endpoints; leave it unset for the
+normal backend runtime.
+
 Use the repository architecture docs and accepted ADRs as the source of truth
 for event, command, device and reliability behavior.
