@@ -70,6 +70,12 @@ report whose observation time is not newer than the projected capability
 timestamp remains visible in history but cannot regress reported state or
 advance freshness.
 
+Under the Stage 4 persistence model, normal startup restores
+`lastObservedAt` and reevaluates every configured freshness policy against the
+injected startup clock before exposing the first room snapshot. Downtime can
+therefore change a restored observation from `fresh` to `stale`; that change is
+projection-only and preserves the durability of the underlying evidence.
+
 ## Command States
 
 | State        | Meaning                                                                                          |
@@ -81,6 +87,34 @@ advance freshness.
 | `confirmed`  | Device state matches the command, or the device type allows trusted acknowledgement.             |
 | `failed`     | Device or backend explicitly rejected the command.                                               |
 | `timed_out`  | No confirmation arrived within the allowed time.                                                 |
+
+The Stage 4 contract adds command durability independently of these
+lifecycle states. With platform storage `available`, `accepted` means the
+request and durable outbox intent committed before dispatch. With storage
+`degraded`, an accepted command is marked `volatile`, is dispatched directly,
+is never automatically retried and may disappear on process restart. The API,
+command projection and Dashboard must not present a volatile command as
+durable. Storage `recovering` temporarily blocks new commands.
+
+The proposed command projection uses `durability` for the request/intent and
+`lifecycleDurability` for its current lifecycle state. They can differ after an
+adapter handoff whose dispatch transition could not be persisted. Availability,
+health and each entry in `observationStatus` likewise carry their own evidence
+durability instead of one device-wide flag.
+
+Schema-valid accepted and rejected command outcomes expose both axes; malformed
+transport, unknown-device and `platform_recovering` pre-admission errors have no
+command outcome and therefore no command ID or durability. For a known device,
+an admitted policy or concurrency rejection creates a terminal command failure.
+Bootstrap `unknown` device evidence follows the containing projection's durability, while
+time-derived freshness changes preserve the durability of the last observation.
+
+The Stage 4 pending and terminal command shapes carry discriminated
+delivery evidence. `handed_off` has `dispatchedAt` and `deadlineAt`; `uncertain`
+has `firstAttemptedAt` and `deadlineAt` and must not invent `dispatchedAt`. A
+later definite handoff changes the evidence variant but keeps the original
+deadline established by the first uncertain attempt. `recentCommands` preserves
+the same variant so the UI can explain how the lifecycle was timed.
 
 ## State Fields
 
@@ -209,6 +243,34 @@ subsequent transition follows the strictly-later ordering rule above.
 An availability change blocks only new commands. An existing `accepted` or
 `pending` command remains active until the adapter emits `command.failed` or the
 normal timeout expires; the availability change must not silently rewrite it.
+
+Platform storage availability is also independent of device availability,
+health and observation freshness. A database outage does not make a device
+offline and does not stale a fresh observation. In the Stage 4 model,
+it changes top-level platform status and the durability of new work. An active
+durable command blocks a new volatile command for the same device; recovery
+waits for any conflicting active volatile command to become terminal before it
+resumes durable outbox work.
+
+The Stage 4 checkpoint includes active commands, the newest 20 terminal
+`recentCommands` and the bounded `recentEvents` projection cache. A checkpointed
+active volatile command is never redispatched after restart; before the first
+snapshot it becomes `failed` with reason `volatile_command_lost_on_restart`.
+Restored volatile feed cache entries remain volatile and do not become durable
+HTTP history.
+
+Checkpoint persistence likewise does not promote volatile device evidence or
+command intent/lifecycle markers. Only a later durable fact that establishes a
+specific dimension changes that dimension's durability.
+
+The last 20 `recentCommands` are a projection cache independent of 30-day fact
+retention. An old terminal command remains until newer terminal commands evict
+it; its timestamp keeps that age explicit.
+
+A later durable observation that exactly matches a volatile dimension's value
+and timestamp may upgrade only its evidence durability. It does not create feed
+noise when the report otherwise changes no state. Older or conflicting evidence
+cannot perform that upgrade.
 
 Initial command policies:
 

@@ -1,7 +1,10 @@
 # System Context
 
-The system context below describes the target backend-backed shape of the Smart
-Room platform.
+The first context diagram describes the pre-persistence backend-backed shape of
+the Smart Room platform, including later MQTT sources. Its in-memory storage is
+the current architectural baseline, not the accepted Stage 4 storage target.
+
+## Pre-Stage 4 Logical Context
 
 ```mermaid
 flowchart LR
@@ -66,6 +69,61 @@ flowchart LR
     processor -->|platform commands| standaloneAdapter
 ```
 
+## Stage 4 Storage Context
+
+```mermaid
+flowchart LR
+    source["Simulator or future source<br/>idempotent commandId"]
+    sourceReceipts["Simulator-owned receipt port<br/>durable outbox commands only"]
+    adapter["Backend adapter"]
+    coordinator["Serialized processor coordinator<br/>prepare, commit and recovery cutover"]
+    memory[("Current in-memory projection<br/>durable and volatile evidence")]
+    storagePort["Replaceable storage port"]
+    sqlite[("Backend SQLite<br/>history generation, facts, telemetry,<br/>checkpoint, deduplication and outbox")]
+    outbox["At-least-once outbox worker"]
+    bff["HTTP history and one SSE BFF"]
+    dashboard["Dashboard"]
+
+    source -->|native facts| adapter
+    source <--> sourceReceipts
+    sourceReceipts --> sqlite
+    adapter -->|platform events| coordinator
+    coordinator -->|available commit| storagePort
+    storagePort --> sqlite
+    sqlite -->|committed outcome| coordinator
+    coordinator --> memory
+    memory --> bff
+    bff --> dashboard
+
+    sqlite --> outbox
+    outbox -->|stable commandId| adapter
+    adapter -->|native command| source
+    storagePort -.->|availability failure| volatile["Volatile in-memory path<br/>platform.updated degraded"]
+    volatile --> memory
+    volatile --> probe["Five-second write-capability probe"]
+    probe --> cutover["Recovering cutover<br/>first schema when needed,<br/>checkpoint and storage.gap.recorded"]
+    cutover --> storagePort
+
+    dashboard -->|generation-pinned cursor pages| bff
+    bff -->|durable reads| storagePort
+```
+
+This diagram is the accepted Stage 4 target. It adds SQLite without making it
+the source of current device truth:
+the in-memory projection continues during availability failures and declares
+volatile evidence explicitly. Automatic outbox retry requires source-owned
+idempotency for the stable `commandId`, backed by a durable source receipt that
+survives restart of the simulator or later source. Stage 4 injects a
+simulator-owned receipt port whose in-process implementation uses a logically
+separate table through the shared SQLite connection owner. A receipt failure
+maps to definite no-handoff only when non-acceptance is known; inability to
+inspect a possible prior acceptance remains uncertain, while an indeterminate
+current commit is fatal. Its SQLite error follows the platform storage taxonomy.
+Volatile commands bypass durable receipts, use only
+process-local source idempotency and are never automatically retried. Future
+out-of-process sources must persist equivalent receipts on their side of the
+transport.
+
 Once MQTT is introduced, Mosquitto is between every simulator or device runtime
 source and its backend adapter. The MQTT simulator, ESP32/ESPHome and standalone
 MQTT devices are allowed to have different native topics and payloads; each
@@ -129,7 +187,38 @@ development runtime can explain rejected duplicate or invalid events. The
 diagnostics response is bounded in-memory, newest-first and metadata-only; it is
 not event history or durable quarantine storage. Command handling and command
 projections are implemented for the LED reference slice; persistence and
-quarantine storage remain future slices.
+quarantine storage remain future slices. The accepted Stage 4 storage ADR
+defines diagnostics as a technical API and structured-log surface rather than
+a required Dashboard feature; it does not change the current runtime until it
+is accepted and implemented.
+
+For the Stage 4 target, the same SSE connection keeps its snapshot
+baseline and revision-linked deltas. The snapshot contains the bounded recent
+event feed and `platform.storage`, which solely owns the durable history
+generation and watermark. Existing
+projection deltas may include multiple related feed records or one telemetry
+sample. `platform.updated` reports `available`, `degraded` or `recovering`
+without requiring a device change, carries watermark-only durable progress and
+may deliver `storage.gap.recorded`. Older
+facts and telemetry are loaded through explicit HTTP reads and merged with every
+buffered SSE-delivered addition by `recordId` and a pinned history generation
+and watermark. The HTTP session is complete through that bound; non-feed facts committed above it
+appear after an explicit refetch. Retired rows remain available to an existing
+cursor for its fixed five-minute lifetime. It does not create a second history
+stream or replay missed data. The client retains its last known generation
+while degraded storage reports `null`; a different later non-null generation in
+a snapshot or `platform.updated` resets the old HTTP pages and overlay.
+
+SQLite is a durable history and recovery dependency in that proposed model, not
+a prerequisite for current device truth. During a storage outage, projections,
+freshness and commands continue in memory as explicitly volatile data; durable
+HTTP reads are unavailable and the Dashboard keeps the storage problem visible.
+Recovery checkpoints current state and records the missing interval rather than
+claiming that outage observations were backfilled. A serialized cutover assigns
+every queued input to either the volatile checkpoint or later durable
+processing. When the restored projection differs, a full `commands.updated`
+reconciliation reaches existing clients before the gap-bearing
+`platform.updated(available)`; new clients receive the final snapshot directly.
 
 ## Development Scenario Controls
 

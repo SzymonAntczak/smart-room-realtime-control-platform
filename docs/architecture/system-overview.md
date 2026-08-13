@@ -136,6 +136,19 @@ Expected responsibilities:
   frontend to interpret raw events
 - remain rebuildable from accepted events when the storage slice supports that
 
+The Stage 4 storage decision keeps a latest persisted projection for
+restart recovery rather than requiring full event sourcing. It separates
+significant facts, raw telemetry and quarantined inputs. It also separates a
+non-mutating processor prepare step from durable or volatile runtime commit.
+SQLite failure changes top-level platform storage status to `degraded`; live
+device projections continue in memory with explicit volatility. Implementation
+remains implementation work for this accepted ADR.
+
+Each valid backend database owns a stable `historyGenerationId`. Storage
+sequences and HTTP cursors are scoped to that generation, so explicit
+replacement of a corrupt database cannot make an old cursor refer to unrelated
+rows after sequences restart.
+
 ### Realtime Frontend
 
 Displays the current room state.
@@ -148,27 +161,38 @@ Expected responsibilities:
 - show pending, failed and timed-out commands
 - surface availability, degraded health and applicable stale observations clearly
 - defer event-history troubleshooting views to a dedicated history slice
+- show Stage 4 `degraded` or `recovering` storage status persistently
+  and distinguish volatile observations and commands from durable ones
 
-### Telemetry Storage
+### Stage 4 Telemetry Storage
 
 Stores events and derived telemetry used for history, debugging and trend analysis.
 
-This is a logical storage responsibility for a backend-backed slice.
+This is the logical storage responsibility for a backend-backed Stage 4 slice.
+It defines the accepted target behavior while implementation remains pending.
 
 Expected responsibilities:
 
-- store accepted raw events as the audit trail
+- store accepted significant facts as the audit trail and raw telemetry in a
+  separate query path
 - store quarantined invalid events separately for debugging
 - store derived state snapshots or projections for faster reads
-- make command history auditable
+- make command history and durable dispatch intents auditable
 
-Raw events explain what happened. Derived projections explain what the system
-currently believes. The first implementation does not need full event sourcing,
-but it should keep enough event history to audit commands and debug state
-changes.
+Significant facts explain what happened, raw telemetry supports detailed
+inspection, and derived projections explain what the system currently believes.
+The first implementation does not need full event sourcing, but it should keep
+enough history to audit commands and debug state changes.
 
 A later local storage slice should preserve recent accepted events and derived
 state long enough for the realtime UI and local demo to explain what happened.
+The Stage 4 model uses explicit HTTP history reads for telemetry and
+recent facts, while SSE remains the snapshot-baseline and live-update channel.
+Diagnostics are a technical API and structured-log surface, not a required
+Dashboard feature. Durable HTTP reads return service unavailable while storage
+is degraded; current realtime state continues over SSE. Recovery writes a
+current-state checkpoint and `storage.gap.recorded` rather than backfilling
+volatile observations.
 
 ### Realtime API / BFF Boundary
 
@@ -201,6 +225,32 @@ snapshot when a delta is malformed or has a revision gap.
 Unsupported message types and malformed payloads are not renderable frontend
 state. Accepted events and projection changes to availability, health or freshness reach
 connected clients through `device.updated`.
+
+The Stage 4 contract extends this one SSE connection rather than
+adding a history stream: the snapshot gains a bounded 20-entry `recentEvents`
+feed and `platform.storage`, which solely owns the durable-history generation
+and watermark.
+Existing projection deltas may carry multiple related live feed records or one
+telemetry sample at the same revision. `platform.updated` carries storage status
+and may carry `storage.gap.recorded`. It also follows a durable outcome as a
+watermark-only next revision so `platform.storage` remains current. Command projections distinguish intent
+durability from lifecycle durability; availability, health and capability
+observations carry their own evidence durability.
+When recovery restores projection data that a connected degraded client lacks,
+one full `commands.updated` reconciliation revision installs devices, commands
+and the bounded non-gap feed cache before the next gap-bearing
+`platform.updated(available)` revision.
+It remains a target contract until the shared schemas and BFF are implemented.
+Older facts and telemetry ranges remain explicit HTTP reads; the client merges
+them with every buffered SSE-delivered record by stable `recordId` and a pinned
+history generation and storage watermark. That HTTP session is complete through its bound. Non-feed
+facts committed above it require an explicit refetch because SSE intentionally
+does not turn them into feed entries. Retention tombstones preserve that pinned
+view for the cursor's fixed five-minute lifetime; an expired cursor begins a new
+session. A changed history generation invalidates the previous pages, cursor
+and overlay instead of merging unrelated databases. The client retains the last
+known generation through a temporarily unknown degraded state and compares it
+with a later snapshot or `platform.updated`. SSE has no replay semantics.
 
 ### Device Adapters
 

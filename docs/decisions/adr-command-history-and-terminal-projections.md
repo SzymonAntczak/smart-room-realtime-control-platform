@@ -41,6 +41,29 @@ history, but leaves a timed-out command terminal.
 
 It does not introduce persistence, a command endpoint or a command runtime.
 
+### Stage 4 amendment
+
+The Stage 4 checkpoint persists the newest 20 terminal
+`recentCommands` together with active command projections. It preserves command
+intent durability and current lifecycle durability independently. A volatile
+command active in a committed checkpoint is never redispatched after restart;
+before the first snapshot it becomes terminal `failed` with reason
+`volatile_command_lost_on_restart`.
+
+Stage 4 also replaces the assumption that every `pending` or terminal command
+has `dispatchedAt`. Delivery evidence is discriminated: definite handoff carries
+`dispatchedAt` and `deadlineAt`, while uncertain handoff carries
+`firstAttemptedAt` and the fixed `deadlineAt` without claiming dispatch. A
+matching report may confirm either still-active pending variant under the
+command-correlation rules, and the chosen evidence remains on its terminal
+projection.
+
+The durable order is descending by the applicable terminal timestamp and then
+descending lexicographically by `commandId`. Live insertion, checkpoint
+selection and restoration apply the same 20-entry order.
+
+This amendment is accepted with the Stage 4 storage ADR.
+
 ## Consequences
 
 The frontend receives a UI-oriented command history with the context needed to
@@ -56,6 +79,9 @@ storage decision must define retention and rebuilding semantics.
 - BFF and frontend boundary tests reject malformed snapshots.
 - Command-slice tests cover confirmation, explicit failure, timeout and late
   reports without moving a terminal command back to active state.
+- Stage 4 tests additionally cover checkpoint restoration of the
+  deterministic 20-entry bound, both delivery-evidence variants and
+  failure-without-redispatch for an active volatile command.
 
 ## Links
 

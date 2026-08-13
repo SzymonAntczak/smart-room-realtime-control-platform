@@ -37,6 +37,14 @@ The platform is event-driven, but the user experience is command-driven. The use
 7. The frontend receives the updated state in realtime.
 8. The event is stored for history and debugging.
 
+The Stage 4 processor separates non-mutating preparation from runtime
+commit. With storage `available`, the durable record, deduplication state and
+candidate projection commit atomically before SSE publication. If that write
+fails, the platform changes to `degraded`, applies the prepared observation in
+memory and publishes it as `volatile`. Realtime device truth therefore
+continues, while durable history exposes an explicit gap instead of pretending
+the observation was stored.
+
 ## Command Path
 
 1. The user sends a command from the frontend.
@@ -53,6 +61,46 @@ The platform is event-driven, but the user experience is command-driven. The use
 9. The event processor updates the backend read model/projections when a
    matching confirmation arrives.
 10. The realtime API/BFF streams the updated projection to the UI.
+
+In the Stage 4 available path, acceptance also persists a durable
+outbox intent before adapter dispatch. The at-least-once dispatch worker uses a
+stable `commandId`, and the receiving source must treat its retries as one
+logical command across its own restarts by persisting a source receipt before
+scheduling native behavior. The simulator owns that receipt through a
+simulator-local port. In Stage 4 the runtime implements that port with a
+logically separate table in the shared SQLite database without exposing backend
+storage internals to the simulator package. A confirmed failure before
+acceptance is definite no-handoff, while inability to inspect a possible prior
+acceptance remains uncertain; the SQLite error follows the same platform
+failure taxonomy. An indeterminate current receipt commit is fatal. After a definite handoff, the runtime atomically
+marks the intent delivered and persists `command.dispatched`; the timeout is
+based on actual handoff time. An uncertain handoff conservatively makes the
+command pending and starts the fixed timeout from its first attempt without
+claiming `command.dispatched`; single-flight retries run every 500 ms, stop at
+terminal lifecycle and never move that deadline. A definite no-handoff always
+fails without retry. In degraded
+operation, a newly accepted command is explicitly volatile: it bypasses the
+outbox and durable source receipts, uses only process-local source idempotency,
+is not retried automatically and may be lost on restart. Recovery
+temporarily blocks new commands and never overlaps volatile and durable work for
+one device.
+
+The command HTTP request completes after admission, not handoff. The first
+durable-outbox or volatile direct-dispatch attempt is an immediate subsequent
+serialized task, and its SSE lifecycle may race the HTTP response at the client.
+`commandId`, not transport arrival order, joins them.
+
+An existing durable outbox pauses dispatch attempts while storage is degraded or
+recovering, but its confirmation and timeout lifecycle continues in memory.
+Recovery closes terminal work without dispatch and retries only active work
+before its original deadline.
+
+The initial durable receipt contains the complete stable native outcome plan.
+If marking a due result terminal rolls back because shared storage became
+unavailable, the platform publishes degraded first and the source may still
+emit that pre-identified result as volatile. Recovery closes the receipt; a
+crash can only cause the same native identity to be emitted again. An
+indeterminate marker commit emits nothing and remains fatal.
 
 For the first implementation, a device can have only one active command
 (`accepted` or `pending`) at a time. A new command for a device with an active
@@ -97,6 +145,12 @@ the old command from `timed_out` to `confirmed`.
 The late report should remain visible in history so the system can explain that
 the device eventually reached the requested state after the command stopped
 waiting for confirmation.
+
+In the Stage 4 serialized coordinator, deadline matching uses the
+backend `receivedAt` captured before queueing. A report received strictly before
+`deadlineAt` may confirm even if recovery delays preparation; a report received
+at or after the deadline updates observed state only after timeout becomes
+terminal. Device `occurredAt` cannot extend the backend waiting window.
 
 ## Command History
 

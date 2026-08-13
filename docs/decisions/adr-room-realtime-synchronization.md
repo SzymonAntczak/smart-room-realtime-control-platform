@@ -42,6 +42,72 @@ revision. A malformed delta, an unknown device, or a revision gap preserves
 the last valid view and closes the connection; reconnect obtains a new
 snapshot baseline.
 
+### Stage 4 amendment
+
+The Stage 4 storage ADR preserves the current recovery model while
+adding these explicit Stage 4 extensions:
+
+- the snapshot adds a bounded recent-event feed and `platform.storage`, which
+  owns the durable-history generation and watermark;
+- `device.updated` may carry a telemetry sample even when its current device
+  projection is otherwise unchanged;
+- an existing projection delta may carry multiple related feed records or one
+  telemetry sample at the same revision, never both;
+- `platform.updated` reports `available`, `degraded` and `recovering` even when
+  no device changes and may carry related platform feed records such as
+  `storage.gap.recorded`;
+- every accepted durable outcome advances `storedThroughSequence`; after a
+  device or command delta, a watermark-only `platform.updated` follows at the
+  next revision, while an accepted non-applying fact needs only that platform
+  delta;
+- live projections and records explicitly distinguish durable from volatile
+  evidence.
+
+After a recovery commit, the existing full-collection `commands.updated`
+payload is also the atomic reconciliation carrier when restored devices,
+commands or non-gap feed-cache entries differ, even if no command fact caused
+that change. It is followed by `platform.updated(available)` with the watermark
+and `storage.gap.recorded`. A new connection reads the already installed final
+state in its revision-0 snapshot.
+
+Every multi-delta outcome is an ordered, non-interleaving publication batch.
+The producer installs final state before publication and queues the whole batch
+before processing another input; a concurrent new connection receives that
+final state as revision 0 and no partial batch.
+
+Older durable history uses explicit HTTP reads with a pinned storage-sequence
+watermark and `historyGenerationId`. Before the first request, the client creates a bounded live overlay
+for every SSE-delivered addition and retains it across all page requests. It
+merges by stable record identifier without replacing the overlay. The pinned HTTP session is
+complete through its bound; accepted non-feed facts committed later are not SSE
+additions and require an explicit refetch or new pagination session. An SSE
+revision is never an HTTP cursor. SSE does not replay history, and reconnect
+obtains a new baseline before refetching each open history range.
+
+The pinned retention view remains queryable for the cursor's fixed five-minute
+lifetime even when rows retire meanwhile. Later pages do not extend expiry; an
+expired cursor starts a new first-page session while retaining the overlay until
+that new baseline merges.
+
+The cursor also binds the canonical dataset, filters, time range, ordering and
+page size chosen for its first page. It cannot be reused for another device or
+reinterpreted under changed query parameters.
+
+It is server-issued and tamper-evident or backed by equivalent server-side
+state. Invalid or restart-invalidated cursors start a new pinned session while
+the bounded live overlay remains until the replacement baseline merges.
+
+A cursor is valid only within its captured history generation. The client keeps
+its last known non-null `historyGenerationId` while storage reports an unknown
+generation. A different later non-null ID in either `room.snapshot` or
+`platform.updated` invalidates old cursors, pages and overlay records; the same
+ID performs ordinary recovery and refetch. The client rebuilds a changed
+generation instead of comparing reset storage sequences or merging unrelated
+history.
+
+These rules define the Stage 4 contract. They promote this amendment and the
+related SSE ADR amendment together.
+
 The BFF and clients support one current realtime contract. They reject messages
 with removed history fields, retired contract fields or undocumented shapes before those
 messages reach renderable state.
@@ -93,7 +159,17 @@ versioning decision and its rollout plan are complete.
 ## Verification
 
 - A connection receives one full snapshot and later receives deltas only.
-- Snapshots and deltas contain current device values and health, not event history.
+- The current runtime's snapshots and deltas contain current device values and
+  health, not event history. The Stage 4 contract explicitly extends that
+  current behavior: its snapshot includes the bounded feed, platform status and
+  durable generation and watermark; existing deltas may carry related live records at the same
+  revision and `platform.updated` may carry a storage status change with related
+  platform facts such as `storage.gap.recorded`.
+- Stage 4 verification adds buffering of every SSE-delivered
+  addition across an HTTP read, pinned-generation/watermark merging by
+  `recordId`, explicit refetch for non-feed facts, watermark-only platform
+  deltas, retention-safe cursor expiry, storage recovery refetch and a rule that
+  never treats an SSE revision as a durable-history cursor.
 - Unchanged health evaluations produce no SSE message.
 - A revision gap preserves the latest valid UI and reconnects.
 - Retired or undocumented fields in snapshots and deltas are rejected before

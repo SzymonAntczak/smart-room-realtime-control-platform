@@ -77,6 +77,63 @@ The projection's bootstrap `unknown` timestamp is a baseline rather than a
 device fact. Its first availability or health fact may have the same timestamp;
 once evidence exists, equal or older transitions remain non-applying.
 
+The Stage 4 history model preserves accepted non-applying transitions
+as auditable significant facts with diagnostics metadata, but excludes them
+from its bounded recent-event feed. It also keeps raw telemetry outside that
+feed. The classification is defined in
+[ADR: Stage 4 Storage and Observability](../decisions/adr-stage-4-storage-and-observability.md)
+and does not alter the current runtime.
+
+That proposed processor has a non-mutating prepare result:
+`accepted_applied`, `accepted_non_applying`, `derived_projection` or
+`quarantined`. The runtime then
+commits the result durably or, while storage is degraded, in memory as
+`volatile`. One input may produce multiple history records, such as an LED state
+report plus a derived command confirmation. Derived command facts and
+`storage.gap.recorded` are history records created by the platform; they are not
+new input event envelopes.
+
+`derived_projection` is reserved initially for time-derived freshness changes.
+It persists or updates the read model and may publish `device.updated`, but
+creates no fact history, feed entry, accepted-event deduplication or durable
+watermark change. Command timeout remains a command lifecycle fact instead.
+
+The proposed serialized coordinator captures an internal ingress time and FIFO
+sequence before recovery queueing. Future-skew validation and quarantine time
+use that ingress time, so delayed preparation cannot change an input's validity.
+The internal sequence is neither a durable history sequence nor an SSE
+revision.
+
+The same ingress time decides command deadline eligibility. A matching state
+report confirms only when its captured `receivedAt` is strictly before the
+active command's `deadlineAt`; later dequeue during recovery does not make an
+early report late, and a device timestamp cannot make a late arrival timely.
+
+The proposed durable outbox may also derive
+`command.delivery_uncertain`. It records that an adapter attempt may have
+reached the source without falsely claiming `command.dispatched`. The command
+becomes `pending`, may be confirmed by matching observed state and uses the
+first attempt as its fixed timeout origin. Single-flight retry runs every 500 ms,
+cannot extend that deadline and stops as soon as confirmation, explicit failure
+or timeout makes the lifecycle terminal. A definite no-handoff instead always
+creates `command.failed` without retry.
+
+That automatic retry is enabled only for durable-outbox commands. The Stage 4
+simulator persists their idempotency receipts through its source-owned receipt
+port before acceptance. A confirmed failure before acceptance is definite
+no-handoff; an inability to inspect possible prior acceptance remains uncertain;
+an indeterminate current receipt commit is fatal. The in-process implementation
+uses a logically separate table in the shared SQLite database, so its storage
+error follows the same platform failure taxonomy without exposing backend
+storage internals to the simulator package. A volatile command uses
+process-local source idempotency only, is never automatically retried and does
+not require a durable receipt.
+
+In the proposed feed classification, a report after timeout is treated like any
+other state report: it enters the feed only when it changes `reportedState`.
+Lateness alone is not significant, and no late report can reopen or reconfirm a
+terminal command.
+
 ## Initial Event Types
 
 | Event type                    | Purpose                                                               |
@@ -198,6 +255,15 @@ global command timeout.
 The full transport, retention and simulator-scenario decision is documented in
 [ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
 
+The Stage 4 command boundary distinguishes pre-admission HTTP errors
+from admitted command rejection. Malformed input, an unknown device and
+`platform_recovering` create no command ID or lifecycle. Once a known-device
+attempt is admitted, policy or concurrency rejection creates an auditable
+`command.failed` fact; its response and any projection carry intent and
+lifecycle durability. A confirmed rollback of the initial durable
+request/outbox transaction first publishes degraded, then admits the same
+request as volatile and dispatches it without outbox retry.
+
 ## Command Request Example
 
 A command request captures the desired action. It is intent, not proof that the
@@ -239,7 +305,40 @@ It retains at most 1000 identifiers; when that limit is reached, it removes the
 oldest identifier and records a metadata-only deduplication eviction diagnostic.
 This bounds memory, but high event volume can shorten the effective retention
 window. The guarantee ends when the process restarts; durable deduplication is
-a future storage responsibility.
+a future storage responsibility. The Stage 4 storage model defines
+durable deduplication only while an accepted event identifier is retained; it
+does not yet change the current runtime behavior. See
+[ADR: Stage 4 Storage and Observability](../decisions/adr-stage-4-storage-and-observability.md).
+
+The Stage 4 retention order uses `(occurredAt, storageSequence)` for
+accepted history and telemetry. An accepted input identity remains durable
+while any significant-fact or telemetry record derived from that `eventId`
+remains retained, and is removed atomically with its last record. Consequently,
+a very late record that falls outside retention immediately may still be
+processed but has no durable deduplication guarantee afterward.
+
+During Stage 4 degraded operation, only bounded in-memory
+deduplication is available. Volatile observations are not backfilled after
+recovery. Instead, recovery persists a current-state checkpoint and one derived
+`storage.gap.recorded` fact for the outage interval.
+
+That checkpoint retains bounded volatile dedup guards with canonical input
+fingerprints over normalized validated semantic fields, excluding contract-
+ignored envelope extras. Identical replay while degraded is ignored; identical source
+redelivery after storage recovery performs one durable reconciliation and
+atomically promotes the guard. The same `eventId` with another fingerprint is
+quarantined as an identity conflict. No input is synthesized by recovery.
+
+If a source later redelivers an exact matching observation through the normal
+durable path, the processor may upgrade only the matching projection evidence
+from volatile to durable. That no-change durability update remains outside the
+feed; an existing bounded feed or telemetry entry with the same deterministic
+logical `recordId` is upgraded in place rather than appended. Older or
+conflicting evidence cannot upgrade it.
+
+The 20-entry recent-event feed is likewise a count-bounded projection cache, not
+a query over active history retention. A new feed candidate recomputes the
+greatest 20 by feed order; retiring a history row does not create an SSE removal.
 
 When a source can redeliver a native fact, its adapter must derive a globally
 unique platform `eventId` from the fact's stable source identity and configured

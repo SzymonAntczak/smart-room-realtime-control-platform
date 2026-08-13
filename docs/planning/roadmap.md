@@ -273,13 +273,14 @@ demonstrated on its own terms.
 Expected outcome:
 
 - the simulator-backed Dashboard shows bounded telemetry history, recent events
-  and diagnostics with enough time context to explain current observed state,
-  availability, health, freshness and command outcomes;
+  and storage durability with enough time context to explain current observed
+  state, availability, health, freshness and command outcomes;
 - the UI can distinguish normal values from stale observations, explicit
   availability changes, degraded health, pending commands and terminal command
   outcomes without requiring raw-event interpretation by the user;
-- diagnostics make duplicate, malformed, future-dated and otherwise ignored
-  events explainable without corrupting the current projection;
+- a technical diagnostics API and correlated JSON logs make duplicate,
+  malformed, future-dated and otherwise ignored events explainable without
+  turning quarantine metadata into a product feed or corrupting the projection;
 - repeatable simulator scenarios cover the important normal, failure and
   recovery paths for the supported environmental-sensor and on/off-output
   roles;
@@ -288,6 +289,10 @@ Expected outcome:
 
 Stage 4 establishes bounded telemetry and recent-event views. Stage 3.5 tests
 only the command-outcome history already exposed by the command slice.
+
+The accepted [Stage 4 Storage and Observability ADR](../decisions/adr-stage-4-storage-and-observability.md)
+defines the local persistence, diagnostics and history-transport model for this
+stage.
 
 Stage 4 is complete when the simulator route is a trustworthy platform
 reference: its state, telemetry, diagnostics and command outcomes can be
@@ -433,6 +438,10 @@ Expected outcome:
 
 Stage 8 is complete when all three runtime sources are useful together in one Dashboard
 and the user can explain their state, events, commands and failure causes.
+
+The later source-aware operational logs do not promote Stage 4 quarantine
+diagnostics into the recent-event product feed. They are a separate operational
+view whose exact access contract belongs to the source-parity stage.
 
 ## Stage 9 - Cross-Source Scenes and Packaging
 

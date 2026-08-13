@@ -47,6 +47,12 @@ reported state, availability, applicable freshness, command lifecycle, recent
 events and logs. A later scene must issue ordinary platform commands and must
 not bypass command lifecycle or history.
 
+The source-aware logs in that later Dashboard are an operational view. They do
+not turn Stage 4 quarantine diagnostics into recent-event product history;
+ignored input remains available through its technical diagnostics contract and
+correlated logs unless a later accepted decision explicitly changes that
+boundary.
+
 Because MQTT is the required transport, loss of the backend-to-broker
 connection sets `availability: offline` with reason `broker_unavailable` for
 devices available only through MQTT, and blocks their commands. This means the

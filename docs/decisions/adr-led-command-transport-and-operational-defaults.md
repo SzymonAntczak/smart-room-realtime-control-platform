@@ -75,6 +75,34 @@ rejects selection while that device has an `accepted` or `pending` command with
 never cancelled. The scenario selection itself is dev-only, ephemeral runtime
 configuration and is not included in room projections.
 
+### Stage 4 amendment
+
+The Stage 4 response extends accepted and rejected command outcomes
+with `durability` for the command intent and `lifecycleDurability` for the
+accepted or terminal-rejected admission outcome returned synchronously. It does
+not claim to be the later current projection; SSE remains authoritative after
+dispatch. Existing lifecycle meanings and HTTP status codes do
+not otherwise change. For a known device, policy and active-command rejection
+become admitted terminal `command.failed` outcomes. Malformed input, an unknown
+device and the new retryable `503 platform_recovering` response are explicitly
+pre-admission errors: they have no `commandId`, lifecycle or durability axes. A
+durable request whose adapter handoff could not be persisted may therefore be a
+durable intent with a volatile lifecycle.
+
+Stage 4 returns `202` after durable or volatile admission, before waiting for
+adapter handoff. The immediate dispatch task and its SSE lifecycle may be
+observed before or after the HTTP promise settles; clients correlate by
+`commandId` rather than arrival order.
+
+The Stage 3 rule "5000 ms from dispatch" becomes a fixed Stage 4 confirmation
+deadline over discriminated delivery evidence. A definite handoff anchors it at
+the adapter's actual `handedOffAt`; a first uncertain handoff anchors it at that
+attempt's `attemptedAt`, does not invent `dispatchedAt`, and later retry cannot
+move the deadline. Timeout remains 5000 ms in either case.
+
+The shared TypeBox response contract must implement this accepted amendment
+atomically with the BFF and frontend.
+
 ## Consequences
 
 - HTTP provides a simple request/response boundary for BFF acceptance while

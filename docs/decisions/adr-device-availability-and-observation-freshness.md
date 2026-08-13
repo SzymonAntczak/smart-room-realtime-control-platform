@@ -119,6 +119,24 @@ They bootstrap with `availability: unknown` and `health: unknown`; a
 controllable device therefore exposes `block` with `availability_unknown` until
 availability evidence is accepted.
 
+### Stage 4 amendment
+
+The Stage 4 storage decision adds an independent evidence
+`durability` discriminator to availability, health and every applicable
+`observationStatus` entry. A checkpoint may therefore restore a projection that
+mixes durable and volatile evidence without promoting outage facts into durable
+history. Bootstrap `unknown` is durable after an available startup transaction
+and volatile after degraded startup.
+
+Normal startup reevaluates every configured freshness policy against the
+injected startup clock and restored `lastObservedAt` before exposing the first
+room snapshot. Elapsed downtime may change `fresh` to `stale`, but this is a
+projection-only checkpoint update: it creates no accepted fact, feed record,
+deduplication identity, storage sequence or watermark advance and preserves the
+underlying observation evidence durability.
+
+This amendment is accepted with the Stage 4 storage ADR.
+
 An availability change affects only new command admission. An already accepted
 or pending command remains active until an explicit `command.failed` fact or its
 normal timeout. A later offline state must not silently rewrite that command's
@@ -151,6 +169,9 @@ superseded by this decision.
   while explicit availability evidence changes only `availability`; they cover
   bootstrap `unknown`, delayed transitions, equal timestamps and offline during
   an active command.
+- Stage 4 tests additionally prove independent evidence durability and
+  startup freshness reevaluation before the first snapshot without history or
+  watermark creation.
 - Simulator scenarios cover a sparse-but-online sensor, an explicit offline
   device with retained last observation, a degraded-but-online device, and
   recovery through explicit availability and health evidence.

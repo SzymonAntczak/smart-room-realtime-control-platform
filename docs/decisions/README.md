@@ -28,6 +28,7 @@ Keep current system behavior in [architecture](../architecture/). Promote a trad
 - [Device Availability, Health and Observation Freshness](adr-device-availability-and-observation-freshness.md)
 - [MQTT Source Parity Before Device Expansion](adr-mqtt-source-parity-before-device-expansion.md)
 - [Playwright for Frontend Integration Tests](adr-playwright-frontend-integration-tests.md)
+- [Stage 4 Storage and Observability](adr-stage-4-storage-and-observability.md)
 
 ## Superseded ADRs
 

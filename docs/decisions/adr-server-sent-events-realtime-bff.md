@@ -32,6 +32,33 @@ when the HTTP stream closes or errors.
 If an SSE write reports backpressure, the BFF closes that stream rather than
 buffering revision-linked deltas; the client reconnects for a fresh baseline.
 
+### Stage 4 amendment
+
+The Stage 4 storage decision retains this one SSE connection, revision
+continuity, backpressure closure and no-replay behavior. It extends the future
+validated message union with `platform.updated`, and permits existing device or
+command deltas to carry their related history records or telemetry sample.
+`platform.updated` carries the complete platform storage projection and may
+carry related platform history such as `storage.gap.recorded`. It never carries
+telemetry. The projection includes the current `historyGenerationId`; a changed
+non-null generation in a reconnect snapshot or later `platform.updated`
+invalidates client-side HTTP history state from the previous database. A null
+generation during degraded startup does not erase the client's last known ID.
+
+It also carries watermark-only changes. An accepted durable device or command
+outcome publishes its ordinary delta first and the updated storage watermark in
+the next contiguous `platform.updated`; an accepted non-applying durable fact
+needs only the platform delta.
+
+Recovery may first publish one full `commands.updated` reconciliation delta for
+restored device, command and non-gap feed-cache state, even when the command
+collections themselves are unchanged. The next `platform.updated` carries the
+available status, watermark and gap. This is the only non-command use of that
+existing full-projection payload and does not add a new SSE type.
+
+This amendment promotes the post-snapshot message list and the related message
+semantics together with the Stage 4 storage decision.
+
 ## Consequences
 
 The browser uses `EventSource` and the BFF no longer needs a WebSocket route for
