@@ -13,6 +13,14 @@ event path as normal readings; ignored duplicates and invalid payloads are
 available through diagnostics. The Stage 3 LED reference slice adds explicit
 HTTP command acceptance and realtime command lifecycle projections.
 
+## Local SQLite storage
+
+Stage 4 storage uses the Node `node:sqlite` API and requires Node `>=24.15 <25`.
+The future runtime composition resolves its local database to
+`data/smart-room.sqlite` by default. Set `SMART_ROOM_STORAGE_PATH` to use a
+different local path. The current runtime intentionally remains in-memory until
+the next Stage 4 persistence task wires the storage port into event processing.
+
 ## Structure
 
 - `src/platform/` contains stable backend platform behavior shared by all

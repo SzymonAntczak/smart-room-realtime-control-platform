@@ -48,3 +48,34 @@ export {
     type TemperatureRoomRuntime,
     type TemperatureRoomRuntimeConfig,
 } from './runtime/temperature-room-runtime';
+export {
+    defaultStorageDatabasePath,
+    readStorageRuntimeConfig,
+    type StorageRuntimeConfig,
+} from './runtime/storage-runtime-config';
+export {
+    createSqliteRoomStorage,
+    type SqliteRoomStorageConfig,
+} from './platform/storage/sqlite-room-storage';
+export {
+    type LatestRoomProjectionInput,
+    type QuarantineEntryInput,
+    type RoomStorage,
+    type SignificantFactInput,
+    type SimulatorCommandReceiptInput,
+    type StorageMetadata,
+    type StoredQuarantineEntry,
+    type StoredSignificantFact,
+    type StoredTelemetrySample,
+    type TelemetrySampleInput,
+} from './platform/storage/room-storage';
+export {
+    classifySqliteError,
+    StorageAvailabilityError,
+    StorageError,
+    StorageFatalError,
+    StorageInvariantError,
+    StorageManualInterventionError,
+    StorageMigrationError,
+    StorageSchemaError,
+} from './platform/storage/storage-errors';

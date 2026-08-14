@@ -2,6 +2,9 @@
     "name": "smart-room-realtime-control-platform",
     "private": true,
     "type": "module",
+    "engines": {
+        "node": ">=24.15 <25"
+    },
     "workspaces": [
         "backend",
         "frontend",
