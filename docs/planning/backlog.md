@@ -30,7 +30,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       and HTTP/SSE watermark merge. Promote the aligned amendments to every
       affected ADR together with this accepted decision.
 
-- [ ] Add a replaceable backend storage port and SQLite migrations.
+- [x] Add a replaceable backend storage port and SQLite migrations.
       Use local `node:sqlite`, a gitignored database file, WAL mode and
       schema-versioned deterministic migrations. Store significant facts, raw
       telemetry, quarantine, simulator command receipts and the latest room
