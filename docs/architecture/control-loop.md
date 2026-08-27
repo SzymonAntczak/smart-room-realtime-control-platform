@@ -32,10 +32,11 @@ The platform is event-driven, but the user experience is command-driven. The use
 2. A backend adapter translates the message into a platform event.
 3. The event processor validates the event.
 4. The processor applies deduplication and event-specific processing rules.
-5. Accepted events update the backend read model/projections.
-6. The realtime API/BFF reads the updated projections.
-7. The frontend receives the updated state in realtime.
-8. The event is stored for history and debugging.
+5. The runtime atomically persists the accepted fact or telemetry sample,
+   accepted identity, retention result and candidate projection checkpoint.
+6. After a confirmed commit, the runtime installs the projection in memory.
+7. The realtime API/BFF reads and publishes the updated projections.
+8. The frontend receives the updated state in realtime.
 
 The Stage 4 processor separates non-mutating preparation from runtime
 commit. With storage `available`, the durable record, deduplication state and

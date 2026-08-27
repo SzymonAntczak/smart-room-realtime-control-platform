@@ -185,6 +185,41 @@ describe('createSetPowerCommandController', () => {
         });
         expect(dispatchedCommands).toEqual([]);
     });
+
+    it('times out a restored command synchronously when its deadline has passed', () => {
+        const events: PlatformEvent[] = [];
+        let scheduledTimeouts = 0;
+        const controller = createSetPowerCommandController({
+            routes: [],
+            emitEvent(event) {
+                events.push(event);
+
+                return acceptedEvent();
+            },
+            createDispatchScope: immediateDispatchScope,
+            getRoomSnapshot: () => pendingLedSnapshot,
+            clock: { now: () => '2026-08-05T10:00:05Z' },
+            commandTimer: {
+                setTimeout() {
+                    scheduledTimeouts += 1;
+
+                    return 1;
+                },
+                clearTimeout() {},
+            },
+            generateEventId: () => 'evt-timeout-1',
+        });
+
+        controller.reschedulePendingCommands();
+
+        expect(events).toEqual([
+            expect.objectContaining({
+                eventType: 'command.timed_out',
+                commandId: 'cmd-led-pending',
+            }),
+        ]);
+        expect(scheduledTimeouts).toBe(0);
+    });
 });
 
 const availableLedSnapshot: RoomSnapshotProjection = {
@@ -197,15 +232,25 @@ const availableLedSnapshot: RoomSnapshotProjection = {
             role: 'led-output',
             availability: 'online',
             availabilityChangedAt: '2026-08-05T10:00:00Z',
+            availabilityDurability: 'durable',
             health: 'healthy',
             healthChangedAt: '2026-08-05T10:00:00Z',
+            healthDurability: 'durable',
             reportedState: { power: 'off' },
-            observationStatus: { power: { freshness: 'unknown' } },
+            observationStatus: { power: { freshness: 'unknown', durability: 'durable' } },
             commandAvailability: { policy: 'allow' },
         },
     ],
     activeCommands: [],
     recentCommands: [],
+    platform: {
+        storage: {
+            status: 'available',
+            changedAt: '2026-08-05T10:00:00Z',
+            historyGenerationId: 'generation-test',
+            storedThroughSequence: 0,
+        },
+    },
 };
 
 function availableLedSnapshotFor(deviceId: string): RoomSnapshotProjection {
@@ -214,6 +259,28 @@ function availableLedSnapshotFor(deviceId: string): RoomSnapshotProjection {
         devices: availableLedSnapshot.devices.map((device) => ({ ...device, deviceId })),
     };
 }
+
+const pendingLedSnapshot: RoomSnapshotProjection = {
+    ...availableLedSnapshot,
+    devices: availableLedSnapshot.devices.map((device) => ({
+        ...device,
+        activeCommandId: 'cmd-led-pending',
+    })),
+    activeCommands: [
+        {
+            commandId: 'cmd-led-pending',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-08-05T10:00:00Z',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
+            status: 'pending',
+            dispatchedAt: '2026-08-05T10:00:00Z',
+            deadlineAt: '2026-08-05T10:00:05Z',
+        },
+    ],
+};
 
 function createEventIdGenerator(): () => string {
     let index = 0;

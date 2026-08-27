@@ -50,6 +50,7 @@ export const ignoredEventReasons = [
     'device_metric_mismatch',
     'future_dated_report',
     'stale_device_transition',
+    'event_identity_conflict',
 ] as const;
 export type IgnoredEventReason = (typeof ignoredEventReasons)[number];
 export interface IgnoredEventDiagnostic {

@@ -745,8 +745,10 @@ function createRoomSnapshot({
                 role: 'temperature-sensor',
                 availability: 'online',
                 availabilityChangedAt: '2026-06-08T09:30:00Z',
+                availabilityDurability: 'durable',
                 health,
                 healthChangedAt: '2026-06-08T09:30:00Z',
+                healthDurability: 'durable',
                 ...(healthReason ? { healthReason } : {}),
                 reportedState: {
                     temperature,
@@ -757,12 +759,17 @@ function createRoomSnapshot({
                     reason: 'read_only_device',
                 },
                 observationStatus: {
-                    temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+                    temperature: {
+                        freshness: 'fresh',
+                        lastObservedAt: '2026-06-08T09:30:00Z',
+                        durability: 'durable',
+                    },
                 },
             },
         ],
         activeCommands: [],
         recentCommands: [],
+        platform: { storage: availableStorage() },
     };
 }
 
@@ -777,6 +784,8 @@ function createLedRoomSnapshot({
         commandType: 'set.power' as const,
         requestedState: { power: 'on' as const },
         requestedAt: '2026-06-08T09:30:00Z',
+        durability: 'durable' as const,
+        lifecycleDurability: 'durable' as const,
     };
 
     return {
@@ -789,12 +798,18 @@ function createLedRoomSnapshot({
                 role: 'led-output',
                 availability: 'online',
                 availabilityChangedAt: '2026-06-08T09:30:00Z',
+                availabilityDurability: 'durable',
                 health: 'healthy',
                 healthChangedAt: '2026-06-08T09:30:00Z',
+                healthDurability: 'durable',
                 reportedState: { power: status === 'confirmed' ? 'on' : 'off' },
                 commandAvailability: { policy: 'allow' },
                 observationStatus: {
-                    power: { freshness: 'unknown', lastObservedAt: '2026-06-08T09:30:00Z' },
+                    power: {
+                        freshness: 'unknown',
+                        lastObservedAt: '2026-06-08T09:30:00Z',
+                        durability: 'durable',
+                    },
                 },
                 ...(status === 'accepted' ? { activeCommandId: command.commandId } : {}),
             },
@@ -811,6 +826,7 @@ function createLedRoomSnapshot({
                       },
                   ]
                 : [],
+        platform: { storage: availableStorage() },
     };
 }
 
@@ -822,6 +838,8 @@ function createTwoLedRoomSnapshot(status: 'accepted' | 'confirmed'): RoomSnapsho
         commandType: 'set.power' as const,
         requestedState: { power: 'off' as const },
         requestedAt: '2026-06-08T09:29:58Z',
+        durability: 'durable' as const,
+        lifecycleDurability: 'durable' as const,
         dispatchedAt: '2026-06-08T09:29:59Z',
         confirmedAt: '2026-06-08T09:30:00Z',
         status: 'confirmed' as const,
@@ -839,14 +857,29 @@ function createTwoLedRoomSnapshot(status: 'accepted' | 'confirmed'): RoomSnapsho
                 availabilityChangedAt: '2026-06-08T09:30:00Z',
                 health: 'healthy',
                 healthChangedAt: '2026-06-08T09:30:00Z',
+                availabilityDurability: 'durable',
+                healthDurability: 'durable',
                 reportedState: { power: 'off' },
                 commandAvailability: { policy: 'allow' },
                 observationStatus: {
-                    power: { freshness: 'unknown', lastObservedAt: '2026-06-08T09:30:00Z' },
+                    power: {
+                        freshness: 'unknown',
+                        lastObservedAt: '2026-06-08T09:30:00Z',
+                        durability: 'durable',
+                    },
                 },
             },
         ],
         recentCommands: [...snapshot.recentCommands, sideCommand],
+    };
+}
+
+function availableStorage() {
+    return {
+        status: 'available' as const,
+        changedAt: '2026-06-08T09:30:00Z',
+        historyGenerationId: 'generation-test',
+        storedThroughSequence: 0,
     };
 }
 

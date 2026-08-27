@@ -17,7 +17,12 @@ describe('command lifecycle event processing', () => {
         processor.processEvent(dispatched('cmd-1', '2026-08-05T10:00:02Z'));
 
         const matchingReport = report('on', '2026-08-05T10:00:03Z');
-        const result = processor.processEvent(matchingReport);
+        const prepared = processor.prepareEvent(
+            matchingReport,
+            { receivedAt: '2026-08-05T10:00:03Z', ingestSequence: 1 },
+            'available',
+        );
+        const result = processor.commitPrepared(prepared);
         const duplicateReport = processor.processEvent(matchingReport);
 
         expect(result).toEqual(
@@ -31,6 +36,14 @@ describe('command lifecycle event processing', () => {
                 }),
             }),
         );
+        expect(prepared.records).toEqual([
+            expect.objectContaining({ kind: 'input_significant_fact' }),
+            expect.objectContaining({
+                kind: 'derived_command_confirmed',
+                commandId: 'cmd-1',
+                eventId: matchingReport.eventId,
+            }),
+        ]);
         expect(duplicateReport).toEqual(
             expect.objectContaining({ status: 'ignored', reason: 'duplicate_event' }),
         );

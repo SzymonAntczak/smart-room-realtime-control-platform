@@ -1,4 +1,4 @@
 interface:
     display_name: 'Smart Room Implementation Planning'
-    short_description: 'Interactive evidence-based Smart Room planning'
-    default_prompt: 'Use $smart-room-implementation-planning to plan this Smart Room change interactively.'
+    short_description: 'Plan Smart Room changes with AC, DoD, and Goal handoff'
+    default_prompt: 'Use $smart-room-implementation-planning to prepare an evidence-based Smart Room plan with a Goal-ready handoff.'

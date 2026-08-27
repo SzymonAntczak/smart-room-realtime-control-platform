@@ -241,6 +241,36 @@ describe('connectTemperatureRealtime', () => {
         );
     });
 
+    it('applies a contiguous platform storage delta without changing the room devices', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage({
+            messageType: 'platform.updated',
+            previousRevision: 0,
+            revision: 1,
+            sentAt: '2026-06-08T09:30:02Z',
+            payload: {
+                storage: {
+                    status: 'degraded',
+                    changedAt: '2026-06-08T09:30:02Z',
+                    reason: 'storage_write_failed',
+                    historyGenerationId: null,
+                    storedThroughSequence: null,
+                },
+            },
+        } satisfies RoomRealtimeServerMessage);
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                platform: expect.objectContaining({
+                    storage: expect.objectContaining({ status: 'degraded' }),
+                }),
+                devices: [expect.objectContaining({ deviceId: 'temp-desk' })],
+            }),
+        );
+    });
+
     it('rejects a schema-valid device delta that breaks active command references', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
@@ -558,7 +588,7 @@ function createInvalidRenderableDevices(): readonly {
             label: 'a temperature reading without a timestamp',
             device: {
                 ...createTemperatureDevice(),
-                observationStatus: { temperature: { freshness: 'unknown' } },
+                observationStatus: { temperature: { freshness: 'unknown', durability: 'durable' } },
             },
         },
         {
@@ -591,6 +621,14 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands,
             recentCommands,
+            platform: {
+                storage: {
+                    status: 'available',
+                    changedAt: '2026-06-08T09:30:00Z',
+                    historyGenerationId: 'generation-test',
+                    storedThroughSequence: 0,
+                },
+            },
         },
     };
 }
@@ -632,8 +670,10 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
         role: 'temperature-sensor',
         availability: 'online',
         availabilityChangedAt: '2026-06-08T09:30:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-06-08T09:30:00Z',
+        healthDurability: 'durable',
         reportedState: {
             temperature: 22.4,
             temperatureUnit: 'celsius',
@@ -643,7 +683,11 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
             reason: 'read_only_device',
         },
         observationStatus: {
-            temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+            temperature: {
+                freshness: 'fresh',
+                lastObservedAt: '2026-06-08T09:30:00Z',
+                durability: 'durable',
+            },
         },
     };
 }
@@ -655,12 +699,18 @@ function createLedDevice(activeCommandId?: string): RoomSnapshotProjection['devi
         role: 'led-output',
         availability: 'online',
         availabilityChangedAt: '2026-06-08T09:30:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-06-08T09:30:00Z',
+        healthDurability: 'durable',
         reportedState: { power: 'off' },
         commandAvailability: { policy: 'allow' },
         observationStatus: {
-            power: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+            power: {
+                freshness: 'fresh',
+                lastObservedAt: '2026-06-08T09:30:00Z',
+                durability: 'durable',
+            },
         },
         ...(activeCommandId ? { activeCommandId } : {}),
     };
@@ -701,6 +751,9 @@ function createPendingCommand(): RoomSnapshotProjection['activeCommands'][number
         requestedState: { power: 'on' },
         requestedAt: '2026-06-08T09:30:00Z',
         dispatchedAt: '2026-06-08T09:30:01Z',
+        deadlineAt: '2026-06-08T09:30:06Z',
+        durability: 'durable',
+        lifecycleDurability: 'durable',
     };
 }
 
@@ -714,6 +767,8 @@ function createConfirmedCommand(): RoomSnapshotProjection['recentCommands'][numb
         requestedAt: '2026-06-08T09:30:00Z',
         dispatchedAt: '2026-06-08T09:30:01Z',
         confirmedAt: '2026-06-08T09:30:03Z',
+        durability: 'durable',
+        lifecycleDurability: 'durable',
     };
 }
 

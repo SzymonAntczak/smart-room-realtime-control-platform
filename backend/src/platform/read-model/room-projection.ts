@@ -11,6 +11,7 @@ import type {
     DeviceAvailabilityChangedEvent,
     DeviceHealthChangedEvent,
     DeviceStateReportedEvent,
+    PlatformEvent,
     TelemetryReadingRecordedEvent,
     TelemetryReadingRecordedPayload,
 } from '@smart-room/contracts/events';
@@ -33,12 +34,18 @@ export interface RoomProjectionConfig {
 }
 export interface ProjectionEvaluationOptions {
     evaluatedAt?: string;
+    receivedAt?: string;
 }
 export interface RoomProjection {
     updatedAt: string;
     devices: DeviceProjection[];
     activeCommands: ActiveCommandProjection[];
     recentCommands: TerminalCommandProjection[];
+}
+export interface RoomProjectionEvidence {
+    availabilityDeviceIds: string[];
+    healthDeviceIds: string[];
+    commandConfirmationSources?: Array<{ commandId: string; eventId: string }>;
 }
 export interface RoomProjector {
     applyDeviceStateReported(
@@ -57,7 +64,166 @@ export interface RoomProjector {
     applyCommandTimedOut(event: CommandTimedOutEvent): RoomProjection;
     hasAvailabilityEvidence(deviceId: string): boolean;
     hasHealthEvidence(deviceId: string): boolean;
+    getEvidence(): RoomProjectionEvidence;
     getProjection(options?: ProjectionEvaluationOptions): RoomProjection;
+    fork(): RoomProjector;
+    replaceProjection(projection: RoomProjection, evidence?: RoomProjectionEvidence): void;
+    installProjection(
+        projection: RoomProjection,
+        evaluatedAt: string,
+        evidence?: RoomProjectionEvidence,
+    ): void;
+}
+
+/** Materializes only evidence changed by a prepared transition at its durability. */
+export function materializePreparedTransition(
+    previous: RoomProjection,
+    candidate: RoomProjection,
+    durability: 'durable' | 'volatile',
+    reconciliationEvent?: PlatformEvent,
+    reconciledCommandIds: readonly string[] = [],
+): RoomProjection {
+    const previousDevices = new Map(previous.devices.map((device) => [device.deviceId, device]));
+    const previousActive = new Map(
+        previous.activeCommands.map((command) => [command.commandId, command]),
+    );
+    const previousRecent = new Map(
+        previous.recentCommands.map((command) => [command.commandId, command]),
+    );
+
+    return {
+        ...candidate,
+        devices: candidate.devices.map((device) => {
+            const before = previousDevices.get(device.deviceId);
+
+            if (!before) {
+                return device;
+            }
+
+            const observationStatus = Object.fromEntries(
+                Object.entries(device.observationStatus).map(([key, observation]) => {
+                    const prior =
+                        before.observationStatus[key as keyof typeof before.observationStatus];
+
+                    return [
+                        key,
+                        observation && observation.lastObservedAt !== prior?.lastObservedAt
+                            ? { ...observation, durability }
+                            : observation,
+                    ];
+                }),
+            ) as DeviceProjection['observationStatus'];
+
+            const reconciledDevice = reconcileVolatileEvidence(
+                { ...device, observationStatus },
+                before,
+                reconciliationEvent,
+            );
+
+            return {
+                ...reconciledDevice,
+                ...(device.availabilityChangedAt !== before.availabilityChangedAt
+                    ? { availabilityDurability: durability }
+                    : {}),
+                ...(device.healthChangedAt !== before.healthChangedAt
+                    ? { healthDurability: durability }
+                    : {}),
+            };
+        }),
+        activeCommands: candidate.activeCommands.map((command) => {
+            const previousCommand = previousActive.get(command.commandId);
+
+            return previousCommand && JSON.stringify(previousCommand) === JSON.stringify(command)
+                ? command
+                : {
+                      ...command,
+                      durability: previousCommand?.durability ?? durability,
+                      lifecycleDurability: durability,
+                  };
+        }),
+        recentCommands: candidate.recentCommands.map((command) => {
+            const previousCommand =
+                previousRecent.get(command.commandId) ?? previousActive.get(command.commandId);
+            const isReconciledLifecycle =
+                durability === 'durable' && reconciledCommandIds.includes(command.commandId);
+
+            return previousCommand && JSON.stringify(previousCommand) === JSON.stringify(command)
+                ? isReconciledLifecycle
+                    ? { ...command, lifecycleDurability: 'durable' }
+                    : command
+                : {
+                      ...command,
+                      durability: previousCommand?.durability ?? durability,
+                      lifecycleDurability: durability,
+                  };
+        }),
+    };
+}
+
+function reconcileVolatileEvidence(
+    candidate: DeviceProjection,
+    previous: DeviceProjection,
+    event: PlatformEvent | undefined,
+): DeviceProjection {
+    if (!event || event.deviceId !== candidate.deviceId) {
+        return candidate;
+    }
+
+    if (
+        event.eventType === 'device.availability.changed' &&
+        candidate.availability === event.payload.availability &&
+        candidate.availabilityChangedAt === event.occurredAt &&
+        previous.availabilityDurability === 'volatile'
+    ) {
+        return { ...candidate, availabilityDurability: 'durable' };
+    }
+
+    if (
+        event.eventType === 'device.health.changed' &&
+        candidate.health === event.payload.health &&
+        candidate.healthChangedAt === event.occurredAt &&
+        previous.healthDurability === 'volatile'
+    ) {
+        return { ...candidate, healthDurability: 'durable' };
+    }
+
+    const capability =
+        event.eventType === 'device.state.reported'
+            ? 'power'
+            : event.eventType === 'telemetry.reading.recorded'
+              ? 'temperature'
+              : undefined;
+    const observation = capability ? candidate.observationStatus[capability] : undefined;
+    const prior = capability ? previous.observationStatus[capability] : undefined;
+
+    if (
+        capability &&
+        observation?.lastObservedAt === event.occurredAt &&
+        prior?.durability === 'volatile' &&
+        sameObservationValue(candidate, event)
+    ) {
+        return {
+            ...candidate,
+            observationStatus: {
+                ...candidate.observationStatus,
+                [capability]: { ...observation, durability: 'durable' },
+            },
+        };
+    }
+
+    return candidate;
+}
+
+function sameObservationValue(device: DeviceProjection, event: PlatformEvent): boolean {
+    if (event.eventType === 'device.state.reported') {
+        return device.reportedState.power === event.payload.reportedState.power;
+    }
+
+    return (
+        event.eventType === 'telemetry.reading.recorded' &&
+        device.reportedState.temperature === event.payload.value &&
+        device.reportedState.temperatureUnit === event.payload.unit
+    );
 }
 
 export class InvalidLifecycleTransitionError extends Error {
@@ -80,7 +246,9 @@ export function createRoomProjector({
     const recent: TerminalCommandProjection[] = [];
     const availabilityEvidenceReceived = new Set<string>();
     const healthEvidenceReceived = new Set<string>();
+    const commandConfirmationSourceEventIds = new Map<string, string>();
     let updatedAt = initialUpdatedAt;
+    let defaultEvaluatedAt = initialUpdatedAt;
 
     return {
         applyDeviceStateReported(event, options = {}) {
@@ -103,10 +271,14 @@ export function createRoomProjector({
 
             if (
                 active?.status === 'pending' &&
+                active.deadlineAt !== undefined &&
+                Date.parse(options.receivedAt ?? options.evaluatedAt ?? event.occurredAt) <
+                    Date.parse(active.deadlineAt) &&
                 isOnOrAfter(event.occurredAt, active.dispatchedAt) &&
                 matchesSetPowerCommand(active, event.payload.reportedState)
             ) {
                 moveToRecent({ ...active, status: 'confirmed', confirmedAt: event.occurredAt });
+                commandConfirmationSourceEventIds.set(active.commandId, event.eventId);
             }
 
             return build(options.evaluatedAt ?? event.occurredAt);
@@ -229,6 +401,8 @@ export function createRoomProjector({
                 commandType: event.payload.commandType,
                 requestedState: event.payload.requestedState,
                 requestedAt: event.occurredAt,
+                durability: 'durable',
+                lifecycleDurability: 'durable',
                 status: 'accepted',
             });
             updatedAt = event.occurredAt;
@@ -249,6 +423,9 @@ export function createRoomProjector({
                 ...active,
                 status: 'pending',
                 dispatchedAt: event.occurredAt,
+                deadlineAt: new Date(
+                    Date.parse(event.occurredAt) + ledSetPowerTimeoutMs,
+                ).toISOString(),
             } satisfies ActiveCommandProjection;
             activeByDeviceId.set(event.deviceId, pending);
             updatedAt = event.occurredAt;
@@ -265,6 +442,7 @@ export function createRoomProjector({
                     status: 'confirmed',
                     confirmedAt: observation.lastObservedAt,
                 });
+                commandConfirmationSourceEventIds.set(pending.commandId, event.eventId);
             }
 
             return build(event.occurredAt);
@@ -341,8 +519,81 @@ export function createRoomProjector({
         hasHealthEvidence(deviceId) {
             return healthEvidenceReceived.has(deviceId);
         },
+        getEvidence() {
+            return {
+                availabilityDeviceIds: [...availabilityEvidenceReceived].sort(),
+                healthDeviceIds: [...healthEvidenceReceived].sort(),
+                commandConfirmationSources: [...commandConfirmationSourceEventIds]
+                    .map(([commandId, eventId]) => ({ commandId, eventId }))
+                    .sort((left, right) => left.commandId.localeCompare(right.commandId)),
+            };
+        },
         getProjection(options = {}) {
-            return build(options.evaluatedAt ?? updatedAt);
+            return build(options.evaluatedAt ?? defaultEvaluatedAt);
+        },
+        fork() {
+            const forked = createRoomProjector({
+                devices,
+                initialUpdatedAt,
+                freshnessThresholdsByRole,
+            });
+            forked.installProjection(
+                structuredClone(build(defaultEvaluatedAt)),
+                defaultEvaluatedAt,
+                this.getEvidence(),
+            );
+
+            return forked;
+        },
+        replaceProjection(projection, evidence) {
+            updatedAt = projection.updatedAt;
+            defaultEvaluatedAt = projection.updatedAt;
+            projections.clear();
+            activeByDeviceId.clear();
+            recent.length = 0;
+            availabilityEvidenceReceived.clear();
+            healthEvidenceReceived.clear();
+            commandConfirmationSourceEventIds.clear();
+
+            for (const device of projection.devices) {
+                projections.set(device.deviceId, structuredClone(device));
+
+                if (
+                    evidence?.availabilityDeviceIds.includes(device.deviceId) ||
+                    (!evidence && device.availability !== 'unknown')
+                ) {
+                    availabilityEvidenceReceived.add(device.deviceId);
+                }
+
+                if (
+                    evidence?.healthDeviceIds.includes(device.deviceId) ||
+                    (!evidence && device.health !== 'unknown')
+                ) {
+                    healthEvidenceReceived.add(device.deviceId);
+                }
+            }
+
+            for (const command of projection.activeCommands) {
+                activeByDeviceId.set(command.deviceId, structuredClone(command));
+            }
+
+            recent.push(...projection.recentCommands.map((command) => structuredClone(command)));
+
+            for (const source of evidence?.commandConfirmationSources ?? []) {
+                if (
+                    recent.some(
+                        (command) =>
+                            command.commandId === source.commandId &&
+                            command.status === 'confirmed',
+                    )
+                ) {
+                    commandConfirmationSourceEventIds.set(source.commandId, source.eventId);
+                }
+            }
+        },
+        installProjection(projection, evaluatedAt, evidence) {
+            this.replaceProjection(projection, evidence);
+            defaultEvaluatedAt = evaluatedAt;
         },
     };
 
@@ -381,6 +632,14 @@ export function createRoomProjector({
         recent.push(command);
         recent.sort((left, right) => terminalTimestamp(right) - terminalTimestamp(left));
         recent.splice(20);
+
+        const retainedCommandIds = new Set(recent.map((recentCommand) => recentCommand.commandId));
+
+        for (const commandId of commandConfirmationSourceEventIds.keys()) {
+            if (!retainedCommandIds.has(commandId)) {
+                commandConfirmationSourceEventIds.delete(commandId);
+            }
+        }
     }
 
     function requireActive(deviceId: string, commandId: string): ActiveCommandProjection {
@@ -411,11 +670,15 @@ function bootstrap(device: DeviceDefinition, at: string): DeviceProjection {
         role: device.role,
         availability: 'unknown',
         availabilityChangedAt: at,
+        availabilityDurability: 'durable',
         health: 'unknown',
         healthChangedAt: at,
+        healthDurability: 'durable',
         reportedState: {},
         observationStatus:
-            device.role === 'temperature-sensor' ? { temperature: { freshness: 'unknown' } } : {},
+            device.role === 'temperature-sensor'
+                ? { temperature: { freshness: 'unknown', durability: 'durable' } }
+                : {},
         commandAvailability: commandAvailabilityFor(device.role, 'unknown', 'unknown'),
     };
 }
@@ -434,7 +697,7 @@ function withObservation(
         reportedState,
         observationStatus: {
             ...device.observationStatus,
-            [capability]: { freshness, lastObservedAt: observedAt },
+            [capability]: { freshness, lastObservedAt: observedAt, durability: 'durable' },
         },
         commandAvailability: commandAvailabilityFor(
             device.role,
@@ -488,6 +751,8 @@ function toRejectedCommandFailure(event: CommandFailedEvent): TerminalCommandPro
         commandType,
         requestedState,
         requestedAt,
+        durability: 'durable',
+        lifecycleDurability: 'durable',
         status: 'failed',
         failedAt: event.occurredAt,
         reason: event.payload.reason,

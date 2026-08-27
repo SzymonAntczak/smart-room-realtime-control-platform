@@ -14,6 +14,8 @@ describe('realtime schemas', () => {
             requestedAt: '2026-06-08T09:30:00Z',
             dispatchedAt: '2026-06-08T09:30:01Z',
             confirmedAt: '2026-06-08T09:30:02Z',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
         } as const;
 
         expect(isRoomRealtimeServerMessage(update)).toBe(true);
@@ -402,6 +404,8 @@ describe('realtime schemas', () => {
                 requestedAt: '2026-06-08T09:30:00Z',
                 dispatchedAt: '2026-06-08T09:30:01Z',
                 confirmedAt: '2026-06-08T09:30:02Z',
+                durability: 'durable',
+                lifecycleDurability: 'durable',
             },
         ];
 
@@ -466,6 +470,8 @@ describe('realtime schemas', () => {
                 requestedState: { power: 'on' },
                 requestedAt: '2026-06-08T09:30:00Z',
                 failedAt: '2026-06-08T09:30:01Z',
+                durability: 'durable',
+                lifecycleDurability: 'durable',
             },
         ];
 
@@ -501,9 +507,24 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
         devices: Record<string, unknown>[];
         activeCommands: unknown[];
         recentCommands: Record<string, unknown>[];
+        platform: { storage: ReturnType<typeof availableStorage> };
     };
 } {
     const firstCommand = activeCommands[0] as { commandId?: string } | undefined;
+    const normalizedActiveCommands = activeCommands.map((command) => {
+        if (typeof command !== 'object' || command === null) {
+            return command;
+        }
+
+        const candidate = command as Record<string, unknown>;
+
+        return {
+            ...candidate,
+            durability: 'durable',
+            lifecycleDurability: 'durable',
+            ...(candidate.status === 'pending' ? { deadlineAt: '2026-06-08T09:31:00Z' } : {}),
+        };
+    });
 
     return {
         messageType: 'room.snapshot',
@@ -513,8 +534,9 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
             roomName: 'Smart Room',
             updatedAt: '2026-06-08T09:30:00Z',
             devices: activeCommands.length > 0 ? [createLedDevice(firstCommand?.commandId)] : [],
-            activeCommands,
+            activeCommands: normalizedActiveCommands,
             recentCommands: [],
+            platform: { storage: availableStorage() },
         },
     };
 }
@@ -526,11 +548,17 @@ function createLedDevice(activeCommandId?: string) {
         role: 'led-output',
         availability: 'online',
         availabilityChangedAt: '2026-06-08T09:30:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-06-08T09:30:00Z',
+        healthDurability: 'durable',
         reportedState: { power: 'off' },
         observationStatus: {
-            power: { freshness: 'unknown', lastObservedAt: '2026-06-08T09:30:00Z' },
+            power: {
+                freshness: 'unknown',
+                lastObservedAt: '2026-06-08T09:30:00Z',
+                durability: 'durable',
+            },
         },
         commandAvailability: { policy: 'allow' },
         ...(activeCommandId ? { activeCommandId } : {}),
@@ -549,13 +577,16 @@ function createDeviceUpdatedMessage() {
             role: 'temperature-sensor' as const,
             availability: 'online' as const,
             availabilityChangedAt: '2026-06-08T09:30:00Z',
+            availabilityDurability: 'durable' as const,
             health: 'healthy' as const,
             healthChangedAt: '2026-06-08T09:30:00Z',
+            healthDurability: 'durable' as const,
             reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
             observationStatus: {
                 temperature: {
                     freshness: 'fresh' as const,
                     lastObservedAt: '2026-06-08T09:30:00Z',
+                    durability: 'durable' as const,
                 },
             },
             commandAvailability: { policy: 'block' as const, reason: 'read_only_device' },
@@ -580,6 +611,9 @@ function createCommandsUpdatedMessage() {
                     requestedState: { power: 'on' as const },
                     requestedAt: '2026-06-08T09:30:00Z',
                     dispatchedAt: '2026-06-08T09:30:01Z',
+                    deadlineAt: '2026-06-08T09:31:00Z',
+                    durability: 'durable' as const,
+                    lifecycleDurability: 'durable' as const,
                 },
             ],
             recentCommands: [],
@@ -676,21 +710,46 @@ function createCommandUpdateForProjectionTest(command: Record<string, unknown>) 
                     role: 'led-output',
                     availability: 'online',
                     availabilityChangedAt: '2026-06-08T09:30:00Z',
+                    availabilityDurability: 'durable',
                     health: 'healthy',
                     healthChangedAt: '2026-06-08T09:30:00Z',
+                    healthDurability: 'durable',
                     reportedState: { power: 'off' },
                     observationStatus: {
                         power: {
                             freshness: 'unknown',
                             lastObservedAt: '2026-06-08T09:30:00Z',
+                            durability: 'durable',
                         },
                     },
                     commandAvailability: { policy: 'allow' },
                     ...(isActiveCommand ? { activeCommandId: command.commandId } : {}),
                 },
             ],
-            activeCommands: isActiveCommand ? [command] : [],
-            recentCommands: isActiveCommand ? [] : [command],
+            activeCommands: isActiveCommand
+                ? [
+                      {
+                          ...command,
+                          durability: 'durable',
+                          lifecycleDurability: 'durable',
+                          ...(command.status === 'pending'
+                              ? { deadlineAt: '2026-06-08T09:31:00Z' }
+                              : {}),
+                      },
+                  ]
+                : [],
+            recentCommands: isActiveCommand
+                ? []
+                : [{ ...command, durability: 'durable', lifecycleDurability: 'durable' }],
         },
+    };
+}
+
+function availableStorage() {
+    return {
+        status: 'available' as const,
+        changedAt: '2026-06-08T09:30:00Z',
+        historyGenerationId: 'generation-test',
+        storedThroughSequence: 0,
     };
 }

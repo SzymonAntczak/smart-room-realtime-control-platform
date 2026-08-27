@@ -300,14 +300,14 @@ observable state.
 
 ## In-Memory Deduplication Retention
 
-The current in-memory processor rejects an accepted `eventId` for ten minutes.
-It retains at most 1000 identifiers; when that limit is reached, it removes the
-oldest identifier and records a metadata-only deduplication eviction diagnostic.
+The current in-memory processor and checkpointed volatile guards reject an
+accepted `eventId` for ten minutes. They retain at most 1000 identifiers; when
+that limit is reached, they remove the oldest identifier and record a
+metadata-only deduplication eviction diagnostic.
 This bounds memory, but high event volume can shorten the effective retention
-window. The guarantee ends when the process restarts; durable deduplication is
-a future storage responsibility. The Stage 4 storage model defines
-durable deduplication only while an accepted event identifier is retained; it
-does not yet change the current runtime behavior. See
+window. The in-memory guarantee ends when the process restarts. Durable
+deduplication remains valid only while an accepted event identifier is retained
+with an active fact or telemetry record. See
 [ADR: Stage 4 Storage and Observability](../decisions/adr-stage-4-storage-and-observability.md).
 
 The Stage 4 retention order uses `(occurredAt, storageSequence)` for

@@ -247,5 +247,13 @@ function createSnapshot(): RoomSnapshotProjection {
         devices: [],
         activeCommands: [],
         recentCommands: [],
+        platform: {
+            storage: {
+                status: 'available',
+                changedAt: '2026-08-06T12:00:00Z',
+                historyGenerationId: 'generation-test',
+                storedThroughSequence: 0,
+            },
+        },
     };
 }

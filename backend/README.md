@@ -16,10 +16,11 @@ HTTP command acceptance and realtime command lifecycle projections.
 ## Local SQLite storage
 
 Stage 4 storage uses the Node `node:sqlite` API and requires Node `>=24.15 <25`.
-The future runtime composition resolves its local database to
+Runtime composition resolves its local database to
 `data/smart-room.sqlite` by default. Set `SMART_ROOM_STORAGE_PATH` to use a
-different local path. The current runtime intentionally remains in-memory until
-the next Stage 4 persistence task wires the storage port into event processing.
+different local path. Accepted events use the storage transaction path before
+their projection is published; a confirmed storage rollback leaves the running
+process explicitly degraded and continues with volatile realtime state.
 
 ## Structure
 

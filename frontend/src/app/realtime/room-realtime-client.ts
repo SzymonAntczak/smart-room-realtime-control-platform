@@ -188,6 +188,21 @@ export function connectRoomRealtime(
 
                 break;
             }
+
+            case 'platform.updated': {
+                roomSnapshot = {
+                    ...roomSnapshot,
+                    platform: message.payload,
+                };
+
+                if (!isRoomSnapshotProjection(roomSnapshot)) {
+                    throw new Error(
+                        'Realtime platform update did not produce a valid room snapshot.',
+                    );
+                }
+
+                break;
+            }
         }
 
         revision = message.revision;

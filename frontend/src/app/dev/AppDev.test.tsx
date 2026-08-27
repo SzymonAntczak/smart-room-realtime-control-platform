@@ -166,6 +166,7 @@ function createRoomSnapshotMessage(devices: unknown[] = [createTemperatureDevice
             activeCommands: [],
             recentCommands: [],
             devices,
+            platform: { storage: availableStorage() },
         },
     };
 }
@@ -177,14 +178,17 @@ function createTemperatureDevice() {
         role: 'temperature-sensor',
         availability: 'online',
         availabilityChangedAt: '2026-06-08T09:30:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-06-08T09:30:00Z',
+        healthDurability: 'durable',
         reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
         commandAvailability: { policy: 'block', reason: 'read_only_device' },
         observationStatus: {
             temperature: {
                 freshness: 'fresh',
                 lastObservedAt: '2026-06-08T09:30:00Z',
+                durability: 'durable',
             },
         },
     };
@@ -197,15 +201,27 @@ function createLedDevice() {
         role: 'led-output',
         availability: 'online',
         availabilityChangedAt: '2026-06-08T09:30:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-06-08T09:30:00Z',
+        healthDurability: 'durable',
         reportedState: { power: 'off' },
         commandAvailability: { policy: 'allow' },
         observationStatus: {
             power: {
                 freshness: 'fresh',
                 lastObservedAt: '2026-06-08T09:30:00Z',
+                durability: 'durable',
             },
         },
+    };
+}
+
+function availableStorage() {
+    return {
+        status: 'available' as const,
+        changedAt: '2026-06-08T09:30:00Z',
+        historyGenerationId: 'generation-test',
+        storedThroughSequence: 0,
     };
 }

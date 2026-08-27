@@ -19,6 +19,17 @@ const temperatureRecoveredAt = '2026-06-08T09:34:00Z';
 const temperatureFreshAfterRecoveryAt = '2026-06-08T09:35:00Z';
 const ledCommandId = 'mock-command-1';
 
+function storagePlatform() {
+    return {
+        storage: {
+            status: 'available' as const,
+            changedAt: fixtureTimestamp,
+            historyGenerationId: 'mock-history-generation',
+            storedThroughSequence: 0,
+        },
+    };
+}
+
 export function createOnlineLedDeviceProjection(): DeviceProjection {
     return {
         deviceId: 'led-main',
@@ -26,13 +37,16 @@ export function createOnlineLedDeviceProjection(): DeviceProjection {
         role: 'led-output',
         availability: 'online',
         availabilityChangedAt: fixtureTimestamp,
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: fixtureTimestamp,
+        healthDurability: 'durable',
         reportedState: { power: 'off' },
         observationStatus: {
             power: {
                 freshness: 'fresh',
                 lastObservedAt: fixtureTimestamp,
+                durability: 'durable',
             },
         },
         commandAvailability: { policy: 'allow' },
@@ -46,6 +60,7 @@ export function createOnlineLedRoomSnapshot(): RoomSnapshotProjection {
         devices: [createOnlineLedDeviceProjection()],
         activeCommands: [],
         recentCommands: [],
+        platform: storagePlatform(),
     };
 }
 
@@ -56,11 +71,17 @@ export function createOnlineTemperatureDeviceProjection(): DeviceProjection {
         role: 'temperature-sensor',
         availability: 'online',
         availabilityChangedAt: fixtureTimestamp,
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: fixtureTimestamp,
+        healthDurability: 'durable',
         reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
         observationStatus: {
-            temperature: { freshness: 'fresh', lastObservedAt: fixtureTimestamp },
+            temperature: {
+                freshness: 'fresh',
+                lastObservedAt: fixtureTimestamp,
+                durability: 'durable',
+            },
         },
         commandAvailability: { policy: 'block', reason: 'read_only_device' },
     };
@@ -85,6 +106,7 @@ export function createOnlineTemperatureRoomSnapshot(): RoomSnapshotProjection {
         ],
         activeCommands: [],
         recentCommands: [],
+        platform: storagePlatform(),
     };
 }
 
@@ -93,7 +115,11 @@ export function createFreshTemperatureDeviceProjection(): DeviceProjection {
         ...createOnlineTemperatureDeviceProjection(),
         reportedState: { temperature: 22.8, temperatureUnit: 'celsius' },
         observationStatus: {
-            temperature: { freshness: 'fresh', lastObservedAt: temperatureUpdatedAt },
+            temperature: {
+                freshness: 'fresh',
+                lastObservedAt: temperatureUpdatedAt,
+                durability: 'durable',
+            },
         },
     };
 }
@@ -102,7 +128,11 @@ export function createStaleTemperatureDeviceProjection(): DeviceProjection {
     return {
         ...createFreshTemperatureDeviceProjection(),
         observationStatus: {
-            temperature: { freshness: 'stale', lastObservedAt: temperatureUpdatedAt },
+            temperature: {
+                freshness: 'stale',
+                lastObservedAt: temperatureUpdatedAt,
+                durability: 'durable',
+            },
         },
     };
 }
@@ -131,6 +161,7 @@ export function createFreshTemperatureAfterRecoveryDeviceProjection(): DevicePro
             temperature: {
                 freshness: 'fresh',
                 lastObservedAt: temperatureFreshAfterRecoveryAt,
+                durability: 'durable',
             },
         },
     };
@@ -144,7 +175,10 @@ export function createPendingLedCommand(): ActiveCommandProjection {
         status: 'pending',
         requestedState: { power: 'on' },
         requestedAt: commandRequestedAt,
+        durability: 'durable',
+        lifecycleDurability: 'durable',
         dispatchedAt: commandDispatchedAt,
+        deadlineAt: commandTimedOutAt,
     };
 }
 
@@ -163,6 +197,8 @@ export function createConfirmedLedCommand(): TerminalCommandProjection {
         status: 'confirmed',
         requestedState: { power: 'on' },
         requestedAt: commandRequestedAt,
+        durability: 'durable',
+        lifecycleDurability: 'durable',
         dispatchedAt: commandDispatchedAt,
         confirmedAt: commandConfirmedAt,
     };
@@ -176,6 +212,7 @@ export function createConfirmedLedDeviceProjection(): DeviceProjection {
             power: {
                 freshness: 'fresh',
                 lastObservedAt: commandConfirmedAt,
+                durability: 'durable',
             },
         },
     };
@@ -189,6 +226,8 @@ export function createFailedLedCommand(commandId: string): FailedCommandProjecti
         status: 'failed',
         requestedState: { power: 'on' },
         requestedAt: commandRequestedAt,
+        durability: 'durable',
+        lifecycleDurability: 'durable',
         failedAt: commandFailedAt,
         reason: 'command_already_active',
         message: 'Device already has an active command.',
@@ -203,6 +242,8 @@ export function createTimedOutLedCommand(): TerminalCommandProjection {
         status: 'timed_out',
         requestedState: { power: 'on' },
         requestedAt: commandRequestedAt,
+        durability: 'durable',
+        lifecycleDurability: 'durable',
         dispatchedAt: commandDispatchedAt,
         timedOutAt: commandTimedOutAt,
         reason: 'confirmation_not_received',
@@ -217,6 +258,7 @@ export function createLateReportedLedDeviceProjection(): DeviceProjection {
             power: {
                 freshness: 'fresh',
                 lastObservedAt: lateReportAt,
+                durability: 'durable',
             },
         },
     };

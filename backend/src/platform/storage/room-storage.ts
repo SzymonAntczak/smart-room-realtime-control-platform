@@ -1,7 +1,39 @@
+import type { RoomProjectionEvidence } from '../read-model/room-projection';
+
 export interface StorageMetadata {
     historyGenerationId: string;
     schemaVersion: number;
     lastStorageSequence: number;
+}
+
+export type RecordDurability = 'durable' | 'volatile';
+
+export interface AcceptedInputIdentity {
+    eventId: string;
+    fingerprint: string;
+    durability: RecordDurability;
+    acceptedAt: string;
+}
+
+export interface RoomStorageCheckpoint {
+    updatedAt: string;
+    projection: unknown;
+    projectionEvidence: RoomProjectionEvidence;
+    volatileGuards: AcceptedInputIdentity[];
+}
+
+export type StorageTransactionOutcome<Value> =
+    | { status: 'committed'; value: Value }
+    | { status: 'confirmed_rolled_back'; error: unknown }
+    | { status: 'indeterminate'; error: unknown };
+
+export interface RoomStorageTransaction {
+    appendSignificantFact(input: SignificantFactInput): StoredSignificantFact;
+    appendTelemetrySample(input: TelemetrySampleInput): StoredTelemetrySample;
+    appendQuarantineEntry(input: QuarantineEntryInput): StoredQuarantineEntry;
+    upsertAcceptedInputIdentity(input: AcceptedInputIdentity): void;
+    retireExpiredRecords(input: { asOf: string }): string[];
+    saveLatestRoomProjection(input: LatestRoomProjectionInput): void;
 }
 
 export interface SignificantFactInput {
@@ -52,30 +84,28 @@ export interface SimulatorCommandReceiptInput {
     receipt: unknown;
 }
 
-export interface LatestRoomProjectionInput {
-    updatedAt: string;
-    projection: unknown;
-}
+export type LatestRoomProjectionInput = RoomStorageCheckpoint;
 
 export interface RoomStorage {
     getMetadata(): StorageMetadata;
-    appendSignificantFact(input: SignificantFactInput): StoredSignificantFact;
+    transact<Value>(
+        operation: (transaction: RoomStorageTransaction) => Value,
+    ): StorageTransactionOutcome<Value>;
+    listAcceptedInputIdentities(): AcceptedInputIdentity[];
+    isAcceptedInputIdentityActive(eventId: string, asOf: string): boolean;
     listSignificantFacts(): StoredSignificantFact[];
-    appendTelemetrySample(input: TelemetrySampleInput): StoredTelemetrySample;
     listTelemetrySamples(query: {
         deviceId: string;
         metric: string;
         from?: string;
         to?: string;
     }): StoredTelemetrySample[];
-    appendQuarantineEntry(input: QuarantineEntryInput): StoredQuarantineEntry;
     listQuarantineEntries(): StoredQuarantineEntry[];
     upsertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): void;
     getSimulatorCommandReceipt(
         source: string,
         commandId: string,
     ): SimulatorCommandReceiptInput | undefined;
-    saveLatestRoomProjection(input: LatestRoomProjectionInput): void;
     getLatestRoomProjection(): LatestRoomProjectionInput | undefined;
     close(): void;
 }

@@ -71,7 +71,12 @@ function sendRoomSnapshot(
 
     sendRealtimeMessage(
         stream,
-        { messageType: 'room.snapshot', revision: 0, sentAt, payload: snapshot },
+        {
+            messageType: 'room.snapshot',
+            revision: 0,
+            sentAt,
+            payload: snapshot,
+        } as RoomRealtimeServerMessage,
         0,
     );
 }
@@ -108,12 +113,48 @@ function sendRoomDeltas(
                 revision: revision + 1,
                 sentAt,
                 payload: device,
-            },
+            } as RoomRealtimeServerMessage,
             revision,
         );
     }
 
     if (commandDeviceIds.size === 0) {
+        return sendPlatformDelta(stream, previous, next, revision, now);
+    }
+
+    const sentAt = normalizedNow(stream, now);
+
+    if (!sentAt) {
+        return revision;
+    }
+
+    revision = sendRealtimeMessage(
+        stream,
+        {
+            messageType: 'commands.updated',
+            previousRevision: revision,
+            revision: revision + 1,
+            sentAt,
+            payload: {
+                devices: next.devices,
+                activeCommands: next.activeCommands,
+                recentCommands: next.recentCommands,
+            },
+        } as RoomRealtimeServerMessage,
+        revision,
+    );
+
+    return sendPlatformDelta(stream, previous, next, revision, now);
+}
+
+function sendPlatformDelta(
+    stream: ServerResponse,
+    previous: RoomSnapshotProjection,
+    next: RoomSnapshotProjection,
+    revision: number,
+    now: () => string,
+): number {
+    if (!next.platform || sameJson(previous.platform, next.platform)) {
         return revision;
     }
 
@@ -126,16 +167,12 @@ function sendRoomDeltas(
     return sendRealtimeMessage(
         stream,
         {
-            messageType: 'commands.updated',
+            messageType: 'platform.updated',
             previousRevision: revision,
             revision: revision + 1,
             sentAt,
-            payload: {
-                devices: next.devices,
-                activeCommands: next.activeCommands,
-                recentCommands: next.recentCommands,
-            },
-        },
+            payload: next.platform,
+        } as RoomRealtimeServerMessage,
         revision,
     );
 }

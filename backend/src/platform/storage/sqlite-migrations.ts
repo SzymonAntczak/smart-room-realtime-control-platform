@@ -16,9 +16,7 @@ CREATE TABLE storage_metadata (
     history_generation_id TEXT NOT NULL,
     last_storage_sequence INTEGER NOT NULL DEFAULT 0 CHECK (last_storage_sequence >= 0)
 ) STRICT;
-`;
 
-const migrationTwoSql = `
 CREATE TABLE significant_facts (
     storage_sequence INTEGER PRIMARY KEY,
     record_id TEXT NOT NULL,
@@ -28,7 +26,8 @@ CREATE TABLE significant_facts (
     command_id TEXT,
     source TEXT,
     occurred_at TEXT NOT NULL,
-    payload_json TEXT NOT NULL
+    payload_json TEXT NOT NULL,
+    retired_at TEXT
 ) STRICT;
 
 CREATE TABLE telemetry_samples (
@@ -40,7 +39,8 @@ CREATE TABLE telemetry_samples (
     value REAL NOT NULL,
     unit TEXT NOT NULL,
     occurred_at TEXT NOT NULL,
-    payload_json TEXT NOT NULL
+    payload_json TEXT NOT NULL,
+    retired_at TEXT
 ) STRICT;
 
 CREATE INDEX telemetry_samples_by_device_metric_time
@@ -54,7 +54,8 @@ CREATE TABLE quarantine_entries (
     event_id TEXT,
     reason TEXT NOT NULL,
     recorded_at TEXT NOT NULL,
-    raw_event_json TEXT NOT NULL
+    raw_event_json TEXT NOT NULL,
+    retired_at TEXT
 ) STRICT;
 
 CREATE TABLE simulator_command_receipts (
@@ -70,12 +71,37 @@ CREATE TABLE latest_room_projection (
     updated_at TEXT NOT NULL,
     projection_json TEXT NOT NULL
 ) STRICT;
+
+CREATE TABLE accepted_input_identities (
+    event_id TEXT PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    durability TEXT NOT NULL CHECK (durability IN ('durable', 'volatile')),
+    accepted_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX significant_facts_active_by_time
+    ON significant_facts (occurred_at DESC, storage_sequence DESC)
+    WHERE retired_at IS NULL;
+CREATE INDEX telemetry_samples_active_by_device_time
+    ON telemetry_samples (device_id, occurred_at DESC, storage_sequence DESC)
+    WHERE retired_at IS NULL;
+CREATE INDEX quarantine_entries_active_by_time
+    ON quarantine_entries (recorded_at DESC, internal_sequence DESC)
+    WHERE retired_at IS NULL;
+CREATE INDEX significant_facts_active_by_event_id
+    ON significant_facts (event_id)
+    WHERE retired_at IS NULL;
+CREATE INDEX telemetry_samples_active_by_event_id
+    ON telemetry_samples (event_id)
+    WHERE retired_at IS NULL;
+CREATE INDEX accepted_input_identities_by_accepted_at
+    ON accepted_input_identities (accepted_at, event_id);
 `;
 
 export const roomStorageMigrations: readonly Migration[] = [
     {
         version: 1,
-        name: 'storage-metadata',
+        name: 'initial-room-storage-schema',
         checksum: checksum(migrationOneSql),
         apply(database, historyGenerationId) {
             database.exec(migrationOneSql);
@@ -85,14 +111,6 @@ export const roomStorageMigrations: readonly Migration[] = [
                      VALUES (1, ?, 0)`,
                 )
                 .run(historyGenerationId);
-        },
-    },
-    {
-        version: 2,
-        name: 'storage-records-and-projection',
-        checksum: checksum(migrationTwoSql),
-        apply(database) {
-            database.exec(migrationTwoSql);
         },
     },
 ];
@@ -117,7 +135,10 @@ export function migrateSqliteDatabase(
 function assertMigrationManifest(migrations: readonly Migration[]): void {
     for (const [index, migration] of migrations.entries()) {
         if (migration.version !== index + 1) {
-            throw new StorageMigrationError('Migration versions must be contiguous and start at 1.', migration);
+            throw new StorageMigrationError(
+                'Migration versions must be contiguous and start at 1.',
+                migration,
+            );
         }
     }
 }
@@ -177,7 +198,10 @@ function validateAppliedMigrations(
     migrations: readonly Migration[],
 ): void {
     if (applied.length > migrations.length) {
-        throw new StorageSchemaError('Database schema version is newer than this backend supports.', applied);
+        throw new StorageSchemaError(
+            'Database schema version is newer than this backend supports.',
+            applied,
+        );
     }
 
     for (const [index, appliedMigration] of applied.entries()) {
@@ -189,10 +213,13 @@ function validateAppliedMigrations(
             appliedMigration.name !== expected.name ||
             appliedMigration.checksum !== expected.checksum
         ) {
-            throw new StorageSchemaError('Applied migration does not match the deterministic manifest.', {
-                appliedMigration,
-                expected,
-            });
+            throw new StorageSchemaError(
+                'Applied migration does not match the deterministic manifest.',
+                {
+                    appliedMigration,
+                    expected,
+                },
+            );
         }
     }
 }
@@ -216,7 +243,10 @@ function applyMigration(
             // Migration errors are fatal even if rollback itself cannot be observed.
         }
 
-        throw new StorageMigrationError(`Migration ${migration.version} (${migration.name}) failed.`, error);
+        throw new StorageMigrationError(
+            `Migration ${migration.version} (${migration.name}) failed.`,
+            error,
+        );
     }
 }
 

@@ -67,6 +67,28 @@ describe('createRoomProjector', () => {
             health: 'healthy',
         });
     });
+    it('preserves explicit unknown evidence when installing a derived projection', () => {
+        const room = createRoomProjector({ devices: [device], initialUpdatedAt: at });
+
+        room.applyDeviceAvailabilityChanged({
+            eventId: 'availability-explicit-unknown',
+            eventType: 'device.availability.changed',
+            occurredAt: at,
+            source: 'simulator-adapter',
+            deviceId: device.deviceId,
+            payload: {
+                previousAvailability: 'unknown',
+                availability: 'unknown',
+                reason: 'transport_not_ready',
+            },
+        });
+        const derived = room.getProjection({ evaluatedAt: '2026-06-08T09:30:03Z' });
+        const evidence = room.getEvidence();
+
+        room.installProjection(derived, '2026-06-08T09:30:03Z', evidence);
+
+        expect(room.hasAvailabilityEvidence(device.deviceId)).toBe(true);
+    });
     it('does not apply first availability or health evidence older than the bootstrap timestamp', () => {
         const room = createRoomProjector({ devices: [device], initialUpdatedAt: at });
         const olderAt = '2026-06-08T09:29:59Z';
@@ -96,6 +118,21 @@ describe('createRoomProjector', () => {
             health: 'unknown',
             observationStatus: { temperature: { freshness: 'stale', lastObservedAt: at } },
         });
+    });
+    it('keeps an installed derived freshness evaluation when a later projection is forked', () => {
+        const room = projector();
+        room.applyTelemetryReadingRecorded(telemetry());
+        const staleAt = '2026-06-08T09:30:02.501Z';
+        const derived = room.getProjection({ evaluatedAt: staleAt });
+
+        room.installProjection(derived, staleAt);
+
+        expect(room.fork().getProjection().devices[0]?.observationStatus.temperature).toMatchObject(
+            {
+                freshness: 'stale',
+                lastObservedAt: at,
+            },
+        );
     });
     it('retains an explicit offline availability change with the last observation', () => {
         const room = projector();

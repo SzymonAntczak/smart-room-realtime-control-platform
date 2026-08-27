@@ -11,10 +11,11 @@ Use docs/architecture and accepted ADRs as the source of truth for project
 behavior. Use docs/architecture/ai-collaboration.md as the source of truth for
 the AI-facing context hierarchy: docs define behavior, AGENTS.md files provide
 local operating guidance, skills provide workflows, and subagents provide
-focused review or validation.
+focused research, validation or explicitly bounded delivery judgment.
 
 Focus on AGENTS.md files, .codex/agents, .agents/skills, documentation
-hierarchy, role boundaries, redundant instructions, dead references and
+hierarchy, role boundaries (including whether delivery judgment remains limited
+to `smart_room_delivery_reviewer`), redundant instructions, dead references and
 conflicts with project governance. Return binding sources checked, observations
 with file references, concrete drift risks and confidence.
 """

@@ -163,7 +163,11 @@ describe('temperature read path integration', () => {
             expect.objectContaining({
                 availability: 'unknown',
                 observationStatus: {
-                    temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:11Z' },
+                    temperature: {
+                        freshness: 'fresh',
+                        lastObservedAt: '2026-06-08T09:30:11Z',
+                        durability: 'durable',
+                    },
                 },
                 reportedState: {
                     temperature: 22.8,

@@ -59,6 +59,14 @@ function applyUpdateToSnapshot(
     snapshot: RoomSnapshotProjection,
     update: Exclude<RoomRealtimeServerMessage, { messageType: 'room.snapshot' }>,
 ): RoomSnapshotProjection {
+    if (update.messageType === 'platform.updated') {
+        return {
+            ...snapshot,
+            updatedAt: update.sentAt,
+            platform: update.payload,
+        };
+    }
+
     const devices =
         update.messageType === 'device.updated'
             ? replaceDevice(snapshot.devices, update.payload)

@@ -1,0 +1,4 @@
+interface:
+    display_name: 'Smart Room Verified Implementation'
+    short_description: 'Implement approved Smart Room plans with delivery gates'
+    default_prompt: 'Use $smart-room-verified-implementation to implement this approved Smart Room plan and verify its completion.'

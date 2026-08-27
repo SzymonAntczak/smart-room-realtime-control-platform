@@ -201,7 +201,11 @@ export function createSetPowerCommandController({
         reschedulePendingCommands() {
             for (const command of getRoomSnapshot().activeCommands) {
                 if (command.status === 'pending') {
-                    scheduleTimeout(command.commandId, command.deviceId);
+                    if (Date.parse(command.deadlineAt) <= Date.parse(clock.now())) {
+                        emitTimeout(command.commandId, command.deviceId);
+                    } else {
+                        scheduleTimeout(command.commandId, command.deviceId);
+                    }
                 }
             }
         },
@@ -231,25 +235,26 @@ export function createSetPowerCommandController({
             return;
         }
 
-        const remainingMs = Math.max(
-            0,
-            setPowerTimeoutMs - (Date.parse(clock.now()) - Date.parse(active.dispatchedAt)),
-        );
+        const remainingMs = Math.max(0, Date.parse(active.deadlineAt) - Date.parse(clock.now()));
         timeoutHandles.set(
             commandId,
             commandTimer.setTimeout(() => {
                 timeoutHandles.delete(commandId);
-                emitEvent({
-                    eventId: generateEventId(),
-                    eventType: 'command.timed_out',
-                    occurredAt: clock.now(),
-                    source: 'backend',
-                    deviceId,
-                    commandId,
-                    payload: { timeoutMs: setPowerTimeoutMs, reason: 'confirmation_not_received' },
-                });
+                emitTimeout(commandId, deviceId);
             }, remainingMs),
         );
+    }
+
+    function emitTimeout(commandId: string, deviceId: string): void {
+        emitEvent({
+            eventId: generateEventId(),
+            eventType: 'command.timed_out',
+            occurredAt: clock.now(),
+            source: 'backend',
+            deviceId,
+            commandId,
+            payload: { timeoutMs: setPowerTimeoutMs, reason: 'confirmation_not_received' },
+        });
     }
 
     function clearCompletedTimeout(

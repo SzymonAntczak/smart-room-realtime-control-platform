@@ -1,8 +1,11 @@
 import { type Static, Type } from '@sinclair/typebox';
 
+import type { ActiveCommandProjection, TerminalCommandProjection } from './commands';
+import type { DeviceProjection, PlatformStorageProjection } from './projections';
 import {
     activeCommandProjectionSchema,
     deviceProjectionSchema,
+    platformStorageProjectionSchema,
     recentCommandProjectionsSchema,
     type RoomSnapshotProjection,
     roomSnapshotProjectionSchema,
@@ -14,6 +17,7 @@ export const roomRealtimeServerMessageTypes = [
     'room.snapshot',
     'device.updated',
     'commands.updated',
+    'platform.updated',
 ] as const;
 
 export const roomRealtimeServerMessageSchema = Type.Object(
@@ -52,16 +56,64 @@ export const commandsUpdatedMessageSchema = Type.Object(
     },
     { additionalProperties: false },
 );
+export const platformUpdatedMessageSchema = Type.Object(
+    {
+        messageType: Type.Literal('platform.updated'),
+        previousRevision: Type.Integer({ minimum: 0 }),
+        revision: Type.Integer({ minimum: 1 }),
+        sentAt: isoTimestampSchema,
+        payload: Type.Object(
+            {
+                storage: platformStorageProjectionSchema,
+            },
+            { additionalProperties: false },
+        ),
+    },
+    { additionalProperties: false },
+);
 export const roomRealtimeServerMessageUnionSchema = Type.Union([
     roomRealtimeServerMessageSchema,
     deviceUpdatedMessageSchema,
     commandsUpdatedMessageSchema,
+    platformUpdatedMessageSchema,
 ]);
 
-export type RoomSnapshotMessage = Static<typeof roomRealtimeServerMessageSchema>;
-export type DeviceUpdatedMessage = Static<typeof deviceUpdatedMessageSchema>;
-export type CommandsUpdatedMessage = Static<typeof commandsUpdatedMessageSchema>;
-export type RoomRealtimeServerMessage = Static<typeof roomRealtimeServerMessageUnionSchema>;
+export interface RoomSnapshotMessage {
+    messageType: 'room.snapshot';
+    revision: 0;
+    sentAt: string;
+    payload: RoomSnapshotProjection;
+}
+export interface DeviceUpdatedMessage {
+    messageType: 'device.updated';
+    previousRevision: number;
+    revision: number;
+    sentAt: string;
+    payload: DeviceProjection;
+}
+export interface CommandsUpdatedMessage {
+    messageType: 'commands.updated';
+    previousRevision: number;
+    revision: number;
+    sentAt: string;
+    payload: {
+        devices: DeviceProjection[];
+        activeCommands: ActiveCommandProjection[];
+        recentCommands: TerminalCommandProjection[];
+    };
+}
+export interface PlatformUpdatedMessage {
+    messageType: 'platform.updated';
+    previousRevision: number;
+    revision: number;
+    sentAt: string;
+    payload: { storage: PlatformStorageProjection };
+}
+export type RoomRealtimeServerMessage =
+    | RoomSnapshotMessage
+    | DeviceUpdatedMessage
+    | CommandsUpdatedMessage
+    | PlatformUpdatedMessage;
 
 export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealtimeServerMessage {
     if (
@@ -93,10 +145,33 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
         );
     }
 
+    if (value.messageType === 'platform.updated') {
+        return (
+            value.revision === value.previousRevision + 1 &&
+            hasValidPlatformStorage(value.payload.storage)
+        );
+    }
+
     return (
         value.revision === value.previousRevision + 1 &&
         hasCanonicalDeviceTimestamps(value.payload) &&
         hasValidDeviceSemantics(value.payload)
+    );
+}
+
+function hasValidPlatformStorage(storage: {
+    status: 'available' | 'degraded' | 'recovering';
+    changedAt: string;
+    reason?: string;
+    historyGenerationId: string | null;
+    storedThroughSequence: number | null;
+}): boolean {
+    return (
+        isCanonicalUtcTimestamp(storage.changedAt) &&
+        (storage.historyGenerationId === null) === (storage.storedThroughSequence === null) &&
+        (storage.status === 'available'
+            ? storage.historyGenerationId !== null && storage.storedThroughSequence !== null
+            : storage.reason !== undefined)
     );
 }
 
@@ -109,6 +184,7 @@ export function isRoomSnapshotProjection(value: unknown): value is RoomSnapshotP
             value.recentCommands,
         ) &&
         isCanonicalUtcTimestamp(value.updatedAt) &&
+        hasValidPlatformStorage(value.platform.storage) &&
         value.devices.every(
             (device) => hasCanonicalDeviceTimestamps(device) && hasValidDeviceSemantics(device),
         ) &&

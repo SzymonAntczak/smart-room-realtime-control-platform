@@ -1,9 +1,238 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import type { Clock, TimerScheduler } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
+
+import type { RoomStorage } from '../platform/storage/room-storage';
+import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
+import {
+    StorageAvailabilityError,
+    StorageInvariantError,
+} from '../platform/storage/storage-errors';
 
 import { createTemperatureRoomRuntime } from './temperature-room-runtime';
 
 describe('createTemperatureRoomRuntime', () => {
+    it('terminates instead of continuing volatile after a rolled-back fatal storage error', () => {
+        const fatalError = new StorageInvariantError('broken storage invariant', undefined);
+        const storage = {
+            getLatestRoomProjection() {
+                return undefined;
+            },
+            transact() {
+                return { status: 'confirmed_rolled_back' as const, error: fatalError };
+            },
+        } as unknown as RoomStorage;
+
+        expect(() =>
+            createTemperatureRoomRuntime({
+                storage,
+                clock: createMutableClock('2026-06-08T09:30:00Z'),
+            }),
+        ).toThrow('storage_fatal_error');
+    });
+
+    it('labels only an indeterminate storage outcome as unknown', () => {
+        const storage = {
+            transact() {
+                return { status: 'indeterminate' as const, error: new Error('commit uncertain') };
+            },
+        } as unknown as RoomStorage;
+
+        expect(() =>
+            createTemperatureRoomRuntime({
+                storage,
+                clock: createMutableClock('2026-06-08T09:30:00Z'),
+            }),
+        ).toThrow('storage_commit_outcome_unknown');
+    });
+
+    it('starts degraded when a checkpoint read has an availability failure', () => {
+        const storage = {
+            transact() {
+                return { status: 'committed' as const, value: [] };
+            },
+            getLatestRoomProjection() {
+                throw new StorageAvailabilityError('database is busy', undefined);
+            },
+        } as unknown as RoomStorage;
+        const runtime = createTemperatureRoomRuntime({
+            storage,
+            clock: createMutableClock('2026-06-08T09:30:00Z'),
+        });
+
+        try {
+            runtime.start();
+
+            expect(runtime.getRoomSnapshot().platform.storage).toEqual({
+                status: 'degraded',
+                changedAt: '2026-06-08T09:30:00.000Z',
+                reason: 'storage_write_failed',
+                historyGenerationId: null,
+                storedThroughSequence: null,
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('runs startup retention before loading accepted input identities', () => {
+        const calls: string[] = [];
+        const storage = {
+            getLatestRoomProjection() {
+                calls.push('checkpoint');
+
+                return undefined;
+            },
+            listAcceptedInputIdentities() {
+                calls.push('identities');
+
+                return [];
+            },
+            getMetadata() {
+                calls.push('metadata');
+
+                return {
+                    historyGenerationId: 'test-generation',
+                    schemaVersion: 1,
+                    lastStorageSequence: 0,
+                };
+            },
+            transact(
+                operation: (transaction: {
+                    retireExpiredRecords(): string[];
+                    saveLatestRoomProjection(): void;
+                }) => unknown,
+            ) {
+                const value = operation({
+                    retireExpiredRecords() {
+                        calls.push('retention');
+
+                        return [];
+                    },
+                    saveLatestRoomProjection() {
+                        calls.push('checkpoint-save');
+                    },
+                });
+
+                return { status: 'committed' as const, value };
+            },
+        } as unknown as RoomStorage;
+
+        createTemperatureRoomRuntime({
+            storage,
+            clock: createMutableClock('2026-06-08T09:30:00Z'),
+        });
+
+        expect(calls.indexOf('retention')).toBeLessThan(calls.indexOf('identities'));
+    });
+
+    it('persists a restored command timeout before exposing the first recovered snapshot', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const initialStorage = createSqliteRoomStorage({ databasePath });
+        const initialRuntime = createTemperatureRoomRuntime({
+            clock,
+            storage: initialStorage,
+            ledScenario: 'omit_confirmation',
+            commandTimer: createCommandTimer(),
+        });
+        let recoveredStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let recoveredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            initialRuntime.start();
+            const command = initialRuntime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            initialRuntime.stop();
+            initialStorage.close();
+            clock.advanceBy(5_000);
+
+            recoveredStorage = createSqliteRoomStorage({ databasePath });
+            recoveredRuntime = createTemperatureRoomRuntime({
+                clock,
+                storage: recoveredStorage,
+                ledScenario: 'omit_confirmation',
+                commandTimer: createCommandTimer(),
+            });
+            recoveredRuntime.start();
+
+            expect(recoveredRuntime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(recoveredRuntime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ commandId: command.commandId, status: 'timed_out' }),
+            ]);
+            expect(recoveredStorage.listSignificantFacts()).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventType: 'command.timed_out',
+                        commandId: command.commandId,
+                    }),
+                ]),
+            );
+        } finally {
+            initialRuntime.stop();
+            initialStorage.close();
+            recoveredRuntime?.stop();
+            recoveredStorage?.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('admits the first replay after its durable retention horizon expires', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const storage = createSqliteRoomStorage({ databasePath });
+        const clock = createMutableClock('2026-08-01T10:00:00Z');
+        const timer = createManualTimer();
+        let nativeMessageIndex = 0;
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer,
+            storage,
+            generateNativeMessageId() {
+                nativeMessageIndex += 1;
+
+                return nativeMessageIndex === 1 || nativeMessageIndex === 7
+                    ? 'expired-availability'
+                    : `native-${nativeMessageIndex}`;
+            },
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(31 * 24 * 60 * 60 * 1_000);
+            runtime.runDeviceScenario('led-main', 'disconnect_device');
+
+            expect(device(runtime, 'led-main')).toMatchObject({ availability: 'offline' });
+            expect(storage.listQuarantineEntries()).not.toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventId: 'simulator-adapter:led-main-native:expired-availability',
+                        reason: 'event_identity_conflict',
+                    }),
+                ]),
+            );
+            expect(storage.listSignificantFacts()).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventId: 'simulator-adapter:led-main-native:expired-availability',
+                        payload: expect.objectContaining({ availability: 'offline' }),
+                    }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+            storage.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
     it('starts with two independently configured temperature projections', () => {
         const runtime = createTemperatureRoomRuntime({
             clock: createMutableClock('2026-06-08T09:30:00Z'),
@@ -464,6 +693,48 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('atomically prepares both the observed report and derived confirmation record', () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const storage = createCapturingStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            commandTimer: createCommandTimer(),
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(1);
+            const result = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            const confirmation = storage.significantFacts.find(
+                (fact) =>
+                    fact.eventType === 'command.confirmed' && fact.commandId === result.commandId,
+            );
+
+            expect(confirmation).toEqual(
+                expect.objectContaining({
+                    payload: expect.objectContaining({ sourceEventId: expect.any(String) }),
+                }),
+            );
+            expect(
+                storage.significantFacts.some(
+                    (fact) =>
+                        fact.eventType === 'device.state.reported' &&
+                        fact.eventId ===
+                            (confirmation?.payload as { sourceEventId?: string } | undefined)
+                                ?.sourceEventId,
+                ),
+            ).toBe(true);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('cancels the timeout when a delayed matching report confirms the command', () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const ledScheduler = createLedScheduler();
@@ -830,5 +1101,68 @@ function createCommandTimer() {
         size() {
             return callbacks.size;
         },
+    };
+}
+
+function createCapturingStorage() {
+    const significantFacts: Array<{
+        eventId?: string;
+        eventType: string;
+        commandId?: string;
+        payload: unknown;
+    }> = [];
+    let storageSequence = 0;
+
+    return {
+        significantFacts,
+        port: {
+            getMetadata() {
+                return {
+                    historyGenerationId: 'test-generation',
+                    schemaVersion: 1,
+                    lastStorageSequence: storageSequence,
+                };
+            },
+            getLatestRoomProjection() {
+                return undefined;
+            },
+            listAcceptedInputIdentities() {
+                return [];
+            },
+            transact(
+                operation: (transaction: {
+                    appendSignificantFact(input: {
+                        eventId?: string;
+                        eventType: string;
+                        commandId?: string;
+                        payload: unknown;
+                    }): { storageSequence: number };
+                    appendTelemetrySample(): { storageSequence: number };
+                    appendQuarantineEntry(): { internalSequence: number };
+                    upsertAcceptedInputIdentity(): void;
+                    retireExpiredRecords(): void;
+                    saveLatestRoomProjection(): void;
+                }) => unknown,
+            ) {
+                const value = operation({
+                    appendSignificantFact(input) {
+                        significantFacts.push(input);
+
+                        return { storageSequence: ++storageSequence };
+                    },
+                    appendTelemetrySample() {
+                        return { storageSequence: ++storageSequence };
+                    },
+                    appendQuarantineEntry() {
+                        return { internalSequence: 1 };
+                    },
+                    upsertAcceptedInputIdentity() {},
+                    retireExpiredRecords() {},
+                    saveLatestRoomProjection() {},
+                });
+
+                return { status: 'committed' as const, value };
+            },
+        } as unknown as RoomStorage,
     };
 }

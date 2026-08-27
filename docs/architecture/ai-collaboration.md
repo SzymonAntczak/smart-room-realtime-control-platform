@@ -12,7 +12,8 @@ subagent prompts.
 2. `AGENTS.md` files provide local operating instructions for AI agents working
    in a repository area.
 3. Skills provide reusable workflows for common kinds of work.
-4. Subagents provide focused review or validation passes.
+4. Subagents provide focused research, validation or explicitly bounded
+   delivery judgment.
 
 Planning documents in `docs/planning/` remain directional context until an idea
 is promoted into architecture docs or an accepted ADR.
@@ -74,14 +75,14 @@ only when the extra reasoning produces a meaningful quality gain. Revisit these
 presets as model availability and observed project outcomes change; see the
 [official OpenAI model guidance](https://developers.openai.com/api/docs/guides/latest-model).
 
-| Delivery stage | Default selection | Escalation or boundary |
-| --- | --- | --- |
-| Decompose a roadmap Stage into backlog tasks | Sol High | Use Sol XHigh only when the Stage creates a fundamental system boundary or requires unusually difficult synthesis. |
-| Plan one accepted task | Sol High | Use Sol XHigh only when the plan needs exceptional cross-cutting analysis. The human owner approves the plan and resolves material decisions. |
-| Implement an approved plan | Terra Medium | Escalate only as needed: Terra High, then Sol Medium, then Sol High. The implementer must not silently redesign system behavior. |
-| Review a task | Sol High | Use Sol XHigh only for unusually complex review evidence. Review remains read-only unless the human owner explicitly authorizes a fix. |
-| Prepare and create a commit | Luna Low or Luna Medium | Keep the existing scoped commit workflow; the human owner chooses when the reviewed change is accepted for commit. |
-| Audit completion of a whole Stage | Sol Ultra | Use only for a read-only audit with separable, independent areas of evidence. It is not the default for a task or normal Stage decomposition. The human owner decides whether the Stage is complete. |
+| Delivery stage                               | Default selection       | Escalation or boundary                                                                                                                                                                               |
+| -------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decompose a roadmap Stage into backlog tasks | Sol High                | Use Sol XHigh only when the Stage creates a fundamental system boundary or requires unusually difficult synthesis.                                                                                   |
+| Plan one accepted task                       | Sol High                | Use Sol XHigh only when the plan needs exceptional cross-cutting analysis. The human owner approves the plan and resolves material decisions.                                                        |
+| Implement an approved plan                   | Terra Medium            | Use the verified implementation workflow and one writer. Escalate only as needed: Terra High, then Sol Medium, then Sol High. The implementer must not silently redesign system behavior.            |
+| Review a task                                | Sol High                | Use Sol XHigh only for unusually complex review evidence. General review remains read-only; the delivery reviewer provides an independent bounded gate.                                              |
+| Prepare and create a commit                  | Luna Low or Luna Medium | Keep the existing scoped commit workflow; the human owner chooses when the reviewed change is accepted for commit.                                                                                   |
+| Audit completion of a whole Stage            | Sol Ultra               | Use only for a read-only audit with separable, independent areas of evidence. It is not the default for a task or normal Stage decomposition. The human owner decides whether the Stage is complete. |
 
 The main agent's model is selected manually for the task. Project configuration
 provides compatible subagent defaults and focused research presets; it cannot
@@ -91,19 +92,73 @@ Human ownership remains explicit throughout this workflow: the human approves
 implementation plans, owns changes to system behavior and architecture,
 accepts review outcomes, and decides when to commit or close a Stage.
 
+## Goal-Oriented Task Delivery
+
+Use a Goal for a cohesive implementation task that has stable acceptance
+criteria, meaningful verification and a clear stopping condition. Small, local
+changes should use the same discipline with a minimal outline instead of Goal
+ceremony. A roadmap Stage or an open-ended architecture exploration is too
+broad to become one implementation Goal.
+
+The preferred task flow is:
+
+1. inspect binding documentation and repository evidence,
+2. prepare a plan with stable acceptance criteria, definition-of-done items,
+   non-goals and verification scenarios,
+3. obtain human approval for choices that affect behavior or architecture,
+4. implement through one writer, optionally using read-only research
+   subagents,
+5. run the narrowest credible verification,
+6. pass an independent delivery review,
+7. prepare a commit only when explicitly requested.
+
+When a Goal is appropriate, the plan should include a Goal Execution Contract:
+the objective, required acceptance criteria and definition-of-done items,
+constraints, non-goals, verification, checkpoints, pause conditions and stop
+condition. The contract is a handoff of approved requirements; it must not add
+new behavior.
+
+Specification evidence may be locked selectively when it directly represents
+an approved acceptance criterion. Locked evidence is not rewritten merely to
+make an implementation pass. This does not freeze unrelated tests or prevent a
+human-approved correction to a defective specification.
+
+Delivery review is bounded to two passes. After the first `BLOCKING` result,
+the implementation workflow may apply one cohesive correction batch only for
+confirmed implementation defects, then rerun verification and request one
+final review. Specification defects, requirement ambiguity, architecture
+conflicts, scope gaps and verification-environment failures stop autonomous
+remediation immediately. A second `BLOCKING` result also stops the workflow and
+returns a decision package to the human.
+
+Use these blocker categories consistently:
+
+- `implementation_defect` — code or tests fail an approved requirement,
+- `specification_defect` — approved specification evidence is internally wrong,
+- `requirement_ambiguity` — the intended behavior cannot be resolved from
+  approved sources,
+- `architecture_conflict` — the requested outcome conflicts with binding
+  architecture or an accepted ADR,
+- `scope_gap` — completion requires work outside the approved scope,
+- `verification_environment` — required verification cannot run credibly in the
+  available environment.
+
 ## Subagents
 
 Subagents should be used primarily for focused, independent exploration,
 review, validation and checks. Skills own reusable workflows and decide whether
-a focused pass is needed; the main agent owns user interaction, synthesis and
-the final review or implementation plan.
+a focused pass is needed; the main agent owns user interaction, planning
+decisions, implementation synthesis and the final general-review response. A
+dedicated delivery reviewer is the narrow exception: it may issue a bounded
+`PASS` or `BLOCKING` judgment against an approved plan, acceptance criteria and
+definition of done.
 
 Review and planning skills may automatically delegate independent, read-heavy
 passes when they materially improve confidence. Use at most three passes for a
 review and two for a plan. Do not delegate a small, clear task, dependent work,
 or overlapping write work merely because it is difficult.
 
-Subagents should:
+Research subagents should:
 
 - stay read-only unless explicitly assigned implementation work,
 - identify the binding source of truth before judging a change,
@@ -113,13 +168,19 @@ Subagents should:
   review or implementation plan,
 - avoid introducing new behavior rules in their output.
 
+The delivery reviewer instead reports the gate result, blocking findings,
+advisories, affected acceptance criteria or definition-of-done items and any
+remaining uncertainty. It remains read-only and must not redesign the plan or
+change the specification.
+
 For AI-configuration reviews, subagents should check that:
 
 - docs remain the source of truth for behavior,
 - `AGENTS.md` files point to docs instead of duplicating them,
 - skills remain workflow-oriented,
 - subagent roles and prompts remain narrowly scoped to research, review
-  evidence or validation unless explicitly assigned implementation,
+  evidence or validation, except for explicitly bounded delivery judgment or
+  explicitly assigned implementation,
 - redundant context is reduced when it creates drift risk.
 
 ## Updating AI Context

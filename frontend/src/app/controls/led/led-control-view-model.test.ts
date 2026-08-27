@@ -18,7 +18,11 @@ describe('toLedControlViewModel', () => {
                 health: 'degraded',
                 healthReason: 'partial_data',
                 observationStatus: {
-                    power: { freshness: 'stale', lastObservedAt: '2026-08-06T11:00:00Z' },
+                    power: {
+                        freshness: 'stale',
+                        lastObservedAt: '2026-08-06T11:00:00Z',
+                        durability: 'durable',
+                    },
                 },
             },
             activeCommand: createPendingCommand(),
@@ -71,6 +75,8 @@ describe('toLedControlViewModel', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
                 requestedAt: '2026-08-06T12:00:00Z',
+                durability: 'durable',
+                lifecycleDurability: 'durable',
                 dispatchedAt: '2026-08-06T12:00:01Z',
                 status: 'failed',
                 failedAt: '2026-08-06T12:00:02Z',
@@ -117,12 +123,18 @@ function createLed(): LedDeviceProjection {
         role: 'led-output',
         availability: 'online',
         availabilityChangedAt: '2026-08-06T12:00:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-08-06T12:00:00Z',
+        healthDurability: 'durable',
         reportedState: { power: 'off' },
         commandAvailability: { policy: 'allow' },
         observationStatus: {
-            power: { freshness: 'unknown', lastObservedAt: '2026-08-06T12:00:00Z' },
+            power: {
+                freshness: 'unknown',
+                lastObservedAt: '2026-08-06T12:00:00Z',
+                durability: 'durable',
+            },
         },
         activeCommandId: 'cmd-1',
     };
@@ -137,6 +149,9 @@ function createPendingCommand(): ActiveCommandProjection {
         requestedState: { power: 'on' },
         requestedAt: '2026-08-06T12:00:00Z',
         dispatchedAt: '2026-08-06T12:00:01Z',
+        deadlineAt: '2026-08-06T12:00:06Z',
+        durability: 'durable',
+        lifecycleDurability: 'durable',
     };
 }
 
@@ -151,5 +166,7 @@ function createTimedOutCommand(): TerminalCommandProjection {
         dispatchedAt: '2026-08-06T12:00:01Z',
         timedOutAt: '2026-08-06T12:00:06Z',
         reason: 'confirmation_missing',
+        durability: 'durable',
+        lifecycleDurability: 'durable',
     };
 }

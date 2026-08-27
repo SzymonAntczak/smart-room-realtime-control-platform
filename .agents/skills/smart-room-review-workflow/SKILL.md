@@ -1,13 +1,18 @@
 ---
 name: smart-room-review-workflow
-description: Use for read-only Smart Room reviews, including architecture conformance, frontend conformance, control reliability, AI configuration, test gaps, documentation drift, decision gaps, and reusable review output structure.
+description: Use for read-only Smart Room reviews, including architecture conformance, frontend conformance, control reliability, AI configuration, delivery acceptance, test gaps, documentation drift, decision gaps, and reusable review output structure.
 ---
 
 # Smart Room Review Workflow
 
-Use this skill to lead Smart Room reviews consistently. The main agent owns the
-scope, finding severity and final report; subagents supply only focused,
-read-only evidence when useful.
+Use this skill to lead Smart Room reviews consistently. Distinguish two modes:
+
+- **General review** reports severity-ordered findings. The main agent owns the
+  scope, severity and final synthesis; subagents supply focused read-only
+  evidence when useful.
+- **Delivery gate** evaluates an approved plan, stable acceptance criteria and
+  definition-of-done items. It classifies findings as `BLOCKING` or `ADVISORY`
+  and returns an overall `PASS` or `BLOCKING` result.
 
 ## Workflow
 
@@ -20,22 +25,26 @@ read-only evidence when useful.
    confidence. Delegate at most three read-only passes; skip delegation for a
    small, clear review or dependent work.
 6. Give each pass one distinct question, the relevant boundary and an expected
-   evidence summary. Suitable passes include architecture, reliability,
-   frontend, simulator and AI-configuration research.
+   evidence summary. Suitable passes include system architecture and
+   reliability, frontend, simulator and AI-configuration research.
 7. Inspect the touched files and nearby ownership boundary.
 8. Inspect the relevant tests with the same behavior boundary in mind.
 9. Inspect changed and nearby code for AI-generation artifacts that create a
    concrete correctness, testability, boundary or maintenance risk.
 10. Compare test intent against documented behavior, changed behavior and
-   realistic failure modes.
-11. Synthesize delegated evidence, resolve duplicate findings and classify
-    findings when useful: code drift, doc drift, structure drift,
+    realistic failure modes.
+11. For a general review, synthesize delegated evidence, resolve duplicate
+    findings and classify findings when useful: code drift, doc drift, structure drift,
     contract drift, projection drift, test gap, weak test, redundant test,
     decision gap, AI-config drift, or AI artifact.
-12. Lead with concrete findings ordered by severity.
-13. Cite files and lines when possible.
-14. Include open questions or assumptions when they affect confidence.
-15. End with a short suggested-actions section when there are findings.
+12. For a delivery gate, map findings to acceptance criteria,
+    definition-of-done items and their source evidence. Return `PASS` only when
+    there are zero blocking findings; advisories may remain when they do not
+    prevent the approved outcome.
+13. Lead general reviews with concrete findings ordered by severity.
+14. Cite files and lines when possible.
+15. Include open questions or assumptions when they affect confidence.
+16. End with a short suggested-actions section when there are findings.
 
 ## Delegated Evidence
 
@@ -43,6 +52,18 @@ Ask each subagent to return only: binding sources checked, observations with
 file references, concrete risks or gaps, and confidence. Do not ask a subagent
 to assign final severity, produce the final review or create an implementation
 plan.
+
+A dedicated delivery reviewer is the bounded exception. It may issue the final
+gate result against approved inputs, but it remains read-only and must not
+change the plan, specification, acceptance criteria or definition of done.
+
+## Delivery Gate Output
+
+- `DELIVERY_REVIEW: PASS` or `DELIVERY_REVIEW: BLOCKING`.
+- Blocking findings with affected acceptance criteria, definition-of-done items
+  and source evidence.
+- Advisories.
+- Verification gaps and uncertainty.
 
 ## Review Boundary
 

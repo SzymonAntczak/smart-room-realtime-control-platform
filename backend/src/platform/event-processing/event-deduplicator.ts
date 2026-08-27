@@ -8,6 +8,7 @@ export interface EventDeduplicationClock {
 }
 
 export interface EventDeduplicator {
+    inspect(eventId: string): EventDeduplicationCheck;
     check(eventId: string): EventDeduplicationCheck;
     remember(eventId: string): string[];
 }
@@ -30,6 +31,16 @@ export function createEventDeduplicator({
     const entries = new Map<string, number>();
 
     return {
+        inspect(eventId) {
+            const checkedAt = readClock();
+            const acceptedAt = entries.get(eventId);
+
+            return {
+                isDuplicate:
+                    acceptedAt !== undefined && acceptedAt > Date.parse(checkedAt) - retentionMs,
+                checkedAt,
+            };
+        },
         check(eventId) {
             const checkedAt = readClock();
             removeExpiredEntries(Date.parse(checkedAt));

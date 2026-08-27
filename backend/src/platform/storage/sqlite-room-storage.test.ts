@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,8 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { roomStorageMigrations } from './sqlite-migrations';
-import { createSqliteRoomStorage } from './sqlite-room-storage';
+import { createSqliteRoomStorage, executeStorageTransaction } from './sqlite-room-storage';
 import {
     classifySqliteError,
     StorageAvailabilityError,
@@ -38,62 +36,15 @@ describe('SQLite room storage', () => {
             historyGenerationId: expect.stringMatching(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             ),
-            schemaVersion: 2,
+            schemaVersion: 1,
             lastStorageSequence: 0,
         });
         expect(reopened.getMetadata()).toEqual(initialMetadata);
         reopened.close();
     });
 
-    it('migrates a database stopped at the previous supported migration', () => {
-        const databasePath = temporaryDatabasePath();
-        const historyGenerationId = randomUUID();
-        createVersionOneDatabase(databasePath, historyGenerationId);
-
-        const storage = createSqliteRoomStorage({ databasePath });
-        const metadata = storage.getMetadata();
-        storage.close();
-        const database = new DatabaseSync(databasePath);
-        const index = database
-            .prepare("SELECT name FROM pragma_index_list('telemetry_samples') WHERE name = ?")
-            .get('telemetry_samples_by_device_metric_time');
-        database.close();
-
-        expect(metadata).toEqual({
-            historyGenerationId,
-            schemaVersion: 2,
-            lastStorageSequence: 0,
-        });
-        expect(index).toEqual({ name: 'telemetry_samples_by_device_metric_time' });
-    });
-
     it('stores and reads every Stage 4 storage category through the port', () => {
         const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
-        const fact = storage.appendSignificantFact({
-            recordId: 'fact-1',
-            eventId: 'event-fact-1',
-            eventType: 'device.availability.changed',
-            deviceId: 'led-main',
-            source: 'simulator-adapter',
-            occurredAt: '2026-08-14T10:00:00.000Z',
-            payload: { availability: 'online' },
-        });
-        const telemetry = storage.appendTelemetrySample({
-            recordId: 'telemetry-1',
-            eventId: 'event-telemetry-1',
-            deviceId: 'temp-desk',
-            metric: 'temperature',
-            value: 22.5,
-            unit: 'celsius',
-            occurredAt: '2026-08-14T10:00:01.000Z',
-            payload: { value: 22.5, unit: 'celsius' },
-        });
-        const quarantine = storage.appendQuarantineEntry({
-            eventId: 'event-invalid-1',
-            reason: 'invalid_payload',
-            recordedAt: '2026-08-14T10:00:02.000Z',
-            rawEvent: { malformed: true },
-        });
         const receipt = {
             source: 'simulator-led',
             commandId: 'command-1',
@@ -103,22 +54,340 @@ describe('SQLite room storage', () => {
         const projection = {
             updatedAt: '2026-08-14T10:00:04.000Z',
             projection: { roomName: 'Smart Room', devices: [] },
+            projectionEvidence: {
+                availabilityDeviceIds: [],
+                healthDeviceIds: [],
+                commandConfirmationSources: [{ commandId: 'command-1', eventId: 'state-report-1' }],
+            },
+            volatileGuards: [],
         };
 
+        const outcome = storage.transact((transaction) => {
+            const fact = transaction.appendSignificantFact({
+                recordId: 'fact-1',
+                eventId: 'event-fact-1',
+                eventType: 'device.availability.changed',
+                deviceId: 'led-main',
+                source: 'simulator-adapter',
+                occurredAt: '2026-08-14T10:00:00.000Z',
+                payload: { availability: 'online' },
+            });
+            const telemetry = transaction.appendTelemetrySample({
+                recordId: 'telemetry-1',
+                eventId: 'event-telemetry-1',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                value: 22.5,
+                unit: 'celsius',
+                occurredAt: '2026-08-14T10:00:01.000Z',
+                payload: { value: 22.5, unit: 'celsius' },
+            });
+            const quarantine = transaction.appendQuarantineEntry({
+                eventId: 'event-invalid-1',
+                reason: 'invalid_payload',
+                recordedAt: '2026-08-14T10:00:02.000Z',
+                rawEvent: { malformed: true },
+            });
+            transaction.saveLatestRoomProjection(projection);
+
+            return { fact, telemetry, quarantine };
+        });
+
+        if (outcome.status !== 'committed') {
+            throw outcome.error;
+        }
+
+        const { fact, telemetry, quarantine } = outcome.value;
         storage.upsertSimulatorCommandReceipt(receipt);
-        storage.saveLatestRoomProjection(projection);
 
         expect(fact.storageSequence).toBe(1);
         expect(telemetry.storageSequence).toBe(2);
         expect(storage.getMetadata().lastStorageSequence).toBe(2);
         expect(storage.listSignificantFacts()).toEqual([fact]);
-        expect(storage.listTelemetrySamples({ deviceId: 'temp-desk', metric: 'temperature' })).toEqual([
-            telemetry,
-        ]);
+        expect(
+            storage.listTelemetrySamples({ deviceId: 'temp-desk', metric: 'temperature' }),
+        ).toEqual([telemetry]);
         expect(storage.listQuarantineEntries()).toEqual([quarantine]);
-        expect(storage.getSimulatorCommandReceipt(receipt.source, receipt.commandId)).toEqual(receipt);
+        expect(storage.getSimulatorCommandReceipt(receipt.source, receipt.commandId)).toEqual(
+            receipt,
+        );
         expect(storage.getLatestRoomProjection()).toEqual(projection);
         storage.close();
+    });
+
+    it('orders and retires canonical timestamps by instant rather than text representation', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+
+        storage.transact((transaction) => {
+            transaction.appendSignificantFact({
+                recordId: 'whole-second',
+                eventId: 'whole-second-event',
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-08-14T00:00:00Z',
+                payload: { availability: 'online' },
+            });
+            transaction.appendSignificantFact({
+                recordId: 'fractional-second',
+                eventId: 'fractional-second-event',
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-08-14T00:00:00.500Z',
+                payload: { availability: 'offline' },
+            });
+            transaction.retireExpiredRecords({ asOf: '2026-09-13T00:00:00.500Z' });
+        });
+
+        expect(storage.listSignificantFacts()).toEqual([
+            expect.objectContaining({ recordId: 'fractional-second' }),
+        ]);
+        storage.close();
+    });
+
+    it('removes an accepted identity only after its final active record is retired', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const eventId = 'identity-retention-event';
+        const fingerprint = 'fp:v1:sha256:identity-retention';
+
+        const firstOutcome = storage.transact((transaction) => {
+            transaction.appendSignificantFact({
+                recordId: 'identity-fact',
+                eventId,
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-08-01T00:00:00.000Z',
+                payload: { availability: 'online' },
+            });
+            transaction.appendTelemetrySample({
+                recordId: 'identity-telemetry',
+                eventId,
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                value: 22,
+                unit: 'celsius',
+                occurredAt: '2026-08-15T00:00:00.000Z',
+                payload: { metric: 'temperature', value: 22, unit: 'celsius' },
+            });
+            transaction.upsertAcceptedInputIdentity({
+                eventId,
+                fingerprint,
+                durability: 'durable',
+                acceptedAt: '2026-08-15T00:00:00.000Z',
+            });
+
+            return transaction.retireExpiredRecords({ asOf: '2026-09-01T00:00:00.000Z' });
+        });
+
+        expect(firstOutcome).toMatchObject({ status: 'committed', value: [] });
+        expect(storage.listAcceptedInputIdentities()).toEqual([
+            expect.objectContaining({ eventId, fingerprint }),
+        ]);
+        expect(storage.isAcceptedInputIdentityActive(eventId, '2026-09-01T00:00:00.000Z')).toBe(
+            true,
+        );
+
+        const secondOutcome = storage.transact((transaction) =>
+            transaction.retireExpiredRecords({ asOf: '2026-09-15T00:00:00.000Z' }),
+        );
+
+        expect(secondOutcome).toMatchObject({ status: 'committed', value: [eventId] });
+        expect(storage.listAcceptedInputIdentities()).toEqual([]);
+        expect(storage.isAcceptedInputIdentityActive(eventId, '2026-09-15T00:00:00.000Z')).toBe(
+            false,
+        );
+        storage.close();
+    });
+
+    it('uses active-retention indexes for the write-side ordering keys', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        storage.close();
+        const database = new DatabaseSync(databasePath);
+        const plans = [
+            database
+                .prepare(
+                    `EXPLAIN QUERY PLAN
+                     SELECT storage_sequence FROM significant_facts
+                     WHERE retired_at IS NULL
+                     ORDER BY occurred_at DESC, storage_sequence DESC`,
+                )
+                .all(),
+            database
+                .prepare(
+                    `EXPLAIN QUERY PLAN
+                     SELECT storage_sequence FROM telemetry_samples
+                     WHERE retired_at IS NULL AND device_id = ?
+                     ORDER BY occurred_at DESC, storage_sequence DESC`,
+                )
+                .all('temp-desk'),
+            database
+                .prepare(
+                    `EXPLAIN QUERY PLAN
+                     SELECT internal_sequence FROM quarantine_entries
+                     WHERE retired_at IS NULL
+                     ORDER BY recorded_at DESC, internal_sequence DESC`,
+                )
+                .all(),
+        ];
+        database.close();
+
+        expect(plans.map((plan) => JSON.stringify(plan)).join(' ')).toContain(
+            'significant_facts_active_by_time',
+        );
+        expect(plans.map((plan) => JSON.stringify(plan)).join(' ')).toContain(
+            'telemetry_samples_active_by_device_time',
+        );
+        expect(plans.map((plan) => JSON.stringify(plan)).join(' ')).toContain(
+            'quarantine_entries_active_by_time',
+        );
+    });
+
+    it('keeps volatile guards in the latest typed checkpoint', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        const guard = {
+            eventId: 'volatile-event-1',
+            fingerprint: 'fp:v1:sha256:guard',
+            durability: 'volatile' as const,
+            acceptedAt: '2026-08-14T10:00:00.000Z',
+        };
+
+        const outcome = storage.transact((transaction) => {
+            transaction.saveLatestRoomProjection({
+                updatedAt: '2026-08-14T10:00:01.000Z',
+                projection: { roomName: 'Smart Room', devices: [] },
+                projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                volatileGuards: [guard],
+            });
+        });
+
+        expect(outcome.status).toBe('committed');
+
+        expect(storage.getLatestRoomProjection()).toEqual({
+            updatedAt: '2026-08-14T10:00:01.000Z',
+            projection: { roomName: 'Smart Room', devices: [] },
+            projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+            volatileGuards: [guard],
+        });
+        storage.close();
+    });
+
+    it('rejects a legacy or malformed checkpoint instead of inferring durability evidence', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        storage.close();
+        const database = new DatabaseSync(databasePath);
+        database
+            .prepare(
+                `INSERT INTO latest_room_projection (id, updated_at, projection_json)
+                 VALUES (1, ?, ?)`,
+            )
+            .run(
+                '2026-08-14T10:00:01.000Z',
+                JSON.stringify({
+                    roomName: 'Legacy Room',
+                    devices: [
+                        { deviceId: 'online-device', availability: 'online', health: 'unknown' },
+                        {
+                            deviceId: 'degraded-device',
+                            availability: 'unknown',
+                            health: 'degraded',
+                        },
+                    ],
+                }),
+            );
+        database.close();
+
+        const reopened = createSqliteRoomStorage({ databasePath });
+
+        try {
+            expect(() => reopened.getLatestRoomProjection()).toThrow(StorageSchemaError);
+        } finally {
+            reopened.close();
+        }
+    });
+
+    it('classifies a COMMIT error as indeterminate even after cleanup succeeds', () => {
+        let transactionOpen = false;
+        const executed: string[] = [];
+        const database = {
+            get isTransaction() {
+                return transactionOpen;
+            },
+            exec(statement: string) {
+                executed.push(statement);
+
+                if (statement === 'BEGIN IMMEDIATE') {
+                    transactionOpen = true;
+
+                    return;
+                }
+
+                if (statement === 'COMMIT') {
+                    throw Object.assign(new Error('commit failed'), { errcode: 5 });
+                }
+
+                if (statement === 'ROLLBACK') {
+                    transactionOpen = false;
+                }
+            },
+        };
+
+        expect(executeStorageTransaction(database as never, () => 'value')).toMatchObject({
+            status: 'indeterminate',
+        });
+        expect(executed).toEqual(['BEGIN IMMEDIATE', 'COMMIT', 'ROLLBACK']);
+    });
+
+    it('rolls back a BEGIN error that leaves a transaction active before allowing fallback', () => {
+        let transactionOpen = false;
+        const executed: string[] = [];
+        const database = {
+            get isTransaction() {
+                return transactionOpen;
+            },
+            exec(statement: string) {
+                executed.push(statement);
+
+                if (statement === 'BEGIN IMMEDIATE') {
+                    transactionOpen = true;
+
+                    throw Object.assign(new Error('begin failed'), { errcode: 5 });
+                }
+
+                if (statement === 'ROLLBACK') {
+                    transactionOpen = false;
+                }
+            },
+        };
+
+        expect(executeStorageTransaction(database as never, () => 'value')).toMatchObject({
+            status: 'confirmed_rolled_back',
+        });
+        expect(executed).toEqual(['BEGIN IMMEDIATE', 'ROLLBACK']);
+    });
+
+    it('treats a rollback that leaves the transaction active as indeterminate', () => {
+        let transactionOpen = false;
+        const database = {
+            get isTransaction() {
+                return transactionOpen;
+            },
+            exec(statement: string) {
+                if (statement === 'BEGIN IMMEDIATE') {
+                    transactionOpen = true;
+
+                    return;
+                }
+
+                if (statement === 'ROLLBACK') {
+                    return;
+                }
+            },
+        };
+
+        expect(
+            executeStorageTransaction(database as never, () => {
+                throw new Error('operation failed');
+            }),
+        ).toMatchObject({ status: 'indeterminate' });
     });
 
     it('uses the telemetry history index and binds device identifiers as parameters', () => {
@@ -126,28 +395,32 @@ describe('SQLite room storage', () => {
         const storage = createSqliteRoomStorage({ databasePath });
         const quotedDeviceId = "temp'; DROP TABLE telemetry_samples; --";
 
-        storage.appendTelemetrySample({
-            recordId: 'telemetry-quoted',
-            deviceId: quotedDeviceId,
-            metric: 'temperature',
-            value: 21,
-            unit: 'celsius',
-            occurredAt: '2026-08-14T10:00:00.000Z',
-            payload: { value: 21 },
-        });
-        storage.appendTelemetrySample({
-            recordId: 'telemetry-other',
-            deviceId: 'temp-other',
-            metric: 'temperature',
-            value: 20,
-            unit: 'celsius',
-            occurredAt: '2026-08-14T10:00:01.000Z',
-            payload: { value: 20 },
+        const outcome = storage.transact((transaction) => {
+            transaction.appendTelemetrySample({
+                recordId: 'telemetry-quoted',
+                deviceId: quotedDeviceId,
+                metric: 'temperature',
+                value: 21,
+                unit: 'celsius',
+                occurredAt: '2026-08-14T10:00:00.000Z',
+                payload: { value: 21 },
+            });
+            transaction.appendTelemetrySample({
+                recordId: 'telemetry-other',
+                deviceId: 'temp-other',
+                metric: 'temperature',
+                value: 20,
+                unit: 'celsius',
+                occurredAt: '2026-08-14T10:00:01.000Z',
+                payload: { value: 20 },
+            });
         });
 
-        expect(storage.listTelemetrySamples({ deviceId: quotedDeviceId, metric: 'temperature' })).toMatchObject([
-            { recordId: 'telemetry-quoted', deviceId: quotedDeviceId },
-        ]);
+        expect(outcome.status).toBe('committed');
+
+        expect(
+            storage.listTelemetrySamples({ deviceId: quotedDeviceId, metric: 'temperature' }),
+        ).toMatchObject([{ recordId: 'telemetry-quoted', deviceId: quotedDeviceId }]);
         storage.close();
 
         const database = new DatabaseSync(databasePath);
@@ -171,7 +444,9 @@ describe('SQLite room storage', () => {
         const storage = createSqliteRoomStorage({ databasePath });
         storage.close();
         const database = new DatabaseSync(databasePath);
-        database.prepare('UPDATE schema_migrations SET checksum = ? WHERE version = 2').run('changed');
+        database
+            .prepare('UPDATE schema_migrations SET checksum = ? WHERE version = 1')
+            .run('changed');
         database.close();
 
         expect(() => createSqliteRoomStorage({ databasePath })).toThrow(StorageSchemaError);
@@ -181,7 +456,7 @@ describe('SQLite room storage', () => {
         newerStorage.close();
         const newerDatabase = new DatabaseSync(newerDatabasePath);
         newerDatabase
-            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (3, ?, ?)')
+            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (2, ?, ?)')
             .run('future', 'future');
         newerDatabase.close();
 
@@ -190,7 +465,7 @@ describe('SQLite room storage', () => {
         );
     });
 
-    it('rejects a missing table or index before returning a storage port', () => {
+    it('rejects a missing or structurally altered table or index before returning a storage port', () => {
         const missingTablePath = temporaryDatabasePath();
         const missingTableStorage = createSqliteRoomStorage({ databasePath: missingTablePath });
         missingTableStorage.close();
@@ -212,6 +487,42 @@ describe('SQLite room storage', () => {
         expect(() => createSqliteRoomStorage({ databasePath: missingIndexPath })).toThrow(
             StorageSchemaError,
         );
+
+        const alteredTablePath = temporaryDatabasePath();
+        const alteredTableStorage = createSqliteRoomStorage({ databasePath: alteredTablePath });
+        alteredTableStorage.close();
+        const alteredTableDatabase = new DatabaseSync(alteredTablePath);
+        alteredTableDatabase.exec(`
+            DROP TABLE accepted_input_identities;
+            CREATE TABLE accepted_input_identities (
+                event_id TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                durability TEXT NOT NULL CHECK (durability IN ('durable', 'volatile')),
+                accepted_at TEXT NOT NULL
+            ) STRICT;
+            CREATE INDEX accepted_input_identities_by_accepted_at
+                ON accepted_input_identities (accepted_at, event_id);
+        `);
+        alteredTableDatabase.close();
+
+        expect(() => createSqliteRoomStorage({ databasePath: alteredTablePath })).toThrow(
+            StorageSchemaError,
+        );
+
+        const alteredIndexPath = temporaryDatabasePath();
+        const alteredIndexStorage = createSqliteRoomStorage({ databasePath: alteredIndexPath });
+        alteredIndexStorage.close();
+        const alteredIndexDatabase = new DatabaseSync(alteredIndexPath);
+        alteredIndexDatabase.exec(`
+            DROP INDEX significant_facts_active_by_time;
+            CREATE INDEX significant_facts_active_by_time
+                ON significant_facts (occurred_at DESC, storage_sequence DESC);
+        `);
+        alteredIndexDatabase.close();
+
+        expect(() => createSqliteRoomStorage({ databasePath: alteredIndexPath })).toThrow(
+            StorageSchemaError,
+        );
     });
 
     it('classifies native SQLite availability and manual-intervention failures', () => {
@@ -222,17 +533,22 @@ describe('SQLite room storage', () => {
         lockHolder.exec('BEGIN EXCLUSIVE');
 
         try {
-            expect(() =>
-                storage.appendTelemetrySample({
-                    recordId: 'blocked-sample',
-                    deviceId: 'temp-desk',
-                    metric: 'temperature',
-                    value: 20,
-                    unit: 'celsius',
-                    occurredAt: '2026-08-14T10:00:00.000Z',
-                    payload: { value: 20 },
-                }),
-            ).toThrow(StorageAvailabilityError);
+            expect(
+                storage.transact((transaction) =>
+                    transaction.appendTelemetrySample({
+                        recordId: 'blocked-sample',
+                        deviceId: 'temp-desk',
+                        metric: 'temperature',
+                        value: 20,
+                        unit: 'celsius',
+                        occurredAt: '2026-08-14T10:00:00.000Z',
+                        payload: { value: 20 },
+                    }),
+                ),
+            ).toMatchObject({
+                status: 'confirmed_rolled_back',
+                error: expect.any(StorageAvailabilityError),
+            });
         } finally {
             lockHolder.exec('ROLLBACK');
             lockHolder.close();
@@ -245,15 +561,21 @@ describe('SQLite room storage', () => {
         expect(() => createSqliteRoomStorage({ databasePath: invalidDatabasePath })).toThrow(
             StorageManualInterventionError,
         );
-        expect(() => renameSync(invalidDatabasePath, `${invalidDatabasePath}.preserved`)).not.toThrow();
+        expect(() =>
+            renameSync(invalidDatabasePath, `${invalidDatabasePath}.preserved`),
+        ).not.toThrow();
     });
 
     it('keeps migration, schema and invariant failures out of availability classification', () => {
-        expect(classifySqliteError({ code: 'ERR_SQLITE_ERROR', errcode: 5 }).kind).toBe('availability');
+        expect(classifySqliteError({ code: 'ERR_SQLITE_ERROR', errcode: 5 }).kind).toBe(
+            'availability',
+        );
         expect(classifySqliteError({ code: 'ERR_SQLITE_ERROR', errcode: 26 }).kind).toBe(
             'manual_intervention',
         );
-        expect(classifySqliteError(new StorageMigrationError('failed migration', undefined))).toMatchObject({
+        expect(
+            classifySqliteError(new StorageMigrationError('failed migration', undefined)),
+        ).toMatchObject({
             kind: 'fatal',
             category: 'migration',
         });
@@ -261,7 +583,9 @@ describe('SQLite room storage', () => {
             kind: 'fatal',
             category: 'schema',
         });
-        expect(classifySqliteError(new StorageInvariantError('bad invariant', undefined))).toMatchObject({
+        expect(
+            classifySqliteError(new StorageInvariantError('bad invariant', undefined)),
+        ).toMatchObject({
             kind: 'fatal',
             category: 'invariant',
         });
@@ -273,28 +597,4 @@ function temporaryDatabasePath(): string {
     temporaryDirectories.push(directory);
 
     return join(directory, 'room.sqlite');
-}
-
-function createVersionOneDatabase(databasePath: string, historyGenerationId: string): void {
-    const migration = roomStorageMigrations[0];
-
-    if (!migration) {
-        throw new Error('Expected the first room storage migration.');
-    }
-
-    const database = new DatabaseSync(databasePath);
-    database.exec(`
-        CREATE TABLE schema_migrations (
-            version INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            checksum TEXT NOT NULL
-        ) STRICT;
-        BEGIN IMMEDIATE;
-    `);
-    migration.apply(database, historyGenerationId);
-    database
-        .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (?, ?, ?)')
-        .run(migration.version, migration.name, migration.checksum);
-    database.exec('COMMIT');
-    database.close();
 }

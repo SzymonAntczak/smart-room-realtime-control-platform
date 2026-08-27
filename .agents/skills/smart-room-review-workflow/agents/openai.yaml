@@ -1,4 +1,4 @@
 interface:
     display_name: 'Smart Room Review Workflow'
-    short_description: 'Review Smart Room behavior, tests, and AI config'
-    default_prompt: 'Use $smart-room-review-workflow to review this Smart Room change.'
+    short_description: 'Review Smart Room changes and delivery readiness'
+    default_prompt: 'Use $smart-room-review-workflow to run a read-only Smart Room review and return one evidence-backed result.'

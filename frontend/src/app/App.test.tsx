@@ -132,6 +132,7 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands,
             recentCommands: [],
+            platform: { storage: availableStorage() },
         },
     };
 }
@@ -145,6 +146,9 @@ function pendingCommand() {
         requestedState: { power: 'on' },
         requestedAt: '2026-06-08T09:30:00Z',
         dispatchedAt: '2026-06-08T09:30:01Z',
+        deadlineAt: '2026-06-08T09:31:00Z',
+        durability: 'durable',
+        lifecycleDurability: 'durable',
     };
 }
 
@@ -155,12 +159,18 @@ function temperatureDevice() {
         role: 'temperature-sensor',
         availability: 'online',
         availabilityChangedAt: '2026-06-08T09:30:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-06-08T09:30:00Z',
+        healthDurability: 'durable',
         reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
         commandAvailability: { policy: 'block', reason: 'read_only_device' },
         observationStatus: {
-            temperature: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+            temperature: {
+                freshness: 'fresh',
+                lastObservedAt: '2026-06-08T09:30:00Z',
+                durability: 'durable',
+            },
         },
     };
 }
@@ -180,13 +190,19 @@ function ledDevice() {
         role: 'led-output',
         availability: 'online',
         availabilityChangedAt: '2026-06-08T09:30:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-06-08T09:30:00Z',
+        healthDurability: 'durable',
         reportedState: { power: 'off' },
         commandAvailability: { policy: 'allow' },
         activeCommandId: 'cmd-1',
         observationStatus: {
-            power: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+            power: {
+                freshness: 'fresh',
+                lastObservedAt: '2026-06-08T09:30:00Z',
+                durability: 'durable',
+            },
         },
     };
 }
@@ -198,12 +214,27 @@ function unsupportedDevice() {
         role: 'humidity-sensor',
         availability: 'online',
         availabilityChangedAt: '2026-06-08T09:30:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-06-08T09:30:00Z',
+        healthDurability: 'durable',
         reportedState: { humidity: 48 },
         commandAvailability: { policy: 'block', reason: 'read_only_device' },
         observationStatus: {
-            humidity: { freshness: 'fresh', lastObservedAt: '2026-06-08T09:30:00Z' },
+            humidity: {
+                freshness: 'fresh',
+                lastObservedAt: '2026-06-08T09:30:00Z',
+                durability: 'durable',
+            },
         },
+    };
+}
+
+function availableStorage() {
+    return {
+        status: 'available' as const,
+        changedAt: '2026-06-08T09:30:00Z',
+        historyGenerationId: 'generation-test',
+        storedThroughSequence: 0,
     };
 }

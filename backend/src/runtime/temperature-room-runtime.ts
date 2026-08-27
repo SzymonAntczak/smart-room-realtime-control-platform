@@ -16,7 +16,11 @@ import {
     temperatureScenarioActions,
 } from '@smart-room/contracts/development';
 import type { PlatformEvent } from '@smart-room/contracts/events';
-import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
+import type {
+    PlatformStorageProjection,
+    RoomSnapshotProjection,
+} from '@smart-room/contracts/projections';
+import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 import {
     type Clock,
     createLedScenario,
@@ -41,15 +45,35 @@ import {
     createSetPowerCommandController,
 } from '../platform/command-processing/set-power-command-controller';
 import {
+    derivedCommandRecordId,
+    inputFingerprint,
+    logicalRecordId,
+} from '../platform/event-processing/event-identity';
+import {
     createEventProcessingDiagnostics,
     type EventProcessingDiagnosticsSnapshot,
 } from '../platform/event-processing/event-processing-diagnostics';
 import {
     createEventProcessor,
     type DeviceDefinition,
+    type EventIngress,
     type EventProcessingResult,
+    type PreparedRecord,
 } from '../platform/event-processing/event-processor';
-import { createRoomProjector, type RoomProjector } from '../platform/read-model/room-projection';
+import {
+    createRoomProjector,
+    type RoomProjection,
+    type RoomProjector,
+} from '../platform/read-model/room-projection';
+import type {
+    AcceptedInputIdentity,
+    RoomStorage,
+    RoomStorageTransaction,
+    StorageMetadata,
+} from '../platform/storage/room-storage';
+import { StorageError } from '../platform/storage/storage-errors';
+
+import { createRoomInputCoordinator } from './room-input-coordinator';
 
 export interface TemperatureRoomRuntimeConfig {
     roomName?: string;
@@ -66,6 +90,8 @@ export interface TemperatureRoomRuntimeConfig {
     ledScenarioScheduler?: LedScenarioScheduler;
     commandTimer?: CommandTimer;
     generateCommandId?: () => string;
+    storage?: RoomStorage;
+    onFatalStorageError?: (error: unknown) => never;
 }
 
 interface TemperatureSensorDefinition extends DeviceDefinition {
@@ -148,6 +174,10 @@ export function createTemperatureRoomRuntime({
     ledScenarioScheduler = realLedScenarioScheduler,
     commandTimer = realCommandTimer,
     generateCommandId = randomUUID,
+    storage,
+    onFatalStorageError = (error): never => {
+        throw error;
+    },
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
     const sensors = defaultSensors.map((definition) => ({
         definition,
@@ -172,17 +202,95 @@ export function createTemperatureRoomRuntime({
         devices,
         initialUpdatedAt: clock.now(),
     });
+    let fatalRuntimeError: Error | undefined;
+    const initializedCheckpoint = initializeProjectionCheckpoint(
+        storage,
+        roomProjector,
+        clock.now(),
+    );
+    const initialStorageOutcome = initializedCheckpoint?.outcome;
+    let startupStorageError = initializedCheckpoint?.readError;
+
+    if (initialStorageOutcome?.status === 'indeterminate') {
+        terminateForStorageOutcome(initialStorageOutcome.error, 'unknown');
+    }
+
+    if (
+        initialStorageOutcome?.status === 'confirmed_rolled_back' &&
+        isFatalStorageError(initialStorageOutcome.error)
+    ) {
+        terminateForStorageOutcome(initialStorageOutcome.error, 'fatal');
+    }
+
+    if (startupStorageError && !isDegradableStorageError(startupStorageError)) {
+        throw startupStorageError;
+    }
+
+    let initialAcceptedInputIdentities: AcceptedInputIdentity[] = [];
+    let initialStorageMetadata: StorageMetadata | undefined;
+
+    if (
+        storage &&
+        !startupStorageError &&
+        initialStorageOutcome?.status !== 'confirmed_rolled_back'
+    ) {
+        try {
+            initialAcceptedInputIdentities = storage.listAcceptedInputIdentities();
+            initialStorageMetadata = storage.getMetadata();
+        } catch (error) {
+            startupStorageError = error;
+        }
+    }
+
+    if (startupStorageError && !isDegradableStorageError(startupStorageError)) {
+        throw startupStorageError;
+    }
+
+    if (startupStorageError) {
+        initialAcceptedInputIdentities = [];
+    }
+
     const processor = createEventProcessor({
         devices,
         roomProjector,
         clock,
         deduplicationRetentionMs,
         deduplicationEntryLimit,
+        acceptedInputIdentities: [
+            ...(initializedCheckpoint?.volatileGuards ?? []),
+            ...initialAcceptedInputIdentities,
+        ],
     });
     const diagnostics = createEventProcessingDiagnostics({
         clock,
         diagnosticEventLimit,
     });
+    let storageState: PlatformStorageProjection =
+        storage &&
+        !startupStorageError &&
+        initialStorageOutcome?.status !== 'confirmed_rolled_back' &&
+        initialStorageMetadata
+            ? {
+                  status: 'available',
+                  changedAt: clock.now(),
+                  historyGenerationId: initialStorageMetadata.historyGenerationId,
+                  storedThroughSequence: initialStorageMetadata.lastStorageSequence,
+              }
+            : {
+                  status: 'degraded',
+                  changedAt: clock.now(),
+                  reason: storage ? 'storage_write_failed' : 'storage_not_configured',
+                  historyGenerationId: null,
+                  storedThroughSequence: null,
+              };
+
+    if (storageState.status === 'degraded' && !initializedCheckpoint?.restored) {
+        roomProjector.installProjection(
+            withBootstrapDurability(roomProjector.getProjection(), 'volatile'),
+            clock.now(),
+            roomProjector.getEvidence(),
+        );
+    }
 
     for (const sensorEntry of sensors) {
         sensorEntry.runtime = createTemperatureSensorRuntime({
@@ -199,6 +307,12 @@ export function createTemperatureRoomRuntime({
     let hasStarted = false;
     let snapshotBroadcastTimerHandle: unknown | undefined;
     let lastPublishedSnapshot: RoomSnapshotProjection | undefined;
+    const inputCoordinator = createRoomInputCoordinator({
+        now: clock.now,
+        dispatch(input) {
+            return processPlatformEvent(input.event, input.ingress);
+        },
+    });
     const commandController = createSetPowerCommandController({
         routes: [
             {
@@ -215,7 +329,15 @@ export function createTemperatureRoomRuntime({
                 },
             },
         ],
-        emitEvent: processPlatformEvent,
+        emitEvent(event) {
+            const result = inputCoordinator.receive(event);
+
+            if (!result) {
+                throw new Error('Command lifecycle event was enqueued during another dispatch.');
+            }
+
+            return result;
+        },
         createDispatchScope() {
             if (bufferedAdapterEvents) {
                 throw new Error('A command dispatch scope is already active.');
@@ -235,7 +357,7 @@ export function createTemperatureRoomRuntime({
                 },
                 flush() {
                     for (const event of bufferedEvents) {
-                        processPlatformEvent(event);
+                        inputCoordinator.receive(event);
                     }
 
                     bufferedEvents.length = 0;
@@ -251,6 +373,8 @@ export function createTemperatureRoomRuntime({
 
     return {
         start() {
+            assertRuntimeIsHealthy();
+
             if (hasStarted) {
                 return;
             }
@@ -268,7 +392,9 @@ export function createTemperatureRoomRuntime({
             }
 
             snapshotBroadcastTimerHandle = snapshotBroadcastTimer.setInterval(() => {
-                notifyFreshnessChanges(clock.now());
+                inputCoordinator.receiveTimer((ingress) => {
+                    notifyFreshnessChanges(ingress.receivedAt);
+                });
             }, snapshotBroadcastIntervalMs);
 
             for (const sensorEntry of sensors) {
@@ -299,7 +425,7 @@ export function createTemperatureRoomRuntime({
             hasStarted = false;
         },
         getRoomSnapshot() {
-            return toRoomSnapshot(roomName, roomProjector, clock.now());
+            return snapshotAt(clock.now());
         },
         getDiagnosticsSnapshot() {
             return diagnostics.getSnapshot();
@@ -326,6 +452,8 @@ export function createTemperatureRoomRuntime({
             };
         },
         runDeviceScenario(deviceId, action) {
+            assertRuntimeIsHealthy();
+
             if (!hasStarted) {
                 throw new Error(
                     'Temperature room runtime must be started before running a scenario.',
@@ -397,6 +525,8 @@ export function createTemperatureRoomRuntime({
             };
         },
         requestCommand(request) {
+            assertRuntimeIsHealthy();
+
             return commandController.requestCommand(request);
         },
     };
@@ -487,8 +617,8 @@ export function createTemperatureRoomRuntime({
         return sensors.find((sensorEntry) => sensorEntry.definition.deviceId === deviceId);
     }
 
-    function notifySnapshotListeners(evaluatedAt: string): void {
-        const snapshot = toRoomSnapshot(roomName, roomProjector, evaluatedAt);
+    function notifySnapshotListeners(evaluatedAt: string, installedProjectionOnly = false): void {
+        const snapshot = installedProjectionOnly ? installedSnapshot() : snapshotAt(evaluatedAt);
         lastPublishedSnapshot = snapshot;
 
         for (const listener of snapshotListeners) {
@@ -501,46 +631,481 @@ export function createTemperatureRoomRuntime({
     }
 
     function notifyFreshnessChanges(evaluatedAt: string): void {
-        const snapshot = toRoomSnapshot(roomName, roomProjector, evaluatedAt);
+        assertRuntimeIsHealthy();
+        const snapshot = snapshotAt(evaluatedAt);
         const previousSnapshot = lastPublishedSnapshot;
 
         if (previousSnapshot && !hasObservationStatusChange(previousSnapshot, snapshot)) {
             return;
         }
 
+        const derivedProjection = roomProjector.getProjection({ evaluatedAt });
+        const derivedEvidence = roomProjector.getEvidence();
+
+        if (storage && storageState.status === 'available') {
+            const outcome = storage.transact((transaction) => {
+                const retiredIdentityEventIds =
+                    transaction.retireExpiredRecords({ asOf: evaluatedAt }) ?? [];
+                transaction.saveLatestRoomProjection({
+                    updatedAt: derivedProjection.updatedAt,
+                    projection: derivedProjection,
+                    projectionEvidence: derivedEvidence,
+                    volatileGuards: processor.listVolatileIdentities(),
+                });
+
+                return { retiredIdentityEventIds };
+            });
+
+            if (outcome.status === 'indeterminate') {
+                return terminateForStorageOutcome(outcome.error, 'unknown');
+            }
+
+            if (outcome.status === 'confirmed_rolled_back' && isFatalStorageError(outcome.error)) {
+                return terminateForStorageOutcome(outcome.error, 'fatal');
+            }
+
+            if (outcome.status === 'confirmed_rolled_back') {
+                storageState = {
+                    status: 'degraded',
+                    changedAt: evaluatedAt,
+                    reason: 'storage_write_failed',
+                    historyGenerationId: storageState.historyGenerationId,
+                    storedThroughSequence: storageState.storedThroughSequence,
+                };
+                notifySnapshotListeners(evaluatedAt, true);
+            } else {
+                processor.forgetDurableIdentities(outcome.value.retiredIdentityEventIds);
+            }
+        }
+
+        roomProjector.installProjection(derivedProjection, evaluatedAt, derivedEvidence);
+
         notifySnapshotListeners(evaluatedAt);
     }
 
-    function processPlatformEvent(event: PlatformEvent): EventProcessingResult {
+    function processPlatformEvent(
+        event: PlatformEvent,
+        ingress: EventIngress,
+    ): EventProcessingResult {
+        assertRuntimeIsHealthy();
+        const receivedAt = ingress.receivedAt;
+        closeExpiredCommandBeforeStateReport(event, ingress);
         const activeCommandIdBeforeEvent = event.deviceId
             ? roomProjector
                   .getProjection()
                   .activeCommands.find((command) => command.deviceId === event.deviceId)?.commandId
             : undefined;
-        const result = processor.processEvent(event);
+        reconcileExpiredDurableIdentity(event.eventId, receivedAt);
+        const prepared = processor.prepareEvent(
+            event,
+            ingress,
+            storageState.status === 'available' ? 'available' : 'degraded',
+        );
+        const durablePreparedState = processor.materializePreparedState(prepared, 'durable');
+        let result: EventProcessingResult;
+
+        if (storage && storageState.status === 'available') {
+            const outcome = storage.transact((transaction) => {
+                let storedThroughSequence: number | undefined;
+
+                if (prepared.kind === 'quarantined') {
+                    transaction.appendQuarantineEntry({
+                        eventId: event.eventId,
+                        reason:
+                            prepared.result.status === 'ignored'
+                                ? prepared.result.reason
+                                : 'rejected',
+                        recordedAt: receivedAt,
+                        rawEvent: event,
+                    });
+                } else if (prepared.eventId) {
+                    for (const record of prepared.records) {
+                        storedThroughSequence = appendPreparedRecord(transaction, record);
+                    }
+
+                    transaction.upsertAcceptedInputIdentity({
+                        eventId: prepared.eventId,
+                        fingerprint: prepared.fingerprint ?? inputFingerprint(event),
+                        durability: 'durable',
+                        acceptedAt: receivedAt,
+                    });
+                }
+
+                const retiredIdentityEventIds =
+                    transaction.retireExpiredRecords({ asOf: receivedAt }) ?? [];
+
+                if (prepared.kind !== 'quarantined') {
+                    transaction.saveLatestRoomProjection({
+                        updatedAt: durablePreparedState.updatedAt,
+                        projection: durablePreparedState,
+                        projectionEvidence:
+                            prepared.candidateEvidence ?? roomProjector.getEvidence(),
+                        volatileGuards: volatileGuardsForCheckpoint(prepared),
+                    });
+                }
+
+                return { storedThroughSequence, retiredIdentityEventIds };
+            });
+
+            if (outcome.status === 'indeterminate') {
+                return terminateForStorageOutcome(outcome.error, 'unknown');
+            }
+
+            if (outcome.status === 'confirmed_rolled_back' && isFatalStorageError(outcome.error)) {
+                return terminateForStorageOutcome(outcome.error, 'fatal');
+            }
+
+            if (outcome.status === 'confirmed_rolled_back') {
+                storageState = {
+                    status: 'degraded',
+                    changedAt: receivedAt,
+                    reason: 'storage_write_failed',
+                    historyGenerationId: storageState.historyGenerationId,
+                    storedThroughSequence: storageState.storedThroughSequence,
+                };
+                notifySnapshotListeners(receivedAt, true);
+                result = processor.commitPrepared(prepared, 'volatile');
+                rememberVolatileIdentity(prepared, receivedAt);
+            } else {
+                result = processor.commitPrepared(prepared);
+                processor.forgetDurableIdentities(outcome.value.retiredIdentityEventIds);
+
+                if (
+                    prepared.eventId &&
+                    prepared.fingerprint &&
+                    !outcome.value.retiredIdentityEventIds.includes(prepared.eventId)
+                ) {
+                    processor.rememberDurableIdentity(
+                        prepared.eventId,
+                        prepared.fingerprint,
+                        receivedAt,
+                    );
+                }
+
+                storageState = {
+                    status: 'available',
+                    changedAt: storageState.changedAt,
+                    historyGenerationId: storageState.historyGenerationId,
+                    storedThroughSequence:
+                        outcome.value.storedThroughSequence ?? storageState.storedThroughSequence,
+                };
+            }
+        } else {
+            result = processor.commitPrepared(prepared, 'volatile');
+            rememberVolatileIdentity(prepared, receivedAt);
+        }
+
         diagnostics.recordProcessingResult(event, result);
         commandController.onEventProcessed(activeCommandIdBeforeEvent, event, result);
 
-        if (result.status === 'accepted') {
-            notifySnapshotListeners(result.evaluatedAt);
+        if (result.status === 'accepted' || prepared.kind === 'accepted_non_applying') {
+            notifySnapshotListeners(result.status === 'accepted' ? result.evaluatedAt : receivedAt);
         }
 
         return result;
     }
 
+    function closeExpiredCommandBeforeStateReport(
+        event: PlatformEvent,
+        ingress: EventIngress,
+    ): void {
+        if (event.eventType !== 'device.state.reported' || !event.deviceId) {
+            return;
+        }
+
+        const active = roomProjector
+            .getProjection()
+            .activeCommands.find(
+                (command) => command.deviceId === event.deviceId && command.status === 'pending',
+            );
+
+        if (!active || active.status !== 'pending' || !active.deadlineAt) {
+            return;
+        }
+
+        if (Date.parse(ingress.receivedAt) < Date.parse(active.deadlineAt)) {
+            return;
+        }
+
+        processPlatformEvent(
+            {
+                eventId: generateEventId(),
+                eventType: 'command.timed_out',
+                occurredAt: active.deadlineAt,
+                source: 'backend',
+                deviceId: active.deviceId,
+                commandId: active.commandId,
+                payload: { timeoutMs: 5_000, reason: 'confirmation_not_received' },
+            },
+            ingress,
+        );
+    }
+
+    function appendPreparedRecord(
+        transaction: RoomStorageTransaction,
+        record: PreparedRecord,
+    ): number {
+        switch (record.kind) {
+            case 'telemetry': {
+                const event = record.event;
+
+                return transaction.appendTelemetrySample({
+                    recordId: logicalRecordId(event, 'telemetry'),
+                    eventId: event.eventId,
+                    deviceId: event.deviceId,
+                    metric: event.payload.metric,
+                    value: event.payload.value,
+                    unit: event.payload.unit,
+                    occurredAt: event.occurredAt,
+                    payload: event.payload,
+                }).storageSequence;
+            }
+
+            case 'input_significant_fact': {
+                const event = record.event;
+
+                return transaction.appendSignificantFact({
+                    recordId: logicalRecordId(event, 'input_fact'),
+                    eventId: event.eventId,
+                    eventType: event.eventType,
+                    deviceId: event.deviceId,
+                    commandId: event.commandId,
+                    source: event.source,
+                    occurredAt: event.occurredAt,
+                    payload: event.payload,
+                }).storageSequence;
+            }
+
+            case 'derived_command_confirmed':
+                return transaction.appendSignificantFact({
+                    recordId: derivedCommandRecordId(record.commandId, 'confirmed'),
+                    eventId: record.eventId,
+                    eventType: 'command.confirmed',
+                    deviceId: record.deviceId,
+                    commandId: record.commandId,
+                    source: 'backend',
+                    occurredAt: record.occurredAt,
+                    payload: record.payload,
+                }).storageSequence;
+        }
+    }
+
+    function volatileGuardsForCheckpoint(prepared: ReturnType<typeof processor.prepareEvent>) {
+        return processor
+            .listVolatileIdentities()
+            .filter(
+                (identity) =>
+                    !(
+                        prepared.identityDisposition === 'volatile_reconciliation' &&
+                        identity.eventId === prepared.eventId
+                    ),
+            );
+    }
+
+    function rememberVolatileIdentity(
+        prepared: ReturnType<typeof processor.prepareEvent>,
+        acceptedAt: string,
+    ): void {
+        if (prepared.eventId && prepared.fingerprint && prepared.kind !== 'quarantined') {
+            processor.rememberVolatileIdentity(prepared.eventId, prepared.fingerprint, acceptedAt);
+        }
+    }
+
     function receiveAdapterEvent(event: PlatformEvent): void {
+        assertRuntimeIsHealthy();
+
         if (bufferedAdapterEvents) {
             bufferedAdapterEvents.push(event);
 
             return;
         }
 
-        processPlatformEvent(event);
+        inputCoordinator.receive(event);
     }
 
     function getCurrentRoomSnapshot(): RoomSnapshotProjection {
-        return toRoomSnapshot(roomName, roomProjector, clock.now());
+        return snapshotAt(clock.now());
     }
+
+    function snapshotAt(evaluatedAt: string): RoomSnapshotProjection {
+        return toRoomSnapshot(roomName, roomProjector, evaluatedAt, storageState);
+    }
+
+    function installedSnapshot(): RoomSnapshotProjection {
+        return toRoomSnapshot(roomName, roomProjector, undefined, storageState);
+    }
+
+    function assertRuntimeIsHealthy(): void {
+        if (fatalRuntimeError) {
+            throw fatalRuntimeError;
+        }
+    }
+
+    function reconcileExpiredDurableIdentity(eventId: string, receivedAt: string): void {
+        if (
+            !storage ||
+            storageState.status !== 'available' ||
+            !processor.hasDurableIdentity(eventId)
+        ) {
+            return;
+        }
+
+        try {
+            if (!storage.isAcceptedInputIdentityActive(eventId, receivedAt)) {
+                processor.forgetDurableIdentities([eventId]);
+            }
+        } catch (error) {
+            if (!isDegradableStorageError(error)) {
+                terminateForStorageOutcome(error, 'fatal');
+            }
+
+            storageState = {
+                status: 'degraded',
+                changedAt: receivedAt,
+                reason: 'storage_write_failed',
+                historyGenerationId: storageState.historyGenerationId,
+                storedThroughSequence: storageState.storedThroughSequence,
+            };
+            notifySnapshotListeners(receivedAt, true);
+        }
+    }
+
+    function terminateForStorageOutcome(cause: unknown, kind: 'unknown' | 'fatal'): never {
+        fatalRuntimeError ??= new Error(
+            kind === 'unknown' ? 'storage_commit_outcome_unknown' : 'storage_fatal_error',
+            { cause },
+        );
+
+        return onFatalStorageError(fatalRuntimeError);
+    }
+}
+
+function initializeProjectionCheckpoint(
+    storage: RoomStorage | undefined,
+    projector: RoomProjector,
+    evaluatedAt: string,
+) {
+    if (!storage) {
+        return undefined;
+    }
+
+    const retentionOutcome = storage.transact((transaction) =>
+        transaction.retireExpiredRecords({ asOf: evaluatedAt }),
+    );
+
+    if (retentionOutcome.status !== 'committed') {
+        return {
+            outcome: retentionOutcome,
+            restored: false,
+            volatileGuards: [],
+        };
+    }
+
+    let checkpoint;
+
+    try {
+        checkpoint = storage.getLatestRoomProjection();
+    } catch (error) {
+        return {
+            readError: error,
+            restored: false,
+            volatileGuards: [],
+        };
+    }
+
+    if (checkpoint) {
+        if (!isRoomProjection(checkpoint.projection)) {
+            throw new Error('Latest room projection checkpoint is invalid.');
+        }
+
+        projector.replaceProjection(checkpoint.projection, checkpoint.projectionEvidence);
+    }
+
+    const projection = projector.getProjection({ evaluatedAt });
+    const projectionEvidence = projector.getEvidence();
+
+    if (checkpoint && JSON.stringify(checkpoint.projection) === JSON.stringify(projection)) {
+        projector.installProjection(projection, evaluatedAt, projectionEvidence);
+
+        return { restored: true, volatileGuards: checkpoint.volatileGuards };
+    }
+
+    const outcome = storage.transact((transaction) => {
+        transaction.retireExpiredRecords({ asOf: evaluatedAt });
+        transaction.saveLatestRoomProjection({
+            updatedAt: projection.updatedAt,
+            projection,
+            projectionEvidence,
+            volatileGuards: checkpoint?.volatileGuards ?? [],
+        });
+    });
+
+    if (outcome.status !== 'indeterminate') {
+        projector.installProjection(projection, evaluatedAt, projectionEvidence);
+    }
+
+    return {
+        outcome,
+        restored: false,
+        volatileGuards: checkpoint?.volatileGuards ?? [],
+    };
+}
+
+function withBootstrapDurability(
+    projection: RoomProjection,
+    durability: 'durable' | 'volatile',
+): RoomProjection {
+    return {
+        ...projection,
+        devices: projection.devices.map((device) => ({
+            ...device,
+            ...(device.availability === 'unknown' ? { availabilityDurability: durability } : {}),
+            ...(device.health === 'unknown' ? { healthDurability: durability } : {}),
+            observationStatus: Object.fromEntries(
+                Object.entries(device.observationStatus).map(([capability, observation]) => [
+                    capability,
+                    observation.lastObservedAt ? observation : { ...observation, durability },
+                ]),
+            ) as typeof device.observationStatus,
+        })),
+    };
+}
+
+function isFatalStorageError(error: unknown): boolean {
+    return error instanceof StorageError && error.kind === 'fatal';
+}
+
+function isDegradableStorageError(error: unknown): boolean {
+    return error instanceof StorageError && error.kind !== 'fatal';
+}
+
+function isRoomProjection(value: unknown): value is RoomProjection {
+    if (
+        typeof value !== 'object' ||
+        value === null ||
+        !('updatedAt' in value) ||
+        !('devices' in value) ||
+        !('activeCommands' in value) ||
+        !('recentCommands' in value)
+    ) {
+        return false;
+    }
+
+    return isRoomSnapshotProjection({
+        roomName: 'Checkpoint validation',
+        updatedAt: value.updatedAt,
+        devices: value.devices,
+        activeCommands: value.activeCommands,
+        recentCommands: value.recentCommands,
+        platform: {
+            storage: {
+                status: 'available',
+                changedAt: value.updatedAt,
+                historyGenerationId: 'checkpoint-validation',
+                storedThroughSequence: 0,
+            },
+        },
+    });
 }
 
 const realTimer: TimerScheduler<ReturnType<typeof setInterval>> = {
@@ -579,11 +1144,13 @@ const realClock: Clock = {
 function toRoomSnapshot(
     roomName: string,
     roomProjector: RoomProjector,
-    evaluatedAt: string,
+    evaluatedAt: string | undefined,
+    storage: PlatformStorageProjection,
 ): RoomSnapshotProjection {
-    const projection = roomProjector.getProjection({
-        evaluatedAt,
-    });
+    const projection =
+        evaluatedAt === undefined
+            ? roomProjector.getProjection()
+            : roomProjector.getProjection({ evaluatedAt });
 
     return {
         roomName,
@@ -591,6 +1158,7 @@ function toRoomSnapshot(
         devices: projection.devices,
         activeCommands: projection.activeCommands,
         recentCommands: projection.recentCommands,
+        platform: { storage },
     };
 }
 

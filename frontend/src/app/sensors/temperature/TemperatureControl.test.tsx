@@ -25,7 +25,9 @@ describe('TemperatureControl', () => {
                 device={{
                     ...createTemperatureSensor(),
                     reportedState: {},
-                    observationStatus: { temperature: { freshness: 'unknown' } },
+                    observationStatus: {
+                        temperature: { freshness: 'unknown', durability: 'durable' },
+                    },
                 }}
             />,
         );
@@ -41,12 +43,18 @@ function createTemperatureSensor(): TemperatureSensorDeviceProjection {
         role: 'temperature-sensor',
         availability: 'online',
         availabilityChangedAt: '2026-08-06T12:00:00Z',
+        availabilityDurability: 'durable',
         health: 'healthy',
         healthChangedAt: '2026-08-06T12:00:00Z',
+        healthDurability: 'durable',
         reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
         commandAvailability: { policy: 'block', reason: 'not-controllable' },
         observationStatus: {
-            temperature: { freshness: 'fresh', lastObservedAt: '2026-08-06T12:00:00Z' },
+            temperature: {
+                freshness: 'fresh',
+                lastObservedAt: '2026-08-06T12:00:00Z',
+                durability: 'durable',
+            },
         },
     };
 }

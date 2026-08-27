@@ -3,6 +3,9 @@ import { Type } from '@sinclair/typebox';
 import type { PowerState } from './devices';
 import { nonEmptyStringSchema } from './validation';
 
+export const durabilityValues = ['durable', 'volatile'] as const;
+export type Durability = (typeof durabilityValues)[number];
+
 export const commandTypes = ['set.power'] as const;
 export type CommandType = (typeof commandTypes)[number];
 export const commandRequestedByValues = ['user', 'automation'] as const;
@@ -29,11 +32,14 @@ interface CommandProjectionBase {
     commandType: 'set.power';
     requestedState: { power: PowerState };
     requestedAt: string;
+    durability: Durability;
+    lifecycleDurability: Durability;
 }
 export type AcceptedCommandProjection = CommandProjectionBase & { status: 'accepted' };
 export type PendingCommandProjection = CommandProjectionBase & {
     status: 'pending';
     dispatchedAt: string;
+    deadlineAt: string;
 };
 export type ConfirmedCommandProjection = CommandProjectionBase & {
     status: 'confirmed';
