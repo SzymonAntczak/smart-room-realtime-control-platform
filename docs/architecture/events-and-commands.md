@@ -77,14 +77,14 @@ The projection's bootstrap `unknown` timestamp is a baseline rather than a
 device fact. Its first availability or health fact may have the same timestamp;
 once evidence exists, equal or older transitions remain non-applying.
 
-The Stage 4 history model preserves accepted non-applying transitions
-as auditable significant facts with diagnostics metadata, but excludes them
-from its bounded recent-event feed. It also keeps raw telemetry outside that
-feed. The classification is defined in
+The implemented Stage 4 processor preserves accepted non-applying transitions
+as auditable significant facts with diagnostics metadata. It also keeps raw
+telemetry separate from significant history. The bounded recent-event feed
+remains a follow-up and is not emitted yet. The classification is defined in
 [ADR: Stage 4 Storage and Observability](../decisions/adr-stage-4-storage-and-observability.md)
-and does not alter the current runtime.
+and governs the current storage-backed runtime.
 
-That proposed processor has a non-mutating prepare result:
+The Stage 4 processor has a non-mutating prepare result:
 `accepted_applied`, `accepted_non_applying`, `derived_projection` or
 `quarantined`. The runtime then
 commits the result durably or, while storage is degraded, in memory as
@@ -98,16 +98,18 @@ It persists or updates the read model and may publish `device.updated`, but
 creates no fact history, feed entry, accepted-event deduplication or durable
 watermark change. Command timeout remains a command lifecycle fact instead.
 
-The proposed serialized coordinator captures an internal ingress time and FIFO
-sequence before recovery queueing. Future-skew validation and quarantine time
-use that ingress time, so delayed preparation cannot change an input's validity.
-The internal sequence is neither a durable history sequence nor an SSE
-revision.
+The serialized coordinator captures an internal ingress time and FIFO sequence
+before queueing. Future-skew validation and quarantine time use that ingress
+time, so delayed preparation cannot change an input's validity. The internal
+sequence is neither a durable history sequence nor an SSE revision. The future
+automatic-recovery cutover will reuse this boundary while temporarily queueing
+raw inputs.
 
 The same ingress time decides command deadline eligibility. A matching state
 report confirms only when its captured `receivedAt` is strictly before the
-active command's `deadlineAt`; later dequeue during recovery does not make an
-early report late, and a device timestamp cannot make a late arrival timely.
+active command's `deadlineAt`; later dequeue, including during the future
+recovery cutover, does not make an early report late, and a device timestamp
+cannot make a late arrival timely.
 
 The proposed durable outbox may also derive
 `command.delivery_uncertain`. It records that an adapter attempt may have
@@ -317,17 +319,19 @@ remains retained, and is removed atomically with its last record. Consequently,
 a very late record that falls outside retention immediately may still be
 processed but has no durable deduplication guarantee afterward.
 
-During Stage 4 degraded operation, only bounded in-memory
-deduplication is available. Volatile observations are not backfilled after
-recovery. Instead, recovery persists a current-state checkpoint and one derived
-`storage.gap.recorded` fact for the outage interval.
+During Stage 4 degraded operation, only bounded in-memory deduplication is
+available. Automatic recovery is a follow-up: it will not backfill volatile
+observations and will instead persist a current-state checkpoint plus one
+derived `storage.gap.recorded` fact for the outage interval.
 
 That checkpoint retains bounded volatile dedup guards with canonical input
 fingerprints over normalized validated semantic fields, excluding contract-
-ignored envelope extras. Identical replay while degraded is ignored; identical source
-redelivery after storage recovery performs one durable reconciliation and
-atomically promotes the guard. The same `eventId` with another fingerprint is
-quarantined as an identity conflict. No input is synthesized by recovery.
+ignored envelope extras. Identical replay while degraded is ignored; identical
+source redelivery after a later durable startup performs one durable
+reconciliation and atomically promotes the guard. Future automatic recovery
+will use the same reconciliation rule. The same `eventId` with another
+fingerprint is quarantined as an identity conflict. Recovery will not synthesize
+input.
 
 If a source later redelivers an exact matching observation through the normal
 durable path, the processor may upgrade only the matching projection evidence

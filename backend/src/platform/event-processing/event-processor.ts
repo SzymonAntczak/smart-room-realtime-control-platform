@@ -73,8 +73,8 @@ export type PreparedRecord =
           payload: { sourceEventId: string; confirmedAt: string };
       };
 
-export type PreparedProcessingResult = {
-    kind: 'accepted_applied' | 'accepted_non_applying' | 'derived_projection' | 'quarantined';
+export type PreparedEventProcessingResult = {
+    kind: 'accepted_applied' | 'accepted_non_applying' | 'quarantined';
     result: EventProcessingResult;
     eventId?: string;
     event?: PlatformEvent;
@@ -86,6 +86,18 @@ export type PreparedProcessingResult = {
     records: readonly PreparedRecord[];
     ingress: EventIngress;
 };
+
+export interface PreparedDerivedProjectionResult {
+    kind: 'derived_projection';
+    candidateState: EventProcessorState;
+    candidateEvidence: RoomProjectionEvidence;
+    records: readonly [];
+    ingress: EventIngress;
+}
+
+export type PreparedProcessingResult =
+    | PreparedEventProcessingResult
+    | PreparedDerivedProjectionResult;
 
 export type EventProcessingResult =
     | {
@@ -117,13 +129,15 @@ export interface EventProcessor {
         event: unknown,
         ingress: EventIngress,
         storageMode?: 'available' | 'degraded',
-    ): PreparedProcessingResult;
+    ): PreparedEventProcessingResult;
+    prepareFreshnessProjection(ingress: EventIngress): PreparedDerivedProjectionResult;
     commitPrepared(
-        prepared: PreparedProcessingResult,
+        prepared: PreparedEventProcessingResult,
         durability?: 'durable' | 'volatile',
     ): EventProcessingResult;
+    commitPreparedProjection(prepared: PreparedDerivedProjectionResult): EventProcessorState;
     materializePreparedState(
-        prepared: PreparedProcessingResult,
+        prepared: PreparedEventProcessingResult,
         durability: 'durable' | 'volatile',
     ): EventProcessorState;
     rememberDurableIdentity(
@@ -523,6 +537,15 @@ export function createEventProcessor({
                 ingress,
             };
         },
+        prepareFreshnessProjection(ingress) {
+            return {
+                kind: 'derived_projection',
+                candidateState: roomProjector.getProjection({ evaluatedAt: ingress.receivedAt }),
+                candidateEvidence: roomProjector.getEvidence(),
+                records: [],
+                ingress,
+            };
+        },
         commitPrepared(prepared, durability = 'durable') {
             pruneVolatileIdentities(prepared.ingress.receivedAt);
 
@@ -563,6 +586,15 @@ export function createEventProcessor({
 
             return { ...prepared.result, state: roomProjector.getProjection() };
         },
+        commitPreparedProjection(prepared) {
+            roomProjector.installProjection(
+                prepared.candidateState,
+                prepared.ingress.receivedAt,
+                prepared.candidateEvidence,
+            );
+
+            return roomProjector.getProjection();
+        },
         materializePreparedState,
         rememberDurableIdentity(eventId, fingerprint, acceptedAt) {
             identities.set(eventId, {
@@ -598,7 +630,7 @@ export function createEventProcessor({
     };
 
     function materializePreparedState(
-        prepared: PreparedProcessingResult,
+        prepared: PreparedEventProcessingResult,
         durability: 'durable' | 'volatile',
     ): EventProcessorState {
         if (!prepared.candidateState) {
@@ -707,7 +739,7 @@ function reconciledCommandIdsFor(
     event: PlatformEvent,
     previousState: EventProcessorState,
     evidence: RoomProjectionEvidence | undefined,
-    identityDisposition: PreparedProcessingResult['identityDisposition'],
+    identityDisposition: PreparedEventProcessingResult['identityDisposition'],
 ): string[] {
     if (identityDisposition !== 'volatile_reconciliation') {
         return [];

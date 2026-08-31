@@ -138,6 +138,118 @@ describe('createEventProcessor', () => {
         });
     });
 
+    it('prepares freshness as a projection-only result before installing it', () => {
+        const room = processor();
+        room.processEvent({
+            eventId: 'freshness-reading',
+            eventType: 'telemetry.reading.recorded',
+            occurredAt: '2026-06-08T09:30:00Z',
+            source: 'simulator-adapter',
+            deviceId: 'temp-desk',
+            payload: { metric: 'temperature', value: 22.5, unit: 'celsius' },
+        });
+
+        const prepared = room.prepareFreshnessProjection({
+            receivedAt: '2026-06-08T09:30:03Z',
+            ingestSequence: 2,
+        });
+
+        expect(prepared).toMatchObject({
+            kind: 'derived_projection',
+            records: [],
+            ingress: { receivedAt: '2026-06-08T09:30:03Z', ingestSequence: 2 },
+            candidateState: {
+                devices: [
+                    {
+                        observationStatus: {
+                            temperature: {
+                                freshness: 'stale',
+                                lastObservedAt: '2026-06-08T09:30:00Z',
+                            },
+                        },
+                    },
+                ],
+            },
+        });
+        expect(
+            room.processEvent({
+                eventId: 'freshness-reading',
+                eventType: 'telemetry.reading.recorded',
+                occurredAt: '2026-06-08T09:30:00Z',
+                source: 'simulator-adapter',
+                deviceId: 'temp-desk',
+                payload: { metric: 'temperature', value: 22.5, unit: 'celsius' },
+            }).state.devices[0]?.observationStatus.temperature?.freshness,
+        ).toBe('fresh');
+
+        const installed = room.commitPreparedProjection(prepared);
+
+        expect(installed.devices[0]?.observationStatus.temperature?.freshness).toBe('stale');
+    });
+
+    it('classifies prepared work into exactly one storage path', () => {
+        const room = processor();
+        const ingress = { receivedAt: '2026-06-08T09:30:00Z', ingestSequence: 1 };
+        const telemetry = room.prepareEvent(
+            {
+                eventId: 'classified-telemetry',
+                eventType: 'telemetry.reading.recorded',
+                occurredAt: '2026-06-08T09:30:00Z',
+                source: 'simulator-adapter',
+                deviceId: 'temp-desk',
+                payload: { metric: 'temperature', value: 22.5, unit: 'celsius' },
+            },
+            ingress,
+        );
+
+        expect(telemetry).toMatchObject({
+            kind: 'accepted_applied',
+            records: [{ kind: 'telemetry' }],
+        });
+        room.commitPrepared(telemetry);
+
+        const duplicate = room.prepareEvent(telemetry.event, ingress);
+        expect(duplicate).toMatchObject({ kind: 'quarantined', records: [] });
+
+        const firstAvailability = room.prepareEvent(
+            {
+                eventId: 'classified-availability',
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-06-08T09:30:00Z',
+                source: 'simulator-adapter',
+                deviceId: 'temp-desk',
+                payload: {
+                    previousAvailability: 'unknown',
+                    availability: 'online',
+                    reason: 'simulator_started',
+                },
+            },
+            { ...ingress, ingestSequence: 2 },
+        );
+        room.commitPrepared(firstAvailability);
+        const nonApplying = room.prepareEvent(
+            {
+                ...firstAvailability.event,
+                eventId: 'classified-stale-availability',
+                payload: {
+                    previousAvailability: 'online',
+                    availability: 'offline',
+                    reason: 'device_disconnected',
+                },
+            },
+            { ...ingress, ingestSequence: 3 },
+        );
+
+        expect(nonApplying).toMatchObject({
+            kind: 'accepted_non_applying',
+            records: [{ kind: 'input_significant_fact' }],
+        });
+        expect(room.prepareFreshnessProjection({ ...ingress, ingestSequence: 4 })).toMatchObject({
+            kind: 'derived_projection',
+            records: [],
+        });
+    });
+
     it('routes explicit availability evidence independently of telemetry', () => {
         const result = processor().processEvent({
             eventId: 'availability-1',
@@ -189,6 +301,56 @@ describe('createEventProcessor', () => {
         expect(room.materializePreparedState(reconciliation, 'volatile').devices[0]).toMatchObject({
             availabilityDurability: 'volatile',
         });
+    });
+
+    it('does not promote volatile observation evidence from older or conflicting facts', () => {
+        const room = processor();
+        const event = {
+            eventId: 'volatile-temperature',
+            eventType: 'telemetry.reading.recorded',
+            occurredAt: '2026-06-08T09:30:00Z',
+            source: 'simulator-adapter',
+            deviceId: 'temp-desk',
+            payload: { metric: 'temperature', value: 22.5, unit: 'celsius' },
+        } as const;
+        const ingress = { receivedAt: event.occurredAt, ingestSequence: 1 };
+        const volatile = room.prepareEvent(event, ingress, 'degraded');
+        room.commitPrepared(volatile, 'volatile');
+        room.rememberVolatileIdentity(
+            event.eventId,
+            volatile.fingerprint ?? 'fp:v1:sha256:test',
+            ingress.receivedAt,
+        );
+
+        const exact = room.prepareEvent(event, { ...ingress, ingestSequence: 2 }, 'available');
+        expect(
+            room.materializePreparedState(exact, 'durable').devices[0]?.observationStatus
+                .temperature,
+        ).toMatchObject({ durability: 'durable' });
+
+        for (const candidate of [
+            {
+                ...event,
+                eventId: 'older-temperature',
+                occurredAt: '2026-06-08T09:29:59Z',
+            },
+            {
+                ...event,
+                eventId: 'conflicting-temperature',
+                payload: { ...event.payload, value: 23 },
+            },
+        ] as const) {
+            const prepared = room.prepareEvent(
+                candidate,
+                { receivedAt: '2026-06-08T09:30:01Z', ingestSequence: 3 },
+                'available',
+            );
+
+            expect(
+                room.materializePreparedState(prepared, 'durable').devices[0]?.observationStatus
+                    .temperature,
+            ).toMatchObject({ durability: 'volatile' });
+        }
     });
 
     it('uses a restored volatile guard to reject duplicate input while degraded', () => {
@@ -360,6 +522,36 @@ describe('createEventProcessor', () => {
                 ingress,
             ),
         ).toMatchObject({ result: { reason: 'duplicate_event' } });
+    });
+
+    it('quarantines semantic identity reuse with a different fingerprint', () => {
+        const room = processor();
+        const event = {
+            eventId: 'telemetry-identity-conflict',
+            eventType: 'telemetry.reading.recorded',
+            occurredAt: '2026-06-08T09:30:00Z',
+            source: 'simulator-adapter',
+            deviceId: 'temp-desk',
+            payload: { metric: 'temperature', value: 22, unit: 'celsius' },
+        } as const;
+        const ingress = { receivedAt: event.occurredAt, ingestSequence: 1 };
+        const first = room.prepareEvent(event, ingress);
+        room.rememberDurableIdentity(
+            event.eventId,
+            first.fingerprint ?? 'fp:v1:sha256:test',
+            ingress.receivedAt,
+        );
+
+        expect(
+            room.prepareEvent(
+                { ...event, payload: { ...event.payload, value: 22.1 } },
+                { ...ingress, ingestSequence: 2 },
+            ),
+        ).toMatchObject({
+            kind: 'quarantined',
+            records: [],
+            result: { reason: 'event_identity_conflict' },
+        });
     });
 
     it('routes operational health evidence independently of availability', () => {

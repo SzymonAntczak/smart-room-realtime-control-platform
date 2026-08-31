@@ -5,7 +5,20 @@ import { join } from 'node:path';
 import type { Clock, TimerScheduler } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
-import type { RoomStorage } from '../platform/storage/room-storage';
+import { inputFingerprint } from '../platform/event-processing/event-identity';
+import type {
+    AcceptedInputIdentity,
+    LatestRoomProjectionInput,
+    QuarantineEntryInput,
+    RoomStorage,
+    RoomStorageTransaction,
+    SignificantFactInput,
+    SimulatorCommandReceiptInput,
+    StoredQuarantineEntry,
+    StoredSignificantFact,
+    StoredTelemetrySample,
+    TelemetrySampleInput,
+} from '../platform/storage/room-storage';
 import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
 import {
     StorageAvailabilityError,
@@ -127,6 +140,260 @@ describe('createTemperatureRoomRuntime', () => {
         });
 
         expect(calls.indexOf('retention')).toBeLessThan(calls.indexOf('identities'));
+    });
+
+    it('commits telemetry, identity, retention and checkpoint before publishing its effect', () => {
+        const clock = createMutableClock('2026-08-31T09:00:00Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+            const telemetryCount = storage.telemetrySamples.length;
+            const identityCount = storage.identities.length;
+            const previousState = device(runtime, 'temp-desk')?.reportedState;
+            let inspectedBeforeCommit = false;
+            storage.setBeforeOutcome((operations) => {
+                inspectedBeforeCommit = true;
+                expect(operations).toEqual([
+                    'appendTelemetrySample',
+                    'upsertAcceptedInputIdentity',
+                    'retireExpiredRecords',
+                    'saveLatestRoomProjection',
+                ]);
+                expect(snapshots).toEqual([]);
+                expect(device(runtime, 'temp-desk')?.reportedState).toEqual(previousState);
+                expect(storage.telemetrySamples).toHaveLength(telemetryCount);
+                expect(storage.identities).toHaveLength(identityCount);
+            });
+
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+            expect(inspectedBeforeCommit).toBe(true);
+            expect(storage.telemetrySamples).toHaveLength(telemetryCount + 1);
+            expect(storage.identities).toHaveLength(identityCount + 1);
+            expect(snapshots).toHaveLength(1);
+            expect(device(runtime, 'temp-desk')).toMatchObject({
+                reportedState: { temperature: 22.2, temperatureUnit: 'celsius' },
+                observationStatus: { temperature: { durability: 'durable' } },
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('publishes degraded before applying the rolled-back telemetry as volatile', () => {
+        const clock = createMutableClock('2026-08-31T09:00:00Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+            const telemetryCount = storage.telemetrySamples.length;
+            const identityCount = storage.identities.length;
+            const checkpoint = storage.latestCheckpoint;
+            const previousState = device(runtime, 'temp-desk')?.reportedState;
+            storage.failNext(
+                'confirmed_rolled_back',
+                new StorageAvailabilityError('database is busy', undefined),
+            );
+
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+            expect(snapshots).toHaveLength(2);
+            expect(snapshots[0]?.platform.storage.status).toBe('degraded');
+            expect(
+                snapshots[0]?.devices.find((candidate) => candidate.deviceId === 'temp-desk')
+                    ?.reportedState,
+            ).toEqual(previousState);
+            expect(
+                snapshots[1]?.devices.find((candidate) => candidate.deviceId === 'temp-desk'),
+            ).toMatchObject({
+                reportedState: { temperature: 22.2, temperatureUnit: 'celsius' },
+                observationStatus: { temperature: { durability: 'volatile' } },
+            });
+            expect(storage.telemetrySamples).toHaveLength(telemetryCount);
+            expect(storage.identities).toHaveLength(identityCount);
+            expect(storage.latestCheckpoint).toEqual(checkpoint);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('publishes and dispatches nothing when command admission has an indeterminate commit', () => {
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-08-31T09:00:00Z'),
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+            const factCount = storage.significantFacts.length;
+            storage.failNext('indeterminate', new Error('commit outcome unknown'));
+
+            expect(() =>
+                runtime.requestCommand({
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                }),
+            ).toThrow('storage_commit_outcome_unknown');
+
+            expect(snapshots).toEqual([]);
+            expect(storage.significantFacts).toHaveLength(factCount);
+            expect(device(runtime, 'led-main')?.reportedState).toEqual({ power: 'off' });
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual([]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('stores quarantined inputs without accepted history, identity or projection mutation', () => {
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-08-31T09:00:00Z'),
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            const factCount = storage.significantFacts.length;
+            const telemetryCount = storage.telemetrySamples.length;
+            const identityCount = storage.identities.length;
+            const checkpoint = storage.latestCheckpoint;
+            const snapshot = runtime.getRoomSnapshot();
+
+            runtime.runDeviceScenario('temp-desk', 'emit_invalid_reading');
+            runtime.runDeviceScenario('temp-desk', 'replay_last_reading');
+
+            expect(storage.significantFacts).toHaveLength(factCount);
+            expect(storage.telemetrySamples).toHaveLength(telemetryCount);
+            expect(storage.identities).toHaveLength(identityCount);
+            expect(storage.latestCheckpoint).toEqual(checkpoint);
+            expect(runtime.getRoomSnapshot()).toEqual(snapshot);
+            expect(storage.quarantineEntries.slice(-2)).toEqual([
+                expect.objectContaining({ reason: 'invalid_payload' }),
+                expect.objectContaining({ reason: 'duplicate_event' }),
+            ]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('atomically reconciles one checkpointed volatile guard on exact source redelivery', () => {
+        const clock = createMutableClock('2026-08-31T09:00:00Z');
+        const sourceEvent = {
+            eventId: 'simulator-adapter:temp-desk-native:source-reading-1',
+            eventType: 'telemetry.reading.recorded',
+            occurredAt: '2026-08-31T09:00:00Z',
+            source: 'simulator-adapter',
+            deviceId: 'temp-desk',
+            payload: { metric: 'temperature', value: 22, unit: 'celsius' },
+        } as const;
+        const volatileRuntime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            generateNativeMessageId: nativeMessageIdsForRedelivery(),
+        });
+        volatileRuntime.start();
+        const volatileSnapshot = volatileRuntime.getRoomSnapshot();
+        volatileRuntime.stop();
+        const volatileProjection = {
+            updatedAt: volatileSnapshot.updatedAt,
+            devices: volatileSnapshot.devices,
+            activeCommands: volatileSnapshot.activeCommands,
+            recentCommands: volatileSnapshot.recentCommands,
+        };
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint({
+            updatedAt: volatileProjection.updatedAt,
+            projection: volatileProjection,
+            projectionEvidence: {
+                availabilityDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+                healthDeviceIds: [],
+            },
+            volatileGuards: [
+                {
+                    eventId: sourceEvent.eventId,
+                    fingerprint: inputFingerprint(sourceEvent),
+                    durability: 'volatile',
+                    acceptedAt: sourceEvent.occurredAt,
+                },
+            ],
+        });
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateNativeMessageId: nativeMessageIdsForRedelivery(),
+        });
+
+        try {
+            runtime.start();
+
+            expect(
+                storage.telemetrySamples.filter((sample) => sample.eventId === sourceEvent.eventId),
+            ).toEqual([
+                expect.objectContaining({
+                    recordId: expect.stringMatching(/^rec:v1:sha256:/),
+                    value: 22,
+                    occurredAt: sourceEvent.occurredAt,
+                }),
+            ]);
+            expect(storage.identities).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventId: sourceEvent.eventId,
+                        fingerprint: inputFingerprint(sourceEvent),
+                        durability: 'durable',
+                    }),
+                ]),
+            );
+            expect(storage.latestCheckpoint?.volatileGuards).not.toEqual(
+                expect.arrayContaining([expect.objectContaining({ eventId: sourceEvent.eventId })]),
+            );
+            expect(device(runtime, 'temp-desk')?.observationStatus.temperature).toMatchObject({
+                lastObservedAt: sourceEvent.occurredAt,
+                durability: 'durable',
+            });
+            expect(storage.quarantineEntries).not.toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventId: sourceEvent.eventId,
+                        reason: 'duplicate_event',
+                    }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
     });
 
     it('persists a restored command timeout before exposing the first recovered snapshot', () => {
@@ -421,6 +688,102 @@ describe('createTemperatureRoomRuntime', () => {
             clock.advanceBy(2_501);
             timer.run(1);
             expect(snapshots).toHaveLength(1);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('persists prepared freshness before publication without history, identity or watermark', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            snapshotBroadcastIntervalMs: 1000,
+            clock,
+            timer,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+            const factCount = storage.significantFacts.length;
+            const telemetryCount = storage.telemetrySamples.length;
+            const identityCount = storage.identities.length;
+            const storedThroughSequence = storage.port.getMetadata().lastStorageSequence;
+            const checkpoint = storage.latestCheckpoint;
+            let inspectedBeforeCommit = false;
+            storage.setBeforeOutcome((operations) => {
+                inspectedBeforeCommit = true;
+                expect(operations).toEqual(['retireExpiredRecords', 'saveLatestRoomProjection']);
+                expect(snapshots).toEqual([]);
+                expect(storage.latestCheckpoint).toEqual(checkpoint);
+                expect(storage.port.getMetadata().lastStorageSequence).toBe(storedThroughSequence);
+            });
+
+            clock.advanceBy(2_501);
+            timer.run(1);
+
+            expect(inspectedBeforeCommit).toBe(true);
+            expect(snapshots).toHaveLength(1);
+            expect(storage.significantFacts).toHaveLength(factCount);
+            expect(storage.telemetrySamples).toHaveLength(telemetryCount);
+            expect(storage.identities).toHaveLength(identityCount);
+            expect(storage.port.getMetadata().lastStorageSequence).toBe(storedThroughSequence);
+            expect(snapshots[0]?.platform.storage.storedThroughSequence).toBe(
+                storedThroughSequence,
+            );
+            expect(device(runtime, 'temp-desk')?.observationStatus.temperature).toMatchObject({
+                freshness: 'stale',
+                durability: 'durable',
+            });
+            expect(storage.latestCheckpoint).not.toEqual(checkpoint);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('publishes degraded before applying rolled-back freshness in memory', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer,
+            storage: storage.port,
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+            const checkpoint = storage.latestCheckpoint;
+            storage.failNext(
+                'confirmed_rolled_back',
+                new StorageAvailabilityError('database is busy', undefined),
+            );
+
+            clock.advanceBy(2_501);
+            timer.run(1);
+
+            expect(snapshots).toHaveLength(2);
+            expect(snapshots[0]?.platform.storage.status).toBe('degraded');
+            expect(
+                snapshots[0]?.devices.find((candidate) => candidate.deviceId === 'temp-desk')
+                    ?.observationStatus.temperature,
+            ).toMatchObject({ freshness: 'fresh', durability: 'durable' });
+            expect(
+                snapshots[1]?.devices.find((candidate) => candidate.deviceId === 'temp-desk')
+                    ?.observationStatus.temperature,
+            ).toMatchObject({ freshness: 'stale', durability: 'durable' });
+            expect(storage.latestCheckpoint).toEqual(checkpoint);
         } finally {
             runtime.stop();
         }
@@ -884,6 +1247,66 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('persists a late state report without reconfirming its timed-out command', () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const storage = createScriptedStorage();
+        const ledScheduler = createLedScheduler();
+        const commandTimer = createCommandTimer();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+            generateNativeMessageId: createEventIdGenerator(),
+            ledScenario: 'report_after_timeout',
+            ledScenarioScheduler: ledScheduler,
+            commandTimer,
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(1);
+            const command = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            clock.advanceBy(5_000);
+            commandTimer.runAll();
+            clock.advanceBy(1_000);
+            ledScheduler.runAll();
+
+            expect(device(runtime, 'led-main')?.reportedState).toEqual({ power: 'on' });
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ commandId: command.commandId, status: 'timed_out' }),
+            ]);
+            expect(storage.significantFacts).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventType: 'command.timed_out',
+                        commandId: command.commandId,
+                    }),
+                    expect.objectContaining({
+                        eventType: 'device.state.reported',
+                        deviceId: 'led-main',
+                        payload: { reportedState: { power: 'on' } },
+                    }),
+                ]),
+            );
+            expect(storage.significantFacts).not.toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventType: 'command.confirmed',
+                        commandId: command.commandId,
+                    }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('records dispatch before a synchronous simulator rejection without lifecycle diagnostics', () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const commandTimer = createCommandTimer();
@@ -1006,6 +1429,20 @@ function createEventIdGenerator(): () => string {
     return () => `evt-temperature-${++index}`;
 }
 
+function nativeMessageIdsForRedelivery(): () => string {
+    const messageIds = [
+        'led-availability',
+        'led-state',
+        'temp-desk-availability',
+        'source-reading-1',
+        'temp-window-availability',
+        'temp-window-reading',
+    ];
+    let index = 0;
+
+    return () => messageIds[index++] ?? `extra-${index}`;
+}
+
 function createMutableClock(
     initialTimestamp: string,
 ): Clock & { advanceBy(milliseconds: number): void } {
@@ -1100,6 +1537,163 @@ function createCommandTimer() {
         },
         size() {
             return callbacks.size;
+        },
+    };
+}
+
+function createScriptedStorage() {
+    const significantFacts: StoredSignificantFact[] = [];
+    const telemetrySamples: StoredTelemetrySample[] = [];
+    const quarantineEntries: StoredQuarantineEntry[] = [];
+    const identities: AcceptedInputIdentity[] = [];
+    const receipts = new Map<string, SimulatorCommandReceiptInput>();
+    let storageSequence = 0;
+    let internalSequence = 0;
+    let latestCheckpoint: LatestRoomProjectionInput | undefined;
+    let nextOutcome:
+        | { status: 'confirmed_rolled_back' | 'indeterminate'; error: unknown }
+        | undefined;
+    let beforeOutcome: ((operations: string[]) => void) | undefined;
+
+    const port: RoomStorage = {
+        getMetadata() {
+            return {
+                historyGenerationId: 'scripted-generation',
+                schemaVersion: 1,
+                lastStorageSequence: storageSequence,
+            };
+        },
+        transact<Value>(operation: (transaction: RoomStorageTransaction) => Value) {
+            const operations: string[] = [];
+            const stagedFacts: StoredSignificantFact[] = [];
+            const stagedTelemetry: StoredTelemetrySample[] = [];
+            const stagedQuarantine: StoredQuarantineEntry[] = [];
+            const stagedIdentities: AcceptedInputIdentity[] = [];
+            let stagedCheckpoint: LatestRoomProjectionInput | undefined;
+            let stagedStorageSequence = storageSequence;
+            let stagedInternalSequence = internalSequence;
+            const transaction: RoomStorageTransaction = {
+                appendSignificantFact(input: SignificantFactInput) {
+                    operations.push('appendSignificantFact');
+                    const stored = { ...input, storageSequence: ++stagedStorageSequence };
+                    stagedFacts.push(stored);
+
+                    return stored;
+                },
+                appendTelemetrySample(input: TelemetrySampleInput) {
+                    operations.push('appendTelemetrySample');
+                    const stored = { ...input, storageSequence: ++stagedStorageSequence };
+                    stagedTelemetry.push(stored);
+
+                    return stored;
+                },
+                appendQuarantineEntry(input: QuarantineEntryInput) {
+                    operations.push('appendQuarantineEntry');
+                    const stored = { ...input, internalSequence: ++stagedInternalSequence };
+                    stagedQuarantine.push(stored);
+
+                    return stored;
+                },
+                upsertAcceptedInputIdentity(input: AcceptedInputIdentity) {
+                    operations.push('upsertAcceptedInputIdentity');
+                    stagedIdentities.push(input);
+                },
+                retireExpiredRecords() {
+                    operations.push('retireExpiredRecords');
+
+                    return [];
+                },
+                saveLatestRoomProjection(input: LatestRoomProjectionInput) {
+                    operations.push('saveLatestRoomProjection');
+                    stagedCheckpoint = input;
+                },
+            };
+            const value = operation(transaction);
+            const hook = beforeOutcome;
+            beforeOutcome = undefined;
+            hook?.(operations);
+            const configuredOutcome = nextOutcome;
+            nextOutcome = undefined;
+
+            if (configuredOutcome) {
+                return configuredOutcome;
+            }
+
+            significantFacts.push(...stagedFacts);
+            telemetrySamples.push(...stagedTelemetry);
+            quarantineEntries.push(...stagedQuarantine);
+
+            for (const identity of stagedIdentities) {
+                const index = identities.findIndex(
+                    (candidate) => candidate.eventId === identity.eventId,
+                );
+
+                if (index >= 0) {
+                    identities[index] = identity;
+                } else {
+                    identities.push(identity);
+                }
+            }
+
+            if (stagedCheckpoint) {
+                latestCheckpoint = stagedCheckpoint;
+            }
+
+            storageSequence = stagedStorageSequence;
+            internalSequence = stagedInternalSequence;
+
+            return { status: 'committed', value };
+        },
+        listAcceptedInputIdentities() {
+            return [...identities];
+        },
+        isAcceptedInputIdentityActive(eventId) {
+            return identities.some((identity) => identity.eventId === eventId);
+        },
+        listSignificantFacts() {
+            return [...significantFacts];
+        },
+        listTelemetrySamples({ deviceId, metric, from, to }) {
+            return telemetrySamples.filter(
+                (sample) =>
+                    sample.deviceId === deviceId &&
+                    sample.metric === metric &&
+                    (from === undefined || Date.parse(sample.occurredAt) >= Date.parse(from)) &&
+                    (to === undefined || Date.parse(sample.occurredAt) < Date.parse(to)),
+            );
+        },
+        listQuarantineEntries() {
+            return [...quarantineEntries];
+        },
+        upsertSimulatorCommandReceipt(input) {
+            receipts.set(`${input.source}:${input.commandId}`, input);
+        },
+        getSimulatorCommandReceipt(source, commandId) {
+            return receipts.get(`${source}:${commandId}`);
+        },
+        getLatestRoomProjection() {
+            return latestCheckpoint;
+        },
+        close() {},
+    };
+
+    return {
+        port,
+        significantFacts,
+        telemetrySamples,
+        quarantineEntries,
+        identities,
+        get latestCheckpoint() {
+            return latestCheckpoint;
+        },
+        failNext(status: 'confirmed_rolled_back' | 'indeterminate', error: unknown) {
+            nextOutcome = { status, error };
+        },
+        setBeforeOutcome(callback: (operations: string[]) => void) {
+            beforeOutcome = callback;
+        },
+        seedCheckpoint(checkpoint: LatestRoomProjectionInput) {
+            latestCheckpoint = checkpoint;
         },
     };
 }

@@ -393,7 +393,7 @@ export function createTemperatureRoomRuntime({
 
             snapshotBroadcastTimerHandle = snapshotBroadcastTimer.setInterval(() => {
                 inputCoordinator.receiveTimer((ingress) => {
-                    notifyFreshnessChanges(ingress.receivedAt);
+                    notifyFreshnessChanges(ingress);
                 });
             }, snapshotBroadcastIntervalMs);
 
@@ -630,8 +630,9 @@ export function createTemperatureRoomRuntime({
         }
     }
 
-    function notifyFreshnessChanges(evaluatedAt: string): void {
+    function notifyFreshnessChanges(ingress: EventIngress): void {
         assertRuntimeIsHealthy();
+        const evaluatedAt = ingress.receivedAt;
         const snapshot = snapshotAt(evaluatedAt);
         const previousSnapshot = lastPublishedSnapshot;
 
@@ -639,17 +640,16 @@ export function createTemperatureRoomRuntime({
             return;
         }
 
-        const derivedProjection = roomProjector.getProjection({ evaluatedAt });
-        const derivedEvidence = roomProjector.getEvidence();
+        const prepared = processor.prepareFreshnessProjection(ingress);
 
         if (storage && storageState.status === 'available') {
             const outcome = storage.transact((transaction) => {
                 const retiredIdentityEventIds =
                     transaction.retireExpiredRecords({ asOf: evaluatedAt }) ?? [];
                 transaction.saveLatestRoomProjection({
-                    updatedAt: derivedProjection.updatedAt,
-                    projection: derivedProjection,
-                    projectionEvidence: derivedEvidence,
+                    updatedAt: prepared.candidateState.updatedAt,
+                    projection: prepared.candidateState,
+                    projectionEvidence: prepared.candidateEvidence,
                     volatileGuards: processor.listVolatileIdentities(),
                 });
 
@@ -678,7 +678,7 @@ export function createTemperatureRoomRuntime({
             }
         }
 
-        roomProjector.installProjection(derivedProjection, evaluatedAt, derivedEvidence);
+        processor.commitPreparedProjection(prepared);
 
         notifySnapshotListeners(evaluatedAt);
     }

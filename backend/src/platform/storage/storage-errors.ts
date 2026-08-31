@@ -29,11 +29,7 @@ export class StorageManualInterventionError extends StorageError {
 export class StorageFatalError extends StorageError {
     readonly category: 'migration' | 'schema' | 'invariant';
 
-    constructor(
-        message: string,
-        category: StorageFatalError['category'],
-        cause: unknown,
-    ) {
+    constructor(message: string, category: StorageFatalError['category'], cause: unknown) {
         super(message, 'fatal', cause);
         this.name = 'StorageFatalError';
         this.category = category;

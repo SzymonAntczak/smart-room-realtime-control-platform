@@ -43,7 +43,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       isolated temporary databases; migration, schema and platform-invariant
       failures cannot be misclassified as recoverable availability outages.
 
-- [ ] Persist accepted facts atomically before publishing their effects.
+- [x] Persist accepted facts atomically before publishing their effects.
       In one transaction persist either a significant fact or a telemetry
       sample, enforce the applicable retention and durable deduplication, and
       persist the derived room projection. A telemetry event remains an

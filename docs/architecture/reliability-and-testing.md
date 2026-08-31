@@ -74,15 +74,15 @@ When explicit availability evidence reports that a device reconnects:
 3. the UI should replace stale values when a fresh observation arrives
 4. unresolved commands should remain historically visible, even after recovery
 
-For Stage 4 storage recovery, the runtime probes SQLite every five
-seconds with a schema check and rollback-only write transaction. It enters
-`recovering`, temporarily blocks new commands and keeps processing observations
-as volatile. A serialized cutover briefly stops dequeuing, checkpoints every
-result through its boundary, writes `storage.gap.recorded`, then processes
-later queued inputs as durable. It does not backfill volatile telemetry or
-events. Active volatile commands are not redispatched; a conflict with restored
-durable work keeps recovery waiting so one device never has overlapping active
-commands.
+Automatic Stage 4 storage recovery remains a follow-up. Its planned runtime
+will probe SQLite every five seconds with a schema check and rollback-only write
+transaction. It will enter `recovering`, temporarily block new commands and
+keep processing observations as volatile. A serialized cutover will briefly
+stop dequeuing, checkpoint every result through its boundary, write
+`storage.gap.recorded`, then process later queued inputs as durable. It will not
+backfill volatile telemetry or events. Active volatile commands will not be
+redispatched; a conflict with restored durable work will keep recovery waiting
+so one device never has overlapping active commands.
 
 The proposed failure taxonomy distinguishes automatically recoverable storage
 availability, corruption requiring manual intervention, and fatal migration,
