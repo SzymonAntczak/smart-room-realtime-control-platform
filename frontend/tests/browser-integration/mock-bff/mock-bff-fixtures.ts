@@ -177,8 +177,11 @@ export function createPendingLedCommand(): ActiveCommandProjection {
         requestedAt: commandRequestedAt,
         durability: 'durable',
         lifecycleDurability: 'durable',
-        dispatchedAt: commandDispatchedAt,
-        deadlineAt: commandTimedOutAt,
+        delivery: {
+            status: 'handed_off',
+            dispatchedAt: commandDispatchedAt,
+            deadlineAt: commandTimedOutAt,
+        },
     };
 }
 
@@ -199,7 +202,11 @@ export function createConfirmedLedCommand(): TerminalCommandProjection {
         requestedAt: commandRequestedAt,
         durability: 'durable',
         lifecycleDurability: 'durable',
-        dispatchedAt: commandDispatchedAt,
+        delivery: {
+            status: 'handed_off',
+            dispatchedAt: commandDispatchedAt,
+            deadlineAt: commandTimedOutAt,
+        },
         confirmedAt: commandConfirmedAt,
     };
 }
@@ -244,7 +251,11 @@ export function createTimedOutLedCommand(): TerminalCommandProjection {
         requestedAt: commandRequestedAt,
         durability: 'durable',
         lifecycleDurability: 'durable',
-        dispatchedAt: commandDispatchedAt,
+        delivery: {
+            status: 'handed_off',
+            dispatchedAt: commandDispatchedAt,
+            deadlineAt: commandTimedOutAt,
+        },
         timedOutAt: commandTimedOutAt,
         reason: 'confirmation_not_received',
     };

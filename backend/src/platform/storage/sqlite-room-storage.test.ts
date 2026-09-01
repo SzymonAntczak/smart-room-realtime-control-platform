@@ -36,7 +36,7 @@ describe('SQLite room storage', () => {
             historyGenerationId: expect.stringMatching(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             ),
-            schemaVersion: 1,
+            schemaVersion: 2,
             lastStorageSequence: 0,
         });
         expect(reopened.getMetadata()).toEqual(initialMetadata);
@@ -112,6 +112,61 @@ describe('SQLite room storage', () => {
             receipt,
         );
         expect(storage.getLatestRoomProjection()).toEqual(projection);
+        storage.close();
+    });
+
+    it('rolls back an outbox intent atomically and retains only active work past terminal retention', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const readyIntent = {
+            commandId: 'cmd-ready',
+            deviceId: 'led-main',
+            commandType: 'set.power' as const,
+            requestedPower: 'on' as const,
+            target: 'simulator-adapter' as const,
+            state: 'ready' as const,
+            createdAt: '2026-08-01T10:00:00.000Z',
+        };
+
+        const rolledBack = storage.transact((transaction) => {
+            transaction.upsertCommandDispatchOutboxIntent(readyIntent);
+
+            throw new Error('force rollback');
+        });
+        expect(rolledBack.status).toBe('confirmed_rolled_back');
+        expect(storage.listCommandDispatchOutboxIntents()).toEqual([]);
+
+        expect(
+            storage.transact((transaction) => {
+                transaction.upsertCommandDispatchOutboxIntent(readyIntent);
+                transaction.upsertCommandDispatchOutboxIntent({
+                    ...readyIntent,
+                    commandId: 'cmd-uncertain',
+                    state: 'uncertain',
+                    attemptedAt: '2026-08-01T10:00:00.000Z',
+                    firstAttemptedAt: '2026-08-01T10:00:00.000Z',
+                    deadlineAt: '2026-08-01T10:00:05.000Z',
+                    nextAttemptAt: '2026-08-01T10:00:00.500Z',
+                });
+                transaction.upsertCommandDispatchOutboxIntent({
+                    ...readyIntent,
+                    commandId: 'cmd-delivered',
+                    state: 'delivered',
+                    handedOffAt: '2026-08-01T10:00:01.000Z',
+                });
+                transaction.upsertCommandDispatchOutboxIntent({
+                    ...readyIntent,
+                    commandId: 'cmd-closed',
+                    state: 'closed',
+                    closedAt: '2026-08-01T10:00:01.000Z',
+                });
+                transaction.retireExpiredRecords({ asOf: '2026-09-02T10:00:01.000Z' });
+            }).status,
+        ).toBe('committed');
+
+        expect(storage.listCommandDispatchOutboxIntents()).toEqual([
+            expect.objectContaining({ commandId: 'cmd-ready', state: 'ready' }),
+            expect.objectContaining({ commandId: 'cmd-uncertain', state: 'uncertain' }),
+        ]);
         storage.close();
     });
 
@@ -456,7 +511,7 @@ describe('SQLite room storage', () => {
         newerStorage.close();
         const newerDatabase = new DatabaseSync(newerDatabasePath);
         newerDatabase
-            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (2, ?, ?)')
+            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (3, ?, ?)')
             .run('future', 'future');
         newerDatabase.close();
 

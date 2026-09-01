@@ -4,6 +4,7 @@ import type {
 } from '@smart-room/contracts/commands';
 import type { DeviceRole, DeviceState } from '@smart-room/contracts/devices';
 import type {
+    CommandDeliveryUncertainEvent,
     CommandDispatchedEvent,
     CommandFailedEvent,
     CommandRequestedEvent,
@@ -60,6 +61,7 @@ export interface RoomProjector {
     applyDeviceHealthChanged(event: DeviceHealthChangedEvent): RoomProjection;
     applyCommandRequested(event: CommandRequestedEvent): RoomProjection;
     applyCommandDispatched(event: CommandDispatchedEvent): RoomProjection;
+    applyCommandDeliveryUncertain(event: CommandDeliveryUncertainEvent): RoomProjection;
     applyCommandFailed(event: CommandFailedEvent): RoomProjection;
     applyCommandTimedOut(event: CommandTimedOutEvent): RoomProjection;
     hasAvailabilityEvidence(deviceId: string): boolean;
@@ -271,10 +273,10 @@ export function createRoomProjector({
 
             if (
                 active?.status === 'pending' &&
-                active.deadlineAt !== undefined &&
+                active.delivery !== undefined &&
                 Date.parse(options.receivedAt ?? options.evaluatedAt ?? event.occurredAt) <
-                    Date.parse(active.deadlineAt) &&
-                isOnOrAfter(event.occurredAt, active.dispatchedAt) &&
+                    Date.parse(active.delivery.deadlineAt) &&
+                isOnOrAfter(event.occurredAt, deliveryOrigin(active.delivery)) &&
                 matchesSetPowerCommand(active, event.payload.reportedState)
             ) {
                 moveToRecent({ ...active, status: 'confirmed', confirmedAt: event.occurredAt });
@@ -412,20 +414,28 @@ export function createRoomProjector({
         applyCommandDispatched(event) {
             const active = requireActive(event.deviceId, event.commandId);
 
-            if (active.status !== 'accepted') {
+            if (
+                active.status !== 'accepted' &&
+                !(
+                    active.status === 'pending' &&
+                    (active.delivery.status === 'uncertain' ||
+                        active.lifecycleDurability === 'volatile')
+                )
+            ) {
                 throw new InvalidLifecycleTransitionError(
                     `Cannot dispatch command ${event.commandId}.`,
                 );
             }
 
             assertChronological(event.occurredAt, active.requestedAt, 'dispatch');
+            const deadlineAt =
+                active.status === 'pending'
+                    ? active.delivery.deadlineAt
+                    : new Date(Date.parse(event.occurredAt) + ledSetPowerTimeoutMs).toISOString();
             const pending = {
                 ...active,
                 status: 'pending',
-                dispatchedAt: event.occurredAt,
-                deadlineAt: new Date(
-                    Date.parse(event.occurredAt) + ledSetPowerTimeoutMs,
-                ).toISOString(),
+                delivery: { status: 'handed_off', dispatchedAt: event.occurredAt, deadlineAt },
             } satisfies ActiveCommandProjection;
             activeByDeviceId.set(event.deviceId, pending);
             updatedAt = event.occurredAt;
@@ -434,7 +444,7 @@ export function createRoomProjector({
 
             if (
                 observation?.lastObservedAt &&
-                isOnOrAfter(observation.lastObservedAt, pending.dispatchedAt) &&
+                isOnOrAfter(observation.lastObservedAt, deliveryOrigin(pending.delivery)) &&
                 matchesSetPowerCommand(pending, requireDevice(event.deviceId).reportedState)
             ) {
                 moveToRecent({
@@ -444,6 +454,32 @@ export function createRoomProjector({
                 });
                 commandConfirmationSourceEventIds.set(pending.commandId, event.eventId);
             }
+
+            return build(event.occurredAt);
+        },
+        applyCommandDeliveryUncertain(event) {
+            const active = requireActive(event.deviceId, event.commandId);
+
+            if (active.status !== 'accepted') {
+                throw new InvalidLifecycleTransitionError(
+                    `Cannot mark command ${event.commandId} delivery as uncertain.`,
+                );
+            }
+
+            assertChronological(event.occurredAt, active.requestedAt, 'delivery attempt');
+            const pending = {
+                ...active,
+                status: 'pending',
+                delivery: {
+                    status: 'uncertain',
+                    firstAttemptedAt: event.occurredAt,
+                    deadlineAt: new Date(
+                        Date.parse(event.occurredAt) + ledSetPowerTimeoutMs,
+                    ).toISOString(),
+                },
+            } satisfies ActiveCommandProjection;
+            activeByDeviceId.set(event.deviceId, pending);
+            updatedAt = event.occurredAt;
 
             return build(event.occurredAt);
         },
@@ -463,7 +499,7 @@ export function createRoomProjector({
             assertChronological(event.occurredAt, active.requestedAt, 'failure');
 
             if (active.status === 'pending') {
-                assertChronological(event.occurredAt, active.dispatchedAt, 'failure');
+                assertChronological(event.occurredAt, deliveryOrigin(active.delivery), 'failure');
             }
 
             updatedAt = event.occurredAt;
@@ -492,14 +528,12 @@ export function createRoomProjector({
                 );
             }
 
-            assertChronological(event.occurredAt, active.dispatchedAt, 'timeout');
+            const deadlineAt = active.delivery.deadlineAt;
+            assertChronological(event.occurredAt, deliveryOrigin(active.delivery), 'timeout');
 
-            if (
-                Date.parse(event.occurredAt) - Date.parse(active.dispatchedAt) <
-                ledSetPowerTimeoutMs
-            ) {
+            if (Date.parse(event.occurredAt) < Date.parse(deadlineAt)) {
                 throw new InvalidLifecycleTransitionError(
-                    `Command timeout must occur at least ${ledSetPowerTimeoutMs} ms after dispatch.`,
+                    `Command timeout must occur at or after its fixed deadline.`,
                 );
             }
 
@@ -661,6 +695,12 @@ export function createRoomProjector({
             throw new InvalidLifecycleTransitionError(`Command ${commandId} already exists.`);
         }
     }
+}
+
+function deliveryOrigin(
+    delivery: Exclude<ActiveCommandProjection, { status: 'accepted' }>['delivery'],
+): string {
+    return delivery.status === 'handed_off' ? delivery.dispatchedAt : delivery.firstAttemptedAt;
 }
 
 function bootstrap(device: DeviceDefinition, at: string): DeviceProjection {

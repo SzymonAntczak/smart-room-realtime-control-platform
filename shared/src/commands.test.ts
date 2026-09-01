@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     acceptedCommandResponseSchema,
+    preAdmissionCommandErrorResponseSchema,
     rejectedCommandResponseSchema,
     setPowerCommandRequestSchema,
 } from './commands';
@@ -37,7 +38,12 @@ describe('set.power HTTP contracts', () => {
 
     it('distinguishes backend acceptance from rejection without a confirmation field', () => {
         expect(
-            isSchema(acceptedCommandResponseSchema, { commandId: 'cmd-1', status: 'accepted' }),
+            isSchema(acceptedCommandResponseSchema, {
+                commandId: 'cmd-1',
+                status: 'accepted',
+                durability: 'durable',
+                lifecycleDurability: 'durable',
+            }),
         ).toBe(true);
         expect(
             isSchema(acceptedCommandResponseSchema, {
@@ -51,6 +57,8 @@ describe('set.power HTTP contracts', () => {
                 status: 'rejected',
                 reason: 'command_already_active',
                 message: 'The device already has an active command.',
+                durability: 'volatile',
+                lifecycleDurability: 'volatile',
             }),
         ).toBe(true);
         expect(
@@ -58,6 +66,33 @@ describe('set.power HTTP contracts', () => {
                 status: 'rejected',
                 reason: 'command_already_active',
                 message: 'The device already has an active command.',
+            }),
+        ).toBe(false);
+        expect(
+            isSchema(preAdmissionCommandErrorResponseSchema, {
+                error: 'platform_recovering',
+                message: 'The platform is recovering.',
+                retryable: true,
+            }),
+        ).toBe(true);
+        expect(
+            isSchema(preAdmissionCommandErrorResponseSchema, {
+                error: 'unknown_device',
+                message: 'Unknown device.',
+                commandId: 'cmd-should-not-exist',
+            }),
+        ).toBe(false);
+        expect(
+            isSchema(preAdmissionCommandErrorResponseSchema, {
+                error: 'unknown_device',
+                message: 'Unknown device.',
+                retryable: true,
+            }),
+        ).toBe(false);
+        expect(
+            isSchema(preAdmissionCommandErrorResponseSchema, {
+                error: 'platform_recovering',
+                message: 'The platform is recovering.',
             }),
         ).toBe(false);
     });

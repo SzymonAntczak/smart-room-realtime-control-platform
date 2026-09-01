@@ -1,6 +1,8 @@
 import {
     type AcceptedCommandResponse,
     acceptedCommandResponseSchema,
+    type PreAdmissionCommandErrorResponse,
+    preAdmissionCommandErrorResponseSchema,
     type RejectedCommandResponse,
     rejectedCommandResponseSchema,
     type SetPowerCommandRequest,
@@ -147,6 +149,8 @@ export function createRoomBffServer({
                     202: acceptedCommandResponseSchema,
                     409: rejectedCommandResponseSchema,
                     422: rejectedCommandResponseSchema,
+                    404: preAdmissionCommandErrorResponseSchema,
+                    503: preAdmissionCommandErrorResponseSchema,
                     400: apiErrorResponseSchema,
                     415: apiErrorResponseSchema,
                     500: apiErrorResponseSchema,
@@ -166,18 +170,15 @@ export function createRoomBffServer({
             },
         },
         (request, response) => {
-            const result = handlers.requestCommand?.(request.body as SetPowerCommandRequest);
+            const requestCommand = handlers.requestCommand;
 
-            if (!result) {
-                writeJson(response, 422, {
-                    commandId: 'unavailable',
-                    status: 'rejected',
-                    reason: 'unsupported_command',
-                    message: 'Command handling is not available.',
-                });
+            if (!requestCommand) {
+                writeInvalidServerResponse(response);
 
                 return;
             }
+
+            const result = requestCommand(request.body as SetPowerCommandRequest);
 
             if (!isCommandRequestResult(result)) {
                 writeInvalidServerResponse(response);
@@ -185,11 +186,15 @@ export function createRoomBffServer({
                 return;
             }
 
-            writeJson(
-                response,
-                result.status === 'accepted' ? 202 : commandRejectionStatus(result),
-                result,
-            );
+            if ('error' in result) {
+                writeJson(response, result.error === 'platform_recovering' ? 503 : 404, result);
+            } else {
+                writeJson(
+                    response,
+                    result.status === 'accepted' ? 202 : commandRejectionStatus(result),
+                    result,
+                );
+            }
         },
     );
 
@@ -291,7 +296,10 @@ interface RoomBffHandlers {
     getDeviceScenarios?: (deviceId: string) => DeviceScenarioList | undefined;
 }
 
-export type CommandRequestResult = AcceptedCommandResponse | RejectedCommandResponse;
+export type CommandRequestResult =
+    | AcceptedCommandResponse
+    | RejectedCommandResponse
+    | PreAdmissionCommandErrorResponse;
 
 function handleRoomBffRequest(
     request: FastifyRequest,
@@ -400,7 +408,8 @@ function isCommandRequest(request: FastifyRequest): boolean {
 function isCommandRequestResult(value: unknown): value is CommandRequestResult {
     return (
         isSchema(acceptedCommandResponseSchema, value) ||
-        isSchema(rejectedCommandResponseSchema, value)
+        isSchema(rejectedCommandResponseSchema, value) ||
+        isSchema(preAdmissionCommandErrorResponseSchema, value)
     );
 }
 

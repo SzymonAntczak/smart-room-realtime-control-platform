@@ -57,6 +57,22 @@ describe('createRoomInputCoordinator', () => {
             },
         ]);
     });
+
+    it('preserves a previously captured adapter receivedAt while delaying its dispatch', () => {
+        const dispatched: Array<{ receivedAt: string; ingestSequence: number }> = [];
+        const coordinator = createRoomInputCoordinator({
+            now: () => '2026-08-31T09:00:10Z',
+            dispatch(input) {
+                dispatched.push(input.ingress);
+
+                return input.event.eventId;
+            },
+        });
+
+        coordinator.receiveAt(event('buffered-report'), '2026-08-31T09:00:04.999Z');
+
+        expect(dispatched).toEqual([{ receivedAt: '2026-08-31T09:00:04.999Z', ingestSequence: 1 }]);
+    });
 });
 
 function event(eventId: string): PlatformEvent {

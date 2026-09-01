@@ -396,7 +396,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('persists a restored command timeout before exposing the first recovered snapshot', () => {
+    it('persists a restored command timeout before exposing the first recovered snapshot', async () => {
         const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
         const databasePath = join(directory, 'room.sqlite');
         const clock = createMutableClock('2026-08-05T10:00:00Z');
@@ -417,6 +417,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
             initialRuntime.stop();
             initialStorage.close();
             clock.advanceBy(5_000);
@@ -448,6 +449,206 @@ describe('createTemperatureRoomRuntime', () => {
             recoveredRuntime?.stop();
             recoveredStorage?.close();
             rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('commits durable admission and its ready outbox intent before the scheduled handoff', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
+        const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-08-05T10:00:00Z'),
+            storage,
+            ledScenario: 'omit_confirmation',
+            commandTimer: createCommandTimer(),
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            const response = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+
+            expect(response).toMatchObject({
+                status: 'accepted',
+                durability: 'durable',
+                lifecycleDurability: 'durable',
+            });
+            expect(storage.listCommandDispatchOutboxIntents()).toEqual([
+                expect.objectContaining({ commandId: response.commandId, state: 'ready' }),
+            ]);
+            expect(storage.listSignificantFacts()).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventType: 'command.requested',
+                        commandId: response.commandId,
+                    }),
+                ]),
+            );
+
+            await flushCommandDispatch();
+
+            expect(storage.listCommandDispatchOutboxIntents()).toEqual([
+                expect.objectContaining({
+                    commandId: response.commandId,
+                    state: 'delivered',
+                    handedOffAt: expect.any(String),
+                    deadlineAt: expect.any(String),
+                }),
+            ]);
+        } finally {
+            runtime.stop();
+            storage.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('falls back once to a volatile admission with the same command id after durable admission rollback', async () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+            generateCommandId: () => 'cmd-rollback-1',
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+            storage.failNext(
+                'confirmed_rolled_back',
+                new StorageAvailabilityError('database is busy', undefined),
+            );
+
+            const response = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([
+                expect.objectContaining({
+                    commandId: 'cmd-rollback-1',
+                    durability: 'volatile',
+                    lifecycleDurability: 'volatile',
+                }),
+            ]);
+            await flushCommandDispatch();
+
+            expect(response).toEqual({
+                commandId: 'cmd-rollback-1',
+                status: 'accepted',
+                durability: 'volatile',
+                lifecycleDurability: 'volatile',
+            });
+            expect(snapshots[0]?.platform.storage.status).toBe('degraded');
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([
+                expect.objectContaining({
+                    commandId: 'cmd-rollback-1',
+                    status: 'pending',
+                    durability: 'volatile',
+                    lifecycleDurability: 'volatile',
+                }),
+            ]);
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual([]);
+            expect(
+                storage.significantFacts.filter((fact) => fact.commandId === 'cmd-rollback-1'),
+            ).toEqual([]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('does not publish or dispatch a command after a fatal durable-admission rollback', async () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+            generateCommandId: () => 'cmd-fatal-admission-1',
+        });
+
+        try {
+            runtime.start();
+            storage.failNext(
+                'confirmed_rolled_back',
+                new StorageInvariantError('broken storage invariant', undefined),
+            );
+
+            expect(() =>
+                runtime.requestCommand({
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                }),
+            ).toThrow('storage_fatal_error');
+            await flushCommandDispatch();
+
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(
+                storage.significantFacts.filter(
+                    (fact) => fact.commandId === 'cmd-fatal-admission-1',
+                ),
+            ).toEqual([]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('keeps a volatile pending handoff with its original deadline after durable dispatch persistence rolls back', async () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            commandTimer: createCommandTimer(),
+            generateEventId: createEventIdGenerator(),
+            generateCommandId: () => 'cmd-dispatch-rollback-1',
+            ledScenario: 'omit_confirmation',
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(1);
+            const command = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            storage.failNext(
+                'confirmed_rolled_back',
+                new StorageAvailabilityError('database is busy', undefined),
+            );
+            await flushCommandDispatch();
+
+            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('degraded');
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([
+                expect.objectContaining({
+                    commandId: command.commandId,
+                    status: 'pending',
+                    durability: 'durable',
+                    lifecycleDurability: 'volatile',
+                    delivery: {
+                        status: 'handed_off',
+                        dispatchedAt: '2026-08-05T10:00:00.001Z',
+                        deadlineAt: '2026-08-05T10:00:05.001Z',
+                    },
+                }),
+            ]);
+            expect(
+                storage.significantFacts.filter(
+                    (fact) =>
+                        fact.commandId === command.commandId &&
+                        fact.eventType === 'command.dispatched',
+                ),
+            ).toEqual([]);
+        } finally {
+            runtime.stop();
         }
     });
 
@@ -941,7 +1142,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('dispatches an LED command through the composed runtime and publishes its reported state', () => {
+    it('dispatches an LED command through the composed runtime and publishes its reported state', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const runtime = createTemperatureRoomRuntime({
             clock,
@@ -960,6 +1161,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
 
             expect(device(runtime, 'led-main')).toEqual(
                 expect.objectContaining({
@@ -980,7 +1182,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('configures the next LED command scenario without changing reported LED state', () => {
+    it('configures the next LED command scenario without changing reported LED state', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const commandTimer = createCommandTimer();
         const runtime = createTemperatureRoomRuntime({
@@ -1002,6 +1204,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
             clock.advanceBy(5_000);
             commandTimer.runAll();
 
@@ -1014,6 +1217,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
             expect(runtime.getRoomSnapshot().recentCommands).toEqual(
                 expect.arrayContaining([expect.objectContaining({ status: 'confirmed' })]),
             );
@@ -1022,7 +1226,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('records dispatch before a synchronous LED confirmation and clears its timeout', () => {
+    it('records dispatch before a synchronous LED confirmation and clears its timeout', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const commandTimer = createCommandTimer();
         const runtime = createTemperatureRoomRuntime({
@@ -1040,6 +1244,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
 
             expect(result).toEqual(expect.objectContaining({ status: 'accepted' }));
             expect(device(runtime, 'led-main')).toEqual(
@@ -1056,7 +1261,37 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('atomically prepares both the observed report and derived confirmation record', () => {
+    it('retains a synchronous report ingress captured before lifecycle persistence crosses deadline', async () => {
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            commandTimer: createCommandTimer(),
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(4_999);
+            const command = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            storage.setBeforeOutcome(() => clock.advanceBy(5_000));
+            await flushCommandDispatch();
+
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ commandId: command.commandId, status: 'confirmed' }),
+            ]);
+            expect(device(runtime, 'led-main')?.reportedState).toEqual({ power: 'on' });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('atomically prepares both the observed report and derived confirmation record', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const storage = createCapturingStorage();
         const runtime = createTemperatureRoomRuntime({
@@ -1074,6 +1309,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
             const confirmation = storage.significantFacts.find(
                 (fact) =>
                     fact.eventType === 'command.confirmed' && fact.commandId === result.commandId,
@@ -1098,7 +1334,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('cancels the timeout when a delayed matching report confirms the command', () => {
+    it('cancels the timeout when a delayed matching report confirms the command', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const ledScheduler = createLedScheduler();
         const commandTimer = createCommandTimer();
@@ -1118,6 +1354,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
             expect(runtime.getRoomSnapshot().activeCommands).toHaveLength(1);
 
             clock.advanceBy(2_000);
@@ -1132,7 +1369,51 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('keeps a pending LED command active when the device becomes offline', () => {
+    it('uses captured report ingress time for the strict confirmation deadline', async () => {
+        const cases = [
+            [4_999, 'confirmed'],
+            [5_000, 'timed_out'],
+            [5_001, 'timed_out'],
+        ] as const;
+
+        for (const [advanceByMs, expectedStatus] of cases) {
+            const clock = createMutableClock('2026-08-05T10:00:00Z');
+            const ledScheduler = createLedScheduler();
+            const runtime = createTemperatureRoomRuntime({
+                clock,
+                commandTimer: createCommandTimer(),
+                generateEventId: createEventIdGenerator(),
+                ledScenario: 'confirm_delayed',
+                ledScenarioScheduler: ledScheduler,
+            });
+
+            try {
+                runtime.start();
+                clock.advanceBy(1);
+                const command = runtime.requestCommand({
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                });
+                await flushCommandDispatch();
+
+                clock.advanceBy(advanceByMs);
+                ledScheduler.runAll();
+
+                expect(device(runtime, 'led-main')?.reportedState).toEqual({ power: 'on' });
+                expect(runtime.getRoomSnapshot().recentCommands).toEqual([
+                    expect.objectContaining({
+                        commandId: command.commandId,
+                        status: expectedStatus,
+                    }),
+                ]);
+            } finally {
+                runtime.stop();
+            }
+        }
+    });
+
+    it('keeps a pending LED command active when the device becomes offline', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const runtime = createTemperatureRoomRuntime({
             clock,
@@ -1149,6 +1430,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
             runtime.runDeviceScenario('led-main', 'disconnect_device');
 
             expect(device(runtime, 'led-main')).toMatchObject({ availability: 'offline' });
@@ -1160,7 +1442,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('records a terminal failure when a second command conflicts with an active command', () => {
+    it('records a terminal failure when a second command conflicts with an active command', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const runtime = createTemperatureRoomRuntime({
             clock,
@@ -1177,6 +1459,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
             const second = runtime.requestCommand({
                 deviceId: 'led-main',
                 commandType: 'set.power',
@@ -1198,7 +1481,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('projects simulator rejection, timeout and late report as distinct terminal outcomes', () => {
+    it('projects simulator rejection, timeout and late report as distinct terminal outcomes', async () => {
         const scenarios = [
             ['reject_command', 'failed'],
             ['omit_confirmation', 'timed_out'],
@@ -1225,6 +1508,7 @@ describe('createTemperatureRoomRuntime', () => {
                     commandType: 'set.power',
                     requestedState: { power: 'on' },
                 });
+                await flushCommandDispatch();
 
                 if (scenario !== 'reject_command') {
                     clock.advanceBy(5_000);
@@ -1247,7 +1531,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('persists a late state report without reconfirming its timed-out command', () => {
+    it('persists a late state report without reconfirming its timed-out command', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const storage = createScriptedStorage();
         const ledScheduler = createLedScheduler();
@@ -1271,6 +1555,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
             clock.advanceBy(5_000);
             commandTimer.runAll();
             clock.advanceBy(1_000);
@@ -1307,7 +1592,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('records dispatch before a synchronous simulator rejection without lifecycle diagnostics', () => {
+    it('records dispatch before a synchronous simulator rejection without lifecycle diagnostics', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const commandTimer = createCommandTimer();
         const runtime = createTemperatureRoomRuntime({
@@ -1325,6 +1610,7 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
+            await flushCommandDispatch();
 
             expect(result).toEqual(expect.objectContaining({ status: 'accepted' }));
             expect(runtime.getRoomSnapshot().activeCommands).toEqual([]);
@@ -1359,7 +1645,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('reschedules a pending command timeout after a runtime restart', () => {
+    it('reschedules a pending command timeout after a runtime restart', async () => {
         const clock = createMutableClock('2026-08-05T10:00:00Z');
         const commandTimer = createCommandTimer();
         const runtime = createTemperatureRoomRuntime({
@@ -1376,6 +1662,7 @@ describe('createTemperatureRoomRuntime', () => {
             commandType: 'set.power',
             requestedState: { power: 'on' },
         });
+        await flushCommandDispatch();
         runtime.stop();
         clock.advanceBy(5_000);
         runtime.start();
@@ -1607,6 +1894,12 @@ function createScriptedStorage() {
                     operations.push('saveLatestRoomProjection');
                     stagedCheckpoint = input;
                 },
+                upsertCommandDispatchOutboxIntent() {
+                    operations.push('upsertCommandDispatchOutboxIntent');
+                },
+                closeCommandDispatchOutboxIntent() {
+                    operations.push('closeCommandDispatchOutboxIntent');
+                },
             };
             const value = operation(transaction);
             const hook = beforeOutcome;
@@ -1674,6 +1967,9 @@ function createScriptedStorage() {
         getLatestRoomProjection() {
             return latestCheckpoint;
         },
+        listCommandDispatchOutboxIntents() {
+            return [];
+        },
         close() {},
     };
 
@@ -1736,6 +2032,8 @@ function createCapturingStorage() {
                     upsertAcceptedInputIdentity(): void;
                     retireExpiredRecords(): void;
                     saveLatestRoomProjection(): void;
+                    upsertCommandDispatchOutboxIntent(): void;
+                    closeCommandDispatchOutboxIntent(): void;
                 }) => unknown,
             ) {
                 const value = operation({
@@ -1753,10 +2051,17 @@ function createCapturingStorage() {
                     upsertAcceptedInputIdentity() {},
                     retireExpiredRecords() {},
                     saveLatestRoomProjection() {},
+                    upsertCommandDispatchOutboxIntent() {},
+                    closeCommandDispatchOutboxIntent() {},
                 });
 
                 return { status: 'committed' as const, value };
             },
         } as unknown as RoomStorage,
     };
+}
+
+async function flushCommandDispatch(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
 }

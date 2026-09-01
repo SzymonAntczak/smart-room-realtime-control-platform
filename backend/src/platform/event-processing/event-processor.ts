@@ -1,5 +1,7 @@
 import type { IgnoredEventReason } from '@smart-room/contracts/development';
 import {
+    type CommandDeliveryUncertainEvent,
+    commandDeliveryUncertainEventSchema,
     type CommandDispatchedEvent,
     commandDispatchedEventSchema,
     type CommandFailedEvent,
@@ -303,6 +305,16 @@ export function createEventProcessor({
             );
         }
 
+        if (event.eventType === 'command.delivery_uncertain') {
+            if (!isSchema(commandDeliveryUncertainEventSchema, event)) {
+                return ignored('invalid_payload');
+            }
+
+            return acceptLifecycleEvent(event as CommandDeliveryUncertainEvent, (acceptedEvent) =>
+                activeProjector.applyCommandDeliveryUncertain(acceptedEvent),
+            );
+        }
+
         if (event.eventType === 'command.failed') {
             if (!isSchema(commandFailedEventSchema, event)) {
                 return ignored('invalid_payload');
@@ -366,6 +378,7 @@ export function createEventProcessor({
             TEvent extends
                 | CommandRequestedEvent
                 | CommandDispatchedEvent
+                | CommandDeliveryUncertainEvent
                 | CommandFailedEvent
                 | CommandTimedOutEvent,
         >(
@@ -391,6 +404,7 @@ export function createEventProcessor({
                 | DeviceHealthChangedEvent
                 | CommandRequestedEvent
                 | CommandDispatchedEvent
+                | CommandDeliveryUncertainEvent
                 | CommandFailedEvent
                 | CommandTimedOutEvent,
         >(

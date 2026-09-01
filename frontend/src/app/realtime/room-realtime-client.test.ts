@@ -750,8 +750,11 @@ function createPendingCommand(): RoomSnapshotProjection['activeCommands'][number
         status: 'pending',
         requestedState: { power: 'on' },
         requestedAt: '2026-06-08T09:30:00Z',
-        dispatchedAt: '2026-06-08T09:30:01Z',
-        deadlineAt: '2026-06-08T09:30:06Z',
+        delivery: {
+            status: 'handed_off',
+            dispatchedAt: '2026-06-08T09:30:01Z',
+            deadlineAt: '2026-06-08T09:30:06Z',
+        },
         durability: 'durable',
         lifecycleDurability: 'durable',
     };
@@ -765,7 +768,11 @@ function createConfirmedCommand(): RoomSnapshotProjection['recentCommands'][numb
         status: 'confirmed',
         requestedState: { power: 'on' },
         requestedAt: '2026-06-08T09:30:00Z',
-        dispatchedAt: '2026-06-08T09:30:01Z',
+        delivery: {
+            status: 'handed_off',
+            dispatchedAt: '2026-06-08T09:30:01Z',
+            deadlineAt: '2026-06-08T09:30:06Z',
+        },
         confirmedAt: '2026-06-08T09:30:03Z',
         durability: 'durable',
         lifecycleDurability: 'durable',

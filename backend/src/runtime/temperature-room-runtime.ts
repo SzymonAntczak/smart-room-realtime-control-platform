@@ -3,6 +3,7 @@ import { clearInterval, setInterval, setTimeout } from 'node:timers';
 
 import type {
     AcceptedCommandResponse,
+    PreAdmissionCommandErrorResponse,
     RejectedCommandResponse,
     SetPowerCommandRequest,
 } from '@smart-room/contracts/commands';
@@ -41,6 +42,7 @@ import {
     type SimulatorTemperatureAdapter,
 } from '../adapters/simulator/temperature/temperature-adapter';
 import {
+    type CommandOutboxMutation,
     type CommandTimer,
     createSetPowerCommandController,
 } from '../platform/command-processing/set-power-command-controller';
@@ -110,7 +112,7 @@ export interface TemperatureRoomRuntime {
     runDeviceScenario(deviceId: string, action: DeviceScenarioAction): DeviceScenarioResult;
     requestCommand(
         request: SetPowerCommandRequest,
-    ): AcceptedCommandResponse | RejectedCommandResponse;
+    ): AcceptedCommandResponse | RejectedCommandResponse | PreAdmissionCommandErrorResponse;
 }
 
 export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
@@ -303,14 +305,17 @@ export function createTemperatureRoomRuntime({
 
     const snapshotBroadcastTimer = timer ?? (realTimer as TimerScheduler);
     const snapshotListeners = new Set<RoomSnapshotListener>();
-    let bufferedAdapterEvents: PlatformEvent[] | undefined;
+    let bufferedAdapterEvents: Array<{ event: PlatformEvent; receivedAt: string }> | undefined;
     let hasStarted = false;
     let snapshotBroadcastTimerHandle: unknown | undefined;
     let lastPublishedSnapshot: RoomSnapshotProjection | undefined;
-    const inputCoordinator = createRoomInputCoordinator({
+    const inputCoordinator = createRoomInputCoordinator<
+        EventProcessingResult,
+        CommandOutboxMutation
+    >({
         now: clock.now,
         dispatch(input) {
-            return processPlatformEvent(input.event, input.ingress);
+            return processPlatformEvent(input.event, input.ingress, input.context);
         },
     });
     const commandController = createSetPowerCommandController({
@@ -319,31 +324,35 @@ export function createTemperatureRoomRuntime({
                 deviceId: 'led-main',
                 target: 'simulator-adapter',
                 dispatcher: {
-                    dispatch(command) {
+                    dispatch(command, attemptedAt) {
                         if (!hasStarted || !ledAdapter) {
                             throw new Error('The LED adapter is not available.');
                         }
 
-                        ledAdapter.dispatch(command);
+                        return ledAdapter.dispatch(command, attemptedAt);
                     },
                 },
             },
         ],
-        emitEvent(event) {
-            const result = inputCoordinator.receive(event);
-
-            if (!result) {
-                throw new Error('Command lifecycle event was enqueued during another dispatch.');
-            }
+        emitEvent(event, outboxMutation) {
+            const result = inputCoordinator.receive(event, outboxMutation);
 
             return result;
+        },
+        commitOutboxMutation(mutation) {
+            inputCoordinator.receiveTimer((ingress) => {
+                persistOutboxMutation(mutation, ingress);
+            });
+        },
+        listDurableOutboxIntents() {
+            return storage?.listCommandDispatchOutboxIntents() ?? [];
         },
         createDispatchScope() {
             if (bufferedAdapterEvents) {
                 throw new Error('A command dispatch scope is already active.');
             }
 
-            const bufferedEvents: PlatformEvent[] = [];
+            const bufferedEvents: Array<{ event: PlatformEvent; receivedAt: string }> = [];
 
             return {
                 run(operation) {
@@ -356,8 +365,8 @@ export function createTemperatureRoomRuntime({
                     }
                 },
                 flush() {
-                    for (const event of bufferedEvents) {
-                        inputCoordinator.receive(event);
+                    for (const bufferedEvent of bufferedEvents) {
+                        inputCoordinator.receiveAt(bufferedEvent.event, bufferedEvent.receivedAt);
                     }
 
                     bufferedEvents.length = 0;
@@ -365,6 +374,11 @@ export function createTemperatureRoomRuntime({
             };
         },
         getRoomSnapshot: getCurrentRoomSnapshot,
+        scheduleImmediate(callback) {
+            queueMicrotask(() => {
+                inputCoordinator.receiveTimer(() => callback());
+            });
+        },
         clock,
         commandTimer,
         generateCommandId,
@@ -605,6 +619,7 @@ export function createTemperatureRoomRuntime({
             led,
             nativeLedId: 'led-main-native',
             platformDeviceId: 'led-main',
+            clock,
             emitEvent(event) {
                 receiveAdapterEvent(event);
             },
@@ -686,6 +701,7 @@ export function createTemperatureRoomRuntime({
     function processPlatformEvent(
         event: PlatformEvent,
         ingress: EventIngress,
+        outboxMutation?: CommandOutboxMutation,
     ): EventProcessingResult {
         assertRuntimeIsHealthy();
         const receivedAt = ingress.receivedAt;
@@ -735,6 +751,18 @@ export function createTemperatureRoomRuntime({
                     transaction.retireExpiredRecords({ asOf: receivedAt }) ?? [];
 
                 if (prepared.kind !== 'quarantined') {
+                    if (outboxMutation?.kind === 'upsert') {
+                        transaction.upsertCommandDispatchOutboxIntent(outboxMutation.intent);
+                    } else if (outboxMutation?.kind === 'close') {
+                        transaction.closeCommandDispatchOutboxIntent(outboxMutation);
+                    } else {
+                        const terminalClosure = terminalOutboxClosure(event, prepared.records);
+
+                        if (terminalClosure) {
+                            transaction.closeCommandDispatchOutboxIntent(terminalClosure);
+                        }
+                    }
+
                     transaction.saveLatestRoomProjection({
                         updatedAt: durablePreparedState.updatedAt,
                         projection: durablePreparedState,
@@ -805,6 +833,47 @@ export function createTemperatureRoomRuntime({
         return result;
     }
 
+    function persistOutboxMutation(mutation: CommandOutboxMutation, ingress: EventIngress): void {
+        if (!storage || storageState.status !== 'available') {
+            return;
+        }
+
+        const projection = roomProjector.getProjection({ evaluatedAt: ingress.receivedAt });
+        const outcome = storage.transact((transaction) => {
+            if (mutation.kind === 'upsert') {
+                transaction.upsertCommandDispatchOutboxIntent(mutation.intent);
+            } else {
+                transaction.closeCommandDispatchOutboxIntent(mutation);
+            }
+
+            transaction.saveLatestRoomProjection({
+                updatedAt: projection.updatedAt,
+                projection,
+                projectionEvidence: roomProjector.getEvidence(),
+                volatileGuards: processor.listVolatileIdentities(),
+            });
+        });
+
+        if (outcome.status === 'indeterminate') {
+            terminateForStorageOutcome(outcome.error, 'unknown');
+        }
+
+        if (outcome.status === 'confirmed_rolled_back' && isFatalStorageError(outcome.error)) {
+            terminateForStorageOutcome(outcome.error, 'fatal');
+        }
+
+        if (outcome.status === 'confirmed_rolled_back') {
+            storageState = {
+                status: 'degraded',
+                changedAt: ingress.receivedAt,
+                reason: 'storage_write_failed',
+                historyGenerationId: storageState.historyGenerationId,
+                storedThroughSequence: storageState.storedThroughSequence,
+            };
+            notifySnapshotListeners(ingress.receivedAt, true);
+        }
+    }
+
     function closeExpiredCommandBeforeStateReport(
         event: PlatformEvent,
         ingress: EventIngress,
@@ -819,11 +888,11 @@ export function createTemperatureRoomRuntime({
                 (command) => command.deviceId === event.deviceId && command.status === 'pending',
             );
 
-        if (!active || active.status !== 'pending' || !active.deadlineAt) {
+        if (!active || active.status !== 'pending') {
             return;
         }
 
-        if (Date.parse(ingress.receivedAt) < Date.parse(active.deadlineAt)) {
+        if (Date.parse(ingress.receivedAt) < Date.parse(active.delivery.deadlineAt)) {
             return;
         }
 
@@ -831,7 +900,7 @@ export function createTemperatureRoomRuntime({
             {
                 eventId: generateEventId(),
                 eventType: 'command.timed_out',
-                occurredAt: active.deadlineAt,
+                occurredAt: active.delivery.deadlineAt,
                 source: 'backend',
                 deviceId: active.deviceId,
                 commandId: active.commandId,
@@ -915,7 +984,7 @@ export function createTemperatureRoomRuntime({
         assertRuntimeIsHealthy();
 
         if (bufferedAdapterEvents) {
-            bufferedAdapterEvents.push(event);
+            bufferedAdapterEvents.push({ event, receivedAt: clock.now() });
 
             return;
         }
@@ -1069,6 +1138,27 @@ function withBootstrapDurability(
             ) as typeof device.observationStatus,
         })),
     };
+}
+
+function terminalOutboxClosure(
+    event: PlatformEvent,
+    records: readonly PreparedRecord[],
+): { commandId: string; closedAt: string } | undefined {
+    if (
+        event.commandId &&
+        (event.eventType === 'command.failed' || event.eventType === 'command.timed_out')
+    ) {
+        return { commandId: event.commandId, closedAt: event.occurredAt };
+    }
+
+    const confirmation = records.find(
+        (record): record is Extract<PreparedRecord, { kind: 'derived_command_confirmed' }> =>
+            record.kind === 'derived_command_confirmed',
+    );
+
+    return confirmation
+        ? { commandId: confirmation.commandId, closedAt: confirmation.occurredAt }
+        : undefined;
 }
 
 function isFatalStorageError(error: unknown): boolean {

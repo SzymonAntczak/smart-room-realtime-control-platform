@@ -29,6 +29,7 @@ export interface SimulatorLedAdapterConfig {
     led: LedCommandTransport;
     nativeLedId: string;
     platformDeviceId: string;
+    clock?: { now(): string };
     emitEvent: PlatformEventSink<
         | DeviceStateReportedEvent
         | CommandFailedEvent
@@ -45,6 +46,7 @@ export function createSimulatorLedAdapter({
     led,
     nativeLedId,
     platformDeviceId,
+    clock = { now: () => new Date().toISOString() },
     emitEvent,
 }: SimulatorLedAdapterConfig): SimulatorLedAdapter {
     let hasStopped = false;
@@ -130,6 +132,7 @@ export function createSimulatorLedAdapter({
                 throw new RangeError(`LED command deviceId must be ${platformDeviceId}.`);
             }
 
+            const handedOffAt = clock.now();
             led.receive({
                 messageType: 'led.command.set_power',
                 commandId: command.commandId,
@@ -137,6 +140,8 @@ export function createSimulatorLedAdapter({
                 commandType: 'set.power',
                 requestedState: { power: command.requestedState.power },
             });
+
+            return { status: 'handed_off', handedOffAt };
         },
         stop() {
             hasStopped = true;

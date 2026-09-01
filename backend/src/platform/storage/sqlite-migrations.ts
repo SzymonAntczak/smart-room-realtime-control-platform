@@ -98,6 +98,28 @@ CREATE INDEX accepted_input_identities_by_accepted_at
     ON accepted_input_identities (accepted_at, event_id);
 `;
 
+const migrationTwoSql = `
+CREATE TABLE command_dispatch_outbox (
+    command_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    command_type TEXT NOT NULL CHECK (command_type = 'set.power'),
+    requested_power TEXT NOT NULL CHECK (requested_power IN ('on', 'off')),
+    target TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ready', 'uncertain', 'delivered', 'closed')),
+    created_at TEXT NOT NULL,
+    attempted_at TEXT,
+    first_attempted_at TEXT,
+    handed_off_at TEXT,
+    deadline_at TEXT,
+    next_attempt_at TEXT,
+    closed_at TEXT
+) STRICT;
+
+CREATE INDEX command_dispatch_outbox_active_by_state
+    ON command_dispatch_outbox (state, next_attempt_at, command_id)
+    WHERE state IN ('ready', 'uncertain');
+`;
+
 export const roomStorageMigrations: readonly Migration[] = [
     {
         version: 1,
@@ -111,6 +133,14 @@ export const roomStorageMigrations: readonly Migration[] = [
                      VALUES (1, ?, 0)`,
                 )
                 .run(historyGenerationId);
+        },
+    },
+    {
+        version: 2,
+        name: 'command-dispatch-outbox',
+        checksum: checksum(migrationTwoSql),
+        apply(database) {
+            database.exec(migrationTwoSql);
         },
     },
 ];

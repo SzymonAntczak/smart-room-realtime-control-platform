@@ -145,8 +145,11 @@ function pendingCommand() {
         status: 'pending',
         requestedState: { power: 'on' },
         requestedAt: '2026-06-08T09:30:00Z',
-        dispatchedAt: '2026-06-08T09:30:01Z',
-        deadlineAt: '2026-06-08T09:31:00Z',
+        delivery: {
+            status: 'handed_off',
+            dispatchedAt: '2026-06-08T09:30:01Z',
+            deadlineAt: '2026-06-08T09:31:00Z',
+        },
         durability: 'durable',
         lifecycleDurability: 'durable',
     };

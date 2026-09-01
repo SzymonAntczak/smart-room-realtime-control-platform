@@ -118,6 +118,24 @@ const commandProjectionBaseShape = {
     durability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
     lifecycleDurability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
 };
+const commandDeliveryEvidenceSchema = Type.Union([
+    Type.Object(
+        {
+            status: Type.Literal('handed_off'),
+            dispatchedAt: isoTimestampSchema,
+            deadlineAt: isoTimestampSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            status: Type.Literal('uncertain'),
+            firstAttemptedAt: isoTimestampSchema,
+            deadlineAt: isoTimestampSchema,
+        },
+        { additionalProperties: false },
+    ),
+]);
 export const activeCommandProjectionSchema = Type.Union([
     Type.Object(
         { ...commandProjectionBaseShape, status: Type.Literal('accepted') },
@@ -127,8 +145,7 @@ export const activeCommandProjectionSchema = Type.Union([
         {
             ...commandProjectionBaseShape,
             status: Type.Literal('pending'),
-            dispatchedAt: isoTimestampSchema,
-            deadlineAt: isoTimestampSchema,
+            delivery: commandDeliveryEvidenceSchema,
         },
         { additionalProperties: false },
     ),
@@ -138,7 +155,7 @@ export const terminalCommandProjectionSchema = Type.Union([
         {
             ...commandProjectionBaseShape,
             status: Type.Literal('confirmed'),
-            dispatchedAt: isoTimestampSchema,
+            delivery: commandDeliveryEvidenceSchema,
             confirmedAt: isoTimestampSchema,
         },
         { additionalProperties: false },
@@ -147,7 +164,7 @@ export const terminalCommandProjectionSchema = Type.Union([
         {
             ...commandProjectionBaseShape,
             status: Type.Literal('failed'),
-            dispatchedAt: Type.Optional(isoTimestampSchema),
+            delivery: Type.Optional(commandDeliveryEvidenceSchema),
             failedAt: isoTimestampSchema,
             reason: nonEmptyStringSchema,
             message: nonEmptyStringSchema,
@@ -158,7 +175,7 @@ export const terminalCommandProjectionSchema = Type.Union([
         {
             ...commandProjectionBaseShape,
             status: Type.Literal('timed_out'),
-            dispatchedAt: isoTimestampSchema,
+            delivery: commandDeliveryEvidenceSchema,
             timedOutAt: isoTimestampSchema,
             reason: nonEmptyStringSchema,
         },

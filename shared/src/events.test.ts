@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    commandDeliveryUncertainEventSchema,
     commandDispatchedEventSchema,
     commandFailedEventSchema,
     commandRequestedEventSchema,
@@ -20,6 +21,7 @@ describe('platform event schemas', () => {
         [telemetryReadingRecordedEventSchema, 'telemetry.reading.recorded'],
         [commandRequestedEventSchema, 'command.requested'],
         [commandDispatchedEventSchema, 'command.dispatched'],
+        [commandDeliveryUncertainEventSchema, 'command.delivery_uncertain'],
         [commandFailedEventSchema, 'command.failed'],
         [commandTimedOutEventSchema, 'command.timed_out'],
     ] as const)('accepts its documented lifecycle event', (schema, eventType) => {
@@ -146,6 +148,17 @@ function createEvent(eventType: string) {
                 eventType,
                 commandId: 'cmd-1',
                 payload: { commandType: 'set.power', target: 'simulator-adapter' },
+            };
+        case 'command.delivery_uncertain':
+            return {
+                ...base,
+                eventType,
+                commandId: 'cmd-1',
+                payload: {
+                    commandType: 'set.power',
+                    target: 'simulator-adapter',
+                    reason: 'transport_ack_lost',
+                },
             };
         case 'command.failed':
             return {

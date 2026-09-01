@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { mockBffUrls } from './browser-test-runtime';
 import {
+    publishAcceptedCommandBeforeResponse,
     publishMockRoomUpdate,
     rejectNextMockCommand,
     resetMockRoom,
@@ -63,6 +64,30 @@ test('keeps reported LED power unchanged until an accepted command is confirmed 
 
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'true');
     await expect(ledCard.powerToggle).toBeEnabled();
+});
+
+test('reconciles a lifecycle update published before the accepted HTTP response by commandId', async ({
+    page,
+}) => {
+    await resetMockRoom(page.request);
+    await publishAcceptedCommandBeforeResponse(page.request);
+
+    const realtimeRequest = page.waitForRequest(mockBffUrls.realtime);
+    await page.goto('/');
+    await realtimeRequest;
+    const ledCard = new LedCard(page, 'led-main');
+
+    const commandResponse = page.waitForResponse(
+        (response) => response.url() === mockBffUrls.commands && response.status() === 202,
+    );
+    await ledCard.powerToggle.click();
+
+    await expect(ledCard.commandStatus).toContainText('Zażądano:');
+    await expect(ledCard.powerToggle).toBeDisabled();
+    await commandResponse;
+
+    await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(ledCard.commandStatus).toContainText('Zażądano:');
 });
 
 test('shows a rejected command response without changing confirmed LED power', async ({ page }) => {

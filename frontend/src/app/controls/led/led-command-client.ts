@@ -1,6 +1,8 @@
 import {
     type AcceptedCommandResponse,
     acceptedCommandResponseSchema,
+    type PreAdmissionCommandErrorResponse,
+    preAdmissionCommandErrorResponseSchema,
     type RejectedCommandResponse,
     rejectedCommandResponseSchema,
     type SetPowerCommandRequest,
@@ -10,7 +12,10 @@ import { isSchema } from '@smart-room/contracts/validation';
 
 const defaultCommandUrl = 'http://localhost:4310/room/commands';
 
-export type LedCommandResponse = AcceptedCommandResponse | RejectedCommandResponse;
+export type LedCommandResponse =
+    | AcceptedCommandResponse
+    | RejectedCommandResponse
+    | PreAdmissionCommandErrorResponse;
 
 export async function submitLedPowerCommand(
     request: SetPowerCommandRequest,
@@ -34,6 +39,13 @@ export async function submitLedPowerCommand(
     if (
         (response.status === 409 || response.status === 422) &&
         isSchema(rejectedCommandResponseSchema, body)
+    ) {
+        return body;
+    }
+
+    if (
+        (response.status === 404 || response.status === 503) &&
+        isSchema(preAdmissionCommandErrorResponseSchema, body)
     ) {
         return body;
     }

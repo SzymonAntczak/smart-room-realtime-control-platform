@@ -3,6 +3,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
 import type {
     AcceptedInputIdentity,
+    CommandDispatchOutboxIntent,
     LatestRoomProjectionInput,
     QuarantineEntryInput,
     RoomStorage,
@@ -158,6 +159,20 @@ export function createSqliteRoomStorage({
 
                 return row ? toLatestRoomProjection(row) : undefined;
             });
+        },
+        listCommandDispatchOutboxIntents() {
+            return run(() =>
+                database
+                    .prepare(
+                        `SELECT command_id, device_id, command_type, requested_power, target, state,
+                                created_at, attempted_at, first_attempted_at, handed_off_at, deadline_at,
+                                next_attempt_at, closed_at
+                         FROM command_dispatch_outbox
+                         ORDER BY created_at ASC, command_id ASC`,
+                    )
+                    .all()
+                    .map(toCommandDispatchOutboxIntent),
+            );
         },
         close() {
             if (!closed) {
@@ -425,6 +440,50 @@ export function executeStorageTransaction<Value>(
                     )
                     .run(input.updatedAt, stringifyJson(toStoredCheckpoint(input)));
             },
+            upsertCommandDispatchOutboxIntent(input) {
+                database
+                    .prepare(
+                        `INSERT INTO command_dispatch_outbox (
+                            command_id, device_id, command_type, requested_power, target, state,
+                            created_at, attempted_at, first_attempted_at, handed_off_at, deadline_at,
+                            next_attempt_at, closed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(command_id) DO UPDATE SET
+                            state = excluded.state,
+                            attempted_at = excluded.attempted_at,
+                            first_attempted_at = excluded.first_attempted_at,
+                            handed_off_at = excluded.handed_off_at,
+                            deadline_at = excluded.deadline_at,
+                            next_attempt_at = excluded.next_attempt_at,
+                            closed_at = excluded.closed_at`,
+                    )
+                    .run(
+                        input.commandId,
+                        input.deviceId,
+                        input.commandType,
+                        input.requestedPower,
+                        input.target,
+                        input.state,
+                        canonicalStorageTimestamp(input.createdAt),
+                        input.attemptedAt ? canonicalStorageTimestamp(input.attemptedAt) : null,
+                        input.firstAttemptedAt
+                            ? canonicalStorageTimestamp(input.firstAttemptedAt)
+                            : null,
+                        input.handedOffAt ? canonicalStorageTimestamp(input.handedOffAt) : null,
+                        input.deadlineAt ? canonicalStorageTimestamp(input.deadlineAt) : null,
+                        input.nextAttemptAt ? canonicalStorageTimestamp(input.nextAttemptAt) : null,
+                        input.closedAt ? canonicalStorageTimestamp(input.closedAt) : null,
+                    );
+            },
+            closeCommandDispatchOutboxIntent(input) {
+                database
+                    .prepare(
+                        `UPDATE command_dispatch_outbox
+                         SET state = 'closed', closed_at = ?, next_attempt_at = NULL
+                         WHERE command_id = ?`,
+                    )
+                    .run(canonicalStorageTimestamp(input.closedAt), input.commandId);
+            },
         });
     } catch (error) {
         if (!database.isTransaction) {
@@ -534,6 +593,14 @@ function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
              )`,
         )
         .run(retiredAt);
+
+    database
+        .prepare(
+            `DELETE FROM command_dispatch_outbox
+             WHERE (state = 'delivered' AND handed_off_at < ?)
+                OR (state = 'closed' AND closed_at < ?)`,
+        )
+        .run(cutoff, cutoff);
 
     const retiredIdentityEventIds = database
         .prepare(
@@ -819,6 +886,49 @@ function toLatestRoomProjection(row: unknown): LatestRoomProjectionInput {
     };
 }
 
+function toCommandDispatchOutboxIntent(row: unknown): CommandDispatchOutboxIntent {
+    const value = record(row, 'command dispatch outbox intent');
+    const state = stringField(value, 'state');
+
+    if (!['ready', 'uncertain', 'delivered', 'closed'].includes(state)) {
+        throw new StorageSchemaError('Command dispatch outbox state is invalid.', row);
+    }
+
+    const requestedPower = stringField(value, 'requested_power');
+
+    if (requestedPower !== 'on' && requestedPower !== 'off') {
+        throw new StorageSchemaError('Command dispatch outbox requested power is invalid.', row);
+    }
+
+    return {
+        commandId: stringField(value, 'command_id'),
+        deviceId: stringField(value, 'device_id'),
+        commandType: 'set.power',
+        requestedPower,
+        target: stringField(value, 'target') as CommandDispatchOutboxIntent['target'],
+        state: state as CommandDispatchOutboxIntent['state'],
+        createdAt: stringField(value, 'created_at'),
+        ...(optionalStringField(value, 'attempted_at')
+            ? { attemptedAt: optionalStringField(value, 'attempted_at') }
+            : {}),
+        ...(optionalStringField(value, 'first_attempted_at')
+            ? { firstAttemptedAt: optionalStringField(value, 'first_attempted_at') }
+            : {}),
+        ...(optionalStringField(value, 'handed_off_at')
+            ? { handedOffAt: optionalStringField(value, 'handed_off_at') }
+            : {}),
+        ...(optionalStringField(value, 'deadline_at')
+            ? { deadlineAt: optionalStringField(value, 'deadline_at') }
+            : {}),
+        ...(optionalStringField(value, 'next_attempt_at')
+            ? { nextAttemptAt: optionalStringField(value, 'next_attempt_at') }
+            : {}),
+        ...(optionalStringField(value, 'closed_at')
+            ? { closedAt: optionalStringField(value, 'closed_at') }
+            : {}),
+    };
+}
+
 function toStoredCheckpoint(
     input: LatestRoomProjectionInput,
 ): Pick<LatestRoomProjectionInput, 'projection' | 'projectionEvidence' | 'volatileGuards'> {
@@ -960,6 +1070,21 @@ const expectedTableColumns = {
     ],
     accepted_input_identities: ['event_id', 'fingerprint', 'durability', 'accepted_at'],
     simulator_command_receipts: ['source', 'command_id', 'updated_at', 'receipt_json'],
+    command_dispatch_outbox: [
+        'command_id',
+        'device_id',
+        'command_type',
+        'requested_power',
+        'target',
+        'state',
+        'created_at',
+        'attempted_at',
+        'first_attempted_at',
+        'handed_off_at',
+        'deadline_at',
+        'next_attempt_at',
+        'closed_at',
+    ],
     latest_room_projection: ['id', 'updated_at', 'projection_json'],
 } as const satisfies Record<string, readonly string[]>;
 
@@ -1019,6 +1144,15 @@ const expectedTableSqlFragments = {
         'receipt_json text not null',
         'primary key (source, command_id)',
     ],
+    command_dispatch_outbox: [
+        'command_id text primary key',
+        'device_id text not null',
+        "command_type text not null check (command_type = 'set.power')",
+        "requested_power text not null check (requested_power in ('on', 'off'))",
+        'target text not null',
+        "state text not null check (state in ('ready', 'uncertain', 'delivered', 'closed'))",
+        'created_at text not null',
+    ],
     latest_room_projection: [
         'id integer primary key check (id = 1)',
         'updated_at text not null',
@@ -1040,6 +1174,7 @@ const expectedIndexes = {
     significant_facts_active_by_event_id: ['event_id'],
     telemetry_samples_active_by_event_id: ['event_id'],
     accepted_input_identities_by_accepted_at: ['accepted_at', 'event_id'],
+    command_dispatch_outbox_active_by_state: ['state', 'next_attempt_at', 'command_id'],
 } as const satisfies Record<string, readonly string[]>;
 
 const expectedIndexSqlFragments = {
@@ -1066,6 +1201,9 @@ const expectedIndexSqlFragments = {
     ],
     accepted_input_identities_by_accepted_at: [
         'on accepted_input_identities (accepted_at, event_id)',
+    ],
+    command_dispatch_outbox_active_by_state: [
+        "on command_dispatch_outbox (state, next_attempt_at, command_id) where state in ('ready', 'uncertain')",
     ],
 } as const satisfies Record<keyof typeof expectedIndexes, readonly string[]>;
 

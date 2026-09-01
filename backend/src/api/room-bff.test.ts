@@ -95,7 +95,12 @@ describe('createRoomBffServer', () => {
                 requestCommand(request) {
                     requests.push(request);
 
-                    return { commandId: 'cmd-led-1', status: 'accepted' } as const;
+                    return {
+                        commandId: 'cmd-led-1',
+                        status: 'accepted',
+                        durability: 'durable',
+                        lifecycleDurability: 'durable',
+                    } as const;
                 },
             }),
         );
@@ -115,10 +120,33 @@ describe('createRoomBffServer', () => {
         await expect(response.json()).resolves.toEqual({
             commandId: 'cmd-led-1',
             status: 'accepted',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
         });
         expect(requests).toEqual([
             { deviceId: 'led-main', commandType: 'set.power', requestedState: { power: 'on' } },
         ]);
+    });
+
+    it('does not fabricate an admitted rejection when command handling is unavailable', async () => {
+        const server = await listen(createRoomBffServer(createRoomBffConfig()));
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/room/commands`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            }),
+        });
+
+        expect(response.status).toBe(500);
+        await expect(response.json()).resolves.toEqual({
+            error: 'invalid_server_response',
+            message: 'Server produced a response that does not match the transport contract.',
+        });
     });
 
     it('rejects malformed or unsupported command requests at the HTTP boundary', async () => {
@@ -139,6 +167,38 @@ describe('createRoomBffServer', () => {
         await expect(malformed.json()).resolves.toMatchObject({ error: 'invalid_request' });
         expect(nonJson.status).toBe(415);
         await expect(nonJson.json()).resolves.toMatchObject({ error: 'unsupported_media_type' });
+    });
+
+    it('keeps unknown devices and storage recovery outside command lifecycle admission', async () => {
+        for (const [result, expectedStatus] of [
+            [{ error: 'unknown_device', message: 'Device was not found.' } as const, 404],
+            [
+                {
+                    error: 'platform_recovering',
+                    message: 'Storage recovery is in progress.',
+                    retryable: true,
+                } as const,
+                503,
+            ],
+        ] as const) {
+            const server = await listen(
+                createRoomBffServer({ ...createRoomBffConfig(), requestCommand: () => result }),
+            );
+            openServers.push(server);
+
+            const response = await fetch(`${serverUrl(server)}/room/commands`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                }),
+            });
+
+            expect(response.status).toBe(expectedStatus);
+            await expect(response.json()).resolves.toEqual(result);
+        }
     });
 
     it('keeps command validation errors in the API error contract when a query is present', async () => {
@@ -168,6 +228,8 @@ describe('createRoomBffServer', () => {
                         status: 'rejected',
                         reason: 'command_already_active',
                         message: 'Device already has an active command.',
+                        durability: 'durable',
+                        lifecycleDurability: 'durable',
                     } as const;
                 },
             }),
@@ -821,7 +883,11 @@ function createLedRoomSnapshot({
                       {
                           ...command,
                           status: 'confirmed',
-                          dispatchedAt: '2026-06-08T09:30:01Z',
+                          delivery: {
+                              status: 'handed_off',
+                              dispatchedAt: '2026-06-08T09:30:01Z',
+                              deadlineAt: '2026-06-08T09:30:06Z',
+                          },
                           confirmedAt: '2026-06-08T09:30:02Z',
                       },
                   ]
@@ -840,7 +906,11 @@ function createTwoLedRoomSnapshot(status: 'accepted' | 'confirmed'): RoomSnapsho
         requestedAt: '2026-06-08T09:29:58Z',
         durability: 'durable' as const,
         lifecycleDurability: 'durable' as const,
-        dispatchedAt: '2026-06-08T09:29:59Z',
+        delivery: {
+            status: 'handed_off' as const,
+            dispatchedAt: '2026-06-08T09:29:59Z',
+            deadlineAt: '2026-06-08T09:30:04Z',
+        },
         confirmedAt: '2026-06-08T09:30:00Z',
         status: 'confirmed' as const,
     };

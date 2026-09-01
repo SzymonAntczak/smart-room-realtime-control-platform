@@ -12,7 +12,11 @@ describe('realtime schemas', () => {
             status: 'confirmed',
             requestedState: { power: 'on' },
             requestedAt: '2026-06-08T09:30:00Z',
-            dispatchedAt: '2026-06-08T09:30:01Z',
+            delivery: {
+                status: 'handed_off',
+                dispatchedAt: '2026-06-08T09:30:01Z',
+                deadlineAt: '2026-06-08T09:31:00Z',
+            },
             confirmedAt: '2026-06-08T09:30:02Z',
             durability: 'durable',
             lifecycleDurability: 'durable',
@@ -135,6 +139,34 @@ describe('realtime schemas', () => {
                         {
                             ...update.payload.activeCommands[0],
                             dispatchedAt: '2026-06-08T09:30:01+02:00',
+                        },
+                    ],
+                },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    devices: [createLedDevice()],
+                    activeCommands: [],
+                    recentCommands: [
+                        {
+                            commandId: 'cmd-timeout-before-deadline',
+                            deviceId: 'led-main',
+                            commandType: 'set.power',
+                            status: 'timed_out',
+                            requestedState: { power: 'on' },
+                            requestedAt: '2026-06-08T09:30:00Z',
+                            delivery: {
+                                status: 'handed_off',
+                                dispatchedAt: '2026-06-08T09:30:01Z',
+                                deadlineAt: '2026-06-08T09:30:06Z',
+                            },
+                            timedOutAt: '2026-06-08T09:30:05Z',
+                            reason: 'confirmation_not_received',
+                            durability: 'durable',
+                            lifecycleDurability: 'durable',
                         },
                     ],
                 },
@@ -402,7 +434,11 @@ describe('realtime schemas', () => {
                 status: 'confirmed',
                 requestedState: { power: 'on' },
                 requestedAt: '2026-06-08T09:30:00Z',
-                dispatchedAt: '2026-06-08T09:30:01Z',
+                delivery: {
+                    status: 'handed_off',
+                    dispatchedAt: '2026-06-08T09:30:01Z',
+                    deadlineAt: '2026-06-08T09:31:00Z',
+                },
                 confirmedAt: '2026-06-08T09:30:02Z',
                 durability: 'durable',
                 lifecycleDurability: 'durable',
@@ -413,7 +449,11 @@ describe('realtime schemas', () => {
 
         snapshot.payload.recentCommands[0] = {
             ...snapshot.payload.recentCommands[0],
-            dispatchedAt: '2026-06-08T09:30:00.500Z',
+            delivery: {
+                status: 'handed_off',
+                dispatchedAt: '2026-06-08T09:30:00.500Z',
+                deadlineAt: '2026-06-08T09:31:00Z',
+            },
         };
         expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
 
@@ -490,7 +530,11 @@ describe('realtime schemas', () => {
             status: 'timed_out',
             requestedState: { power: 'on' },
             requestedAt: '2026-06-08T09:30:00Z',
-            dispatchedAt: '2026-06-08T09:30:01Z',
+            delivery: {
+                status: 'handed_off',
+                dispatchedAt: '2026-06-08T09:30:01Z',
+                deadlineAt: '2026-06-08T09:31:00Z',
+            },
             timedOutAt: '2026-06-08T09:30:02Z',
         };
         expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
@@ -610,8 +654,11 @@ function createCommandsUpdatedMessage() {
                     status: 'pending' as const,
                     requestedState: { power: 'on' as const },
                     requestedAt: '2026-06-08T09:30:00Z',
-                    dispatchedAt: '2026-06-08T09:30:01Z',
-                    deadlineAt: '2026-06-08T09:31:00Z',
+                    delivery: {
+                        status: 'handed_off',
+                        dispatchedAt: '2026-06-08T09:30:01Z',
+                        deadlineAt: '2026-06-08T09:31:00Z',
+                    },
                     durability: 'durable' as const,
                     lifecycleDurability: 'durable' as const,
                 },
@@ -685,8 +732,12 @@ describe('realtime command projections', () => {
                     status: 'timed_out',
                     requestedState: { power: 'on' },
                     requestedAt: '2026-06-08T09:30:00Z',
-                    dispatchedAt: '2026-06-08T09:30:01Z',
-                    timedOutAt: '2026-06-08T09:30:02Z',
+                    delivery: {
+                        status: 'handed_off',
+                        dispatchedAt: '2026-06-08T09:30:01Z',
+                        deadlineAt: '2026-06-08T09:31:00Z',
+                    },
+                    timedOutAt: '2026-06-08T09:31:00Z',
                     reason: 'confirmation_not_received',
                 }),
             ),

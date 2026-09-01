@@ -252,8 +252,7 @@ function hasCanonicalCommandTimestamps(
             (command) =>
                 isCanonicalUtcTimestamp(command.requestedAt) &&
                 (command.status !== 'pending' ||
-                    (isCanonicalUtcTimestamp(command.dispatchedAt) &&
-                        areChronological(command.requestedAt, command.dispatchedAt))),
+                    hasCanonicalDelivery(command.delivery, command.requestedAt)),
         ) &&
         recentCommands.every((command) => {
             if (!isCanonicalUtcTimestamp(command.requestedAt)) {
@@ -263,34 +262,29 @@ function hasCanonicalCommandTimestamps(
             switch (command.status) {
                 case 'confirmed':
                     return (
-                        isCanonicalUtcTimestamp(command.dispatchedAt) &&
+                        hasCanonicalDelivery(command.delivery, command.requestedAt) &&
                         isCanonicalUtcTimestamp(command.confirmedAt) &&
-                        areChronological(
-                            command.requestedAt,
-                            command.dispatchedAt,
-                            command.confirmedAt,
-                        )
+                        areChronological(deliveryOrigin(command.delivery), command.confirmedAt)
                     );
                 case 'failed':
                     return (
                         isCanonicalUtcTimestamp(command.failedAt) &&
-                        (command.dispatchedAt === undefined ||
-                            (isCanonicalUtcTimestamp(command.dispatchedAt) &&
+                        (command.delivery === undefined ||
+                            (hasCanonicalDelivery(command.delivery, command.requestedAt) &&
                                 areChronological(
-                                    command.requestedAt,
-                                    command.dispatchedAt,
+                                    deliveryOrigin(command.delivery),
                                     command.failedAt,
                                 ))) &&
-                        (command.dispatchedAt !== undefined ||
+                        (command.delivery !== undefined ||
                             areChronological(command.requestedAt, command.failedAt))
                     );
                 case 'timed_out':
                     return (
-                        isCanonicalUtcTimestamp(command.dispatchedAt) &&
+                        hasCanonicalDelivery(command.delivery, command.requestedAt) &&
                         isCanonicalUtcTimestamp(command.timedOutAt) &&
                         areChronological(
-                            command.requestedAt,
-                            command.dispatchedAt,
+                            deliveryOrigin(command.delivery),
+                            command.delivery.deadlineAt,
                             command.timedOutAt,
                         )
                     );
@@ -302,6 +296,29 @@ function hasCanonicalCommandTimestamps(
             return next === undefined || terminalTimestamp(command) >= terminalTimestamp(next);
         })
     );
+}
+
+function hasCanonicalDelivery(
+    delivery:
+        | { status: 'handed_off'; dispatchedAt: string; deadlineAt: string }
+        | { status: 'uncertain'; firstAttemptedAt: string; deadlineAt: string },
+    requestedAt: string,
+): boolean {
+    const origin = deliveryOrigin(delivery);
+
+    return (
+        isCanonicalUtcTimestamp(origin) &&
+        isCanonicalUtcTimestamp(delivery.deadlineAt) &&
+        areChronological(requestedAt, origin, delivery.deadlineAt)
+    );
+}
+
+function deliveryOrigin(
+    delivery:
+        | { status: 'handed_off'; dispatchedAt: string; deadlineAt: string }
+        | { status: 'uncertain'; firstAttemptedAt: string; deadlineAt: string },
+): string {
+    return delivery.status === 'handed_off' ? delivery.dispatchedAt : delivery.firstAttemptedAt;
 }
 
 function hasCanonicalDeviceTimestamps(device: Static<typeof deviceProjectionSchema>): boolean {

@@ -95,21 +95,36 @@ describe('createSimulatorLedAdapter', () => {
 
     it('maps a platform command to a native command', () => {
         const led = controllableLed();
+        let currentTime = '2026-08-05T10:00:00.000Z';
         const adapter = createSimulatorLedAdapter({
-            led: led.transport,
+            led: {
+                ...led.transport,
+                receive(command) {
+                    led.transport.receive(command);
+                    currentTime = '2026-08-05T10:00:00.123Z';
+                },
+            },
             nativeLedId: 'led-native',
             platformDeviceId: 'led-platform',
+            clock: { now: () => currentTime },
             emitEvent: () => undefined,
         });
-        adapter.dispatch({
-            commandId: 'cmd-1',
-            deviceId: 'led-platform',
-            commandType: 'set.power',
-            requestedState: { power: 'on' },
-        });
+        const result = adapter.dispatch(
+            {
+                commandId: 'cmd-1',
+                deviceId: 'led-platform',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            },
+            '2026-08-05T10:00:00.000Z',
+        );
         expect(led.commands).toEqual([
             expect.objectContaining({ commandId: 'cmd-1', deviceId: 'led-native' }),
         ]);
+        expect(result).toEqual({
+            status: 'handed_off',
+            handedOffAt: '2026-08-05T10:00:00.000Z',
+        });
     });
 
     it('translates all native facts through the required sink', () => {

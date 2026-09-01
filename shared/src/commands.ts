@@ -19,13 +19,35 @@ export interface SetPowerCommandRequest {
 export interface AcceptedCommandResponse {
     commandId: string;
     status: 'accepted';
+    durability: Durability;
+    lifecycleDurability: Durability;
 }
 export interface RejectedCommandResponse {
     commandId: string;
     status: 'rejected';
     reason: string;
     message: string;
+    durability: Durability;
+    lifecycleDurability: Durability;
 }
+interface PreAdmissionCommandErrorResponseBase {
+    message: string;
+    /** Type-only convenience for callers that handle all HTTP outcomes together. */
+    commandId?: never;
+    status?: never;
+}
+export type PreAdmissionCommandErrorResponse =
+    | (PreAdmissionCommandErrorResponseBase & {
+          error: 'unknown_device';
+          retryable?: never;
+      })
+    | (PreAdmissionCommandErrorResponseBase & {
+          error: 'platform_recovering';
+          retryable: true;
+      });
+export type CommandDeliveryEvidence =
+    | { status: 'handed_off'; dispatchedAt: string; deadlineAt: string }
+    | { status: 'uncertain'; firstAttemptedAt: string; deadlineAt: string };
 interface CommandProjectionBase {
     commandId: string;
     deviceId: string;
@@ -38,24 +60,23 @@ interface CommandProjectionBase {
 export type AcceptedCommandProjection = CommandProjectionBase & { status: 'accepted' };
 export type PendingCommandProjection = CommandProjectionBase & {
     status: 'pending';
-    dispatchedAt: string;
-    deadlineAt: string;
+    delivery: CommandDeliveryEvidence;
 };
 export type ConfirmedCommandProjection = CommandProjectionBase & {
     status: 'confirmed';
-    dispatchedAt: string;
+    delivery: CommandDeliveryEvidence;
     confirmedAt: string;
 };
 export type FailedCommandProjection = CommandProjectionBase & {
     status: 'failed';
-    dispatchedAt?: string;
+    delivery?: CommandDeliveryEvidence;
     failedAt: string;
     reason: string;
     message: string;
 };
 export type TimedOutCommandProjection = CommandProjectionBase & {
     status: 'timed_out';
-    dispatchedAt: string;
+    delivery: CommandDeliveryEvidence;
     timedOutAt: string;
     reason: string;
 };
@@ -78,7 +99,12 @@ export const setPowerCommandRequestSchema = Type.Object(
     { additionalProperties: false },
 );
 export const acceptedCommandResponseSchema = Type.Object(
-    { commandId: nonEmptyStringSchema, status: Type.Literal('accepted') },
+    {
+        commandId: nonEmptyStringSchema,
+        status: Type.Literal('accepted'),
+        durability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+        lifecycleDurability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+    },
     { additionalProperties: false },
 );
 export const rejectedCommandResponseSchema = Type.Object(
@@ -87,6 +113,25 @@ export const rejectedCommandResponseSchema = Type.Object(
         status: Type.Literal('rejected'),
         reason: nonEmptyStringSchema,
         message: nonEmptyStringSchema,
+        durability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+        lifecycleDurability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
     },
     { additionalProperties: false },
 );
+export const preAdmissionCommandErrorResponseSchema = Type.Union([
+    Type.Object(
+        {
+            error: Type.Literal('unknown_device'),
+            message: nonEmptyStringSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            error: Type.Literal('platform_recovering'),
+            message: nonEmptyStringSchema,
+            retryable: Type.Literal(true),
+        },
+        { additionalProperties: false },
+    ),
+]);

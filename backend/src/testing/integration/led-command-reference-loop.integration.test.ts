@@ -5,16 +5,16 @@ import type { CommandTimer } from '../../platform/command-processing/set-power-c
 import { createTemperatureRoomRuntime } from '../../runtime/temperature-room-runtime';
 
 describe('LED command reference loop', () => {
-    it('keeps normal, delayed, rejected, timed-out and late-report outcomes explainable', () => {
-        verifyScenario('confirm_immediately', 'confirmed');
-        verifyScenario('confirm_delayed', 'confirmed');
-        verifyScenario('reject_command', 'failed');
-        verifyScenario('omit_confirmation', 'timed_out');
-        verifyScenario('report_after_timeout', 'timed_out');
+    it('keeps normal, delayed, rejected, timed-out and late-report outcomes explainable', async () => {
+        await verifyScenario('confirm_immediately', 'confirmed');
+        await verifyScenario('confirm_delayed', 'confirmed');
+        await verifyScenario('reject_command', 'failed');
+        await verifyScenario('omit_confirmation', 'timed_out');
+        await verifyScenario('report_after_timeout', 'timed_out');
     });
 });
 
-function verifyScenario(
+async function verifyScenario(
     scenario:
         | 'confirm_immediately'
         | 'confirm_delayed'
@@ -22,7 +22,7 @@ function verifyScenario(
         | 'omit_confirmation'
         | 'report_after_timeout',
     expectedStatus: 'confirmed' | 'failed' | 'timed_out',
-) {
+): Promise<void> {
     const clock = createMutableClock('2026-08-05T10:00:00Z');
     const ledScheduler = createManualTimeoutScheduler();
     const commandTimer = createManualTimeoutScheduler();
@@ -42,6 +42,7 @@ function verifyScenario(
             commandType: 'set.power',
             requestedState: { power: 'on' },
         });
+        await flushCommandDispatch();
 
         expect(result.status).toBe('accepted');
 
@@ -70,6 +71,11 @@ function verifyScenario(
     } finally {
         runtime.stop();
     }
+}
+
+async function flushCommandDispatch(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
 }
 
 function ledPower(runtime: ReturnType<typeof createTemperatureRoomRuntime>) {

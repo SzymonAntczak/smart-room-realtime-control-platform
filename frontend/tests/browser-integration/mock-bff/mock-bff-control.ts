@@ -12,6 +12,12 @@ export async function rejectNextMockCommand(request: APIRequestContext): Promise
     await assertControlResponse(await request.post(mockBffUrls.rejectNextCommand));
 }
 
+export async function publishAcceptedCommandBeforeResponse(
+    request: APIRequestContext,
+): Promise<void> {
+    await assertControlResponse(await request.post(mockBffUrls.publishAcceptedBeforeResponse));
+}
+
 export async function setMockRoomSnapshot(
     request: APIRequestContext,
     snapshot: RoomSnapshotProjection,

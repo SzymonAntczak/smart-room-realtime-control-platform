@@ -27,7 +27,9 @@ export function useLedCommandRequest(deviceId: string | undefined) {
                 requestedState: { power },
             });
 
-            if (result.status === 'rejected') {
+            if ('error' in result) {
+                setTransportError({ commandId: 'pre-admission', message: result.message });
+            } else if (result.status === 'rejected') {
                 setTransportError({ commandId: result.commandId, message: result.message });
             }
         } catch {

@@ -42,6 +42,11 @@ export interface CommandDispatchedPayload {
     commandType: 'set.power';
     target: PlatformEventSource;
 }
+export interface CommandDeliveryUncertainPayload {
+    commandType: 'set.power';
+    target: PlatformEventSource;
+    reason: string;
+}
 export interface CommandFailedPayload {
     reason: string;
     message: string;
@@ -77,6 +82,10 @@ export type CommandDispatchedEvent = PlatformEventEnvelope<
     'command.dispatched',
     CommandDispatchedPayload
 > & { deviceId: string; commandId: string };
+export type CommandDeliveryUncertainEvent = PlatformEventEnvelope<
+    'command.delivery_uncertain',
+    CommandDeliveryUncertainPayload
+> & { deviceId: string; commandId: string };
 export type CommandFailedEvent = PlatformEventEnvelope<'command.failed', CommandFailedPayload> & {
     deviceId: string;
     commandId: string;
@@ -92,6 +101,7 @@ export type PlatformEvent =
     | TelemetryReadingRecordedEvent
     | CommandRequestedEvent
     | CommandDispatchedEvent
+    | CommandDeliveryUncertainEvent
     | CommandFailedEvent
     | CommandTimedOutEvent;
 
@@ -134,6 +144,11 @@ const commandRequestedPayloadSchema = Type.Object({
 const commandDispatchedPayloadSchema = Type.Object({
     commandType: Type.Literal('set.power'),
     target: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
+});
+const commandDeliveryUncertainPayloadSchema = Type.Object({
+    commandType: Type.Literal('set.power'),
+    target: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
+    reason: nonEmptyStringSchema,
 });
 const commandFailedPayloadSchema = Type.Object({
     reason: nonEmptyStringSchema,
@@ -190,6 +205,11 @@ export const commandDispatchedEventSchema = Type.Object({
     eventType: Type.Literal('command.dispatched'),
     payload: commandDispatchedPayloadSchema,
 });
+export const commandDeliveryUncertainEventSchema = Type.Object({
+    ...commandEventBaseShape,
+    eventType: Type.Literal('command.delivery_uncertain'),
+    payload: commandDeliveryUncertainPayloadSchema,
+});
 export const commandFailedEventSchema = Type.Object({
     ...commandEventBaseShape,
     eventType: Type.Literal('command.failed'),
@@ -207,6 +227,7 @@ export const platformEventEnvelopeSchema = Type.Union([
     telemetryReadingRecordedEventSchema,
     commandRequestedEventSchema,
     commandDispatchedEventSchema,
+    commandDeliveryUncertainEventSchema,
     commandFailedEventSchema,
     commandTimedOutEventSchema,
 ]);

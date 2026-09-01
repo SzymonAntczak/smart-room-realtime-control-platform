@@ -1,4 +1,5 @@
 import type {
+    CommandDeliveryUncertainEvent,
     CommandDispatchedEvent,
     CommandFailedEvent,
     CommandRequestedEvent,
@@ -103,6 +104,66 @@ describe('command lifecycle projections', () => {
         ]);
     });
 
+    it('replaces a volatile handed-off delivery after its durable handoff persistence rolls back', () => {
+        const projector = createLedProjector();
+        projector.applyDeviceStateReported(report('off'));
+        projector.applyCommandRequested(requested('cmd-1', 'on'));
+        projector.applyCommandDispatched(dispatched('cmd-1'));
+        const afterRollback = projector.getProjection();
+        projector.installProjection(
+            {
+                ...afterRollback,
+                activeCommands: afterRollback.activeCommands.map((command) => ({
+                    ...command,
+                    lifecycleDurability: 'volatile' as const,
+                })),
+            },
+            '2026-08-05T10:00:01Z',
+            projector.getEvidence(),
+        );
+
+        const projection = projector.applyCommandDispatched({
+            ...dispatched('cmd-1'),
+            eventId: 'evt-dispatched-retry-cmd-1',
+            occurredAt: '2026-08-05T10:00:02Z',
+        });
+
+        expect(projection.activeCommands).toEqual([
+            expect.objectContaining({
+                commandId: 'cmd-1',
+                status: 'pending',
+                delivery: {
+                    status: 'handed_off',
+                    dispatchedAt: '2026-08-05T10:00:02Z',
+                    deadlineAt: '2026-08-05T10:00:06.000Z',
+                },
+            }),
+        ]);
+    });
+
+    it('replaces durable uncertain evidence with a later definite handoff', () => {
+        const projector = createLedProjector();
+        projector.applyDeviceStateReported(report('off'));
+        projector.applyCommandRequested(requested('cmd-1', 'on'));
+        projector.applyCommandDeliveryUncertain(uncertain('cmd-1'));
+
+        const projection = projector.applyCommandDispatched({
+            ...dispatched('cmd-1'),
+            occurredAt: '2026-08-05T10:00:02Z',
+        });
+
+        expect(projection.activeCommands).toEqual([
+            expect.objectContaining({
+                commandId: 'cmd-1',
+                delivery: {
+                    status: 'handed_off',
+                    dispatchedAt: '2026-08-05T10:00:02Z',
+                    deadlineAt: '2026-08-05T10:00:06.000Z',
+                },
+            }),
+        ]);
+    });
+
     it('keeps a pending command when physical state reports a nonmatching value', () => {
         const projector = createLedProjector();
         projector.applyDeviceStateReported(report('off'));
@@ -160,6 +221,37 @@ describe('command lifecycle projections', () => {
         ]);
     });
 
+    it('confirms only reports received strictly before the fixed deadline', () => {
+        const cases = [
+            ['2026-08-05T10:00:05.999Z', true],
+            ['2026-08-05T10:00:06.000Z', false],
+            ['2026-08-05T10:00:06.001Z', false],
+        ] as const;
+
+        for (const [receivedAt, confirms] of cases) {
+            const projector = createLedProjector();
+            projector.applyDeviceStateReported(report('off'));
+            projector.applyCommandRequested(requested('cmd-1', 'on'));
+            projector.applyCommandDispatched(dispatched('cmd-1'));
+
+            const projection = projector.applyDeviceStateReported(
+                report('on', '2026-08-05T10:00:02Z'),
+                {
+                    receivedAt,
+                    evaluatedAt: '2026-08-05T10:00:10Z',
+                },
+            );
+
+            expect(projection.devices[0]).toEqual(
+                expect.objectContaining({ reportedState: { power: 'on' } }),
+            );
+            expect(
+                projection.recentCommands.some((command) => command.status === 'confirmed'),
+            ).toBe(confirms);
+            expect(projection.activeCommands).toHaveLength(confirms ? 0 : 1);
+        }
+    });
+
     it('moves explicit device rejection to terminal history', () => {
         const projector = createLedProjector();
         projector.applyDeviceStateReported(report('off'));
@@ -189,7 +281,7 @@ describe('command lifecycle projections', () => {
                 ...timedOut('cmd-1'),
                 occurredAt: '2026-08-05T10:00:05.999Z',
             }),
-        ).toThrow(`Command timeout must occur at least ${ledSetPowerTimeoutMs} ms after dispatch.`);
+        ).toThrow('Command timeout must occur at or after its fixed deadline.');
         expect(() =>
             projector.applyCommandTimedOut({
                 ...timedOut('cmd-1'),
@@ -262,6 +354,22 @@ function dispatched(commandId: string): CommandDispatchedEvent {
         deviceId: 'led-main',
         commandId,
         payload: { commandType: 'set.power', target: 'simulator-adapter' },
+    };
+}
+
+function uncertain(commandId: string): CommandDeliveryUncertainEvent {
+    return {
+        eventId: `evt-uncertain-${commandId}`,
+        eventType: 'command.delivery_uncertain',
+        occurredAt: '2026-08-05T10:00:01Z',
+        source: 'backend',
+        deviceId: 'led-main',
+        commandId,
+        payload: {
+            commandType: 'set.power',
+            target: 'simulator-adapter',
+            reason: 'transport_ack_lost',
+        },
     };
 }
 

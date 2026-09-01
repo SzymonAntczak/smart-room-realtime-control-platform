@@ -7,13 +7,19 @@ import {
     parseMockSetPowerCommandRequest,
     serializeMockSseMessage,
 } from './mock-bff-contracts';
-import { createCommandsUpdatedMessage, createFailedLedCommand } from './mock-bff-fixtures';
+import {
+    createCommandsUpdatedMessage,
+    createFailedLedCommand,
+    createPendingLedCommand,
+    createPendingLedDeviceProjection,
+} from './mock-bff-fixtures';
 import { MockRoomScenario } from './mock-room-scenario';
 
 const realtimeStreams = new Set<ServerResponse>();
 const roomScenario = new MockRoomScenario();
 let nextCommandId = 1;
 let rejectNextCommand = false;
+let publishAcceptedBeforeResponse = false;
 
 const server = createServer((request, response) => {
     void handleRequest(request, response);
@@ -51,6 +57,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         roomScenario.reset();
         nextCommandId = 1;
         rejectNextCommand = false;
+        publishAcceptedBeforeResponse = false;
         respondJson(response, 204, undefined);
 
         return;
@@ -69,6 +76,13 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
     if (request.method === 'POST' && request.url === mockBffPaths.rejectNextCommand) {
         rejectNextCommand = true;
+        respondJson(response, 204, undefined);
+
+        return;
+    }
+
+    if (request.method === 'POST' && request.url === mockBffPaths.publishAcceptedBeforeResponse) {
+        publishAcceptedBeforeResponse = true;
         respondJson(response, 204, undefined);
 
         return;
@@ -126,13 +140,31 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
                     status: 'rejected',
                     reason: failedCommand.reason,
                     message: failedCommand.message,
+                    durability: failedCommand.durability,
+                    lifecycleDurability: failedCommand.lifecycleDurability,
                 }),
             );
 
             return;
         }
 
-        respondJson(response, 202, { commandId, status: 'accepted' });
+        if (publishAcceptedBeforeResponse) {
+            publishAcceptedBeforeResponse = false;
+            const update = roomScenario.applyUpdate(
+                createCommandsUpdatedMessage(roomScenario.currentRevision(), {
+                    devices: [createPendingLedDeviceProjection()],
+                    activeCommands: [createPendingLedCommand()],
+                }),
+            );
+            publishSseMessage(update);
+        }
+
+        respondJson(response, 202, {
+            commandId,
+            status: 'accepted',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
+        });
 
         return;
     }

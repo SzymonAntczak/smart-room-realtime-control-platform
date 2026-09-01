@@ -78,7 +78,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       quarantined inputs, durability-only redelivery and preservation of
       late-report semantics.
 
-- [ ] Add a durable command dispatch outbox and volatile command fallback.
+- [x] Add a durable command dispatch outbox and volatile command fallback.
       In available operation, atomically persist `command.requested`, its
       projection and an outbox intent before adapter dispatch. Use a stable
       `commandId`; distinguish definite handoff, definite no-handoff and

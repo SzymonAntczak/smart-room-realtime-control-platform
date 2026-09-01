@@ -129,6 +129,8 @@ describe('mock BFF shared-contract boundary', () => {
                 status: 'rejected',
                 reason: 'command_already_active',
                 message: 'Device already has an active command.',
+                durability: 'durable',
+                lifecycleDurability: 'durable',
             }),
         ).toMatchObject({ status: 'rejected' });
         expect(() =>

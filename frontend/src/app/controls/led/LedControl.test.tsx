@@ -102,7 +102,11 @@ it('formats a confirmed command timestamp for the browser before rendering it', 
                 requestedAt: '2026-08-06T12:00:00Z',
                 durability: 'durable',
                 lifecycleDurability: 'durable',
-                dispatchedAt: '2026-08-06T12:00:01Z',
+                delivery: {
+                    status: 'handed_off',
+                    dispatchedAt: '2026-08-06T12:00:01Z',
+                    deadlineAt: '2026-08-06T12:00:06Z',
+                },
                 confirmedAt: '2026-08-06T12:00:06Z',
             }}
         />,
@@ -144,8 +148,11 @@ function createPendingCommand(): ActiveCommandProjection {
         status: 'pending',
         requestedState: { power: 'on' },
         requestedAt: '2026-08-06T12:00:00Z',
-        dispatchedAt: '2026-08-06T12:00:01Z',
-        deadlineAt: '2026-08-06T12:00:06Z',
+        delivery: {
+            status: 'handed_off',
+            dispatchedAt: '2026-08-06T12:00:01Z',
+            deadlineAt: '2026-08-06T12:00:06Z',
+        },
         durability: 'durable',
         lifecycleDurability: 'durable',
     };

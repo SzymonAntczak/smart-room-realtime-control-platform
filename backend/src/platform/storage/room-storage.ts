@@ -1,3 +1,6 @@
+import type { PowerState } from '@smart-room/contracts/devices';
+import type { PlatformEventSource } from '@smart-room/contracts/events';
+
 import type { RoomProjectionEvidence } from '../read-model/room-projection';
 
 export interface StorageMetadata {
@@ -34,6 +37,26 @@ export interface RoomStorageTransaction {
     upsertAcceptedInputIdentity(input: AcceptedInputIdentity): void;
     retireExpiredRecords(input: { asOf: string }): string[];
     saveLatestRoomProjection(input: LatestRoomProjectionInput): void;
+    upsertCommandDispatchOutboxIntent(input: CommandDispatchOutboxIntent): void;
+    closeCommandDispatchOutboxIntent(input: { commandId: string; closedAt: string }): void;
+}
+
+export type CommandDispatchOutboxState = 'ready' | 'uncertain' | 'delivered' | 'closed';
+
+export interface CommandDispatchOutboxIntent {
+    commandId: string;
+    deviceId: string;
+    commandType: 'set.power';
+    requestedPower: PowerState;
+    target: PlatformEventSource;
+    state: CommandDispatchOutboxState;
+    createdAt: string;
+    attemptedAt?: string;
+    firstAttemptedAt?: string;
+    handedOffAt?: string;
+    deadlineAt?: string;
+    nextAttemptAt?: string;
+    closedAt?: string;
 }
 
 export interface SignificantFactInput {
@@ -107,5 +130,6 @@ export interface RoomStorage {
         commandId: string,
     ): SimulatorCommandReceiptInput | undefined;
     getLatestRoomProjection(): LatestRoomProjectionInput | undefined;
+    listCommandDispatchOutboxIntents(): CommandDispatchOutboxIntent[];
     close(): void;
 }
