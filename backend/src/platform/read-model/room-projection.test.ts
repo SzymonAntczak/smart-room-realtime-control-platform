@@ -7,6 +7,11 @@ const device = {
     name: 'Desk Temperature',
     role: 'temperature-sensor',
 } as const;
+const ledDevice = {
+    deviceId: 'led-main',
+    name: 'Main LED',
+    role: 'led-output',
+} as const;
 const at = '2026-06-08T09:30:00Z';
 
 function projector() {
@@ -133,6 +138,51 @@ describe('createRoomProjector', () => {
                 lastObservedAt: at,
             },
         );
+    });
+    it('removes an active command link after a forked projector confirms the command', () => {
+        const room = createRoomProjector({ devices: [ledDevice], initialUpdatedAt: at });
+
+        room.applyCommandRequested({
+            eventId: 'command-requested',
+            eventType: 'command.requested',
+            occurredAt: at,
+            source: 'backend',
+            deviceId: ledDevice.deviceId,
+            commandId: 'command-1',
+            payload: {
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+                requestedBy: 'user',
+            },
+        });
+        room.applyCommandDispatched({
+            eventId: 'command-dispatched',
+            eventType: 'command.dispatched',
+            occurredAt: '2026-06-08T09:30:01Z',
+            source: 'backend',
+            deviceId: ledDevice.deviceId,
+            commandId: 'command-1',
+            payload: { commandType: 'set.power', target: 'simulator-adapter' },
+        });
+
+        const restored = room.fork();
+
+        restored.applyDeviceStateReported({
+            eventId: 'command-confirmed',
+            eventType: 'device.state.reported',
+            occurredAt: '2026-06-08T09:30:02Z',
+            source: 'simulator-adapter',
+            deviceId: ledDevice.deviceId,
+            payload: { reportedState: { power: 'on' } },
+        });
+
+        const projection = restored.getProjection();
+
+        expect(projection.activeCommands).toEqual([]);
+        expect(projection.devices[0]).not.toHaveProperty('activeCommandId');
+        expect(projection.recentCommands).toEqual([
+            expect.objectContaining({ commandId: 'command-1', status: 'confirmed' }),
+        ]);
     });
     it('retains an explicit offline availability change with the last observation', () => {
         const room = projector();

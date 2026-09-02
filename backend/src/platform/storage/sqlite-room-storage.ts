@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
+import { migrateLatestRoomProjectionCheckpoint } from './checkpoint-format-migrations';
 import type {
     AcceptedInputIdentity,
     CommandDispatchOutboxIntent,
@@ -35,6 +36,7 @@ export function createSqliteRoomStorage({
     try {
         migrateSqliteDatabase(database, generateHistoryGenerationId());
         validateExpectedSchema(database);
+        migrateLatestRoomProjectionCheckpoint(database);
     } catch (error) {
         database.close();
 
@@ -929,10 +931,14 @@ function toCommandDispatchOutboxIntent(row: unknown): CommandDispatchOutboxInten
     };
 }
 
-function toStoredCheckpoint(
-    input: LatestRoomProjectionInput,
-): Pick<LatestRoomProjectionInput, 'projection' | 'projectionEvidence' | 'volatileGuards'> {
+function toStoredCheckpoint(input: LatestRoomProjectionInput): Pick<
+    LatestRoomProjectionInput,
+    'projection' | 'projectionEvidence' | 'volatileGuards'
+> & {
+    checkpointVersion: 2;
+} {
     return {
+        checkpointVersion: 2,
         projection: input.projection,
         projectionEvidence: input.projectionEvidence,
         volatileGuards: input.volatileGuards,
@@ -944,6 +950,7 @@ function fromStoredCheckpoint(
 ): Pick<LatestRoomProjectionInput, 'projection' | 'projectionEvidence' | 'volatileGuards'> {
     if (
         !isRecord(value) ||
+        value.checkpointVersion !== 2 ||
         !('projection' in value) ||
         !isProjectionEvidence(value.projectionEvidence) ||
         !Array.isArray(value.volatileGuards)

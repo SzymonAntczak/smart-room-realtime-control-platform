@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import type { Clock, TimerScheduler } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
@@ -443,6 +444,49 @@ describe('createTemperatureRoomRuntime', () => {
                     }),
                 ]),
             );
+        } finally {
+            initialRuntime.stop();
+            initialStorage.close();
+            recoveredRuntime?.stop();
+            recoveredStorage?.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('starts from a migrated legacy checkpoint without retaining a terminal command as active', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const initialStorage = createSqliteRoomStorage({ databasePath });
+        const initialRuntime = createTemperatureRoomRuntime({
+            clock,
+            storage: initialStorage,
+            commandTimer: createCommandTimer(),
+            generateEventId: createEventIdGenerator(),
+        });
+        let recoveredStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let recoveredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            initialRuntime.start();
+            initialRuntime.stop();
+            initialStorage.close();
+
+            const commandId = writeLegacyCommandCheckpoint(databasePath);
+
+            recoveredStorage = createSqliteRoomStorage({ databasePath });
+            recoveredRuntime = createTemperatureRoomRuntime({
+                clock,
+                storage: recoveredStorage,
+                commandTimer: createCommandTimer(),
+            });
+            recoveredRuntime.start();
+
+            expect(recoveredRuntime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(device(recoveredRuntime, 'led-main')).not.toHaveProperty('activeCommandId');
+            expect(recoveredRuntime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ commandId, status: 'confirmed' }),
+            ]);
         } finally {
             initialRuntime.stop();
             initialStorage.close();
@@ -1708,6 +1752,56 @@ describe('createTemperatureRoomRuntime', () => {
 
 function device(runtime: ReturnType<typeof createTemperatureRoomRuntime>, deviceId: string) {
     return runtime.getRoomSnapshot().devices.find((candidate) => candidate.deviceId === deviceId);
+}
+
+function writeLegacyCommandCheckpoint(databasePath: string): string {
+    const database = new DatabaseSync(databasePath);
+    const row = database
+        .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+        .get() as { projection_json: string };
+    const checkpoint = JSON.parse(row.projection_json) as {
+        checkpointVersion?: number;
+        projection: {
+            devices: Array<{ deviceId: string; activeCommandId?: string }>;
+            recentCommands: unknown[];
+        };
+    };
+    delete checkpoint.checkpointVersion;
+
+    const led = checkpoint.projection.devices.find(
+        (candidate) => candidate.deviceId === 'led-main',
+    );
+
+    if (!led) {
+        database.close();
+
+        throw new Error('Expected an LED device checkpoint.');
+    }
+
+    const commandId = 'legacy-confirmed-command';
+
+    led.activeCommandId = commandId;
+    checkpoint.projection.recentCommands = [
+        {
+            commandId,
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-08-05T10:00:00.000Z',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
+            status: 'confirmed',
+            dispatchedAt: '2026-08-05T10:00:00.000Z',
+            deadlineAt: '2026-08-05T10:00:05.000Z',
+            confirmedAt: '2026-08-05T10:00:01.000Z',
+        },
+    ];
+    database
+        .prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1')
+        .run(JSON.stringify(checkpoint));
+    database.close();
+
+    return commandId;
 }
 
 function createEventIdGenerator(): () => string {

@@ -322,9 +322,17 @@ describe('SQLite room storage', () => {
             volatileGuards: [guard],
         });
         storage.close();
+
+        const database = new DatabaseSync(databasePath, { readOnly: true });
+        const row = database
+            .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+            .get() as { projection_json: string };
+        database.close();
+
+        expect(JSON.parse(row.projection_json)).toMatchObject({ checkpointVersion: 2 });
     });
 
-    it('rejects a legacy or malformed checkpoint instead of inferring durability evidence', () => {
+    it('migrates a known version 0 checkpoint and remains idempotent on reopen', () => {
         const databasePath = temporaryDatabasePath();
         const storage = createSqliteRoomStorage({ databasePath });
         storage.close();
@@ -334,29 +342,158 @@ describe('SQLite room storage', () => {
                 `INSERT INTO latest_room_projection (id, updated_at, projection_json)
                  VALUES (1, ?, ?)`,
             )
-            .run(
-                '2026-08-14T10:00:01.000Z',
-                JSON.stringify({
-                    roomName: 'Legacy Room',
-                    devices: [
-                        { deviceId: 'online-device', availability: 'online', health: 'unknown' },
-                        {
-                            deviceId: 'degraded-device',
-                            availability: 'unknown',
-                            health: 'degraded',
-                        },
-                    ],
-                }),
-            );
+            .run('2026-08-14T10:00:01.000Z', JSON.stringify(legacyCheckpoint()));
         database.close();
 
-        const reopened = createSqliteRoomStorage({ databasePath });
+        const migrated = createSqliteRoomStorage({ databasePath });
 
-        try {
-            expect(() => reopened.getLatestRoomProjection()).toThrow(StorageSchemaError);
-        } finally {
-            reopened.close();
-        }
+        expect(migrated.getLatestRoomProjection()).toMatchObject({
+            projection: {
+                activeCommands: [],
+                devices: [expect.not.objectContaining({ activeCommandId: expect.anything() })],
+                recentCommands: [
+                    expect.objectContaining({
+                        status: 'confirmed',
+                        delivery: {
+                            status: 'handed_off',
+                            dispatchedAt: '2026-08-14T10:00:00.000Z',
+                            deadlineAt: '2026-08-14T10:00:05.000Z',
+                        },
+                    }),
+                ],
+            },
+        });
+        migrated.close();
+
+        const migratedDatabase = new DatabaseSync(databasePath, { readOnly: true });
+        const afterFirstOpen = (
+            migratedDatabase
+                .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+                .get() as { projection_json: string }
+        ).projection_json;
+        migratedDatabase.close();
+
+        const reopened = createSqliteRoomStorage({ databasePath });
+        reopened.close();
+
+        const reopenedDatabase = new DatabaseSync(databasePath, { readOnly: true });
+        const afterSecondOpen = (
+            reopenedDatabase
+                .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+                .get() as { projection_json: string }
+        ).projection_json;
+        reopenedDatabase.close();
+
+        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 2 });
+        expect(afterSecondOpen).toBe(afterFirstOpen);
+    });
+
+    it('repairs a version 1 checkpoint with a terminal command linked as active', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        storage.close();
+        const database = new DatabaseSync(databasePath);
+        database
+            .prepare(
+                `INSERT INTO latest_room_projection (id, updated_at, projection_json)
+                 VALUES (1, ?, ?)`,
+            )
+            .run('2026-08-14T10:00:01.000Z', JSON.stringify(versionOneCheckpoint()));
+        database.close();
+
+        const migrated = createSqliteRoomStorage({ databasePath });
+
+        expect(migrated.getLatestRoomProjection()).toMatchObject({
+            projection: {
+                activeCommands: [],
+                devices: [expect.not.objectContaining({ activeCommandId: expect.anything() })],
+                recentCommands: [expect.objectContaining({ status: 'confirmed' })],
+            },
+        });
+        migrated.close();
+
+        const migratedDatabase = new DatabaseSync(databasePath, { readOnly: true });
+        const migratedCheckpoint = JSON.parse(
+            (
+                migratedDatabase
+                    .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+                    .get() as { projection_json: string }
+            ).projection_json,
+        );
+        migratedDatabase.close();
+
+        expect(migratedCheckpoint).toMatchObject({ checkpointVersion: 2 });
+    });
+
+    it('rejects an unknown or malformed checkpoint version without rewriting it', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        storage.close();
+        const database = new DatabaseSync(databasePath);
+        const malformedCheckpoint = JSON.stringify({
+            roomName: 'Legacy Room',
+            devices: [{ deviceId: 'online-device', availability: 'online', health: 'unknown' }],
+        });
+        database
+            .prepare(
+                `INSERT INTO latest_room_projection (id, updated_at, projection_json)
+                 VALUES (1, ?, ?)`,
+            )
+            .run('2026-08-14T10:00:01.000Z', malformedCheckpoint);
+        database.close();
+
+        expect(() => createSqliteRoomStorage({ databasePath })).toThrow(StorageMigrationError);
+
+        const afterMalformedOpen = new DatabaseSync(databasePath, { readOnly: true });
+        const malformedStoredValue = (
+            afterMalformedOpen
+                .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+                .get() as { projection_json: string }
+        ).projection_json;
+        afterMalformedOpen.close();
+
+        expect(malformedStoredValue).toBe(malformedCheckpoint);
+
+        const futureDatabase = new DatabaseSync(databasePath);
+        futureDatabase
+            .prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1')
+            .run(JSON.stringify({ ...legacyCheckpoint(), checkpointVersion: 3 }));
+        futureDatabase.close();
+
+        expect(() => createSqliteRoomStorage({ databasePath })).toThrow(StorageMigrationError);
+    });
+
+    it('rejects a semantically invalid version 0 checkpoint before rewriting it', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        storage.close();
+        const invalidCheckpoint = JSON.stringify({
+            ...legacyCheckpoint(),
+            projectionEvidence: {
+                availabilityDeviceIds: ['led-main'],
+                healthDeviceIds: 'not-an-array',
+            },
+        });
+        const database = new DatabaseSync(databasePath);
+        database
+            .prepare(
+                `INSERT INTO latest_room_projection (id, updated_at, projection_json)
+                 VALUES (1, ?, ?)`,
+            )
+            .run('2026-08-14T10:00:01.000Z', invalidCheckpoint);
+        database.close();
+
+        expect(() => createSqliteRoomStorage({ databasePath })).toThrow(StorageMigrationError);
+
+        const reopenedDatabase = new DatabaseSync(databasePath, { readOnly: true });
+        const storedValue = (
+            reopenedDatabase
+                .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+                .get() as { projection_json: string }
+        ).projection_json;
+        reopenedDatabase.close();
+
+        expect(storedValue).toBe(invalidCheckpoint);
     });
 
     it('classifies a COMMIT error as indeterminate even after cleanup succeeds', () => {
@@ -652,4 +789,78 @@ function temporaryDatabasePath(): string {
     temporaryDirectories.push(directory);
 
     return join(directory, 'room.sqlite');
+}
+
+function legacyCheckpoint() {
+    return {
+        projection: {
+            updatedAt: '2026-08-14T10:00:01.000Z',
+            devices: [
+                {
+                    deviceId: 'led-main',
+                    name: 'Main LED',
+                    role: 'led-output',
+                    availability: 'online',
+                    availabilityChangedAt: '2026-08-14T10:00:00.000Z',
+                    availabilityDurability: 'durable',
+                    health: 'healthy',
+                    healthChangedAt: '2026-08-14T10:00:00.000Z',
+                    healthDurability: 'durable',
+                    reportedState: { power: 'on' },
+                    observationStatus: {
+                        power: {
+                            freshness: 'fresh',
+                            lastObservedAt: '2026-08-14T10:00:00.000Z',
+                            durability: 'durable',
+                        },
+                    },
+                    commandAvailability: { policy: 'allow' },
+                    activeCommandId: 'command-1',
+                },
+            ],
+            activeCommands: [],
+            recentCommands: [
+                {
+                    commandId: 'command-1',
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                    requestedAt: '2026-08-14T10:00:00.000Z',
+                    durability: 'durable',
+                    lifecycleDurability: 'durable',
+                    status: 'confirmed',
+                    dispatchedAt: '2026-08-14T10:00:00.000Z',
+                    deadlineAt: '2026-08-14T10:00:05.000Z',
+                    confirmedAt: '2026-08-14T10:00:01.000Z',
+                },
+            ],
+        },
+        projectionEvidence: { availabilityDeviceIds: ['led-main'], healthDeviceIds: [] },
+        volatileGuards: [],
+    };
+}
+
+function versionOneCheckpoint() {
+    const checkpoint = legacyCheckpoint();
+    const command = checkpoint.projection.recentCommands[0];
+
+    if (!command) {
+        throw new Error('Expected a legacy terminal command.');
+    }
+
+    const { dispatchedAt, deadlineAt, ...commandWithoutLegacyDelivery } = command;
+
+    return {
+        ...checkpoint,
+        checkpointVersion: 1,
+        projection: {
+            ...checkpoint.projection,
+            recentCommands: [
+                {
+                    ...commandWithoutLegacyDelivery,
+                    delivery: { status: 'handed_off' as const, dispatchedAt, deadlineAt },
+                },
+            ],
+        },
+    };
 }

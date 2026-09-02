@@ -712,6 +712,15 @@ intent remains volatile while that new lifecycle fact and resulting
 
 At normal startup the runtime restores the latest checkpoint, including active
 commands, the newest 20 `recentCommands` and its bounded `recentEvents` cache.
+The serialized checkpoint document carries its own `checkpointVersion`, separate
+from the SQLite schema version. A startup migration may atomically transform a
+known older checkpoint format before the runtime reads it. A checkpoint with an
+unknown version, an unrecognizable legacy shape or semantics that cannot be
+converted without inference is a fatal migration failure: startup preserves the
+file and requires explicit operator intervention. The runtime never silently
+resets or replaces a checkpoint. This format migration is required whenever a
+change alters persisted JSON meaning or validity; SQL table, column and index
+changes remain SQLite schema migrations.
 Before exposing the first snapshot, it reevaluates every configured freshness
 policy against the injected startup clock and the restored `lastObservedAt`.
 Any resulting `fresh` to `stale` change is a `derived_projection`: it is

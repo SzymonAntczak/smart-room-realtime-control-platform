@@ -646,9 +646,14 @@ export function createRoomProjector({
             updatedAt,
             devices: [...projections.values()].map((device) => {
                 const active = activeByDeviceId.get(device.deviceId);
+                const deviceWithoutActiveCommand = {
+                    ...withFreshness(device, evaluatedAt, freshnessThresholdsByRole),
+                };
+
+                delete deviceWithoutActiveCommand.activeCommandId;
 
                 return {
-                    ...withFreshness(device, evaluatedAt, freshnessThresholdsByRole),
+                    ...deviceWithoutActiveCommand,
                     ...(active ? { activeCommandId: active.commandId } : {}),
                 };
             }),
