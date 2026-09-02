@@ -124,16 +124,18 @@ export function createSqliteRoomStorage({
                 database
                     .prepare(
                         `INSERT INTO simulator_command_receipts (
-                            source, command_id, updated_at, receipt_json
-                        ) VALUES (?, ?, ?, ?)
+                            source, command_id, updated_at, terminal_at, receipt_json
+                        ) VALUES (?, ?, ?, ?, ?)
                         ON CONFLICT(source, command_id) DO UPDATE SET
                             updated_at = excluded.updated_at,
+                            terminal_at = excluded.terminal_at,
                             receipt_json = excluded.receipt_json`,
                     )
                     .run(
                         input.source,
                         input.commandId,
                         input.updatedAt,
+                        input.terminalAt ?? null,
                         stringifyJson(input.receipt),
                     );
             });
@@ -142,7 +144,7 @@ export function createSqliteRoomStorage({
             return run(() => {
                 const row = database
                     .prepare(
-                        `SELECT source, command_id, updated_at, receipt_json
+                        `SELECT source, command_id, updated_at, terminal_at, receipt_json
                          FROM simulator_command_receipts
                          WHERE source = ? AND command_id = ?`,
                     )
@@ -150,6 +152,19 @@ export function createSqliteRoomStorage({
 
                 return row ? toSimulatorCommandReceipt(row) : undefined;
             });
+        },
+        listSimulatorCommandReceipts(source) {
+            return run(() =>
+                database
+                    .prepare(
+                        `SELECT source, command_id, updated_at, terminal_at, receipt_json
+                         FROM simulator_command_receipts
+                         WHERE source = ?
+                         ORDER BY command_id ASC`,
+                    )
+                    .all(source)
+                    .map(toSimulatorCommandReceipt),
+            );
         },
         getLatestRoomProjection() {
             return run(() => {
@@ -486,6 +501,59 @@ export function executeStorageTransaction<Value>(
                     )
                     .run(canonicalStorageTimestamp(input.closedAt), input.commandId);
             },
+            getSimulatorCommandReceipt(source, commandId) {
+                const row = database
+                    .prepare(
+                        `SELECT source, command_id, updated_at, terminal_at, receipt_json
+                         FROM simulator_command_receipts
+                         WHERE source = ? AND command_id = ?`,
+                    )
+                    .get(source, commandId);
+
+                return row ? toSimulatorCommandReceipt(row) : undefined;
+            },
+            insertSimulatorCommandReceipt(input) {
+                const result = database
+                    .prepare(
+                        `INSERT INTO simulator_command_receipts (
+                            source, command_id, updated_at, terminal_at, receipt_json
+                        ) VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(source, command_id) DO NOTHING`,
+                    )
+                    .run(
+                        input.source,
+                        input.commandId,
+                        canonicalStorageTimestamp(input.updatedAt),
+                        input.terminalAt ? canonicalStorageTimestamp(input.terminalAt) : null,
+                        stringifyJson(input.receipt),
+                    );
+
+                return result.changes === 1;
+            },
+            updateSimulatorCommandReceipt(input) {
+                database
+                    .prepare(
+                        `UPDATE simulator_command_receipts
+                         SET updated_at = ?, terminal_at = ?, receipt_json = ?
+                         WHERE source = ? AND command_id = ?`,
+                    )
+                    .run(
+                        canonicalStorageTimestamp(input.updatedAt),
+                        input.terminalAt ? canonicalStorageTimestamp(input.terminalAt) : null,
+                        stringifyJson(input.receipt),
+                        input.source,
+                        input.commandId,
+                    );
+            },
+            retireTerminalSimulatorCommandReceipts({ source, asOf }) {
+                const cutoff = retentionCutoff(asOf);
+                database
+                    .prepare(
+                        `DELETE FROM simulator_command_receipts
+                         WHERE source = ? AND terminal_at IS NOT NULL AND terminal_at < ?`,
+                    )
+                    .run(source, cutoff);
+            },
         });
     } catch (error) {
         if (!database.isTransaction) {
@@ -529,14 +597,8 @@ export function executeStorageTransaction<Value>(
 }
 
 function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
-    const asOfEpoch = Date.parse(asOf);
-
-    if (!Number.isFinite(asOfEpoch)) {
-        throw new StorageInvariantError('Retention requires an ISO timestamp.', asOf);
-    }
-
     const retiredAt = asOf;
-    const cutoff = new Date(asOfEpoch - 30 * 24 * 60 * 60 * 1_000).toISOString();
+    const cutoff = retentionCutoff(asOf);
 
     database
         .prepare(
@@ -639,6 +701,16 @@ function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
     );
 
     return retiredIdentityEventIds;
+}
+
+function retentionCutoff(asOf: string): string {
+    const asOfEpoch = Date.parse(asOf);
+
+    if (!Number.isFinite(asOfEpoch)) {
+        throw new StorageInvariantError('Retention requires an ISO timestamp.', asOf);
+    }
+
+    return new Date(asOfEpoch - 30 * 24 * 60 * 60 * 1_000).toISOString();
 }
 
 function isAcceptedInputIdentityActive(
@@ -874,6 +946,9 @@ function toSimulatorCommandReceipt(row: unknown): SimulatorCommandReceiptInput {
         source: stringField(value, 'source'),
         commandId: stringField(value, 'command_id'),
         updatedAt: stringField(value, 'updated_at'),
+        ...(optionalStringField(value, 'terminal_at')
+            ? { terminalAt: optionalStringField(value, 'terminal_at') }
+            : {}),
         receipt: parseJson(stringField(value, 'receipt_json')),
     };
 }
@@ -1076,7 +1151,13 @@ const expectedTableColumns = {
         'retired_at',
     ],
     accepted_input_identities: ['event_id', 'fingerprint', 'durability', 'accepted_at'],
-    simulator_command_receipts: ['source', 'command_id', 'updated_at', 'receipt_json'],
+    simulator_command_receipts: [
+        'source',
+        'command_id',
+        'updated_at',
+        'terminal_at',
+        'receipt_json',
+    ],
     command_dispatch_outbox: [
         'command_id',
         'device_id',
@@ -1148,6 +1229,7 @@ const expectedTableSqlFragments = {
         'source text not null',
         'command_id text not null',
         'updated_at text not null',
+        'terminal_at text',
         'receipt_json text not null',
         'primary key (source, command_id)',
     ],
@@ -1182,6 +1264,7 @@ const expectedIndexes = {
     telemetry_samples_active_by_event_id: ['event_id'],
     accepted_input_identities_by_accepted_at: ['accepted_at', 'event_id'],
     command_dispatch_outbox_active_by_state: ['state', 'next_attempt_at', 'command_id'],
+    simulator_command_receipts_terminal_by_source: ['source', 'terminal_at'],
 } as const satisfies Record<string, readonly string[]>;
 
 const expectedIndexSqlFragments = {
@@ -1211,6 +1294,9 @@ const expectedIndexSqlFragments = {
     ],
     command_dispatch_outbox_active_by_state: [
         "on command_dispatch_outbox (state, next_attempt_at, command_id) where state in ('ready', 'uncertain')",
+    ],
+    simulator_command_receipts_terminal_by_source: [
+        'on simulator_command_receipts (source, terminal_at) where terminal_at is not null',
     ],
 } as const satisfies Record<keyof typeof expectedIndexes, readonly string[]>;
 

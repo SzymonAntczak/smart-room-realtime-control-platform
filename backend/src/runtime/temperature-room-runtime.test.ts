@@ -239,6 +239,51 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('publishes degraded before emitting a volatile LED outcome after terminal receipt rollback', async () => {
+        const clock = createMutableClock('2026-08-31T09:00:00Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+        });
+        const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            snapshots.length = 0;
+            storage.failReceiptTransactionContaining(
+                'updateSimulatorCommandReceipt',
+                'confirmed_rolled_back',
+                new StorageAvailabilityError('database is busy', undefined),
+            );
+            clock.advanceBy(1);
+
+            runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            await flushCommandDispatch();
+
+            const degradedIndex = snapshots.findIndex(
+                (snapshot) => snapshot.platform.storage.status === 'degraded',
+            );
+            const emittedIndex = snapshots.findIndex(
+                (snapshot) =>
+                    snapshot.devices.find((candidate) => candidate.deviceId === 'led-main')
+                        ?.reportedState.power === 'on',
+            );
+
+            expect(degradedIndex).toBeGreaterThanOrEqual(0);
+            expect(emittedIndex).toBeGreaterThan(degradedIndex);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('publishes and dispatches nothing when command admission has an indeterminate commit', () => {
         const storage = createScriptedStorage();
         const runtime = createTemperatureRoomRuntime({
@@ -545,6 +590,60 @@ describe('createTemperatureRoomRuntime', () => {
         } finally {
             runtime.stop();
             storage.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('confirms an overdue durable LED receipt after a backend and simulator restart', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-receipt-restart-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const firstStorage = createSqliteRoomStorage({ databasePath });
+        const firstRuntime = createTemperatureRoomRuntime({
+            clock,
+            storage: firstStorage,
+            ledScenario: 'confirm_delayed',
+            commandTimer: createCommandTimer(),
+            generateEventId: createEventIdGenerator(),
+        });
+        let restoredStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let restoredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            firstRuntime.start();
+            const response = firstRuntime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            await flushCommandDispatch();
+            firstRuntime.stop();
+            firstStorage.close();
+
+            clock.advanceBy(3_000);
+            restoredStorage = createSqliteRoomStorage({ databasePath });
+            restoredRuntime = createTemperatureRoomRuntime({
+                clock,
+                storage: restoredStorage,
+                ledScenario: 'confirm_immediately',
+                commandTimer: createCommandTimer(),
+            });
+            expect(restoredRuntime.getRoomSnapshot().activeCommands).toEqual([
+                expect.objectContaining({ commandId: response.commandId, status: 'pending' }),
+            ]);
+            restoredRuntime.start();
+            await flushCommandDispatch();
+            await flushCommandDispatch();
+
+            expect(restoredRuntime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ commandId: response.commandId, status: 'confirmed' }),
+            ]);
+            expect(device(restoredRuntime, 'led-main')?.reportedState).toEqual({ power: 'on' });
+        } finally {
+            firstRuntime.stop();
+            firstStorage.close();
+            restoredRuntime?.stop();
+            restoredStorage?.close();
             rmSync(directory, { force: true, recursive: true });
         }
     });
@@ -1323,7 +1422,15 @@ describe('createTemperatureRoomRuntime', () => {
                 commandType: 'set.power',
                 requestedState: { power: 'on' },
             });
-            storage.setBeforeOutcome(() => clock.advanceBy(5_000));
+            storage.setBeforeOutcome((operations) => {
+                if (!operations.includes('appendSignificantFact')) {
+                    return false;
+                }
+
+                clock.advanceBy(5_000);
+
+                return true;
+            });
             await flushCommandDispatch();
 
             expect(runtime.getRoomSnapshot().recentCommands).toEqual([
@@ -1934,7 +2041,13 @@ function createScriptedStorage() {
     let nextOutcome:
         | { status: 'confirmed_rolled_back' | 'indeterminate'; error: unknown }
         | undefined;
-    let beforeOutcome: ((operations: string[]) => void) | undefined;
+    let receiptFailure:
+        | {
+              operation: string;
+              outcome: { status: 'confirmed_rolled_back' | 'indeterminate'; error: unknown };
+          }
+        | undefined;
+    let beforeOutcome: ((operations: string[]) => boolean | void) | undefined;
 
     const port: RoomStorage = {
         getMetadata() {
@@ -1953,6 +2066,7 @@ function createScriptedStorage() {
             let stagedCheckpoint: LatestRoomProjectionInput | undefined;
             let stagedStorageSequence = storageSequence;
             let stagedInternalSequence = internalSequence;
+            const stagedReceipts = new Map(receipts);
             const transaction: RoomStorageTransaction = {
                 appendSignificantFact(input: SignificantFactInput) {
                     operations.push('appendSignificantFact');
@@ -1994,13 +2108,55 @@ function createScriptedStorage() {
                 closeCommandDispatchOutboxIntent() {
                     operations.push('closeCommandDispatchOutboxIntent');
                 },
+                getSimulatorCommandReceipt(source, commandId) {
+                    operations.push('getSimulatorCommandReceipt');
+
+                    return stagedReceipts.get(`${source}:${commandId}`);
+                },
+                insertSimulatorCommandReceipt(input) {
+                    operations.push('insertSimulatorCommandReceipt');
+                    const key = `${input.source}:${input.commandId}`;
+
+                    if (stagedReceipts.has(key)) {
+                        return false;
+                    }
+
+                    stagedReceipts.set(key, input);
+
+                    return true;
+                },
+                updateSimulatorCommandReceipt(input) {
+                    operations.push('updateSimulatorCommandReceipt');
+                    stagedReceipts.set(`${input.source}:${input.commandId}`, input);
+                },
+                retireTerminalSimulatorCommandReceipts() {
+                    operations.push('retireTerminalSimulatorCommandReceipts');
+                },
             };
             const value = operation(transaction);
             const hook = beforeOutcome;
-            beforeOutcome = undefined;
-            hook?.(operations);
-            const configuredOutcome = nextOutcome;
-            nextOutcome = undefined;
+            const hookHandled = hook?.(operations);
+
+            if (hookHandled !== false) {
+                beforeOutcome = undefined;
+            }
+
+            const usesReceiptPort = operations.some((operationName) =>
+                operationName.includes('SimulatorCommandReceipt'),
+            );
+            const configuredOutcome = usesReceiptPort
+                ? receiptFailure && operations.includes(receiptFailure.operation)
+                    ? receiptFailure.outcome
+                    : undefined
+                : nextOutcome;
+
+            if (usesReceiptPort && configuredOutcome) {
+                receiptFailure = undefined;
+            }
+
+            if (!usesReceiptPort) {
+                nextOutcome = undefined;
+            }
 
             if (configuredOutcome) {
                 return configuredOutcome;
@@ -2028,6 +2184,11 @@ function createScriptedStorage() {
 
             storageSequence = stagedStorageSequence;
             internalSequence = stagedInternalSequence;
+            receipts.clear();
+
+            for (const [key, receipt] of stagedReceipts) {
+                receipts.set(key, receipt);
+            }
 
             return { status: 'committed', value };
         },
@@ -2058,6 +2219,9 @@ function createScriptedStorage() {
         getSimulatorCommandReceipt(source, commandId) {
             return receipts.get(`${source}:${commandId}`);
         },
+        listSimulatorCommandReceipts(source) {
+            return [...receipts.values()].filter((receipt) => receipt.source === source);
+        },
         getLatestRoomProjection() {
             return latestCheckpoint;
         },
@@ -2079,7 +2243,14 @@ function createScriptedStorage() {
         failNext(status: 'confirmed_rolled_back' | 'indeterminate', error: unknown) {
             nextOutcome = { status, error };
         },
-        setBeforeOutcome(callback: (operations: string[]) => void) {
+        failReceiptTransactionContaining(
+            operation: string,
+            status: 'confirmed_rolled_back' | 'indeterminate',
+            error: unknown,
+        ) {
+            receiptFailure = { operation, outcome: { status, error } };
+        },
+        setBeforeOutcome(callback: (operations: string[]) => boolean | void) {
             beforeOutcome = callback;
         },
         seedCheckpoint(checkpoint: LatestRoomProjectionInput) {
@@ -2096,6 +2267,7 @@ function createCapturingStorage() {
         payload: unknown;
     }> = [];
     let storageSequence = 0;
+    const receipts = new Map<string, SimulatorCommandReceiptInput>();
 
     return {
         significantFacts,
@@ -2128,6 +2300,13 @@ function createCapturingStorage() {
                     saveLatestRoomProjection(): void;
                     upsertCommandDispatchOutboxIntent(): void;
                     closeCommandDispatchOutboxIntent(): void;
+                    getSimulatorCommandReceipt(
+                        source: string,
+                        commandId: string,
+                    ): SimulatorCommandReceiptInput | undefined;
+                    insertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): boolean;
+                    updateSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): void;
+                    retireTerminalSimulatorCommandReceipts(): void;
                 }) => unknown,
             ) {
                 const value = operation({
@@ -2147,10 +2326,53 @@ function createCapturingStorage() {
                     saveLatestRoomProjection() {},
                     upsertCommandDispatchOutboxIntent() {},
                     closeCommandDispatchOutboxIntent() {},
+                    getSimulatorCommandReceipt(source, commandId) {
+                        return receipts.get(`${source}:${commandId}`);
+                    },
+                    insertSimulatorCommandReceipt(input) {
+                        const key = `${input.source}:${input.commandId}`;
+
+                        if (receipts.has(key)) {
+                            return false;
+                        }
+
+                        receipts.set(key, input);
+
+                        return true;
+                    },
+                    updateSimulatorCommandReceipt(input) {
+                        receipts.set(`${input.source}:${input.commandId}`, input);
+                    },
+                    retireTerminalSimulatorCommandReceipts() {},
                 });
 
                 return { status: 'committed' as const, value };
             },
+            listSimulatorCommandReceipts(source: string) {
+                return [...receipts.values()].filter((receipt) => receipt.source === source);
+            },
+            listCommandDispatchOutboxIntents() {
+                return [];
+            },
+            isAcceptedInputIdentityActive() {
+                return false;
+            },
+            listSignificantFacts() {
+                return [];
+            },
+            listTelemetrySamples() {
+                return [];
+            },
+            listQuarantineEntries() {
+                return [];
+            },
+            upsertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput) {
+                receipts.set(`${input.source}:${input.commandId}`, input);
+            },
+            getSimulatorCommandReceipt(source: string, commandId: string) {
+                return receipts.get(`${source}:${commandId}`);
+            },
+            close() {},
         } as unknown as RoomStorage,
     };
 }

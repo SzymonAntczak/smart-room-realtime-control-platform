@@ -36,7 +36,7 @@ describe('SQLite room storage', () => {
             historyGenerationId: expect.stringMatching(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             ),
-            schemaVersion: 2,
+            schemaVersion: 3,
             lastStorageSequence: 0,
         });
         expect(reopened.getMetadata()).toEqual(initialMetadata);
@@ -112,6 +112,44 @@ describe('SQLite room storage', () => {
             receipt,
         );
         expect(storage.getLatestRoomProjection()).toEqual(projection);
+        storage.close();
+    });
+
+    it('keeps non-terminal simulator receipts and evicts only terminal receipts older than 30 days', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const outcome = storage.transact((transaction) => {
+            transaction.insertSimulatorCommandReceipt({
+                source: 'simulator-led',
+                commandId: 'pending',
+                updatedAt: '2026-07-01T00:00:00.000Z',
+                receipt: { version: 1, state: 'pending' },
+            });
+            transaction.insertSimulatorCommandReceipt({
+                source: 'simulator-led',
+                commandId: 'old-terminal',
+                updatedAt: '2026-07-01T00:00:00.000Z',
+                terminalAt: '2026-07-01T00:00:00.000Z',
+                receipt: { version: 1, state: 'terminal' },
+            });
+            transaction.insertSimulatorCommandReceipt({
+                source: 'simulator-led',
+                commandId: 'boundary-terminal',
+                updatedAt: '2026-07-02T00:00:00.000Z',
+                terminalAt: '2026-07-02T00:00:00.000Z',
+                receipt: { version: 1, state: 'terminal' },
+            });
+            transaction.retireTerminalSimulatorCommandReceipts({
+                source: 'simulator-led',
+                asOf: '2026-08-01T00:00:00.000Z',
+            });
+        });
+
+        expect(outcome.status).toBe('committed');
+        expect(
+            storage
+                .listSimulatorCommandReceipts('simulator-led')
+                .map((receipt) => receipt.commandId),
+        ).toEqual(['boundary-terminal', 'pending']);
         storage.close();
     });
 
@@ -648,7 +686,7 @@ describe('SQLite room storage', () => {
         newerStorage.close();
         const newerDatabase = new DatabaseSync(newerDatabasePath);
         newerDatabase
-            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (3, ?, ?)')
+            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (4, ?, ?)')
             .run('future', 'future');
         newerDatabase.close();
 

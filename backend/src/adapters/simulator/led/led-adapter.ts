@@ -6,8 +6,10 @@ import type {
 } from '@smart-room/contracts/events';
 import type {
     LedAvailabilityListener,
+    LedCommandReceiveResult,
     LedCommandRejectionListener,
     LedHealthListener,
+    LedReceiveContext,
     LedSetPowerCommand,
     LedStateReportListener,
 } from '@smart-room/simulator';
@@ -22,7 +24,10 @@ export interface LedCommandTransport {
     onCommandRejection(listener: LedCommandRejectionListener): () => void;
     onAvailability(listener: LedAvailabilityListener): () => void;
     onHealth(listener: LedHealthListener): () => void;
-    receive(command: LedSetPowerCommand): void;
+    receive(
+        command: LedSetPowerCommand,
+        context?: LedReceiveContext,
+    ): LedCommandReceiveResult | void;
 }
 
 export interface SimulatorLedAdapterConfig {
@@ -123,7 +128,7 @@ export function createSimulatorLedAdapter({
     });
 
     return {
-        dispatch(command) {
+        dispatch(command, context) {
             if (hasStopped) {
                 throw new Error('Simulator LED adapter has been stopped.');
             }
@@ -132,16 +137,34 @@ export function createSimulatorLedAdapter({
                 throw new RangeError(`LED command deviceId must be ${platformDeviceId}.`);
             }
 
-            const handedOffAt = clock.now();
-            led.receive({
-                messageType: 'led.command.set_power',
-                commandId: command.commandId,
-                deviceId: nativeLedId,
-                commandType: 'set.power',
-                requestedState: { power: command.requestedState.power },
-            });
+            const dispatchContext =
+                typeof context === 'string'
+                    ? { attemptedAt: context, deliveryKind: 'volatile' as const }
+                    : (context ?? { attemptedAt: clock.now(), deliveryKind: 'volatile' as const });
+            const result = led.receive(
+                {
+                    messageType: 'led.command.set_power',
+                    commandId: command.commandId,
+                    deviceId: nativeLedId,
+                    commandType: 'set.power',
+                    requestedState: { power: command.requestedState.power },
+                },
+                dispatchContext,
+            ) ?? { status: 'accepted' as const, acceptedAt: dispatchContext.attemptedAt };
 
-            return { status: 'handed_off', handedOffAt };
+            if (result.status === 'not_accepted') {
+                return {
+                    status: 'not_handed_off',
+                    reason: result.reason,
+                    message: 'The simulated LED did not accept the command receipt.',
+                };
+            }
+
+            if (result.status === 'uncertain') {
+                return { status: 'uncertain', reason: result.reason };
+            }
+
+            return { status: 'handed_off', handedOffAt: result.acceptedAt };
         },
         stop() {
             hasStopped = true;

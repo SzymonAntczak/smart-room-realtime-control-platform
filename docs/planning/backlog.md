@@ -114,7 +114,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       from known-device policy/concurrency rejection, which creates a terminal
       durable or volatile command fact.
 
-- [ ] Make the simulator command receiver idempotent for durable outbox retry.
+- [x] Make the simulator command receiver idempotent for durable outbox retry.
       Treat repeated `set.power` with one `commandId` as one logical native
       command for at least the outbox retention horizon, including simulator
       restart. Before consuming the selected scenario or scheduling a result,

@@ -11,6 +11,9 @@ const port = readPort(process.env.PORT);
 const runtime = createTemperatureRoomRuntime({
     ...readDeduplicationRuntimeConfig(process.env),
     ...resolveStorage(),
+    operationalLog(entry) {
+        console.log(JSON.stringify(entry));
+    },
 });
 const enableDevScenarioControls = isDevScenarioControlsEnabled(process.env.ENABLE_DEV_SCENARIOS);
 const server = createRoomBffServer({

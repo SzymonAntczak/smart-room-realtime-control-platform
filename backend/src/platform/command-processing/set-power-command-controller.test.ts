@@ -248,6 +248,7 @@ describe('createSetPowerCommandController', () => {
                 {
                     deviceId: 'led-main',
                     target: 'simulator-adapter',
+                    automaticRetry: 'durable_source_receipt',
                     dispatcher: {
                         dispatch() {
                             attempts += 1;
@@ -279,7 +280,6 @@ describe('createSetPowerCommandController', () => {
                 },
                 clearTimeout() {},
             },
-            enableAutomaticRetry: true,
             generateCommandId: () => 'cmd-uncertain-1',
             generateEventId: createEventIdGenerator(),
         });
@@ -367,6 +367,7 @@ describe('createSetPowerCommandController', () => {
                 {
                     deviceId: 'led-main',
                     target: 'simulator-adapter',
+                    automaticRetry: 'durable_source_receipt',
                     dispatcher: {
                         dispatch: () => ({
                             status: 'uncertain' as const,
@@ -393,7 +394,6 @@ describe('createSetPowerCommandController', () => {
                 },
                 clearTimeout() {},
             },
-            enableAutomaticRetry: true,
         });
 
         controller.requestCommand({
@@ -413,6 +413,7 @@ describe('createSetPowerCommandController', () => {
                 {
                     deviceId: 'led-main',
                     target: 'simulator-adapter',
+                    automaticRetry: 'durable_source_receipt',
                     dispatcher: {
                         dispatch() {
                             attempts += 1;
@@ -443,7 +444,6 @@ describe('createSetPowerCommandController', () => {
                 },
                 clearTimeout() {},
             },
-            enableAutomaticRetry: true,
         });
 
         controller.requestCommand({
@@ -464,6 +464,7 @@ describe('createSetPowerCommandController', () => {
                 {
                     deviceId: 'led-main',
                     target: 'simulator-adapter',
+                    automaticRetry: 'durable_source_receipt',
                     dispatcher: {
                         dispatch() {
                             dispatches += 1;
@@ -560,7 +561,6 @@ describe('createSetPowerCommandController', () => {
             },
             clock: { now: () => '2026-08-05T10:00:01Z' },
             commandTimer: { setTimeout: () => 1, clearTimeout() {} },
-            enableAutomaticRetry: true,
         });
 
         controller.reconcileOutboxAfterRecovery();
@@ -578,6 +578,7 @@ describe('createSetPowerCommandController', () => {
                 {
                     deviceId: 'led-main',
                     target: 'simulator-adapter',
+                    automaticRetry: 'durable_source_receipt',
                     dispatcher: {
                         dispatch() {
                             dispatches += 1;
@@ -656,6 +657,7 @@ describe('createSetPowerCommandController', () => {
                 {
                     deviceId: 'led-main',
                     target: 'simulator-adapter',
+                    automaticRetry: 'durable_source_receipt',
                     dispatcher: {
                         dispatch() {
                             dispatches += 1;
@@ -698,7 +700,6 @@ describe('createSetPowerCommandController', () => {
                 },
                 clearTimeout() {},
             },
-            enableAutomaticRetry: true,
         });
 
         controller.reconcileOutboxAfterRecovery();
@@ -787,6 +788,7 @@ describe('createSetPowerCommandController', () => {
                 {
                     deviceId: 'led-main',
                     target: 'simulator-adapter',
+                    automaticRetry: 'durable_source_receipt',
                     dispatcher: {
                         dispatch: () => ({
                             status: 'uncertain' as const,
@@ -814,7 +816,6 @@ describe('createSetPowerCommandController', () => {
             getRoomSnapshot: () => snapshot,
             clock: { now: () => '2026-08-05T10:00:01Z' },
             commandTimer: { setTimeout: () => 1, clearTimeout() {} },
-            enableAutomaticRetry: true,
         });
 
         controller.reconcileOutboxAfterRecovery();
@@ -840,6 +841,7 @@ describe('createSetPowerCommandController', () => {
                 {
                     deviceId: 'led-main',
                     target: 'simulator-adapter',
+                    automaticRetry: 'durable_source_receipt',
                     dispatcher: {
                         dispatch() {
                             dispatches += 1;
@@ -957,7 +959,6 @@ describe('createSetPowerCommandController', () => {
                 },
                 clearTimeout() {},
             },
-            enableAutomaticRetry: true,
         });
 
         controller.requestCommand({

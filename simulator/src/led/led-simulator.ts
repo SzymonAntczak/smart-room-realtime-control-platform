@@ -71,7 +71,9 @@ export interface LedSimulator {
     onHealth(listener: LedHealthListener): () => void;
     receive(command: LedSetPowerCommand): void;
     reportState(power: LedPower, reportedAt: string): LedStateReport;
+    emitStateReport(report: LedStateReport): LedStateReport;
     rejectCommand(command: LedSetPowerCommand, rejectedAt: string): LedCommandRejection;
+    emitCommandRejection(rejection: LedCommandRejection): LedCommandRejection;
     reportAvailability(
         availability: 'online' | 'offline',
         reportedAt: string,
@@ -132,8 +134,6 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
         reportState(power, reportedAt) {
             assertLedPower(power);
             assertTimestamp(reportedAt, 'LED state report reportedAt');
-            observedPower = power;
-
             const report: LedStateReport = {
                 messageId: generateMessageId(),
                 messageType: 'led.state.reported',
@@ -142,6 +142,15 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
                 reportedState: { power },
                 reportedAt,
             };
+            observedPower = report.reportedState.power;
+            emit(reportListeners, report);
+
+            return report;
+        },
+        emitStateReport(report) {
+            assertStateReport(report, config.deviceId);
+            observedPower = report.reportedState.power;
+            stateReportSequence = Math.max(stateReportSequence, report.sequence);
             emit(reportListeners, report);
 
             return report;
@@ -149,7 +158,6 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
         rejectCommand(command, rejectedAt) {
             assertCommand(command, config.deviceId);
             assertTimestamp(rejectedAt, 'LED command rejection rejectedAt');
-
             const rejection: LedCommandRejection = {
                 messageId: generateMessageId(),
                 messageType: 'led.command.rejected',
@@ -158,6 +166,12 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
                 reason: 'command_rejected',
                 rejectedAt,
             };
+            emit(rejectionListeners, rejection);
+
+            return rejection;
+        },
+        emitCommandRejection(rejection) {
+            assertCommandRejection(rejection, config.deviceId);
             emit(rejectionListeners, rejection);
 
             return rejection;
@@ -198,6 +212,45 @@ export function createLedSimulator(config: LedSimulatorConfig): LedSimulator {
             return observedPower;
         },
     };
+}
+
+function assertStateReport(report: LedStateReport, expectedDeviceId: string): void {
+    assertNonEmpty(report.messageId, 'LED state report messageId');
+
+    if (report.messageType !== 'led.state.reported') {
+        throw new TypeError('LED state report messageType must be led.state.reported.');
+    }
+
+    if (report.deviceId !== expectedDeviceId) {
+        throw new RangeError(`LED state report deviceId must be ${expectedDeviceId}.`);
+    }
+
+    if (!Number.isSafeInteger(report.sequence) || report.sequence < 1) {
+        throw new TypeError('LED state report sequence must be a positive safe integer.');
+    }
+
+    assertLedPower(report.reportedState.power);
+    assertTimestamp(report.reportedAt, 'LED state report reportedAt');
+}
+
+function assertCommandRejection(rejection: LedCommandRejection, expectedDeviceId: string): void {
+    assertNonEmpty(rejection.messageId, 'LED command rejection messageId');
+
+    if (rejection.messageType !== 'led.command.rejected') {
+        throw new TypeError('LED command rejection messageType must be led.command.rejected.');
+    }
+
+    assertNonEmpty(rejection.commandId, 'LED command rejection commandId');
+
+    if (rejection.deviceId !== expectedDeviceId) {
+        throw new RangeError(`LED command rejection deviceId must be ${expectedDeviceId}.`);
+    }
+
+    if (rejection.reason !== 'command_rejected') {
+        throw new TypeError('LED command rejection reason must be command_rejected.');
+    }
+
+    assertTimestamp(rejection.rejectedAt, 'LED command rejection rejectedAt');
 }
 
 function assertCommand(command: LedSetPowerCommand, expectedDeviceId: string): void {

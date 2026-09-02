@@ -18,3 +18,9 @@ fact remains deduplicable without an adapter-local replay cache.
 The simulator adapters provide the current read-path and command/confirmation
 translation examples. Detailed adapter rules live in `backend/AGENTS.md` and
 the architecture docs.
+
+An adapter may opt into automatic durable-outbox retry only when its receiving
+source persists an equivalent source-owned command receipt keyed by the stable
+`commandId`. The simulator LED route declares this capability through its
+receipt port. Volatile commands and future sources without durable receipts use
+no automatic retry.

@@ -38,9 +38,22 @@ export {
 } from './led/led-simulator';
 export {
     createLedScenario,
+    type LedCommandReceiveResult,
+    type LedDeliveryKind,
+    type LedReceiptFailure,
+    type LedReceiveContext,
     type LedScenario,
     type LedScenarioClock,
     type LedScenarioConfig,
     type LedScenarioName,
     type LedScenarioScheduler,
 } from './led/led-scenarios';
+export {
+    fingerprintLedSetPowerCommand,
+    isLedCommandReceiptV1,
+    ledReceiptSource,
+    type LedCommandReceiptPort,
+    type LedCommandReceiptV1,
+    type LedPlannedOutcome,
+    type LedReceiptOperationOutcome,
+} from './led/led-command-receipts';

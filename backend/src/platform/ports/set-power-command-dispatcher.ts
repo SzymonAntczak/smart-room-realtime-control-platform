@@ -9,6 +9,14 @@ export type CommandDispatchResult =
     | { status: 'not_handed_off'; reason: string; message: string }
     | { status: 'uncertain'; reason: string };
 
+export interface CommandDispatchContext {
+    attemptedAt: string;
+    deliveryKind: 'durable_outbox' | 'volatile';
+}
+
 export interface SetPowerCommandDispatcher {
-    dispatch(command: PlatformSetPowerCommand, attemptedAt?: string): CommandDispatchResult;
+    dispatch(
+        command: PlatformSetPowerCommand,
+        context?: CommandDispatchContext | string,
+    ): CommandDispatchResult;
 }

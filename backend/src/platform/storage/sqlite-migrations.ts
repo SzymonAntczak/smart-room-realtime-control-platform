@@ -120,6 +120,14 @@ CREATE INDEX command_dispatch_outbox_active_by_state
     WHERE state IN ('ready', 'uncertain');
 `;
 
+const migrationThreeSql = `
+ALTER TABLE simulator_command_receipts ADD COLUMN terminal_at TEXT;
+
+CREATE INDEX simulator_command_receipts_terminal_by_source
+    ON simulator_command_receipts (source, terminal_at)
+    WHERE terminal_at IS NOT NULL;
+`;
+
 export const roomStorageMigrations: readonly Migration[] = [
     {
         version: 1,
@@ -141,6 +149,14 @@ export const roomStorageMigrations: readonly Migration[] = [
         checksum: checksum(migrationTwoSql),
         apply(database) {
             database.exec(migrationTwoSql);
+        },
+    },
+    {
+        version: 3,
+        name: 'simulator-command-receipt-terminal-marker',
+        checksum: checksum(migrationThreeSql),
+        apply(database) {
+            database.exec(migrationThreeSql);
         },
     },
 ];

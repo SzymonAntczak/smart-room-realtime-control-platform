@@ -27,6 +27,7 @@ import {
     createLedScenario,
     createTemperatureSensorRuntime,
     createTemperatureSensorScenario,
+    type LedReceiptFailure,
     type LedScenarioName,
     type LedScenarioScheduler,
     type TemperatureSensorRuntime,
@@ -37,6 +38,7 @@ import {
     createSimulatorLedAdapter,
     type SimulatorLedAdapter,
 } from '../adapters/simulator/led/led-adapter';
+import { createSqliteLedCommandReceiptPort } from '../adapters/simulator/led/sqlite-led-command-receipt-port';
 import {
     createSimulatorTemperatureAdapter,
     type SimulatorTemperatureAdapter,
@@ -93,6 +95,7 @@ export interface TemperatureRoomRuntimeConfig {
     commandTimer?: CommandTimer;
     generateCommandId?: () => string;
     storage?: RoomStorage;
+    operationalLog?: (entry: Record<string, unknown>) => void;
     onFatalStorageError?: (error: unknown) => never;
 }
 
@@ -177,6 +180,7 @@ export function createTemperatureRoomRuntime({
     commandTimer = realCommandTimer,
     generateCommandId = randomUUID,
     storage,
+    operationalLog = () => {},
     onFatalStorageError = (error): never => {
         throw error;
     },
@@ -323,13 +327,14 @@ export function createTemperatureRoomRuntime({
             {
                 deviceId: 'led-main',
                 target: 'simulator-adapter',
+                automaticRetry: 'durable_source_receipt',
                 dispatcher: {
-                    dispatch(command, attemptedAt) {
+                    dispatch(command, context) {
                         if (!hasStarted || !ledAdapter) {
                             throw new Error('The LED adapter is not available.');
                         }
 
-                        return ledAdapter.dispatch(command, attemptedAt);
+                        return ledAdapter.dispatch(command, context);
                     },
                 },
             },
@@ -345,7 +350,9 @@ export function createTemperatureRoomRuntime({
             });
         },
         listDurableOutboxIntents() {
-            return storage?.listCommandDispatchOutboxIntents() ?? [];
+            return storage && typeof storage.listCommandDispatchOutboxIntents === 'function'
+                ? storage.listCommandDispatchOutboxIntents()
+                : [];
         },
         createDispatchScope() {
             if (bufferedAdapterEvents) {
@@ -395,9 +402,14 @@ export function createTemperatureRoomRuntime({
 
             hasStarted = true;
             const startedLed = attachLedScenario('off');
+            startedLed.restoreDurablePlans();
             startedLed.reportAvailability('online', clock.now());
             startedLed.reportCurrentState(clock.now());
             commandController.reschedulePendingCommands();
+
+            if (storageState.status === 'available') {
+                commandController.reconcileOutboxAfterRecovery();
+            }
 
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter = createAdapter(sensorEntry);
@@ -614,6 +626,12 @@ export function createTemperatureRoomRuntime({
             clock,
             scheduler: ledScenarioScheduler,
             generateMessageId: generateNativeMessageId,
+            ...(storage
+                ? { receiptPort: createSqliteLedCommandReceiptPort({ storage, clock }) }
+                : {}),
+            onReceiptFailure(failure) {
+                handleLedReceiptFailure(failure);
+            },
         });
         ledAdapter = createSimulatorLedAdapter({
             led,
@@ -1036,6 +1054,43 @@ export function createTemperatureRoomRuntime({
                 storedThroughSequence: storageState.storedThroughSequence,
             };
             notifySnapshotListeners(receivedAt, true);
+        }
+    }
+
+    function handleLedReceiptFailure(failure: LedReceiptFailure): void {
+        operationalLog({
+            event: 'simulator_command_receipt_failure',
+            source: 'simulator-led',
+            commandId: failure.commandId,
+            deviceId: 'led-main',
+            operation: failure.operation,
+            reason:
+                failure.outcome === 'inspection_unavailable'
+                    ? 'receipt_prior_acceptance_unknown'
+                    : failure.outcome === 'confirmed_rolled_back'
+                      ? 'receipt_write_rolled_back'
+                      : 'storage_commit_outcome_unknown',
+            storageFailureKind:
+                failure.error instanceof StorageError ? failure.error.kind : 'unknown',
+        });
+
+        if (failure.outcome === 'indeterminate') {
+            terminateForStorageOutcome(failure.error, 'unknown');
+        }
+
+        if (failure.error instanceof StorageError && failure.error.kind === 'fatal') {
+            terminateForStorageOutcome(failure.error, 'fatal');
+        }
+
+        if (storageState.status === 'available') {
+            storageState = {
+                status: 'degraded',
+                changedAt: clock.now(),
+                reason: 'storage_write_failed',
+                historyGenerationId: storageState.historyGenerationId,
+                storedThroughSequence: storageState.storedThroughSequence,
+            };
+            notifySnapshotListeners(clock.now(), true);
         }
     }
 

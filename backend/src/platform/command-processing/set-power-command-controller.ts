@@ -44,6 +44,7 @@ export interface SetPowerCommandRoute {
     deviceId: string;
     target: PlatformEventSource;
     dispatcher: SetPowerCommandDispatcher;
+    automaticRetry?: 'durable_source_receipt' | 'disabled';
 }
 
 export interface SetPowerCommandControllerConfig {
@@ -59,7 +60,6 @@ export interface SetPowerCommandControllerConfig {
     scheduleImmediate?(callback: () => void): void;
     clock: { now(): string };
     commandTimer: CommandTimer;
-    enableAutomaticRetry?: boolean;
     generateCommandId?: () => string;
     generateEventId?: () => string;
 }
@@ -101,7 +101,6 @@ export function createSetPowerCommandController({
     scheduleImmediate = (callback) => callback(),
     clock,
     commandTimer,
-    enableAutomaticRetry = false,
     generateCommandId = randomUUID,
     generateEventId = randomUUID,
 }: SetPowerCommandControllerConfig): SetPowerCommandController {
@@ -330,7 +329,10 @@ export function createSetPowerCommandController({
                     continue;
                 }
 
-                if (requiresRetryCapability && !enableAutomaticRetry) {
+                if (
+                    requiresRetryCapability &&
+                    work.route.automaticRetry !== 'durable_source_receipt'
+                ) {
                     continue;
                 }
 
@@ -391,7 +393,13 @@ export function createSetPowerCommandController({
         const attemptedAt = clock.now();
         const dispatchScope = createDispatchScope();
         const result: unknown = dispatchScope.run(() =>
-            work.route.dispatcher.dispatch({ ...work.request, commandId }, attemptedAt),
+            work.route.dispatcher.dispatch(
+                { ...work.request, commandId },
+                {
+                    attemptedAt,
+                    deliveryKind: work.durability === 'durable' ? 'durable_outbox' : 'volatile',
+                },
+            ),
         );
 
         if (!isCommandDispatchResult(result)) {
@@ -500,7 +508,10 @@ export function createSetPowerCommandController({
 
             scheduleTimeout(commandId, work.request.deviceId);
 
-            if (enableAutomaticRetry && work.durability === 'durable') {
+            if (
+                work.route.automaticRetry === 'durable_source_receipt' &&
+                work.durability === 'durable'
+            ) {
                 scheduleRetryAt(
                     commandId,
                     uncertaintyMutation?.intent.nextAttemptAt ?? attemptedAt,

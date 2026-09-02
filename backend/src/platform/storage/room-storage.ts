@@ -39,6 +39,13 @@ export interface RoomStorageTransaction {
     saveLatestRoomProjection(input: LatestRoomProjectionInput): void;
     upsertCommandDispatchOutboxIntent(input: CommandDispatchOutboxIntent): void;
     closeCommandDispatchOutboxIntent(input: { commandId: string; closedAt: string }): void;
+    getSimulatorCommandReceipt(
+        source: string,
+        commandId: string,
+    ): SimulatorCommandReceiptInput | undefined;
+    insertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): boolean;
+    updateSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): void;
+    retireTerminalSimulatorCommandReceipts(input: { source: string; asOf: string }): void;
 }
 
 export type CommandDispatchOutboxState = 'ready' | 'uncertain' | 'delivered' | 'closed';
@@ -104,6 +111,7 @@ export interface SimulatorCommandReceiptInput {
     source: string;
     commandId: string;
     updatedAt: string;
+    terminalAt?: string;
     receipt: unknown;
 }
 
@@ -129,6 +137,7 @@ export interface RoomStorage {
         source: string,
         commandId: string,
     ): SimulatorCommandReceiptInput | undefined;
+    listSimulatorCommandReceipts(source: string): SimulatorCommandReceiptInput[];
     getLatestRoomProjection(): LatestRoomProjectionInput | undefined;
     listCommandDispatchOutboxIntents(): CommandDispatchOutboxIntent[];
     close(): void;
