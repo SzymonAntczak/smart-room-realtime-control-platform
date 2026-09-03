@@ -29,13 +29,26 @@ SSE is strictly server-to-client. All application commands remain on the
 validated `POST /room/commands` HTTP boundary. The local BFF sets standard SSE
 content, no-cache and keep-alive headers, and releases projection subscriptions
 when the HTTP stream closes or errors.
-If an SSE write reports backpressure, the BFF closes that stream rather than
-buffering revision-linked deltas; the client reconnects for a fresh baseline.
+
+### Backpressure amendment
+
+`ServerResponse.write()` returning `false` means Node accepted the frame into
+its output buffer and needs the producer to wait for `drain`; it does not by
+itself mean that the SSE client disconnected. The BFF therefore stops writing
+until `drain` and retains the remainder of the active publication batch plus
+at most one subsequent complete batch. It preserves the batch order and their
+assigned revisions while draining.
+
+If another batch arrives before that one waiting batch can be drained, or if
+the stream errors, is destroyed or receives an invalid projection, the BFF
+closes the stream and releases its subscription. The client then reconnects
+for a fresh revision-0 baseline. This bounds BFF memory while avoiding a
+spurious reconnect for the normal, short burst of command lifecycle updates.
 
 ### Stage 4 amendment
 
 The Stage 4 storage decision retains this one SSE connection, revision
-continuity, backpressure closure and no-replay behavior. It extends the future
+continuity, bounded backpressure handling and no-replay behavior. It extends the future
 validated message union with `platform.updated`, and permits existing device or
 command deltas to carry their related history records or telemetry sample.
 `platform.updated` carries the complete platform storage projection and may

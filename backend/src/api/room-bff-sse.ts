@@ -1,5 +1,3 @@
-import type { ServerResponse } from 'node:http';
-
 import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     isRoomRealtimeServerMessage,
@@ -15,9 +13,28 @@ interface RoomRealtimeStreamConfig {
     now(): string;
 }
 
+export interface RoomRealtimeWritable {
+    readonly destroyed: boolean;
+    readonly writableEnded: boolean;
+    end(): void;
+    once(event: 'close' | 'drain' | 'error', listener: () => void): this;
+    removeListener(event: 'drain', listener: () => void): this;
+    write(chunk: string): boolean;
+}
+
+interface PublicationBatch {
+    readonly frames: readonly string[];
+    readonly nextRevision: number;
+}
+
+type BatchBuildResult =
+    | { readonly kind: 'empty' }
+    | { readonly kind: 'invalid' }
+    | { readonly kind: 'ready'; readonly batch: PublicationBatch };
+
 export function startRoomRealtimeStream(
     response: FastifyReply,
-    { getRoomSnapshot, subscribeRoomSnapshot, now }: RoomRealtimeStreamConfig,
+    config: RoomRealtimeStreamConfig,
 ): void {
     response.hijack();
     const stream = response.raw;
@@ -29,65 +46,178 @@ export function startRoomRealtimeStream(
     });
     stream.flushHeaders();
 
+    startRoomRealtimePublisher(stream, config);
+}
+
+export function startRoomRealtimePublisher(
+    stream: RoomRealtimeWritable,
+    { getRoomSnapshot, subscribeRoomSnapshot, now }: RoomRealtimeStreamConfig,
+): void {
     let baseline = getRoomSnapshot();
     let revision = 0;
     let isBaselineSent = false;
-    const unsubscribe = subscribeRoomSnapshot((snapshot) => {
-        if (!isBaselineSent) {
-            baseline = snapshot;
+    let isClosed = false;
+    let isWaitingForDrain = false;
+    let activeBatch: PublicationBatch | undefined;
+    let activeFrameIndex = 0;
+    let waitingBatch: PublicationBatch | undefined;
+    let unsubscribe: () => void = () => undefined;
 
+    const onDrain = () => {
+        if (isClosed) {
+            return;
+        }
+
+        isWaitingForDrain = false;
+        flush();
+    };
+
+    const close = once(() => {
+        isClosed = true;
+        stream.removeListener('drain', onDrain);
+        unsubscribe();
+
+        if (!stream.writableEnded && !stream.destroyed) {
+            stream.end();
+        }
+    });
+
+    unsubscribe = subscribeRoomSnapshot((snapshot) => {
+        if (isClosed || !isBaselineSent) {
             return;
         }
 
         if (!isRoomSnapshotProjection(snapshot) || !hasSameDeviceSet(baseline, snapshot)) {
-            stream.end();
+            close();
 
             return;
         }
 
-        revision = sendRoomDeltas(stream, baseline, snapshot, revision, now);
-        baseline = snapshot;
-    });
-    const cleanup = once(unsubscribe);
+        const built = buildRoomDeltaBatch(baseline, snapshot, revision, now);
 
-    stream.once('close', cleanup);
-    stream.once('error', cleanup);
+        if (built.kind === 'invalid') {
+            close();
+
+            return;
+        }
+
+        baseline = snapshot;
+
+        if (built.kind === 'empty') {
+            return;
+        }
+
+        revision = built.batch.nextRevision;
+        enqueue(built.batch);
+    });
+
+    stream.once('close', close);
+    stream.once('error', close);
 
     baseline = getRoomSnapshot();
-    sendRoomSnapshot(stream, baseline, now);
-    isBaselineSent = true;
-}
+    const initial = buildRoomSnapshotBatch(baseline, now);
 
-function sendRoomSnapshot(
-    stream: ServerResponse,
-    snapshot: RoomSnapshotProjection,
-    now: () => string,
-): void {
-    const sentAt = normalizedNow(stream, now);
+    if (initial.kind !== 'ready') {
+        close();
 
-    if (!sentAt) {
         return;
     }
 
-    sendRealtimeMessage(
-        stream,
-        {
-            messageType: 'room.snapshot',
-            revision: 0,
-            sentAt,
-            payload: snapshot,
-        } as RoomRealtimeServerMessage,
+    isBaselineSent = true;
+    revision = initial.batch.nextRevision;
+    enqueue(initial.batch);
+
+    function enqueue(batch: PublicationBatch): void {
+        if (isClosed) {
+            return;
+        }
+
+        if (!activeBatch && !isWaitingForDrain) {
+            activeBatch = batch;
+            activeFrameIndex = 0;
+            flush();
+
+            return;
+        }
+
+        if (waitingBatch) {
+            close();
+
+            return;
+        }
+
+        waitingBatch = batch;
+    }
+
+    function flush(): void {
+        if (isClosed || isWaitingForDrain) {
+            return;
+        }
+
+        while (activeBatch) {
+            while (activeFrameIndex < activeBatch.frames.length) {
+                const frame = activeBatch.frames[activeFrameIndex];
+
+                if (!frame) {
+                    close();
+
+                    return;
+                }
+
+                try {
+                    activeFrameIndex += 1;
+
+                    if (!stream.write(frame)) {
+                        isWaitingForDrain = true;
+                        stream.once('drain', onDrain);
+
+                        return;
+                    }
+                } catch {
+                    close();
+
+                    return;
+                }
+            }
+
+            activeBatch = waitingBatch;
+            waitingBatch = undefined;
+            activeFrameIndex = 0;
+        }
+    }
+}
+
+function buildRoomSnapshotBatch(
+    snapshot: RoomSnapshotProjection,
+    now: () => string,
+): BatchBuildResult {
+    const sentAt = normalizedNow(now);
+
+    if (!sentAt) {
+        return { kind: 'invalid' };
+    }
+
+    return buildBatch(
+        [
+            {
+                messageType: 'room.snapshot',
+                revision: 0,
+                sentAt,
+                payload: snapshot,
+            } as RoomRealtimeServerMessage,
+        ],
         0,
     );
 }
 
-function sendRoomDeltas(
-    stream: ServerResponse,
+function buildRoomDeltaBatch(
     previous: RoomSnapshotProjection,
     next: RoomSnapshotProjection,
     revision: number,
     now: () => string,
-): number {
+): BatchBuildResult {
+    const messages: RoomRealtimeServerMessage[] = [];
+    let nextRevision = revision;
     const previousDevices = new Map(previous.devices.map((device) => [device.deviceId, device]));
     const commandDeviceIds = changedCommandDeviceIds(previous, next);
 
@@ -99,96 +229,90 @@ function sendRoomDeltas(
             continue;
         }
 
-        const sentAt = normalizedNow(stream, now);
+        const sentAt = normalizedNow(now);
 
         if (!sentAt) {
-            return revision;
+            return { kind: 'invalid' };
         }
 
-        revision = sendRealtimeMessage(
-            stream,
-            {
-                messageType: 'device.updated',
-                previousRevision: revision,
-                revision: revision + 1,
-                sentAt,
-                payload: device,
-            } as RoomRealtimeServerMessage,
-            revision,
-        );
+        nextRevision += 1;
+        messages.push({
+            messageType: 'device.updated',
+            previousRevision: nextRevision - 1,
+            revision: nextRevision,
+            sentAt,
+            payload: device,
+        } as RoomRealtimeServerMessage);
     }
 
-    if (commandDeviceIds.size === 0) {
-        return sendPlatformDelta(stream, previous, next, revision, now);
-    }
+    if (commandDeviceIds.size > 0) {
+        const sentAt = normalizedNow(now);
 
-    const sentAt = normalizedNow(stream, now);
+        if (!sentAt) {
+            return { kind: 'invalid' };
+        }
 
-    if (!sentAt) {
-        return revision;
-    }
-
-    revision = sendRealtimeMessage(
-        stream,
-        {
+        nextRevision += 1;
+        messages.push({
             messageType: 'commands.updated',
-            previousRevision: revision,
-            revision: revision + 1,
+            previousRevision: nextRevision - 1,
+            revision: nextRevision,
             sentAt,
             payload: {
                 devices: next.devices,
                 activeCommands: next.activeCommands,
                 recentCommands: next.recentCommands,
             },
-        } as RoomRealtimeServerMessage,
-        revision,
-    );
-
-    return sendPlatformDelta(stream, previous, next, revision, now);
-}
-
-function sendPlatformDelta(
-    stream: ServerResponse,
-    previous: RoomSnapshotProjection,
-    next: RoomSnapshotProjection,
-    revision: number,
-    now: () => string,
-): number {
-    if (!next.platform || sameJson(previous.platform, next.platform)) {
-        return revision;
+        } as RoomRealtimeServerMessage);
     }
 
-    const sentAt = normalizedNow(stream, now);
+    if (next.platform && !sameJson(previous.platform, next.platform)) {
+        const sentAt = normalizedNow(now);
 
-    if (!sentAt) {
-        return revision;
-    }
+        if (!sentAt) {
+            return { kind: 'invalid' };
+        }
 
-    return sendRealtimeMessage(
-        stream,
-        {
+        nextRevision += 1;
+        messages.push({
             messageType: 'platform.updated',
-            previousRevision: revision,
-            revision: revision + 1,
+            previousRevision: nextRevision - 1,
+            revision: nextRevision,
             sentAt,
             payload: next.platform,
-        } as RoomRealtimeServerMessage,
-        revision,
-    );
+        } as RoomRealtimeServerMessage);
+    }
+
+    return buildBatch(messages, nextRevision);
 }
 
-function normalizedNow(stream: ServerResponse, now: () => string): string | undefined {
-    if (stream.writableEnded || stream.destroyed) {
+function buildBatch(
+    messages: readonly RoomRealtimeServerMessage[],
+    nextRevision: number,
+): BatchBuildResult {
+    if (messages.length === 0) {
+        return { kind: 'empty' };
+    }
+
+    if (!messages.every(isRoomRealtimeServerMessage)) {
+        return { kind: 'invalid' };
+    }
+
+    return {
+        kind: 'ready',
+        batch: {
+            frames: messages.map(formatSseMessage),
+            nextRevision,
+        },
+    };
+}
+
+function normalizedNow(now: () => string): string | undefined {
+    try {
+        return normalizeIsoTimestamp(now());
+    } catch {
         return undefined;
     }
-
-    const sentAt = normalizeIsoTimestamp(now());
-
-    if (!sentAt) {
-        stream.end();
-    }
-
-    return sentAt;
 }
 
 function changedCommandDeviceIds(
@@ -226,32 +350,6 @@ function changedCommandDeviceIds(
     }
 
     return deviceIds;
-}
-
-function sendRealtimeMessage(
-    stream: ServerResponse,
-    message: RoomRealtimeServerMessage,
-    previousRevision: number,
-): number {
-    if (stream.writableEnded || stream.destroyed || !isRoomRealtimeServerMessage(message)) {
-        stream.end();
-
-        return previousRevision;
-    }
-
-    try {
-        if (!stream.write(formatSseMessage(message))) {
-            stream.end();
-
-            return previousRevision;
-        }
-
-        return message.messageType === 'room.snapshot' ? 0 : message.revision;
-    } catch {
-        stream.end();
-
-        return previousRevision;
-    }
 }
 
 function formatSseMessage(message: RoomRealtimeServerMessage): string {

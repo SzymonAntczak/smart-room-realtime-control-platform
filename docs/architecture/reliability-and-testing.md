@@ -34,6 +34,10 @@ scenarios through automated tests and development controls where applicable:
 - device recovers availability and later reports a fresh observation
 - invalid telemetry payload
 - realtime stream reconnect while retaining the last valid snapshot
+- transient SSE backpressure during a command lifecycle waits for `drain` and
+  preserves contiguous revision-linked updates without reconnecting
+- sustained SSE backpressure beyond one waiting publication batch closes the
+  stream so the client recovers with a fresh snapshot
 
 The completed LED reference slice covers delayed confirmations, command rejection
 and late confirmation after timeout. It also covers an availability change while
