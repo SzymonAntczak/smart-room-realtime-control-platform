@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import type { ActiveCommandProjection, TerminalCommandProjection } from '@smart-room/contracts/commands';
+import type {
+    ActiveCommandProjection,
+    TerminalCommandProjection,
+} from '@smart-room/contracts/commands';
 import type { RecentEventProjection } from '@smart-room/contracts/history';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomPublicationBatch } from '@smart-room/contracts/realtime';
@@ -11,6 +14,7 @@ import type { Clock, TimerScheduler } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
 import { inputFingerprint } from '../platform/event-processing/event-identity';
+import { createRoomProjector } from '../platform/read-model/room-projection';
 import type {
     AcceptedInputIdentity,
     LatestRoomProjectionInput,
@@ -56,6 +60,260 @@ describe('createTemperatureRoomRuntime', () => {
             ]);
         } finally {
             runtime.stop();
+        }
+    });
+
+    it('retains recent caches through history retirement without publishing a cache removal', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-retention-'));
+        const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
+        const clock = createMutableClock('2026-08-01T10:00:00.000Z');
+        const timer = createManualTimer();
+        const baseline = createTemperatureRoomRuntime({ clock }).getRoomSnapshot();
+        const cachedCommand = {
+            commandId: 'cmd-retained-through-history-retirement',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-08-01T09:59:00.000Z',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
+            status: 'failed',
+            failedAt: '2026-08-01T10:00:00.000Z',
+            reason: 'device_rejected',
+            message: 'The simulated LED rejected the command.',
+        } satisfies TerminalCommandProjection;
+        const cachedCommands = Array.from({ length: 20 }, (_, index) => ({
+            ...cachedCommand,
+            commandId: `cmd-retained-${String(19 - index).padStart(2, '0')}`,
+        }));
+        const cachedEvent = {
+            recordId: 'platform:storage-gap:retained-through-history-retirement',
+            eventType: 'storage.gap.recorded',
+            occurredAt: '2026-08-01T10:00:00.000Z',
+            durability: 'durable',
+            storageSequence: 1,
+            source: 'backend',
+            payload: {
+                outageStartedAt: '2026-08-01T09:00:00.000Z',
+                outageEndedAt: '2026-08-01T10:00:00.000Z',
+                failureReason: 'storage_write_failed',
+                boundaryBasis: 'same_process_first_degraded_at',
+                observationsBackfilled: false,
+            },
+        } satisfies RecentEventProjection;
+        const cachedEvents = Array.from({ length: 20 }, (_, index) => ({
+            ...cachedEvent,
+            recordId: `platform:storage-gap:retained-${String(19 - index).padStart(2, '0')}`,
+            storageSequence: 20 - index,
+        }));
+        let runtime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            storage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'history-retired-but-cache-retained',
+                    eventId: 'history-retired-but-cache-retained-event',
+                    eventType: 'device.availability.changed',
+                    occurredAt: clock.now(),
+                    payload: { availability: 'online' },
+                });
+                transaction.saveLatestRoomProjection({
+                    updatedAt: baseline.updatedAt,
+                    projection: {
+                        updatedAt: baseline.updatedAt,
+                        devices: baseline.devices,
+                        activeCommands: baseline.activeCommands,
+                        recentCommands: cachedCommands,
+                    },
+                    projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                    volatileGuards: [],
+                    recentEvents: cachedEvents,
+                });
+            });
+
+            runtime = createTemperatureRoomRuntime({
+                clock,
+                timer,
+                intervalMs: 60_000,
+                snapshotBroadcastIntervalMs: 1_000,
+                storage,
+                generateEventId: createEventIdGenerator(),
+                generateNativeMessageId: createEventIdGenerator(),
+            });
+            runtime.start();
+            const beforeRetirement = runtime.getRoomSnapshot();
+            const batches: RoomPublicationBatch[] = [];
+            runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
+
+            clock.advanceBy(31 * 24 * 60 * 60 * 1_000);
+            timer.run(1);
+
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual(
+                beforeRetirement.recentCommands,
+            );
+            expect(runtime.getRoomSnapshot().recentEvents).toEqual(beforeRetirement.recentEvents);
+            expect(storage.listSignificantFacts()).toEqual([]);
+            expect(batches).toHaveLength(1);
+            expect(batches[0]?.deltas).not.toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ messageType: 'commands.updated' }),
+                ]),
+            );
+
+            const oldestCommandId = beforeRetirement.recentCommands.at(-1)?.commandId;
+            const oldestEventId = beforeRetirement.recentEvents.at(-1)?.recordId;
+
+            if (!oldestCommandId || !oldestEventId) {
+                throw new Error('Expected full recent caches before adding a new candidate.');
+            }
+
+            runtime.runDeviceScenario('led-main', 'reject_command');
+            const response = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+
+            if (response.status !== 'accepted') {
+                throw new Error('Expected a command admission before simulated rejection.');
+            }
+
+            await flushCommandDispatch();
+
+            const afterCandidate = runtime.getRoomSnapshot();
+            expect(afterCandidate.recentCommands).toHaveLength(20);
+            expect(afterCandidate.recentCommands[0]).toMatchObject({
+                commandId: response.commandId,
+                status: 'failed',
+            });
+            expect(
+                afterCandidate.recentCommands.some(
+                    (command) => command.commandId === oldestCommandId,
+                ),
+            ).toBe(false);
+            expect(afterCandidate.recentEvents).toHaveLength(20);
+            expect(
+                afterCandidate.recentEvents.some(
+                    (event) => 'commandId' in event && event.commandId === response.commandId,
+                ),
+            ).toBe(true);
+            expect(
+                afterCandidate.recentEvents.some((event) => event.recordId === oldestEventId),
+            ).toBe(false);
+        } finally {
+            runtime?.stop();
+            storage.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('keeps the same greatest command cache through live insertion, checkpoint restore and recovery', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00.000Z');
+        const projector = createRoomProjector({
+            initialUpdatedAt: clock.now(),
+            devices: [{ deviceId: 'led-main', name: 'Main LED', role: 'led-output' }],
+        });
+        const terminalAt = '2026-09-03T09:00:02.000Z';
+
+        for (let index = 0; index < 23; index += 1) {
+            const commandId = `cmd-tied-${String(index).padStart(2, '0')}`;
+            projector.applyCommandRequested({
+                eventId: `evt-requested-${commandId}`,
+                eventType: 'command.requested',
+                occurredAt: '2026-09-03T09:00:00.000Z',
+                source: 'backend',
+                deviceId: 'led-main',
+                commandId,
+                payload: {
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                    requestedBy: 'user',
+                },
+            });
+            projector.applyCommandFailed({
+                eventId: `evt-failed-${commandId}`,
+                eventType: 'command.failed',
+                occurredAt: terminalAt,
+                source: 'backend',
+                deviceId: 'led-main',
+                commandId,
+                payload: {
+                    reason: 'device_rejected',
+                    message: 'The simulated LED rejected the command.',
+                },
+            });
+        }
+
+        const liveProjection = projector.getProjection();
+        const checkpoint: LatestRoomProjectionInput = {
+            updatedAt: liveProjection.updatedAt,
+            projection: liveProjection,
+            projectionEvidence: projector.getEvidence(),
+            volatileGuards: [],
+            recentEvents: [],
+        };
+        const expectedCommandIds = Array.from(
+            { length: 20 },
+            (_, index) => `cmd-tied-${String(22 - index).padStart(2, '0')}`,
+        );
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-cache-ordering-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const initialStorage = createSqliteRoomStorage({ databasePath });
+        let restoredStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let restoredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+        let recoveryRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            initialStorage.transact((transaction) =>
+                transaction.saveLatestRoomProjection(checkpoint),
+            );
+            expect(liveProjection.recentCommands.map((command) => command.commandId)).toEqual(
+                expectedCommandIds,
+            );
+            initialStorage.close();
+
+            restoredStorage = createSqliteRoomStorage({ databasePath });
+            restoredRuntime = createTemperatureRoomRuntime({
+                clock,
+                storage: restoredStorage,
+                timer: createManualTimer(),
+            });
+            expect(restoredRuntime.getRoomSnapshot().recentCommands).toEqual(
+                liveProjection.recentCommands,
+            );
+
+            const recoveryStorage = createScriptedStorage();
+            recoveryStorage.seedCheckpoint(checkpoint);
+            const recoveryTimer = createManualTimer();
+            let factoryCalls = 0;
+            recoveryRuntime = createTemperatureRoomRuntime({
+                clock,
+                timer: createManualTimer(),
+                recoveryTimer,
+                storageFactory() {
+                    factoryCalls += 1;
+
+                    if (factoryCalls === 1) {
+                        throw new StorageAvailabilityError('database is busy', undefined);
+                    }
+
+                    return recoveryStorage.port;
+                },
+                generateEventId: createEventIdGenerator(),
+                generateNativeMessageId: createEventIdGenerator(),
+            });
+            recoveryRuntime.start();
+            recoveryTimer.runLatest();
+
+            expect(recoveryRuntime.getRoomSnapshot().recentCommands).toEqual(
+                liveProjection.recentCommands,
+            );
+        } finally {
+            initialStorage.close();
+            restoredRuntime?.stop();
+            restoredStorage?.close();
+            recoveryRuntime?.stop();
+            rmSync(directory, { force: true, recursive: true });
         }
     });
 
@@ -3122,9 +3380,7 @@ function device(runtime: ReturnType<typeof createTemperatureRoomRuntime>, device
     return runtime.getRoomSnapshot().devices.find((candidate) => candidate.deviceId === deviceId);
 }
 
-function createMixedRestartCheckpoint(
-    clock: Clock,
-): LatestRoomProjectionInput & {
+function createMixedRestartCheckpoint(clock: Clock): LatestRoomProjectionInput & {
     projection: Pick<
         RoomSnapshotProjection,
         'updatedAt' | 'devices' | 'activeCommands' | 'recentCommands'

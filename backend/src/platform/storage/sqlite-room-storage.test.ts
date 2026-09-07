@@ -658,7 +658,7 @@ describe('SQLite room storage', () => {
             .get() as { projection_json: string };
         database.close();
 
-        expect(JSON.parse(row.projection_json)).toMatchObject({ checkpointVersion: 3 });
+        expect(JSON.parse(row.projection_json)).toMatchObject({ checkpointVersion: 4 });
     });
 
     it('migrates a known version 0 checkpoint and remains idempotent on reopen', () => {
@@ -713,7 +713,7 @@ describe('SQLite room storage', () => {
         ).projection_json;
         reopenedDatabase.close();
 
-        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 3 });
+        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 4 });
         expect(afterSecondOpen).toBe(afterFirstOpen);
     });
 
@@ -751,7 +751,168 @@ describe('SQLite room storage', () => {
         );
         migratedDatabase.close();
 
-        expect(migratedCheckpoint).toMatchObject({ checkpointVersion: 3 });
+        expect(migratedCheckpoint).toMatchObject({ checkpointVersion: 4 });
+    });
+
+    it('migrates a version 3 checkpoint to canonical recent-command ordering', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        storage.close();
+        const prior = versionOneCheckpoint();
+        const sourceCommand = prior.projection.recentCommands[0];
+        const sourceDevice = prior.projection.devices[0];
+
+        if (!sourceCommand || !sourceDevice) {
+            throw new Error('Expected version 1 checkpoint fixtures.');
+        }
+
+        const { activeCommandId, ...device } = sourceDevice;
+        void activeCommandId;
+        const checkpoint = {
+            ...prior,
+            checkpointVersion: 3,
+            projection: {
+                ...prior.projection,
+                devices: [device],
+                recentCommands: [
+                    { ...sourceCommand, commandId: 'cmd-a' },
+                    { ...sourceCommand, commandId: 'cmd-z' },
+                ],
+            },
+            recentEvents: [],
+        };
+        const database = new DatabaseSync(databasePath);
+        database
+            .prepare(
+                `INSERT INTO latest_room_projection (id, updated_at, projection_json)
+                 VALUES (1, ?, ?)`,
+            )
+            .run('2026-08-14T10:00:01.000Z', JSON.stringify(checkpoint));
+        database.close();
+
+        const migrated = createSqliteRoomStorage({ databasePath });
+        expect(migrated.getLatestRoomProjection()?.projection).toMatchObject({
+            recentCommands: [{ commandId: 'cmd-z' }, { commandId: 'cmd-a' }],
+        });
+        migrated.close();
+
+        const migratedDatabase = new DatabaseSync(databasePath, { readOnly: true });
+        const afterFirstOpen = (
+            migratedDatabase
+                .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+                .get() as { projection_json: string }
+        ).projection_json;
+        migratedDatabase.close();
+
+        const reopened = createSqliteRoomStorage({ databasePath });
+        reopened.close();
+        const reopenedDatabase = new DatabaseSync(databasePath, { readOnly: true });
+        const afterSecondOpen = (
+            reopenedDatabase
+                .prepare('SELECT projection_json FROM latest_room_projection WHERE id = 1')
+                .get() as { projection_json: string }
+        ).projection_json;
+        reopenedDatabase.close();
+
+        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 4 });
+        expect(afterSecondOpen).toBe(afterFirstOpen);
+    });
+
+    it('canonicalizes recent commands when saving the current checkpoint format', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const prior = versionOneCheckpoint();
+        const sourceCommand = prior.projection.recentCommands[0];
+        const sourceDevice = prior.projection.devices[0];
+
+        if (!sourceCommand || !sourceDevice) {
+            throw new Error('Expected version 1 checkpoint fixtures.');
+        }
+
+        const { activeCommandId, ...device } = sourceDevice;
+        void activeCommandId;
+        storage.transact((transaction) => {
+            transaction.saveLatestRoomProjection({
+                updatedAt: prior.projection.updatedAt,
+                projection: {
+                    ...prior.projection,
+                    devices: [device],
+                    recentCommands: [
+                        { ...sourceCommand, commandId: 'cmd-a' },
+                        { ...sourceCommand, commandId: 'cmd-z' },
+                    ],
+                },
+                projectionEvidence: prior.projectionEvidence,
+                volatileGuards: [],
+                recentEvents: [],
+            });
+        });
+
+        expect(storage.getLatestRoomProjection()?.projection).toMatchObject({
+            recentCommands: [{ commandId: 'cmd-z' }, { commandId: 'cmd-a' }],
+        });
+        storage.close();
+    });
+
+    it('preserves command and event caches when history retention retires their records', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const prior = versionOneCheckpoint();
+        const sourceCommand = prior.projection.recentCommands[0];
+        const sourceDevice = prior.projection.devices[0];
+
+        if (!sourceCommand || !sourceDevice) {
+            throw new Error('Expected version 1 checkpoint fixtures.');
+        }
+
+        const { activeCommandId, ...device } = sourceDevice;
+        void activeCommandId;
+        const projection = {
+            ...prior.projection,
+            devices: [device],
+            recentCommands: [{ ...sourceCommand, commandId: 'cmd-retained' }],
+        };
+        const recentEvents = [
+            {
+                recordId: 'platform:storage-gap:retained',
+                eventType: 'storage.gap.recorded' as const,
+                occurredAt: '2026-08-01T00:00:00.000Z',
+                durability: 'durable' as const,
+                storageSequence: 1,
+                source: 'backend' as const,
+                payload: {
+                    outageStartedAt: '2026-08-01T00:00:00.000Z',
+                    outageEndedAt: '2026-08-01T00:00:00.000Z',
+                    failureReason: 'storage_write_failed',
+                    boundaryBasis: 'same_process_first_degraded_at' as const,
+                    observationsBackfilled: false as const,
+                },
+            },
+        ];
+
+        storage.transact((transaction) => {
+            transaction.appendSignificantFact({
+                recordId: 'retained-cache-history-record',
+                eventId: 'retained-cache-history-event',
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-08-01T00:00:00.000Z',
+                payload: { availability: 'online' },
+            });
+            transaction.saveLatestRoomProjection({
+                updatedAt: projection.updatedAt,
+                projection,
+                projectionEvidence: { availabilityDeviceIds: ['led-main'], healthDeviceIds: [] },
+                volatileGuards: [],
+                recentEvents,
+            });
+        });
+
+        const checkpointBeforeRetirement = storage.getLatestRoomProjection();
+        storage.transact((transaction) =>
+            transaction.retireExpiredRecords({ asOf: '2026-09-01T00:00:00.000Z' }),
+        );
+
+        expect(storage.listSignificantFacts()).toEqual([]);
+        expect(storage.getLatestRoomProjection()).toEqual(checkpointBeforeRetirement);
+        storage.close();
     });
 
     it('rejects an unknown or malformed checkpoint version without rewriting it', () => {
@@ -786,7 +947,7 @@ describe('SQLite room storage', () => {
         const futureDatabase = new DatabaseSync(databasePath);
         futureDatabase
             .prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1')
-            .run(JSON.stringify({ ...legacyCheckpoint(), checkpointVersion: 4 }));
+            .run(JSON.stringify({ ...legacyCheckpoint(), checkpointVersion: 5 }));
         futureDatabase.close();
 
         expect(() => createSqliteRoomStorage({ databasePath })).toThrow(StorageMigrationError);
@@ -809,7 +970,7 @@ describe('SQLite room storage', () => {
         const database = new DatabaseSync(databasePath);
         database.prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1').run(
             JSON.stringify({
-                checkpointVersion: 3,
+                checkpointVersion: 4,
                 projection: null,
                 projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
                 volatileGuards: [],
@@ -857,7 +1018,7 @@ describe('SQLite room storage', () => {
         const database = new DatabaseSync(databasePath);
         database.prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1').run(
             JSON.stringify({
-                checkpointVersion: 3,
+                checkpointVersion: 4,
                 projection: emptyRoomProjection(duplicateGap.occurredAt),
                 projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
                 volatileGuards: [],
@@ -886,7 +1047,7 @@ describe('SQLite room storage', () => {
             .prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1')
             .run(
                 JSON.stringify({
-                    checkpointVersion: 3,
+                    checkpointVersion: 4,
                     projection: emptyRoomProjection(duplicateGap.occurredAt),
                     projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
                     volatileGuards: [],

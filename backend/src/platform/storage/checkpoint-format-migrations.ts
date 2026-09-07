@@ -1,10 +1,14 @@
 import type { DatabaseSync } from 'node:sqlite';
 
+import {
+    selectRecentCommands,
+    type TerminalCommandProjection,
+} from '@smart-room/contracts/commands';
 import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 
 import { StorageMigrationError } from './storage-errors';
 
-const latestCheckpointVersion = 3;
+const latestCheckpointVersion = 4;
 
 /** Migrates the JSON document stored in the singleton room-projection row. */
 export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): void {
@@ -25,13 +29,15 @@ export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): v
     }
 
     const migrated =
-        checkpoint.checkpointVersion === 2
-            ? migrateVersionTwoCheckpoint(checkpoint)
-            : checkpoint.checkpointVersion === 1
-              ? migrateVersionOneCheckpoint(checkpoint)
-              : 'checkpointVersion' in checkpoint
-                ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
-                : migrateVersionZeroCheckpoint(checkpoint);
+        checkpoint.checkpointVersion === 3
+            ? migrateVersionThreeCheckpoint(checkpoint)
+            : checkpoint.checkpointVersion === 2
+              ? migrateVersionTwoCheckpoint(checkpoint)
+              : checkpoint.checkpointVersion === 1
+                ? migrateVersionOneCheckpoint(checkpoint)
+                : 'checkpointVersion' in checkpoint
+                  ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
+                  : migrateVersionZeroCheckpoint(checkpoint);
 
     assertMigratedCheckpointIsValid(migrated);
 
@@ -57,29 +63,45 @@ function migrateVersionZeroCheckpoint(
     const migratedActiveCommands = activeCommands.map((command) => migrateCommand(command));
 
     return {
-        ...normalizeActiveCommandIds({
-            ...checkpoint,
-            checkpointVersion: latestCheckpointVersion,
-            projection: {
-                ...projection,
-                activeCommands: migratedActiveCommands,
-                recentCommands: recentCommands.map((command) => migrateCommand(command)),
-                devices,
-            },
-        }),
+        ...normalizeRecentCommands(
+            normalizeActiveCommandIds({
+                ...checkpoint,
+                checkpointVersion: latestCheckpointVersion,
+                projection: {
+                    ...projection,
+                    activeCommands: migratedActiveCommands,
+                    recentCommands: recentCommands.map((command) => migrateCommand(command)),
+                    devices,
+                },
+            }),
+        ),
         recentEvents: [],
     };
 }
 
 function migrateVersionOneCheckpoint(checkpoint: Record<string, unknown>): Record<string, unknown> {
     return {
-        ...normalizeActiveCommandIds({ ...checkpoint, checkpointVersion: latestCheckpointVersion }),
+        ...normalizeRecentCommands(
+            normalizeActiveCommandIds({
+                ...checkpoint,
+                checkpointVersion: latestCheckpointVersion,
+            }),
+        ),
         recentEvents: [],
     };
 }
 
 function migrateVersionTwoCheckpoint(checkpoint: Record<string, unknown>): Record<string, unknown> {
-    return { ...checkpoint, checkpointVersion: latestCheckpointVersion, recentEvents: [] };
+    return {
+        ...normalizeRecentCommands({ ...checkpoint, checkpointVersion: latestCheckpointVersion }),
+        recentEvents: [],
+    };
+}
+
+function migrateVersionThreeCheckpoint(
+    checkpoint: Record<string, unknown>,
+): Record<string, unknown> {
+    return normalizeRecentCommands({ ...checkpoint, checkpointVersion: latestCheckpointVersion });
 }
 
 function unsupportedCheckpointVersion(checkpointVersion: unknown): never {
@@ -128,6 +150,46 @@ function normalizeActiveCommandIds(checkpoint: Record<string, unknown>): Record<
             }),
         },
     };
+}
+
+function normalizeRecentCommands(checkpoint: Record<string, unknown>): Record<string, unknown> {
+    const projection = record(checkpoint.projection, 'checkpoint projection');
+    const recentCommands = array(projection.recentCommands, 'checkpoint recent commands').map(
+        toTerminalCommandProjection,
+    );
+
+    return {
+        ...checkpoint,
+        projection: {
+            ...projection,
+            recentCommands: selectRecentCommands(recentCommands),
+        },
+    };
+}
+
+function toTerminalCommandProjection(value: unknown): TerminalCommandProjection {
+    const command = record(value, 'checkpoint terminal command');
+    const status = nonEmptyStringField(command, 'status');
+    nonEmptyStringField(command, 'commandId');
+
+    switch (status) {
+        case 'confirmed':
+            stringField(command, 'confirmedAt');
+            break;
+        case 'failed':
+            stringField(command, 'failedAt');
+            break;
+        case 'timed_out':
+            stringField(command, 'timedOutAt');
+            break;
+        default:
+            throw new StorageMigrationError(
+                'Checkpoint recent command has an unsupported terminal status.',
+                command,
+            );
+    }
+
+    return command as unknown as TerminalCommandProjection;
 }
 
 function migrateCommand(value: unknown): Record<string, unknown> {

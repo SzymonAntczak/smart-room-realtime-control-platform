@@ -1,6 +1,7 @@
-import type {
-    ActiveCommandProjection,
-    TerminalCommandProjection,
+import {
+    type ActiveCommandProjection,
+    selectRecentCommands,
+    type TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
 import type { DeviceRole, DeviceState } from '@smart-room/contracts/devices';
 import type {
@@ -611,7 +612,11 @@ export function createRoomProjector({
                 activeByDeviceId.set(command.deviceId, structuredClone(command));
             }
 
-            recent.push(...projection.recentCommands.map((command) => structuredClone(command)));
+            recent.push(
+                ...selectRecentCommands(projection.recentCommands).map((command) =>
+                    structuredClone(command),
+                ),
+            );
 
             for (const source of evidence?.commandConfirmationSources ?? []) {
                 if (
@@ -668,9 +673,7 @@ export function createRoomProjector({
     }
 
     function addRecent(command: TerminalCommandProjection): void {
-        recent.push(command);
-        recent.sort((left, right) => terminalTimestamp(right) - terminalTimestamp(left));
-        recent.splice(20);
+        recent.splice(0, recent.length, ...selectRecentCommands([...recent, command]));
 
         const retainedCommandIds = new Set(recent.map((recentCommand) => recentCommand.commandId));
 
@@ -803,16 +806,6 @@ function toRejectedCommandFailure(event: CommandFailedEvent): TerminalCommandPro
         reason: event.payload.reason,
         message: event.payload.message,
     };
-}
-
-function terminalTimestamp(command: TerminalCommandProjection): number {
-    return Date.parse(
-        command.status === 'confirmed'
-            ? command.confirmedAt
-            : command.status === 'failed'
-              ? command.failedAt
-              : command.timedOutAt,
-    );
 }
 
 const defaultFreshnessThresholdsByRole: FreshnessThresholdsByRole = {

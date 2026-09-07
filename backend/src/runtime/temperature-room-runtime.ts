@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { clearInterval, setInterval, setTimeout } from 'node:timers';
 
-import type {
-    AcceptedCommandResponse,
-    PreAdmissionCommandErrorResponse,
-    RejectedCommandResponse,
-    SetPowerCommandRequest,
+import {
+    type AcceptedCommandResponse,
+    type PreAdmissionCommandErrorResponse,
+    type RejectedCommandResponse,
+    selectRecentCommands,
+    type SetPowerCommandRequest,
 } from '@smart-room/contracts/commands';
 import {
     deviceConnectionScenarioActions,
@@ -2050,10 +2051,7 @@ function mergeRecoveryProjection(
                 : { ...withoutActiveCommand, activeCommandId };
         }),
         activeCommands,
-        recentCommands: mergedCommands
-            .filter(isTerminalCommand)
-            .sort(compareTerminalCommands)
-            .slice(0, 20),
+        recentCommands: selectRecentCommands(mergedCommands.filter(isTerminalCommand)),
     };
 }
 
@@ -2149,24 +2147,6 @@ function isTerminalCommand(
     command: RoomProjection['activeCommands'][number] | RoomProjection['recentCommands'][number],
 ): command is RoomProjection['recentCommands'][number] {
     return ['confirmed', 'failed', 'timed_out'].includes(command.status);
-}
-
-function compareTerminalCommands(
-    left: RoomProjection['recentCommands'][number],
-    right: RoomProjection['recentCommands'][number],
-): number {
-    return (
-        Date.parse(terminalCommandTimestamp(right)) - Date.parse(terminalCommandTimestamp(left)) ||
-        right.commandId.localeCompare(left.commandId)
-    );
-}
-
-function terminalCommandTimestamp(command: RoomProjection['recentCommands'][number]): string {
-    if (command.status === 'confirmed') {
-        return command.confirmedAt;
-    }
-
-    return command.status === 'failed' ? command.failedAt : command.timedOutAt;
 }
 
 function hasConflictingActiveCommands(projection: RoomProjection): boolean {

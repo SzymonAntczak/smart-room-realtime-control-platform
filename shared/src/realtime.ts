@@ -1,6 +1,10 @@
 import { type Static, Type } from '@sinclair/typebox';
 
-import type { ActiveCommandProjection, TerminalCommandProjection } from './commands';
+import {
+    type ActiveCommandProjection,
+    isRecentCommandsOrdered,
+    type TerminalCommandProjection,
+} from './commands';
 import type { RecentEventProjection } from './history';
 import { isRecentEventsOrdered, recentEventsProjectionSchema } from './history';
 import type { DeviceProjection, PlatformStorageProjection } from './projections';
@@ -343,11 +347,7 @@ function hasCanonicalCommandTimestamps(
                     );
             }
         }) &&
-        recentCommands.every((command, index) => {
-            const next = recentCommands[index + 1];
-
-            return next === undefined || terminalTimestamp(command) >= terminalTimestamp(next);
-        })
+        isRecentCommandsOrdered(recentCommands)
     );
 }
 
@@ -449,15 +449,4 @@ function areChronological(...timestamps: string[]): boolean {
         (timestamp, index) =>
             index === 0 || Date.parse(timestamps[index - 1]) <= Date.parse(timestamp),
     );
-}
-
-function terminalTimestamp(command: Static<typeof terminalCommandProjectionSchema>): number {
-    switch (command.status) {
-        case 'confirmed':
-            return Date.parse(command.confirmedAt);
-        case 'failed':
-            return Date.parse(command.failedAt);
-        case 'timed_out':
-            return Date.parse(command.timedOutAt);
-    }
 }

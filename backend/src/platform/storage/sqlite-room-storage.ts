@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
+import { selectRecentCommands } from '@smart-room/contracts/commands';
 import {
     isRecentEventsOrdered,
     type RecentEventProjection,
     recentEventsProjectionSchema,
 } from '@smart-room/contracts/history';
+import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 import { isSchema } from '@smart-room/contracts/validation';
 
@@ -1143,11 +1145,19 @@ function toStoredCheckpoint(input: LatestRoomProjectionInput): Pick<
     LatestRoomProjectionInput,
     'projection' | 'projectionEvidence' | 'volatileGuards' | 'recentEvents'
 > & {
-    checkpointVersion: 3;
+    checkpointVersion: 4;
 } {
+    const projection = input.projection as Pick<
+        RoomSnapshotProjection,
+        'updatedAt' | 'devices' | 'activeCommands' | 'recentCommands'
+    >;
+
     return {
-        checkpointVersion: 3,
-        projection: input.projection,
+        checkpointVersion: 4,
+        projection: {
+            ...projection,
+            recentCommands: selectRecentCommands(projection.recentCommands),
+        },
         projectionEvidence: input.projectionEvidence,
         volatileGuards: input.volatileGuards,
         recentEvents: input.recentEvents,
@@ -1162,7 +1172,7 @@ function fromStoredCheckpoint(
 > {
     if (
         !isRecord(value) ||
-        value.checkpointVersion !== 3 ||
+        value.checkpointVersion !== 4 ||
         !isStoredRoomProjection(value.projection) ||
         !isProjectionEvidence(value.projectionEvidence) ||
         !Array.isArray(value.volatileGuards) ||

@@ -505,6 +505,32 @@ describe('realtime schemas', () => {
         ).toBe(false);
     });
 
+    it('requires command-ID ordering when terminal timestamps tie', () => {
+        const snapshot = createSnapshotWithActiveCommands([]);
+        snapshot.payload.devices = [createLedDevice()];
+        const terminal = {
+            commandId: 'cmd-z',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            status: 'confirmed',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-06-08T09:30:00Z',
+            delivery: {
+                status: 'handed_off',
+                dispatchedAt: '2026-06-08T09:30:01Z',
+                deadlineAt: '2026-06-08T09:31:00Z',
+            },
+            confirmedAt: '2026-06-08T09:30:02Z',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
+        };
+        snapshot.payload.recentCommands = [terminal, { ...terminal, commandId: 'cmd-a' }];
+
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
+        snapshot.payload.recentCommands.reverse();
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
+    });
+
     it('requires command history in every snapshot', () => {
         const snapshot = createSnapshotWithActiveCommands([]);
         const payloadWithoutHistory = Object.fromEntries(

@@ -306,6 +306,32 @@ describe('command lifecycle projections', () => {
         expect(recentCommands[0]?.commandId).toBe('cmd-21');
         expect(recentCommands.at(-1)?.commandId).toBe('cmd-2');
     });
+
+    it('uses the same terminal-time and command-ID order during live insertion and restore', () => {
+        const projector = createLedProjector();
+        projector.applyDeviceStateReported(report('off'));
+        const terminalAt = '2026-08-05T10:00:02Z';
+
+        for (const commandId of ['cmd-a', 'cmd-z', 'cmd-m']) {
+            projector.applyCommandRequested(requested(commandId, 'on'));
+            projector.applyCommandFailed(failed(commandId, terminalAt));
+        }
+
+        const live = projector.getProjection();
+        expect(live.recentCommands.map((command) => command.commandId)).toEqual([
+            'cmd-z',
+            'cmd-m',
+            'cmd-a',
+        ]);
+
+        projector.installProjection(
+            { ...live, recentCommands: [...live.recentCommands].reverse() },
+            live.updatedAt,
+            projector.getEvidence(),
+        );
+
+        expect(projector.getProjection().recentCommands).toEqual(live.recentCommands);
+    });
 });
 
 function createLedProjector() {

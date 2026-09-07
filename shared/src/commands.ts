@@ -85,6 +85,53 @@ export type TerminalCommandProjection =
     | ConfirmedCommandProjection
     | FailedCommandProjection
     | TimedOutCommandProjection;
+
+/** Canonical terminal time for the discriminated command lifecycle. */
+export function terminalCommandTimestamp(command: TerminalCommandProjection): string {
+    switch (command.status) {
+        case 'confirmed':
+            return command.confirmedAt;
+        case 'failed':
+            return command.failedAt;
+        case 'timed_out':
+            return command.timedOutAt;
+    }
+}
+
+/** Deterministic cache order: terminal time descending, then command ID descending. */
+export function compareTerminalCommandsDescending(
+    left: TerminalCommandProjection,
+    right: TerminalCommandProjection,
+): number {
+    const timestampOrder =
+        Date.parse(terminalCommandTimestamp(right)) - Date.parse(terminalCommandTimestamp(left));
+
+    if (timestampOrder !== 0) {
+        return timestampOrder;
+    }
+
+    if (left.commandId === right.commandId) {
+        return 0;
+    }
+
+    return left.commandId > right.commandId ? -1 : 1;
+}
+
+/** Returns the bounded canonical recent-command cache without concealing duplicates. */
+export function selectRecentCommands(
+    commands: readonly TerminalCommandProjection[],
+): TerminalCommandProjection[] {
+    return [...commands].sort(compareTerminalCommandsDescending).slice(0, 20);
+}
+
+export function isRecentCommandsOrdered(commands: readonly TerminalCommandProjection[]): boolean {
+    return commands.every((command, index) => {
+        const next = commands[index + 1];
+
+        return next === undefined || compareTerminalCommandsDescending(command, next) <= 0;
+    });
+}
+
 export const powerStateSchema = Type.Union([Type.Literal('on'), Type.Literal('off')]);
 export const powerStateProjectionSchema = Type.Object(
     { power: powerStateSchema },

@@ -205,7 +205,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       Done when: a restart exposes the saved projection and bounded explanations
       with their original durability markers.
 
-- [ ] Define one deterministic ordering and maintenance path for recent caches.
+- [x] Define one deterministic ordering and maintenance path for recent caches.
       Order recent commands by descending discriminated terminal time and then
       descending `commandId`, identically during live insertion, checkpoint and
       restore. Keep the command and event caches independent of 30-day history
