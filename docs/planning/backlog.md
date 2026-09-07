@@ -196,7 +196,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       cutover assignment, bounded queued input, recovery conflicts, gap delivery
       and return to available.
 
-- [ ] Restore the persisted room projection and bounded caches at startup.
+- [x] Restore the persisted room projection and bounded caches at startup.
       Rehydrate the latest projection, active commands, newest 20
       `recentCommands` and the bounded `recentEvents` projection cache before
       the first snapshot. Restore volatile feed entries without turning them

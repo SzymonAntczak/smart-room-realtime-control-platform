@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import type { ActiveCommandProjection, TerminalCommandProjection } from '@smart-room/contracts/commands';
 import type { RecentEventProjection } from '@smart-room/contracts/history';
+import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomPublicationBatch } from '@smart-room/contracts/realtime';
 import type { Clock, TimerScheduler } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
@@ -1708,6 +1710,55 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('restores a mixed checkpoint and bounded caches without promoting volatile feed entries', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-restart-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const checkpoint = createMixedRestartCheckpoint(clock);
+        const initialStorage = createSqliteRoomStorage({ databasePath });
+        let restoredStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let restoredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            const saved = initialStorage.transact((transaction) => {
+                transaction.saveLatestRoomProjection(checkpoint);
+            });
+
+            expect(saved.status).toBe('committed');
+            const historyBeforeRestart = initialStorage.listSignificantFacts();
+            initialStorage.close();
+
+            restoredStorage = createSqliteRoomStorage({ databasePath });
+            restoredRuntime = createTemperatureRoomRuntime({
+                clock,
+                storage: restoredStorage,
+                timer: createManualTimer(),
+                commandTimer: createCommandTimer(),
+            });
+
+            const snapshot = restoredRuntime.getRoomSnapshot();
+
+            expect(snapshot.updatedAt).toBe(checkpoint.projection.updatedAt);
+            expect(snapshot.devices).toEqual(checkpoint.projection.devices);
+            expect(snapshot.activeCommands).toEqual(checkpoint.projection.activeCommands);
+            expect(snapshot.recentCommands).toEqual(checkpoint.projection.recentCommands);
+            expect(snapshot.recentCommands).toHaveLength(20);
+            expect(snapshot.recentEvents).toEqual(checkpoint.recentEvents);
+            expect(snapshot.recentEvents).toHaveLength(2);
+            expect(snapshot.recentEvents[0]).toMatchObject({
+                recordId: 'checkpoint-volatile-feed',
+                durability: 'volatile',
+            });
+            expect(snapshot.recentEvents[0]).not.toHaveProperty('storageSequence');
+            expect(restoredStorage.listSignificantFacts()).toEqual(historyBeforeRestart);
+        } finally {
+            initialStorage.close();
+            restoredRuntime?.stop();
+            restoredStorage?.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
     it('starts from a migrated legacy checkpoint without retaining a terminal command as active', async () => {
         const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
         const databasePath = join(directory, 'room.sqlite');
@@ -3069,6 +3120,155 @@ describe('createTemperatureRoomRuntime', () => {
 
 function device(runtime: ReturnType<typeof createTemperatureRoomRuntime>, deviceId: string) {
     return runtime.getRoomSnapshot().devices.find((candidate) => candidate.deviceId === deviceId);
+}
+
+function createMixedRestartCheckpoint(
+    clock: Clock,
+): LatestRoomProjectionInput & {
+    projection: Pick<
+        RoomSnapshotProjection,
+        'updatedAt' | 'devices' | 'activeCommands' | 'recentCommands'
+    >;
+} {
+    const baseline = createTemperatureRoomRuntime({
+        clock,
+        timer: createManualTimer(),
+    }).getRoomSnapshot();
+    const timestamp = clock.now();
+    const activeCommand = {
+        commandId: 'checkpoint-active-command',
+        deviceId: 'led-main',
+        commandType: 'set.power',
+        requestedState: { power: 'on' },
+        requestedAt: timestamp,
+        durability: 'durable',
+        lifecycleDurability: 'volatile',
+        status: 'accepted',
+    } satisfies ActiveCommandProjection;
+    const recentCommands: TerminalCommandProjection[] = Array.from({ length: 20 }, (_, index) => {
+        const failedAt = new Date(Date.parse(timestamp) - (index + 1) * 1_000).toISOString();
+
+        return {
+            commandId: `checkpoint-terminal-${String(index).padStart(2, '0')}`,
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            requestedState: { power: index % 2 === 0 ? 'off' : 'on' },
+            requestedAt: new Date(Date.parse(failedAt) - 1_000).toISOString(),
+            durability: index % 2 === 0 ? 'durable' : 'volatile',
+            lifecycleDurability: index % 2 === 0 ? 'volatile' : 'durable',
+            status: 'failed',
+            failedAt,
+            reason: 'checkpoint_restart_fixture',
+            message: 'Persisted terminal command used for restart verification.',
+        };
+    });
+    const devices = baseline.devices.map((candidate) => {
+        if (candidate.deviceId === 'temp-desk') {
+            return {
+                ...candidate,
+                availability: 'online' as const,
+                availabilityChangedAt: timestamp,
+                availabilityDurability: 'volatile' as const,
+                health: 'degraded' as const,
+                healthChangedAt: timestamp,
+                healthDurability: 'durable' as const,
+                healthReason: 'partial_data',
+                reportedState: { temperature: 22.4, temperatureUnit: 'celsius' },
+                observationStatus: {
+                    temperature: {
+                        freshness: 'fresh' as const,
+                        lastObservedAt: timestamp,
+                        durability: 'volatile' as const,
+                    },
+                },
+            };
+        }
+
+        if (candidate.deviceId === 'temp-window') {
+            return {
+                ...candidate,
+                availability: 'offline' as const,
+                availabilityChangedAt: timestamp,
+                availabilityDurability: 'durable' as const,
+                availabilityReason: 'checkpoint_restart_fixture',
+                health: 'healthy' as const,
+                healthChangedAt: timestamp,
+                healthDurability: 'volatile' as const,
+                observationStatus: {
+                    temperature: { freshness: 'unknown' as const, durability: 'volatile' as const },
+                },
+            };
+        }
+
+        if (candidate.deviceId === 'led-main') {
+            return {
+                ...candidate,
+                availability: 'online' as const,
+                availabilityChangedAt: timestamp,
+                availabilityDurability: 'durable' as const,
+                health: 'healthy' as const,
+                healthChangedAt: timestamp,
+                healthDurability: 'volatile' as const,
+                reportedState: { power: 'off' as const },
+                observationStatus: {
+                    power: { freshness: 'unknown' as const, durability: 'volatile' as const },
+                },
+                commandAvailability: { policy: 'allow' as const },
+                activeCommandId: activeCommand.commandId,
+            };
+        }
+
+        return candidate;
+    });
+    const projection = {
+        updatedAt: timestamp,
+        devices,
+        activeCommands: [activeCommand],
+        recentCommands,
+    } satisfies Pick<
+        RoomSnapshotProjection,
+        'updatedAt' | 'devices' | 'activeCommands' | 'recentCommands'
+    >;
+    const recentEvents: RecentEventProjection[] = [
+        {
+            recordId: 'checkpoint-volatile-feed',
+            eventType: 'device.availability.changed',
+            occurredAt: timestamp,
+            durability: 'volatile',
+            deviceId: 'temp-desk',
+            source: 'simulator-adapter',
+            payload: {
+                previousAvailability: 'unknown',
+                availability: 'online',
+                reason: 'checkpoint_restart_fixture',
+            },
+        },
+        {
+            recordId: 'checkpoint-durable-feed',
+            eventType: 'device.availability.changed',
+            occurredAt: new Date(Date.parse(timestamp) - 1_000).toISOString(),
+            durability: 'durable',
+            storageSequence: 7,
+            deviceId: 'temp-window',
+            source: 'simulator-adapter',
+            payload: {
+                previousAvailability: 'unknown',
+                availability: 'offline',
+                reason: 'checkpoint_restart_fixture',
+            },
+        },
+    ];
+
+    return {
+        updatedAt: timestamp,
+        projection,
+        projectionEvidence: {
+            availabilityDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+            healthDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+        },
+        volatileGuards: [],
+        recentEvents,
+    };
 }
 
 function writeLegacyCommandCheckpoint(databasePath: string): string {
