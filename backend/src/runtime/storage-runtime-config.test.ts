@@ -13,13 +13,30 @@ import {
 
 describe('readStorageRuntimeConfig', () => {
     it('uses the gitignored local database path by default', () => {
-        expect(readStorageRuntimeConfig({})).toEqual({ databasePath: defaultStorageDatabasePath });
+        expect(readStorageRuntimeConfig({})).toEqual({
+            databasePath: defaultStorageDatabasePath,
+            recoveryProbeIntervalMs: 5_000,
+            recoveryQueueLimit: 1_000,
+        });
     });
 
     it('uses an explicitly configured database path', () => {
         expect(
             readStorageRuntimeConfig({ SMART_ROOM_STORAGE_PATH: 'C:/state/smart-room.sqlite' }),
-        ).toEqual({ databasePath: 'C:/state/smart-room.sqlite' });
+        ).toEqual({
+            databasePath: 'C:/state/smart-room.sqlite',
+            recoveryProbeIntervalMs: 5_000,
+            recoveryQueueLimit: 1_000,
+        });
+    });
+
+    it('reads positive recovery probe and cutover queue limits', () => {
+        expect(
+            readStorageRuntimeConfig({
+                SMART_ROOM_STORAGE_RECOVERY_PROBE_INTERVAL_MS: '250',
+                SMART_ROOM_STORAGE_RECOVERY_QUEUE_LIMIT: '4',
+            }),
+        ).toMatchObject({ recoveryProbeIntervalMs: 250, recoveryQueueLimit: 4 });
     });
 
     it('classifies an unavailable database directory as an availability failure', () => {

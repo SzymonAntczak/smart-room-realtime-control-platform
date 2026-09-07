@@ -1,6 +1,8 @@
 import { type Static, Type } from '@sinclair/typebox';
 
 import type { ActiveCommandProjection, TerminalCommandProjection } from './commands';
+import type { RecentEventProjection } from './history';
+import { isRecentEventsOrdered, recentEventsProjectionSchema } from './history';
 import type { DeviceProjection, PlatformStorageProjection } from './projections';
 import {
     activeCommandProjectionSchema,
@@ -50,6 +52,7 @@ export const commandsUpdatedMessageSchema = Type.Object(
                 devices: Type.Array(deviceProjectionSchema),
                 activeCommands: Type.Array(activeCommandProjectionSchema),
                 recentCommands: recentCommandProjectionsSchema,
+                recentEvents: Type.Optional(recentEventsProjectionSchema),
             },
             { additionalProperties: false },
         ),
@@ -65,6 +68,7 @@ export const platformUpdatedMessageSchema = Type.Object(
         payload: Type.Object(
             {
                 storage: platformStorageProjectionSchema,
+                recentEvents: Type.Optional(recentEventsProjectionSchema),
             },
             { additionalProperties: false },
         ),
@@ -100,6 +104,7 @@ export interface CommandsUpdatedMessage {
         devices: DeviceProjection[];
         activeCommands: ActiveCommandProjection[];
         recentCommands: TerminalCommandProjection[];
+        recentEvents?: RecentEventProjection[];
     };
 }
 export interface PlatformUpdatedMessage {
@@ -107,7 +112,27 @@ export interface PlatformUpdatedMessage {
     previousRevision: number;
     revision: number;
     sentAt: string;
-    payload: { storage: PlatformStorageProjection };
+    payload: { storage: PlatformStorageProjection; recentEvents?: RecentEventProjection[] };
+}
+
+/**
+ * Runtime-to-BFF boundary. These deltas have no revision or sentAt yet: the
+ * BFF assigns both once to an entire, non-interleavable batch.
+ */
+export type RoomPublicationDelta =
+    | { messageType: 'device.updated'; payload: DeviceProjection }
+    | {
+          messageType: 'commands.updated';
+          payload: CommandsUpdatedMessage['payload'];
+      }
+    | {
+          messageType: 'platform.updated';
+          payload: PlatformUpdatedMessage['payload'];
+      };
+
+export interface RoomPublicationBatch {
+    snapshot: RoomSnapshotProjection;
+    deltas: readonly RoomPublicationDelta[];
 }
 export type RoomRealtimeServerMessage =
     | RoomSnapshotMessage
@@ -135,6 +160,8 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
                 value.payload.activeCommands,
                 value.payload.recentCommands,
             ) &&
+            (value.payload.recentEvents === undefined ||
+                hasValidRecentEvents(value.payload.recentEvents)) &&
             value.payload.devices.every(
                 (device) => hasCanonicalDeviceTimestamps(device) && hasValidDeviceSemantics(device),
             ) &&
@@ -148,7 +175,9 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
     if (value.messageType === 'platform.updated') {
         return (
             value.revision === value.previousRevision + 1 &&
-            hasValidPlatformStorage(value.payload.storage)
+            hasValidPlatformStorage(value.payload.storage) &&
+            (value.payload.recentEvents === undefined ||
+                hasValidRecentEvents(value.payload.recentEvents))
         );
     }
 
@@ -185,10 +214,34 @@ export function isRoomSnapshotProjection(value: unknown): value is RoomSnapshotP
         ) &&
         isCanonicalUtcTimestamp(value.updatedAt) &&
         hasValidPlatformStorage(value.platform.storage) &&
+        hasValidRecentEvents(value.recentEvents) &&
         value.devices.every(
             (device) => hasCanonicalDeviceTimestamps(device) && hasValidDeviceSemantics(device),
         ) &&
         hasCanonicalCommandTimestamps(value.activeCommands, value.recentCommands)
+    );
+}
+
+function hasValidRecentEvents(events: readonly unknown[]): boolean {
+    if (!events.every(isRecentEventProjection)) {
+        return false;
+    }
+
+    return (
+        events.length <= 20 &&
+        new Set(events.map((event) => event.recordId)).size === events.length &&
+        isRecentEventsOrdered(events)
+    );
+}
+
+function isRecentEventProjection(value: unknown): value is RecentEventProjection {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        'recordId' in value &&
+        typeof value.recordId === 'string' &&
+        'occurredAt' in value &&
+        typeof value.occurredAt === 'string'
     );
 }
 

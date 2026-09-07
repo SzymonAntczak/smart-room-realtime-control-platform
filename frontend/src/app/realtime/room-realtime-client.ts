@@ -1,3 +1,7 @@
+import {
+    compareRecentEventsDescending,
+    type RecentEventProjection,
+} from '@smart-room/contracts/history';
 import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     isRoomRealtimeServerMessage,
@@ -178,6 +182,10 @@ export function connectRoomRealtime(
                     devices: message.payload.devices,
                     activeCommands: message.payload.activeCommands,
                     recentCommands: message.payload.recentCommands,
+                    recentEvents: mergeRecentEvents(
+                        roomSnapshot.recentEvents,
+                        message.payload.recentEvents,
+                    ),
                 };
 
                 if (!isRoomSnapshotProjection(roomSnapshot)) {
@@ -192,7 +200,11 @@ export function connectRoomRealtime(
             case 'platform.updated': {
                 roomSnapshot = {
                     ...roomSnapshot,
-                    platform: message.payload,
+                    platform: { storage: message.payload.storage },
+                    recentEvents: mergeRecentEvents(
+                        roomSnapshot.recentEvents,
+                        message.payload.recentEvents,
+                    ),
                 };
 
                 if (!isRoomSnapshotProjection(roomSnapshot)) {
@@ -209,6 +221,23 @@ export function connectRoomRealtime(
 
         return roomSnapshot;
     }
+}
+
+function mergeRecentEvents(
+    current: RecentEventProjection[],
+    updates: RecentEventProjection[] | undefined,
+): RecentEventProjection[] {
+    if (!updates || updates.length === 0) {
+        return current;
+    }
+
+    const byRecordId = new Map(current.map((event) => [event.recordId, event]));
+
+    for (const event of updates) {
+        byRecordId.set(event.recordId, event);
+    }
+
+    return [...byRecordId.values()].sort(compareRecentEventsDescending).slice(0, 20);
 }
 
 function hasSameDeviceSet(

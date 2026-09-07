@@ -12,6 +12,19 @@ export interface RoomInputCoordinator<Result, Context = undefined> {
     receive(event: PlatformEvent, context?: Context): Result | undefined;
     receiveAt(event: PlatformEvent, receivedAt: string, context?: Context): Result | undefined;
     receiveTimer(dispatch: (ingress: EventIngress) => void): void;
+    beginRecoveryCutover(options?: { queueLimit?: number }): RecoveryCutoverToken;
+}
+
+/**
+ * A recovery cutover owns the dequeue boundary. Inputs received while it is
+ * active remain unprepared until the caller releases the token.
+ */
+export interface RecoveryCutoverToken {
+    readonly queuedInputCount: number;
+    readonly overflowed: boolean;
+    shouldAbort(): boolean;
+    commit(): void;
+    abort(): void;
 }
 
 /** Serializes source callbacks while assigning ingress time before queueing. */
@@ -28,6 +41,13 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
     > = [];
     let ingestSequence = 0;
     let draining = false;
+    let recoveryCutover:
+        | {
+              queueLimit: number;
+              overflowed: boolean;
+              finalized: boolean;
+          }
+        | undefined;
 
     return {
         receive(event, context) {
@@ -40,8 +60,61 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
                 ingress: { receivedAt: now(), ingestSequence: ++ingestSequence },
                 dispatch: timerDispatch,
             });
+            noteRecoveryQueueSize();
 
             drainQueue();
+        },
+        beginRecoveryCutover(options = {}) {
+            if (recoveryCutover) {
+                throw new Error('A recovery cutover is already active.');
+            }
+
+            const cutover = {
+                queueLimit: options.queueLimit ?? 1_000,
+                // The boundary starts after the currently dequeued input.
+                // Inputs already waiting behind it belong to the raw FIFO just
+                // as much as inputs received later, so account for them before
+                // exposing the token.
+                overflowed: queue.length > (options.queueLimit ?? 1_000),
+                finalized: false,
+            };
+            recoveryCutover = cutover;
+
+            return {
+                get queuedInputCount() {
+                    return queue.length;
+                },
+                get overflowed() {
+                    return cutover.overflowed;
+                },
+                shouldAbort() {
+                    return cutover.overflowed;
+                },
+                commit() {
+                    finalize(false);
+                },
+                abort() {
+                    finalize(true);
+                },
+            };
+
+            function finalize(aborted: boolean): void {
+                if (cutover.finalized) {
+                    return;
+                }
+
+                if (!aborted && cutover.overflowed) {
+                    throw new Error('Recovery cutover cannot commit after its queue overflowed.');
+                }
+
+                cutover.finalized = true;
+
+                if (recoveryCutover === cutover) {
+                    recoveryCutover = undefined;
+                }
+
+                drainQueue();
+            }
         },
     };
 
@@ -59,6 +132,7 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
             },
         };
         queue.push(queued);
+        noteRecoveryQueueSize();
 
         drainQueue();
 
@@ -73,7 +147,7 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
         draining = true;
 
         try {
-            while (queue.length > 0) {
+            while (queue.length > 0 && !recoveryCutover) {
                 const queuedInput = queue.shift();
 
                 if (!queuedInput) {
@@ -88,6 +162,12 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
             }
         } finally {
             draining = false;
+        }
+    }
+
+    function noteRecoveryQueueSize(): void {
+        if (recoveryCutover && queue.length > recoveryCutover.queueLimit) {
+            recoveryCutover.overflowed = true;
         }
     }
 }

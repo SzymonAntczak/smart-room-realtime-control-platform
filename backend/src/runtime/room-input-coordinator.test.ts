@@ -1,7 +1,11 @@
 import type { PlatformEvent } from '@smart-room/contracts/events';
 import { describe, expect, it } from 'vitest';
 
-import { createRoomInputCoordinator, type RoomInputCoordinator } from './room-input-coordinator';
+import {
+    createRoomInputCoordinator,
+    type RecoveryCutoverToken,
+    type RoomInputCoordinator,
+} from './room-input-coordinator';
 
 describe('createRoomInputCoordinator', () => {
     it('captures ingress before reentrant queueing and drains events and timers in FIFO order', () => {
@@ -72,6 +76,75 @@ describe('createRoomInputCoordinator', () => {
         coordinator.receiveAt(event('buffered-report'), '2026-08-31T09:00:04.999Z');
 
         expect(dispatched).toEqual([{ receivedAt: '2026-08-31T09:00:04.999Z', ingestSequence: 1 }]);
+    });
+
+    it('aborts at the 1001st raw input and drains all 1001 entries FIFO without loss', () => {
+        const dispatched: string[] = [];
+        let cutover: RecoveryCutoverToken | undefined;
+        const coordinator = createRoomInputCoordinator({
+            now: () => '2026-08-31T09:00:10Z',
+            dispatch(input) {
+                dispatched.push(input.event.eventId);
+
+                if (input.event.eventId === 'boundary') {
+                    cutover = coordinator.beginRecoveryCutover();
+
+                    for (let index = 1; index <= 1_001; index += 1) {
+                        coordinator.receive(event(`queued-${index}`));
+                    }
+                }
+
+                return input.event.eventId;
+            },
+        });
+
+        expect(coordinator.receive(event('boundary'))).toBe('boundary');
+        expect(dispatched).toEqual(['boundary']);
+        expect(cutover?.queuedInputCount).toBe(1_001);
+        expect(cutover?.overflowed).toBe(true);
+        expect(cutover?.shouldAbort()).toBe(true);
+
+        cutover?.abort();
+
+        expect(dispatched).toEqual([
+            'boundary',
+            ...Array.from({ length: 1_001 }, (_, index) => `queued-${index + 1}`),
+        ]);
+    });
+
+    it('latches overflow for inputs already queued behind the recovery timer', () => {
+        const dispatched: string[] = [];
+        let cutover: RecoveryCutoverToken | undefined;
+        const coordinator = createRoomInputCoordinator({
+            now: () => '2026-08-31T09:00:10Z',
+            dispatch(input) {
+                dispatched.push(input.event.eventId);
+
+                if (input.event.eventId === 'boundary') {
+                    coordinator.receiveTimer(() => {
+                        cutover = coordinator.beginRecoveryCutover();
+                    });
+
+                    for (let index = 1; index <= 1_001; index += 1) {
+                        coordinator.receive(event(`queued-before-token-${index}`));
+                    }
+                }
+
+                return input.event.eventId;
+            },
+        });
+
+        expect(coordinator.receive(event('boundary'))).toBe('boundary');
+        expect(cutover?.queuedInputCount).toBe(1_001);
+        expect(cutover?.overflowed).toBe(true);
+        expect(cutover?.shouldAbort()).toBe(true);
+
+        cutover?.abort();
+
+        expect(dispatched).toEqual([
+            'boundary',
+            ...Array.from({ length: 1_001 }, (_, index) => `queued-before-token-${index + 1}`),
+        ]);
     });
 });
 

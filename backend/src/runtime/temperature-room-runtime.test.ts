@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import type { RecentEventProjection } from '@smart-room/contracts/history';
+import type { RoomPublicationBatch } from '@smart-room/contracts/realtime';
 import type { Clock, TimerScheduler } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
@@ -20,15 +22,115 @@ import type {
     StoredTelemetrySample,
     TelemetrySampleInput,
 } from '../platform/storage/room-storage';
+import type { RoomStorageLifecycle } from '../platform/storage/room-storage';
 import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
 import {
     StorageAvailabilityError,
     StorageInvariantError,
+    StorageManualInterventionError,
 } from '../platform/storage/storage-errors';
 
 import { createTemperatureRoomRuntime } from './temperature-room-runtime';
 
 describe('createTemperatureRoomRuntime', () => {
+    it('publishes ordinary runtime transitions as semantic batches', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+        const batches: RoomPublicationBatch[] = [];
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
+
+        try {
+            runtime.start();
+            batches.length = 0;
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+            expect(batches).toHaveLength(1);
+            expect(batches[0]?.deltas).toEqual([
+                expect.objectContaining({ messageType: 'device.updated' }),
+            ]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('does not deliver an in-flight batch to a reentrantly registered subscriber', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+        let reentrantBatches = 0;
+        let registered = false;
+
+        try {
+            runtime.start();
+            runtime.subscribeRoomPublicationBatch(() => {
+                if (registered) {
+                    return;
+                }
+
+                registered = true;
+                runtime.subscribeRoomPublicationBatch(() => {
+                    reentrantBatches += 1;
+                });
+            });
+
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+            expect(reentrantBatches).toBe(0);
+            expect(runtime.getRoomSnapshot().devices).toEqual(
+                expect.arrayContaining([expect.objectContaining({ deviceId: 'temp-desk' })]),
+            );
+
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+            expect(reentrantBatches).toBe(1);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('does not deliver an in-flight batch to a subscriber registered by a snapshot listener', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+        let registered = false;
+        let reentrantBatches = 0;
+
+        try {
+            runtime.start();
+            runtime.subscribeRoomSnapshot(() => {
+                if (registered) {
+                    return;
+                }
+
+                registered = true;
+                runtime.subscribeRoomPublicationBatch(() => {
+                    reentrantBatches += 1;
+                });
+            });
+
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+            expect(reentrantBatches).toBe(0);
+
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+            expect(reentrantBatches).toBe(1);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('terminates instead of continuing volatile after a rolled-back fatal storage error', () => {
         const fatalError = new StorageInvariantError('broken storage invariant', undefined);
         const storage = {
@@ -63,6 +165,25 @@ describe('createTemperatureRoomRuntime', () => {
         ).toThrow('storage_commit_outcome_unknown');
     });
 
+    it('terminates when closing the runtime session rolls back a fatal storage error', () => {
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            storage: storage.port,
+            clock: createMutableClock('2026-06-08T09:30:00Z'),
+            onFatalStorageError(error): never {
+                throw error;
+            },
+        });
+
+        runtime.start();
+        storage.failNext(
+            'confirmed_rolled_back',
+            new StorageInvariantError('session close invariant failed', undefined),
+        );
+
+        expect(() => runtime.stop()).toThrow('storage_fatal_error');
+    });
+
     it('starts degraded when a checkpoint read has an availability failure', () => {
         const storage = {
             transact() {
@@ -89,6 +210,833 @@ describe('createTemperatureRoomRuntime', () => {
             });
         } finally {
             runtime.stop();
+        }
+    });
+
+    it('probes an availability startup failure, records one durable gap, and returns to available', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const runtimeTimer = createManualTimer();
+        const recoveryTimer = createManualTimer();
+        const recoveredStorage = createScriptedStorage();
+        let attempts = 0;
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: runtimeTimer,
+            recoveryTimer,
+            storageRecoveryProbeIntervalMs: 5_000,
+            storageFactory() {
+                attempts += 1;
+
+                if (attempts === 1) {
+                    throw new StorageAvailabilityError('database is busy', undefined);
+                }
+
+                return recoveredStorage.port;
+            },
+            generateEventId: createEventIdGenerator(),
+        });
+        const snapshots: Array<ReturnType<typeof runtime.getRoomSnapshot>> = [];
+        runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+
+        try {
+            runtime.start();
+            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('degraded');
+            expect(recoveryTimer.intervals).toEqual([5_000]);
+
+            clock.advanceBy(5_000);
+            recoveryTimer.runLatest();
+
+            expect(snapshots.map((snapshot) => snapshot.platform.storage.status)).toContain(
+                'recovering',
+            );
+            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('available');
+            expect(recoveredStorage.significantFacts).toMatchObject([
+                {
+                    eventType: 'storage.gap.recorded',
+                    payload: { boundaryBasis: 'degraded_startup_at' },
+                },
+            ]);
+            expect(runtime.getRoomSnapshot().recentEvents).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventType: 'storage.gap.recorded',
+                        durability: 'durable',
+                    }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('does not schedule automatic recovery for manual-intervention startup failures', () => {
+        const recoveryTimer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-09-03T09:00:00Z'),
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageFactory() {
+                throw new StorageManualInterventionError('foreign database', undefined);
+            },
+        });
+
+        try {
+            runtime.start();
+
+            expect(runtime.getRoomSnapshot().platform.storage).toMatchObject({
+                status: 'degraded',
+                reason: 'storage_manual_intervention_required',
+            });
+            expect(recoveryTimer.intervals).toEqual([]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('cancels an availability probe schedule when recovery requires manual intervention', () => {
+        const recoveryTimer = createManualTimer();
+        let probes = 0;
+        const lifecycle: RoomStorageLifecycle = {
+            openAtStartup() {
+                return {
+                    kind: 'degraded',
+                    error: new StorageAvailabilityError('startup unavailable', undefined),
+                };
+            },
+            probe() {
+                probes += 1;
+
+                throw new StorageManualInterventionError('foreign database', undefined);
+            },
+            cutover() {
+                throw new Error('manual probe must not cut over');
+            },
+        };
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-09-03T09:00:00Z'),
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageLifecycle: lifecycle,
+        });
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+            recoveryTimer.runLatest();
+
+            expect(probes).toBe(1);
+            expect(runtime.getRoomSnapshot().platform.storage).toMatchObject({
+                status: 'degraded',
+                reason: 'storage_manual_intervention_required',
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('preserves verified startup generation metadata after a recoverable checkpoint read', () => {
+        const recoveryTimer = createManualTimer();
+        let probeContext: { verifiedHistoryGenerationId: string | undefined } | undefined;
+        const storage = {
+            transact() {
+                return { status: 'committed' as const, value: [] };
+            },
+            getMetadata() {
+                return {
+                    historyGenerationId: 'verified-generation',
+                    schemaVersion: 3,
+                    lastStorageSequence: 17,
+                };
+            },
+            getLatestRoomProjection() {
+                throw new StorageAvailabilityError('checkpoint read unavailable', undefined);
+            },
+        } as unknown as RoomStorage;
+        const lifecycle: RoomStorageLifecycle = {
+            openAtStartup() {
+                return { kind: 'available', storage, metadata: storage.getMetadata() };
+            },
+            probe(context) {
+                probeContext = context;
+
+                throw new StorageAvailabilityError('still unavailable', undefined);
+            },
+            cutover() {
+                throw new Error('unavailable probe must not cut over');
+            },
+        };
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-09-03T09:00:00Z'),
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageLifecycle: lifecycle,
+        });
+
+        try {
+            runtime.start();
+            expect(runtime.getRoomSnapshot().platform.storage).toMatchObject({
+                status: 'degraded',
+                historyGenerationId: 'verified-generation',
+                storedThroughSequence: 17,
+            });
+            recoveryTimer.runLatest();
+            expect(probeContext).toEqual({ verifiedHistoryGenerationId: 'verified-generation' });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('publishes the degraded reversal when a target appears after a first-init probe', () => {
+        const recoveryTimer = createManualTimer();
+        const lifecycle: RoomStorageLifecycle = {
+            openAtStartup() {
+                return {
+                    kind: 'degraded',
+                    error: new StorageAvailabilityError('startup unavailable', undefined),
+                };
+            },
+            probe() {
+                return { kind: 'first_initialization' };
+            },
+            cutover() {
+                return { status: 'aborted' };
+            },
+        };
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-09-03T09:00:00Z'),
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageLifecycle: lifecycle,
+        });
+        const batches: RoomPublicationBatch[] = [];
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+
+            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('degraded');
+            expect(
+                batches.slice(-2).map((batch) => batch.snapshot.platform.storage.status),
+            ).toEqual(['recovering', 'degraded']);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('retains a generation verified by an aborted recovery cutover', () => {
+        const recoveryTimer = createManualTimer();
+        const probeContexts: Array<string | undefined> = [];
+        const candidate = {
+            getMetadata() {
+                return {
+                    historyGenerationId: 'recovered-generation',
+                    schemaVersion: 3,
+                    lastStorageSequence: 0,
+                };
+            },
+            getLatestRoomProjection() {
+                return undefined;
+            },
+            listAcceptedInputIdentities() {
+                return [];
+            },
+            close() {},
+        } as unknown as RoomStorage;
+        const lifecycle: RoomStorageLifecycle = {
+            openAtStartup() {
+                return {
+                    kind: 'degraded',
+                    error: new StorageAvailabilityError('startup unavailable', undefined),
+                };
+            },
+            probe(context) {
+                probeContexts.push(context.verifiedHistoryGenerationId);
+
+                return {
+                    kind: 'existing_generation',
+                    storage: candidate,
+                    metadata: candidate.getMetadata(),
+                };
+            },
+            cutover() {
+                return { status: 'aborted' };
+            },
+        };
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-09-03T09:00:00Z'),
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageLifecycle: lifecycle,
+        });
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+            recoveryTimer.runLatest();
+
+            expect(probeContexts).toEqual([undefined, 'recovered-generation']);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('terminates on an indeterminate recovery cutover without returning to available', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const recoveryTimer = createManualTimer();
+        let queuedRawInput = false;
+        const lifecycle: RoomStorageLifecycle = {
+            openAtStartup() {
+                return {
+                    kind: 'degraded',
+                    error: new StorageAvailabilityError('startup unavailable', undefined),
+                };
+            },
+            probe() {
+                return { kind: 'first_initialization' };
+            },
+            cutover() {
+                runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+                queuedRawInput = true;
+
+                return {
+                    status: 'indeterminate',
+                    error: new StorageInvariantError('commit outcome unknown', undefined),
+                };
+            },
+        };
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageLifecycle: lifecycle,
+            onFatalStorageError(error): never {
+                throw error;
+            },
+        });
+        const batches: RoomPublicationBatch[] = [];
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
+
+        try {
+            runtime.start();
+            batches.length = 0;
+            clock.advanceBy(5_000);
+
+            expect(() => recoveryTimer.runLatest()).toThrow('storage_commit_outcome_unknown');
+            expect(queuedRawInput).toBe(true);
+            expect(runtime.getRoomSnapshot().platform.storage.status).not.toBe('available');
+            expect(device(runtime, 'temp-desk')).toMatchObject({
+                reportedState: { temperature: 22, temperatureUnit: 'celsius' },
+            });
+            expect(batches).toEqual([
+                expect.objectContaining({
+                    snapshot: expect.objectContaining({
+                        platform: expect.objectContaining({
+                            storage: expect.objectContaining({ status: 'recovering' }),
+                        }),
+                    }),
+                }),
+            ]);
+            expect(runtime.getRoomSnapshot().recentEvents).not.toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ eventType: 'storage.gap.recorded' }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('does not drain raw recovery FIFO after a fatal confirmed rollback', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const recoveryTimer = createManualTimer();
+        const lifecycle: RoomStorageLifecycle = {
+            openAtStartup() {
+                return {
+                    kind: 'degraded',
+                    error: new StorageAvailabilityError('startup unavailable', undefined),
+                };
+            },
+            probe() {
+                return { kind: 'first_initialization' };
+            },
+            cutover() {
+                runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+                return {
+                    status: 'confirmed_rolled_back',
+                    error: new StorageInvariantError('fatal recovery rollback', undefined),
+                };
+            },
+        };
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageLifecycle: lifecycle,
+            onFatalStorageError(error): never {
+                throw error;
+            },
+        });
+        const batches: RoomPublicationBatch[] = [];
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
+
+        try {
+            runtime.start();
+            batches.length = 0;
+            clock.advanceBy(5_000);
+
+            expect(() => recoveryTimer.runLatest()).toThrow('storage_fatal_error');
+            expect(device(runtime, 'temp-desk')).toMatchObject({
+                reportedState: { temperature: 22, temperatureUnit: 'celsius' },
+            });
+            expect(batches).toEqual([
+                expect.objectContaining({
+                    snapshot: expect.objectContaining({
+                        platform: expect.objectContaining({
+                            storage: expect.objectContaining({ status: 'recovering' }),
+                        }),
+                    }),
+                }),
+            ]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('drains raw recovery FIFO against the resolved durable or volatile projection', () => {
+        const runRecovery = (outcome: 'committed' | 'confirmed_rolled_back') => {
+            const clock = createMutableClock('2026-09-03T09:00:00Z');
+            const recoveryTimer = createManualTimer();
+            const storage = createScriptedStorage();
+            const lifecycle: RoomStorageLifecycle = {
+                openAtStartup() {
+                    return {
+                        kind: 'degraded',
+                        error: new StorageAvailabilityError('startup unavailable', undefined),
+                    };
+                },
+                probe() {
+                    return {
+                        kind: 'existing_generation',
+                        storage: storage.port,
+                        metadata: storage.port.getMetadata(),
+                    };
+                },
+                cutover(input) {
+                    runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+                    if (outcome === 'confirmed_rolled_back') {
+                        return {
+                            status: 'confirmed_rolled_back',
+                            error: new StorageAvailabilityError(
+                                'recovery write unavailable',
+                                undefined,
+                            ),
+                        };
+                    }
+
+                    const transactionOutcome = storage.port.transact(input.operation);
+
+                    if (transactionOutcome.status !== 'committed') {
+                        throw new Error('Scripted recovery transaction did not commit.');
+                    }
+
+                    return {
+                        status: 'committed',
+                        value: transactionOutcome.value,
+                        storage: storage.port,
+                        metadata: storage.port.getMetadata(),
+                    };
+                },
+            };
+            const runtime = createTemperatureRoomRuntime({
+                clock,
+                timer: createManualTimer(),
+                recoveryTimer,
+                storageLifecycle: lifecycle,
+            });
+
+            try {
+                runtime.start();
+                clock.advanceBy(5_000);
+                recoveryTimer.runLatest();
+
+                return {
+                    snapshot: runtime.getRoomSnapshot(),
+                    telemetrySamples: storage.telemetrySamples,
+                };
+            } finally {
+                runtime.stop();
+            }
+        };
+
+        const committed = runRecovery('committed');
+        expect(committed.snapshot.platform.storage.status).toBe('available');
+        expect(
+            committed.snapshot.devices.find((device) => device.deviceId === 'temp-desk'),
+        ).toMatchObject({
+            reportedState: { temperature: 22.2, temperatureUnit: 'celsius' },
+            observationStatus: { temperature: { durability: 'durable' } },
+        });
+        expect(committed.telemetrySamples).toEqual([expect.objectContaining({ value: 22.2 })]);
+
+        const rolledBack = runRecovery('confirmed_rolled_back');
+        expect(rolledBack.snapshot.platform.storage.status).toBe('degraded');
+        expect(
+            rolledBack.snapshot.devices.find((device) => device.deviceId === 'temp-desk'),
+        ).toMatchObject({
+            reportedState: { temperature: 22.2, temperatureUnit: 'celsius' },
+            observationStatus: { temperature: { durability: 'volatile' } },
+        });
+        expect(rolledBack.telemetrySamples).toEqual([]);
+    });
+
+    it('merges the recovered durable event cache with newer volatile recovery evidence', () => {
+        const storage = createScriptedStorage();
+        const durableClock = createMutableClock('2026-09-03T09:00:00Z');
+        const durableRuntime = createTemperatureRoomRuntime({
+            storage: storage.port,
+            clock: durableClock,
+            timer: createManualTimer(),
+            generateEventId: createEventIdGenerator(),
+        });
+
+        durableRuntime.start();
+        durableRuntime.stop();
+        const checkpoint = storage.latestCheckpoint;
+
+        if (!checkpoint) {
+            throw new Error('Durable source did not write its checkpoint.');
+        }
+
+        const futureCache: RecentEventProjection[] = Array.from({ length: 20 }, (_, index) => ({
+            recordId: `future-fact-${index}`,
+            eventType: 'device.availability.changed' as const,
+            occurredAt: '2026-09-03T09:02:00.000Z',
+            durability: 'durable' as const,
+            storageSequence: index + 1,
+            deviceId: 'temp-desk',
+            source: 'simulator-adapter' as const,
+            payload: {
+                previousAvailability: 'unknown' as const,
+                availability: 'online' as const,
+                reason: 'future_skew_fixture',
+            },
+        }));
+        storage.seedCheckpoint({ ...checkpoint, recentEvents: futureCache });
+
+        const recoveryClock = createMutableClock('2026-09-03T09:01:00Z');
+        const recoveryTimer = createManualTimer();
+        let factoryCalls = 0;
+        const runtime = createTemperatureRoomRuntime({
+            clock: recoveryClock,
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageFactory() {
+                factoryCalls += 1;
+
+                if (factoryCalls === 1) {
+                    throw new StorageAvailabilityError('database is busy', undefined);
+                }
+
+                return storage.port;
+            },
+            generateEventId: createEventIdGenerator(),
+        });
+        const batches: RoomPublicationBatch[] = [];
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+
+            expect(batches.at(-1)?.deltas).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        messageType: 'platform.updated',
+                        payload: expect.objectContaining({
+                            recentEvents: [
+                                expect.objectContaining({ eventType: 'storage.gap.recorded' }),
+                            ],
+                        }),
+                    }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('keeps a newer volatile observation when durable recovery evidence is unknown', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const source = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+        });
+        source.start();
+        const sourceSnapshot = source.getRoomSnapshot();
+        source.stop();
+
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint({
+            updatedAt: sourceSnapshot.updatedAt,
+            projection: {
+                updatedAt: sourceSnapshot.updatedAt,
+                devices: sourceSnapshot.devices.map((device) =>
+                    device.deviceId === 'temp-desk'
+                        ? {
+                              ...device,
+                              reportedState: undefined,
+                              observationStatus: {
+                                  ...device.observationStatus,
+                                  temperature: { freshness: 'unknown', durability: 'durable' },
+                              },
+                          }
+                        : device,
+                ),
+                activeCommands: sourceSnapshot.activeCommands,
+                recentCommands: sourceSnapshot.recentCommands,
+            },
+            projectionEvidence: {
+                availabilityDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+                healthDeviceIds: [],
+            },
+            volatileGuards: [],
+            recentEvents: [],
+        });
+        const recoveryTimer = createManualTimer();
+        let factoryCalls = 0;
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageFactory() {
+                factoryCalls += 1;
+
+                if (factoryCalls === 1) {
+                    throw new StorageAvailabilityError('startup unavailable', undefined);
+                }
+
+                return storage.port;
+            },
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+            const volatileDevice = device(runtime, 'temp-desk');
+            const volatileObservation = volatileDevice?.observationStatus.temperature;
+
+            expect(volatileObservation?.lastObservedAt).toBeDefined();
+            expect(volatileObservation?.durability).toBe('volatile');
+
+            recoveryTimer.runLatest();
+
+            expect(device(runtime, 'temp-desk')?.observationStatus.temperature).toEqual(
+                volatileObservation,
+            );
+            expect(device(runtime, 'temp-desk')?.reportedState).toEqual(
+                volatileDevice?.reportedState,
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('merges complete newer device dimensions and volatile-only observations during recovery', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const source = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+        });
+        source.start();
+        const sourceSnapshot = source.getRoomSnapshot();
+        source.stop();
+
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint({
+            updatedAt: '2026-09-03T08:00:00.000Z',
+            projection: {
+                updatedAt: '2026-09-03T08:00:00.000Z',
+                devices: sourceSnapshot.devices.map((device) =>
+                    device.deviceId === 'led-main'
+                        ? {
+                              ...device,
+                              availability: 'offline',
+                              availabilityChangedAt: '2026-09-03T08:00:00.000Z',
+                              availabilityDurability: 'durable',
+                              availabilityReason: 'device_disconnected',
+                              health: 'degraded',
+                              healthChangedAt: '2026-09-03T08:00:00.000Z',
+                              healthDurability: 'durable',
+                              healthReason: 'partial_data',
+                              reportedState: {},
+                              observationStatus: {},
+                              commandAvailability: {
+                                  policy: 'block',
+                                  reason: 'device_offline',
+                              },
+                          }
+                        : device,
+                ),
+                activeCommands: sourceSnapshot.activeCommands,
+                recentCommands: sourceSnapshot.recentCommands,
+            },
+            projectionEvidence: {
+                availabilityDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+                healthDeviceIds: ['led-main'],
+            },
+            volatileGuards: [],
+            recentEvents: [],
+        });
+        const recoveryTimer = createManualTimer();
+        let factoryCalls = 0;
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageFactory() {
+                factoryCalls += 1;
+
+                if (factoryCalls === 1) {
+                    throw new StorageAvailabilityError('startup unavailable', undefined);
+                }
+
+                return storage.port;
+            },
+        });
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+
+            expect(device(runtime, 'led-main')).toMatchObject({
+                availability: 'online',
+                availabilityDurability: 'volatile',
+                health: 'unknown',
+                healthDurability: 'volatile',
+                reportedState: { power: 'off' },
+                observationStatus: {
+                    power: expect.objectContaining({ durability: 'volatile' }),
+                },
+                commandAvailability: { policy: 'allow' },
+            });
+            expect(device(runtime, 'led-main')).not.toHaveProperty('availabilityReason');
+            expect(device(runtime, 'led-main')).not.toHaveProperty('healthReason');
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('holds recovery for a volatile-durable active-command conflict and retries after terminalization', async () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const durableSource = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            ledScenario: 'omit_confirmation',
+            commandTimer: createCommandTimer(),
+        });
+        const storage = createScriptedStorage();
+        const recoveryTimer = createManualTimer();
+        const commandTimer = createCommandTimer();
+        let factoryCalls = 0;
+        let runtime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            durableSource.start();
+            const durableCommand = durableSource.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            await flushCommandDispatch();
+            const durableSnapshot = durableSource.getRoomSnapshot();
+            expect(durableSnapshot.activeCommands).toEqual([
+                expect.objectContaining({ commandId: durableCommand.commandId }),
+            ]);
+            durableSource.stop();
+            storage.seedCheckpoint({
+                updatedAt: durableSnapshot.updatedAt,
+                projection: {
+                    updatedAt: durableSnapshot.updatedAt,
+                    devices: durableSnapshot.devices,
+                    activeCommands: durableSnapshot.activeCommands.map((command) => ({
+                        ...command,
+                        durability: 'durable' as const,
+                        lifecycleDurability: 'durable' as const,
+                    })),
+                    recentCommands: durableSnapshot.recentCommands,
+                },
+                projectionEvidence: {
+                    availabilityDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+                    healthDeviceIds: [],
+                },
+                volatileGuards: [],
+                recentEvents: [],
+            });
+
+            runtime = createTemperatureRoomRuntime({
+                clock,
+                timer: createManualTimer(),
+                recoveryTimer,
+                ledScenario: 'omit_confirmation',
+                commandTimer,
+                storageFactory() {
+                    factoryCalls += 1;
+
+                    if (factoryCalls === 1) {
+                        throw new StorageAvailabilityError('startup unavailable', undefined);
+                    }
+
+                    return storage.port;
+                },
+            });
+            runtime.start();
+            const volatileCommand = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            expect(volatileCommand).toMatchObject({ status: 'accepted', durability: 'volatile' });
+            await flushCommandDispatch();
+
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([
+                expect.objectContaining({ commandId: volatileCommand.commandId }),
+            ]);
+
+            recoveryTimer.runLatest();
+
+            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('recovering');
+            expect(
+                runtime.requestCommand({
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                }),
+            ).toMatchObject({ error: 'platform_recovering', retryable: true });
+
+            commandTimer.runAll();
+            recoveryTimer.runLatest();
+
+            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('available');
+            expect(runtime.getRoomSnapshot().recentCommands).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        commandId: volatileCommand.commandId,
+                        status: 'timed_out',
+                    }),
+                ]),
+            );
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ commandId: durableCommand.commandId }),
+                ]),
+            );
+        } finally {
+            durableSource.stop();
+            runtime?.stop();
         }
     });
 
@@ -153,11 +1101,14 @@ describe('createTemperatureRoomRuntime', () => {
             generateNativeMessageId: createEventIdGenerator(),
         });
         const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        const batches: RoomPublicationBatch[] = [];
         runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
 
         try {
             runtime.start();
             snapshots.length = 0;
+            batches.length = 0;
             const telemetryCount = storage.telemetrySamples.length;
             const identityCount = storage.identities.length;
             const previousState = device(runtime, 'temp-desk')?.reportedState;
@@ -169,6 +1120,7 @@ describe('createTemperatureRoomRuntime', () => {
                     'upsertAcceptedInputIdentity',
                     'retireExpiredRecords',
                     'saveLatestRoomProjection',
+                    'activateRuntimeSession',
                 ]);
                 expect(snapshots).toEqual([]);
                 expect(device(runtime, 'temp-desk')?.reportedState).toEqual(previousState);
@@ -183,6 +1135,11 @@ describe('createTemperatureRoomRuntime', () => {
             expect(storage.telemetrySamples).toHaveLength(telemetryCount + 1);
             expect(storage.identities).toHaveLength(identityCount + 1);
             expect(snapshots).toHaveLength(1);
+            expect(batches).toHaveLength(1);
+            expect(batches[0]?.deltas.map((delta) => delta.messageType)).toEqual([
+                'device.updated',
+                'platform.updated',
+            ]);
             expect(device(runtime, 'temp-desk')).toMatchObject({
                 reportedState: { temperature: 22.2, temperatureUnit: 'celsius' },
                 observationStatus: { temperature: { durability: 'durable' } },
@@ -192,7 +1149,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('publishes degraded before applying the rolled-back telemetry as volatile', () => {
+    it('publishes one final degraded snapshot with the rolled-back telemetry as volatile', () => {
         const clock = createMutableClock('2026-08-31T09:00:00Z');
         const storage = createScriptedStorage();
         const runtime = createTemperatureRoomRuntime({
@@ -202,15 +1159,17 @@ describe('createTemperatureRoomRuntime', () => {
             generateNativeMessageId: createEventIdGenerator(),
         });
         const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
+        const batches: RoomPublicationBatch[] = [];
         runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
 
         try {
             runtime.start();
             snapshots.length = 0;
+            batches.length = 0;
             const telemetryCount = storage.telemetrySamples.length;
             const identityCount = storage.identities.length;
             const checkpoint = storage.latestCheckpoint;
-            const previousState = device(runtime, 'temp-desk')?.reportedState;
             storage.failNext(
                 'confirmed_rolled_back',
                 new StorageAvailabilityError('database is busy', undefined),
@@ -219,14 +1178,14 @@ describe('createTemperatureRoomRuntime', () => {
             clock.advanceBy(1_000);
             runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
 
-            expect(snapshots).toHaveLength(2);
+            expect(snapshots).toHaveLength(1);
+            expect(batches[0]?.deltas.map((delta) => delta.messageType)).toEqual([
+                'platform.updated',
+                'device.updated',
+            ]);
             expect(snapshots[0]?.platform.storage.status).toBe('degraded');
             expect(
-                snapshots[0]?.devices.find((candidate) => candidate.deviceId === 'temp-desk')
-                    ?.reportedState,
-            ).toEqual(previousState);
-            expect(
-                snapshots[1]?.devices.find((candidate) => candidate.deviceId === 'temp-desk'),
+                snapshots[0]?.devices.find((candidate) => candidate.deviceId === 'temp-desk'),
             ).toMatchObject({
                 reportedState: { temperature: 22.2, temperatureUnit: 'celsius' },
                 observationStatus: { temperature: { durability: 'volatile' } },
@@ -393,6 +1352,7 @@ describe('createTemperatureRoomRuntime', () => {
                     acceptedAt: sourceEvent.occurredAt,
                 },
             ],
+            recentEvents: [],
         });
         const runtime = createTemperatureRoomRuntime({
             clock,
@@ -430,6 +1390,256 @@ describe('createTemperatureRoomRuntime', () => {
                 durability: 'durable',
             });
             expect(storage.quarantineEntries).not.toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventId: sourceEvent.eventId,
+                        reason: 'duplicate_event',
+                    }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('retains checkpointed volatile guards after degraded-startup recovery', () => {
+        const clock = createMutableClock('2026-08-31T09:00:00Z');
+        const recoveredEventId = 'simulator-adapter:temp-desk-native:extra-7';
+        const checkpointGuardEvent = {
+            eventId: recoveredEventId,
+            eventType: 'telemetry.reading.recorded',
+            occurredAt: '2026-08-31T09:00:00Z',
+            source: 'simulator-adapter',
+            deviceId: 'temp-desk',
+            payload: { metric: 'temperature', value: 21, unit: 'celsius' },
+        } as const;
+        const source = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+        });
+        source.start();
+        const sourceSnapshot = source.getRoomSnapshot();
+        source.stop();
+
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint({
+            updatedAt: sourceSnapshot.updatedAt,
+            projection: {
+                updatedAt: sourceSnapshot.updatedAt,
+                devices: sourceSnapshot.devices,
+                activeCommands: sourceSnapshot.activeCommands,
+                recentCommands: sourceSnapshot.recentCommands,
+            },
+            projectionEvidence: {
+                availabilityDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+                healthDeviceIds: [],
+            },
+            volatileGuards: [
+                {
+                    eventId: recoveredEventId,
+                    fingerprint: inputFingerprint(checkpointGuardEvent),
+                    durability: 'volatile',
+                    acceptedAt: checkpointGuardEvent.occurredAt,
+                },
+            ],
+            recentEvents: [],
+        });
+        const recoveryTimer = createManualTimer();
+        let factoryCalls = 0;
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageFactory() {
+                factoryCalls += 1;
+
+                if (factoryCalls === 1) {
+                    throw new StorageAvailabilityError('startup unavailable', undefined);
+                }
+
+                return storage.port;
+            },
+            generateNativeMessageId: nativeMessageIdsForRedelivery(),
+        });
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+
+            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('available');
+            expect(storage.latestCheckpoint?.volatileGuards).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventId: recoveredEventId,
+                        fingerprint: inputFingerprint(checkpointGuardEvent),
+                        durability: 'volatile',
+                    }),
+                ]),
+            );
+
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+            expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventId: recoveredEventId,
+                        reason: 'event_identity_conflict',
+                    }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('bounds and expires merged volatile guards before saving a recovery checkpoint', () => {
+        const clock = createMutableClock('2026-08-31T09:00:00Z');
+        const source = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+        });
+        source.start();
+        const sourceSnapshot = source.getRoomSnapshot();
+        source.stop();
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint({
+            updatedAt: sourceSnapshot.updatedAt,
+            projection: {
+                updatedAt: sourceSnapshot.updatedAt,
+                devices: sourceSnapshot.devices,
+                activeCommands: sourceSnapshot.activeCommands,
+                recentCommands: sourceSnapshot.recentCommands,
+            },
+            projectionEvidence: {
+                availabilityDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+                healthDeviceIds: [],
+            },
+            volatileGuards: [
+                {
+                    eventId: 'expired-guard',
+                    fingerprint: 'fp:v1:sha256:expired',
+                    durability: 'volatile',
+                    acceptedAt: '2026-08-31T08:58:00.000Z',
+                },
+                {
+                    eventId: 'guard-a',
+                    fingerprint: 'fp:v1:sha256:guard-a',
+                    durability: 'volatile',
+                    acceptedAt: '2026-08-31T09:00:00.000Z',
+                },
+                {
+                    eventId: 'guard-b',
+                    fingerprint: 'fp:v1:sha256:guard-b',
+                    durability: 'volatile',
+                    acceptedAt: '2026-08-31T09:00:00.000Z',
+                },
+            ],
+            recentEvents: [],
+        });
+        const recoveryTimer = createManualTimer();
+        let factoryCalls = 0;
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            recoveryTimer,
+            deduplicationRetentionMs: 60_000,
+            deduplicationEntryLimit: 2,
+            storageFactory() {
+                factoryCalls += 1;
+
+                if (factoryCalls === 1) {
+                    throw new StorageAvailabilityError('startup unavailable', undefined);
+                }
+
+                return storage.port;
+            },
+        });
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+
+            expect(storage.latestCheckpoint?.volatileGuards).toHaveLength(2);
+            expect(storage.latestCheckpoint?.volatileGuards).not.toEqual(
+                expect.arrayContaining([expect.objectContaining({ eventId: 'expired-guard' })]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('keeps a restored durable identity ahead of a colliding volatile recovery guard', () => {
+        const clock = createMutableClock('2026-08-31T09:00:00Z');
+        const sourceEvent = {
+            eventId: 'simulator-adapter:temp-desk-native:source-reading-1',
+            eventType: 'telemetry.reading.recorded',
+            occurredAt: '2026-08-31T09:00:00Z',
+            source: 'simulator-adapter',
+            deviceId: 'temp-desk',
+            payload: { metric: 'temperature', value: 22, unit: 'celsius' },
+        } as const;
+        const storage = createScriptedStorage();
+        const durableSource = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateNativeMessageId: nativeMessageIdsForRedelivery(),
+        });
+        durableSource.start();
+        durableSource.stop();
+        const checkpoint = storage.latestCheckpoint;
+
+        if (!checkpoint) {
+            throw new Error('Durable source did not write its checkpoint.');
+        }
+
+        storage.seedCheckpoint({
+            ...checkpoint,
+            volatileGuards: [
+                {
+                    eventId: sourceEvent.eventId,
+                    fingerprint: inputFingerprint(sourceEvent),
+                    durability: 'volatile',
+                    acceptedAt: sourceEvent.occurredAt,
+                },
+            ],
+        });
+        const recoveryTimer = createManualTimer();
+        let factoryCalls = 0;
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageFactory() {
+                factoryCalls += 1;
+
+                if (factoryCalls === 1) {
+                    throw new StorageAvailabilityError('startup unavailable', undefined);
+                }
+
+                return storage.port;
+            },
+            generateNativeMessageId: (() => {
+                const messageIds = ['volatile-start-1', 'volatile-start-2', 'volatile-start-3'];
+                let index = 0;
+
+                return () => messageIds[index++] ?? 'source-reading-1';
+            })(),
+        });
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+
+            expect(storage.latestCheckpoint?.volatileGuards).not.toEqual(
+                expect.arrayContaining([expect.objectContaining({ eventId: sourceEvent.eventId })]),
+            );
+
+            const storedSamplesBeforeReplay = storage.telemetrySamples.length;
+            runtime.runDeviceScenario('temp-desk', 'replay_last_reading');
+
+            expect(storage.telemetrySamples).toHaveLength(storedSamplesBeforeReplay);
+            expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({
                         eventId: sourceEvent.eventId,
@@ -1064,7 +2274,11 @@ describe('createTemperatureRoomRuntime', () => {
             let inspectedBeforeCommit = false;
             storage.setBeforeOutcome((operations) => {
                 inspectedBeforeCommit = true;
-                expect(operations).toEqual(['retireExpiredRecords', 'saveLatestRoomProjection']);
+                expect(operations).toEqual([
+                    'retireExpiredRecords',
+                    'saveLatestRoomProjection',
+                    'activateRuntimeSession',
+                ]);
                 expect(snapshots).toEqual([]);
                 expect(storage.latestCheckpoint).toEqual(checkpoint);
                 expect(storage.port.getMetadata().lastStorageSequence).toBe(storedThroughSequence);
@@ -1092,7 +2306,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
-    it('publishes degraded before applying rolled-back freshness in memory', () => {
+    it('publishes one batch with degraded status before rolled-back freshness', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
         const storage = createScriptedStorage();
@@ -1117,14 +2331,10 @@ describe('createTemperatureRoomRuntime', () => {
             clock.advanceBy(2_501);
             timer.run(1);
 
-            expect(snapshots).toHaveLength(2);
+            expect(snapshots).toHaveLength(1);
             expect(snapshots[0]?.platform.storage.status).toBe('degraded');
             expect(
                 snapshots[0]?.devices.find((candidate) => candidate.deviceId === 'temp-desk')
-                    ?.observationStatus.temperature,
-            ).toMatchObject({ freshness: 'fresh', durability: 'durable' });
-            expect(
-                snapshots[1]?.devices.find((candidate) => candidate.deviceId === 'temp-desk')
                     ?.observationStatus.temperature,
             ).toMatchObject({ freshness: 'stale', durability: 'durable' });
             expect(storage.latestCheckpoint).toEqual(checkpoint);
@@ -2068,6 +3278,13 @@ function createScriptedStorage() {
             let stagedInternalSequence = internalSequence;
             const stagedReceipts = new Map(receipts);
             const transaction: RoomStorageTransaction = {
+                getMetadata() {
+                    return {
+                        historyGenerationId: 'scripted-generation',
+                        schemaVersion: 1,
+                        lastStorageSequence: stagedStorageSequence,
+                    };
+                },
                 appendSignificantFact(input: SignificantFactInput) {
                     operations.push('appendSignificantFact');
                     const stored = { ...input, storageSequence: ++stagedStorageSequence };
@@ -2131,6 +3348,12 @@ function createScriptedStorage() {
                 },
                 retireTerminalSimulatorCommandReceipts() {
                     operations.push('retireTerminalSimulatorCommandReceipts');
+                },
+                activateRuntimeSession() {
+                    operations.push('activateRuntimeSession');
+                },
+                closeRuntimeSession() {
+                    operations.push('closeRuntimeSession');
                 },
             };
             const value = operation(transaction);

@@ -1,8 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
+import type { RecentEventProjection } from './history';
+import { isRecentEventsOrdered } from './history';
 import { isRoomRealtimeServerMessage, isRoomSnapshotProjection } from './realtime';
 
 describe('realtime schemas', () => {
+    it('orders same-timestamp recent events by lexical record ID', () => {
+        const laterLexically = {
+            recordId: 'platform:a',
+            occurredAt: '2026-09-03T09:00:00.000Z',
+        } as RecentEventProjection;
+        const earlierLexically = {
+            recordId: 'platform:Z',
+            occurredAt: '2026-09-03T09:00:00.000Z',
+        } as RecentEventProjection;
+
+        expect(isRecentEventsOrdered([laterLexically, earlierLexically])).toBe(true);
+        expect(isRecentEventsOrdered([earlierLexically, laterLexically])).toBe(false);
+    });
+
     it('accepts an atomic command update and rejects an inconsistent projection', () => {
         const update = createCommandsUpdatedMessage();
         const terminalCommand = {
@@ -246,14 +262,16 @@ describe('realtime schemas', () => {
         ).toBe(false);
     });
 
-    it('rejects a snapshot containing removed root event history', () => {
+    it('requires the bounded recent-event cache in every snapshot', () => {
         const snapshot = createSnapshotWithActiveCommands([]);
         snapshot.revision = 0;
 
         expect(
             isRoomRealtimeServerMessage({
                 ...snapshot,
-                payload: { ...snapshot.payload, recentEvents: [] },
+                payload: Object.fromEntries(
+                    Object.entries(snapshot.payload).filter(([key]) => key !== 'recentEvents'),
+                ),
             }),
         ).toBe(false);
     });
@@ -551,6 +569,7 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
         devices: Record<string, unknown>[];
         activeCommands: unknown[];
         recentCommands: Record<string, unknown>[];
+        recentEvents: Record<string, unknown>[];
         platform: { storage: ReturnType<typeof availableStorage> };
     };
 } {
@@ -580,6 +599,7 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
             devices: activeCommands.length > 0 ? [createLedDevice(firstCommand?.commandId)] : [],
             activeCommands: normalizedActiveCommands,
             recentCommands: [],
+            recentEvents: [],
             platform: { storage: availableStorage() },
         },
     };

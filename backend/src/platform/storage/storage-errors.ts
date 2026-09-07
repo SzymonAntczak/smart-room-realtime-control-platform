@@ -59,10 +59,31 @@ export class StorageInvariantError extends StorageFatalError {
 
 const sqliteAvailabilityCodes = new Set([5, 6, 8, 10, 13, 14]);
 const sqliteManualInterventionCodes = new Set([11, 26]);
+const filesystemAvailabilityCodes = new Set([
+    'EACCES',
+    'EBUSY',
+    'EIO',
+    'EMFILE',
+    'ENFILE',
+    'ENOENT',
+    'ENOSPC',
+    'ENOTDIR',
+    'EPERM',
+    'EROFS',
+]);
 
 export function classifySqliteError(error: unknown): StorageError {
     if (error instanceof StorageError) {
         return error;
+    }
+
+    const filesystemCode = filesystemErrorCode(error);
+
+    if (filesystemCode !== undefined && filesystemAvailabilityCodes.has(filesystemCode)) {
+        return new StorageAvailabilityError(
+            `SQLite filesystem availability failure: ${filesystemCode}.`,
+            error,
+        );
     }
 
     const sqliteCode = sqlitePrimaryCode(error);
@@ -79,6 +100,14 @@ export function classifySqliteError(error: unknown): StorageError {
     }
 
     return new StorageInvariantError('Unexpected SQLite failure.', error);
+}
+
+function filesystemErrorCode(error: unknown): string | undefined {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+        return undefined;
+    }
+
+    return typeof error.code === 'string' ? error.code : undefined;
 }
 
 function sqlitePrimaryCode(error: unknown): number | undefined {

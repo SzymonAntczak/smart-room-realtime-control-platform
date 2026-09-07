@@ -115,13 +115,20 @@ describe('connectTemperatureRealtime', () => {
         },
     );
 
-    it('rejects a snapshot carrying removed history fields', () => {
+    it('rejects a snapshot that omits the required recent-event cache', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
 
         MockWebSocket.latest().emitMessage({
             ...createRoomSnapshotMessage(),
-            payload: { ...createRoomSnapshotMessage().payload, recentEvents: [] },
+            payload: (() => {
+                const snapshotWithoutRecentEvents: Record<string, unknown> = {
+                    ...createRoomSnapshotMessage().payload,
+                };
+                delete snapshotWithoutRecentEvents['recentEvents'];
+
+                return snapshotWithoutRecentEvents;
+            })(),
         });
 
         expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
@@ -267,6 +274,50 @@ describe('connectTemperatureRealtime', () => {
                     storage: expect.objectContaining({ status: 'degraded' }),
                 }),
                 devices: [expect.objectContaining({ deviceId: 'temp-desk' })],
+            }),
+        );
+    });
+
+    it('merges a durable recovery gap from a platform delta without reconnecting', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitMessage({
+            messageType: 'platform.updated',
+            previousRevision: 0,
+            revision: 1,
+            sentAt: '2026-09-03T08:00:01Z',
+            payload: {
+                storage: {
+                    status: 'available',
+                    changedAt: '2026-09-03T08:00:01Z',
+                    historyGenerationId: 'generation-test',
+                    storedThroughSequence: 1,
+                },
+                recentEvents: [
+                    {
+                        recordId: 'platform:storage-gap:test',
+                        eventType: 'storage.gap.recorded',
+                        occurredAt: '2026-09-03T08:00:01Z',
+                        durability: 'durable',
+                        storageSequence: 1,
+                        source: 'backend',
+                        payload: {
+                            outageStartedAt: '2026-09-03T08:00:00Z',
+                            outageEndedAt: '2026-09-03T08:00:01Z',
+                            failureReason: 'storage_write_failed',
+                            boundaryBasis: 'same_process_first_degraded_at',
+                            observationsBackfilled: false,
+                        },
+                    },
+                ],
+            },
+        } satisfies RoomRealtimeServerMessage);
+
+        expect(handlers.onInvalidMessage).not.toHaveBeenCalled();
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                recentEvents: [expect.objectContaining({ eventType: 'storage.gap.recorded' })],
             }),
         );
     });
@@ -479,20 +530,6 @@ describe('connectTemperatureRealtime', () => {
         );
     });
 
-    it('rejects removed history fields without replacing the valid view', () => {
-        const handlers = createHandlers();
-        connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
-        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
-        MockWebSocket.latest().emitMessage({
-            ...createDeviceUpdatedMessage(),
-            payload: { ...createTemperatureDevice(), recentEvents: [] },
-        });
-
-        expect(handlers.onSnapshot).toHaveBeenCalledOnce();
-        expect(handlers.onInvalidMessage).toHaveBeenCalledOnce();
-        expect(handlers.onConnectionStatus).toHaveBeenLastCalledWith('reconnecting');
-    });
-
     it('preserves the valid view and reconnects after a revision gap', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
@@ -602,6 +639,7 @@ function createRoomSnapshotMessage({
     devices = [createTemperatureDevice()],
     activeCommands = [],
     recentCommands = [],
+    recentEvents = [],
 }: {
     devices?: RoomRealtimeServerMessage extends { payload: infer Payload }
         ? Payload extends { devices: infer Devices }
@@ -610,6 +648,7 @@ function createRoomSnapshotMessage({
         : never;
     activeCommands?: RoomSnapshotProjection['activeCommands'];
     recentCommands?: RoomSnapshotProjection['recentCommands'];
+    recentEvents?: RoomSnapshotProjection['recentEvents'];
 } = {}): RoomRealtimeServerMessage {
     return {
         messageType: 'room.snapshot',
@@ -621,6 +660,7 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands,
             recentCommands,
+            recentEvents,
             platform: {
                 storage: {
                     status: 'available',

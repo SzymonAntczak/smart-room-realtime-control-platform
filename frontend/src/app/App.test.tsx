@@ -132,6 +132,7 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands,
             recentCommands: [],
+            recentEvents: [],
             platform: { storage: availableStorage() },
         },
     };

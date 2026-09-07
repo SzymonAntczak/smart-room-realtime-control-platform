@@ -1,4 +1,4 @@
-import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createSqliteRoomStorage, executeStorageTransaction } from './sqlite-room-storage';
+import { createSqliteRoomStorageLifecycle } from './sqlite-room-storage-lifecycle';
 import {
     classifySqliteError,
     StorageAvailabilityError,
@@ -24,6 +25,293 @@ afterEach(() => {
 });
 
 describe('SQLite room storage', () => {
+    it('keeps a missing recovery target absent after a rollback-only first-initialization probe', () => {
+        const databasePath = temporaryDatabasePath();
+        const lifecycle = createSqliteRoomStorageLifecycle({
+            databasePath,
+            ensureDirectory() {},
+            generateHistoryGenerationId: () => '11111111-1111-4111-8111-111111111111',
+        });
+
+        expect(lifecycle.probe({ verifiedHistoryGenerationId: undefined })).toEqual({
+            kind: 'first_initialization',
+        });
+        expect(existsSync(databasePath)).toBe(false);
+    });
+
+    it('classifies recovery probe directory failures as availability errors', () => {
+        const lifecycle = createSqliteRoomStorageLifecycle({
+            databasePath: join(tmpdir(), 'unavailable', 'room.sqlite'),
+            ensureDirectory() {
+                throw { code: 'EACCES' };
+            },
+        });
+
+        expect(() => lifecycle.probe({ verifiedHistoryGenerationId: undefined })).toThrow(
+            StorageAvailabilityError,
+        );
+    });
+
+    it('refuses automatic recovery when a verified generation changes', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        const metadata = storage.getMetadata();
+        storage.close();
+        const lifecycle = createSqliteRoomStorageLifecycle({ databasePath, ensureDirectory() {} });
+
+        expect(() =>
+            lifecycle.probe({
+                verifiedHistoryGenerationId: `${metadata.historyGenerationId}-other`,
+            }),
+        ).toThrow(StorageManualInterventionError);
+    });
+
+    it('treats migration-manifest checksum and continuity drift as fatal during recovery probes', () => {
+        const checksumPath = temporaryDatabasePath();
+        const checksumStorage = createSqliteRoomStorage({ databasePath: checksumPath });
+        checksumStorage.close();
+        const checksumDatabase = new DatabaseSync(checksumPath);
+        checksumDatabase
+            .prepare('UPDATE schema_migrations SET checksum = ? WHERE version = 1')
+            .run('changed');
+        checksumDatabase.close();
+
+        const checksumLifecycle = createSqliteRoomStorageLifecycle({
+            databasePath: checksumPath,
+            ensureDirectory() {},
+        });
+        expect(() => checksumLifecycle.probe({ verifiedHistoryGenerationId: undefined })).toThrow(
+            StorageSchemaError,
+        );
+
+        const continuityPath = temporaryDatabasePath();
+        const continuityStorage = createSqliteRoomStorage({ databasePath: continuityPath });
+        continuityStorage.close();
+        const continuityDatabase = new DatabaseSync(continuityPath);
+        continuityDatabase.prepare('DELETE FROM schema_migrations WHERE version = 1').run();
+        continuityDatabase.close();
+
+        const continuityLifecycle = createSqliteRoomStorageLifecycle({
+            databasePath: continuityPath,
+            ensureDirectory() {},
+        });
+        expect(() => continuityLifecycle.probe({ verifiedHistoryGenerationId: undefined })).toThrow(
+            StorageSchemaError,
+        );
+    });
+
+    it('does not let an abort latch hide a classified existing-generation cutover failure', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        storage.close();
+        const lifecycle = createSqliteRoomStorageLifecycle({ databasePath, ensureDirectory() {} });
+        const probe = lifecycle.probe({ verifiedHistoryGenerationId: undefined });
+
+        if (probe.kind === 'existing_generation') {
+            probe.storage.close();
+        }
+
+        const outcome = lifecycle.cutover({
+            probe,
+            shouldAbort: () => true,
+            operation() {
+                throw new StorageInvariantError('recovery invariant failed', undefined);
+            },
+        });
+
+        expect(outcome).toEqual({
+            status: 'confirmed_rolled_back',
+            error: expect.objectContaining({ kind: 'fatal', category: 'invariant' }),
+        });
+    });
+
+    it('creates schema and a recovery gap in one first-initialization cutover', () => {
+        const databasePath = temporaryDatabasePath();
+        const lifecycle = createSqliteRoomStorageLifecycle({
+            databasePath,
+            ensureDirectory() {},
+            generateHistoryGenerationId: () => '22222222-2222-4222-8222-222222222222',
+        });
+        const probe = lifecycle.probe({ verifiedHistoryGenerationId: undefined });
+        const outcome = lifecycle.cutover({
+            probe,
+            shouldAbort: () => false,
+            operation(transaction) {
+                return transaction.appendSignificantFact({
+                    recordId: 'platform:storage-gap:test',
+                    eventType: 'storage.gap.recorded',
+                    source: 'backend',
+                    occurredAt: '2026-09-03T08:00:00.000Z',
+                    payload: { observationsBackfilled: false },
+                }).storageSequence;
+            },
+        });
+
+        expect(outcome).toMatchObject({
+            status: 'committed',
+            value: 1,
+            metadata: {
+                historyGenerationId: '22222222-2222-4222-8222-222222222222',
+                lastStorageSequence: 1,
+            },
+        });
+
+        if (outcome.status === 'committed') {
+            expect(outcome.storage.listSignificantFacts()).toHaveLength(1);
+            outcome.storage.close();
+        }
+    });
+
+    it('rolls back the complete first-initialization schema, checkpoint, session, and gap', () => {
+        const databasePath = temporaryDatabasePath();
+        const lifecycle = createSqliteRoomStorageLifecycle({ databasePath, ensureDirectory() {} });
+        const probe = lifecycle.probe({ verifiedHistoryGenerationId: undefined });
+        const outcome = lifecycle.cutover({
+            probe,
+            shouldAbort: () => true,
+            operation(transaction) {
+                transaction.appendSignificantFact({
+                    recordId: 'platform:storage-gap:aborted',
+                    eventType: 'storage.gap.recorded',
+                    source: 'backend',
+                    occurredAt: '2026-09-03T08:00:00.000Z',
+                    payload: { observationsBackfilled: false },
+                });
+                transaction.saveLatestRoomProjection({
+                    updatedAt: '2026-09-03T08:00:00.000Z',
+                    projection: emptyRoomProjection('2026-09-03T08:00:00.000Z'),
+                    projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                    volatileGuards: [],
+                    recentEvents: [],
+                });
+                transaction.activateRuntimeSession({
+                    sessionId: 'session-aborted',
+                    sessionStartedAt: '2026-09-03T08:00:00.000Z',
+                    lastDurableCommitAt: '2026-09-03T08:00:00.000Z',
+                });
+
+                return undefined;
+            },
+        });
+
+        expect(outcome).toEqual({ status: 'aborted' });
+        const database = new DatabaseSync(databasePath, { readOnly: true });
+        expect(
+            database.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'").all(),
+        ).toEqual([]);
+        database.close();
+    });
+
+    it('reclassifies a target created after a first-initialization probe without overwriting it', () => {
+        const databasePath = temporaryDatabasePath();
+        const lifecycle = createSqliteRoomStorageLifecycle({ databasePath, ensureDirectory() {} });
+        const probe = lifecycle.probe({ verifiedHistoryGenerationId: undefined });
+        const foreign = new DatabaseSync(databasePath);
+        foreign.exec('CREATE TABLE foreign_data (id INTEGER PRIMARY KEY) STRICT;');
+        foreign.close();
+
+        const outcome = lifecycle.cutover({
+            probe,
+            shouldAbort: () => false,
+            operation() {
+                return undefined;
+            },
+        });
+
+        expect(outcome).toEqual({
+            status: 'confirmed_rolled_back',
+            error: expect.any(StorageManualInterventionError),
+        });
+        const after = new DatabaseSync(databasePath, { readOnly: true });
+        expect(
+            after.prepare("SELECT name FROM sqlite_schema WHERE name = 'foreign_data'").get(),
+        ).toBeDefined();
+        expect(
+            after.prepare("SELECT name FROM sqlite_schema WHERE name = 'schema_migrations'").get(),
+        ).toBeUndefined();
+        after.close();
+    });
+
+    it('treats a partial application target that appears after probe as fatal without overwriting it', () => {
+        const databasePath = temporaryDatabasePath();
+        const lifecycle = createSqliteRoomStorageLifecycle({ databasePath, ensureDirectory() {} });
+        const probe = lifecycle.probe({ verifiedHistoryGenerationId: undefined });
+        const partial = new DatabaseSync(databasePath);
+        partial.exec('CREATE TABLE storage_metadata (history_generation_id TEXT NOT NULL) STRICT;');
+        partial.close();
+
+        const outcome = lifecycle.cutover({
+            probe,
+            shouldAbort: () => false,
+            operation() {
+                return undefined;
+            },
+        });
+
+        expect(outcome).toEqual({
+            status: 'confirmed_rolled_back',
+            error: expect.any(StorageSchemaError),
+        });
+        const after = new DatabaseSync(databasePath, { readOnly: true });
+        expect(
+            after.prepare("SELECT name FROM sqlite_schema WHERE name = 'storage_metadata'").get(),
+        ).toBeDefined();
+        expect(
+            after.prepare("SELECT name FROM sqlite_schema WHERE name = 'schema_migrations'").get(),
+        ).toBeUndefined();
+        after.close();
+    });
+
+    it('classifies a foreign SQLite target as manual intervention without replacing it', () => {
+        const databasePath = temporaryDatabasePath();
+        const database = new DatabaseSync(databasePath);
+        database.exec('CREATE TABLE foreign_data (id INTEGER PRIMARY KEY) STRICT;');
+        database.close();
+        const lifecycle = createSqliteRoomStorageLifecycle({
+            databasePath,
+            ensureDirectory() {},
+        });
+
+        expect(lifecycle.openAtStartup()).toEqual({
+            kind: 'degraded',
+            error: expect.any(StorageManualInterventionError),
+        });
+
+        const after = new DatabaseSync(databasePath, { readOnly: true });
+        expect(
+            after.prepare("SELECT name FROM sqlite_schema WHERE name = 'foreign_data'").get(),
+        ).toBeDefined();
+        expect(
+            after.prepare("SELECT name FROM sqlite_schema WHERE name = 'schema_migrations'").get(),
+        ).toBeUndefined();
+        after.close();
+    });
+
+    it('does not migrate an existing incompatible generation during lifecycle probe', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        storage.close();
+        const database = new DatabaseSync(databasePath);
+        database.prepare('DELETE FROM schema_migrations WHERE version = 4').run();
+        database.close();
+        const lifecycle = createSqliteRoomStorageLifecycle({
+            databasePath,
+            ensureDirectory() {},
+        });
+
+        expect(() => lifecycle.probe({ verifiedHistoryGenerationId: undefined })).toThrow(
+            StorageSchemaError,
+        );
+
+        const after = new DatabaseSync(databasePath, { readOnly: true });
+        expect(
+            after.prepare('SELECT MAX(version) AS version FROM schema_migrations').get(),
+        ).toEqual({
+            version: 3,
+        });
+        after.close();
+    });
+
     it('initializes a fresh database once and preserves its history generation on reopen', () => {
         const databasePath = temporaryDatabasePath();
         const first = createSqliteRoomStorage({ databasePath });
@@ -36,7 +324,7 @@ describe('SQLite room storage', () => {
             historyGenerationId: expect.stringMatching(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             ),
-            schemaVersion: 3,
+            schemaVersion: 4,
             lastStorageSequence: 0,
         });
         expect(reopened.getMetadata()).toEqual(initialMetadata);
@@ -53,13 +341,14 @@ describe('SQLite room storage', () => {
         };
         const projection = {
             updatedAt: '2026-08-14T10:00:04.000Z',
-            projection: { roomName: 'Smart Room', devices: [] },
+            projection: emptyRoomProjection('2026-08-14T10:00:04.000Z'),
             projectionEvidence: {
                 availabilityDeviceIds: [],
                 healthDeviceIds: [],
                 commandConfirmationSources: [{ commandId: 'command-1', eventId: 'state-report-1' }],
             },
             volatileGuards: [],
+            recentEvents: [],
         };
 
         const outcome = storage.transact((transaction) => {
@@ -345,9 +634,10 @@ describe('SQLite room storage', () => {
         const outcome = storage.transact((transaction) => {
             transaction.saveLatestRoomProjection({
                 updatedAt: '2026-08-14T10:00:01.000Z',
-                projection: { roomName: 'Smart Room', devices: [] },
+                projection: emptyRoomProjection('2026-08-14T10:00:01.000Z'),
                 projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
                 volatileGuards: [guard],
+                recentEvents: [],
             });
         });
 
@@ -355,9 +645,10 @@ describe('SQLite room storage', () => {
 
         expect(storage.getLatestRoomProjection()).toEqual({
             updatedAt: '2026-08-14T10:00:01.000Z',
-            projection: { roomName: 'Smart Room', devices: [] },
+            projection: emptyRoomProjection('2026-08-14T10:00:01.000Z'),
             projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
             volatileGuards: [guard],
+            recentEvents: [],
         });
         storage.close();
 
@@ -367,7 +658,7 @@ describe('SQLite room storage', () => {
             .get() as { projection_json: string };
         database.close();
 
-        expect(JSON.parse(row.projection_json)).toMatchObject({ checkpointVersion: 2 });
+        expect(JSON.parse(row.projection_json)).toMatchObject({ checkpointVersion: 3 });
     });
 
     it('migrates a known version 0 checkpoint and remains idempotent on reopen', () => {
@@ -422,7 +713,7 @@ describe('SQLite room storage', () => {
         ).projection_json;
         reopenedDatabase.close();
 
-        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 2 });
+        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 3 });
         expect(afterSecondOpen).toBe(afterFirstOpen);
     });
 
@@ -460,7 +751,7 @@ describe('SQLite room storage', () => {
         );
         migratedDatabase.close();
 
-        expect(migratedCheckpoint).toMatchObject({ checkpointVersion: 2 });
+        expect(migratedCheckpoint).toMatchObject({ checkpointVersion: 3 });
     });
 
     it('rejects an unknown or malformed checkpoint version without rewriting it', () => {
@@ -495,10 +786,118 @@ describe('SQLite room storage', () => {
         const futureDatabase = new DatabaseSync(databasePath);
         futureDatabase
             .prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1')
-            .run(JSON.stringify({ ...legacyCheckpoint(), checkpointVersion: 3 }));
+            .run(JSON.stringify({ ...legacyCheckpoint(), checkpointVersion: 4 }));
         futureDatabase.close();
 
         expect(() => createSqliteRoomStorage({ databasePath })).toThrow(StorageMigrationError);
+    });
+
+    it('rejects a malformed current-version checkpoint during an existing-generation probe', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        const seed = storage.transact((transaction) => {
+            transaction.saveLatestRoomProjection({
+                updatedAt: '2026-09-03T08:00:00.000Z',
+                projection: emptyRoomProjection('2026-09-03T08:00:00.000Z'),
+                projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                volatileGuards: [],
+                recentEvents: [],
+            });
+        });
+        expect(seed.status).toBe('committed');
+        storage.close();
+        const database = new DatabaseSync(databasePath);
+        database.prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1').run(
+            JSON.stringify({
+                checkpointVersion: 3,
+                projection: null,
+                projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                volatileGuards: [],
+                recentEvents: [],
+            }),
+        );
+        database.close();
+        const lifecycle = createSqliteRoomStorageLifecycle({ databasePath, ensureDirectory() {} });
+
+        expect(() => lifecycle.probe({ verifiedHistoryGenerationId: undefined })).toThrow(
+            StorageSchemaError,
+        );
+    });
+
+    it('rejects semantically invalid recent-event checkpoint caches during recovery probes', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        const duplicateGap = {
+            recordId: 'platform:storage-gap:duplicate',
+            eventType: 'storage.gap.recorded' as const,
+            occurredAt: '2026-09-03T08:00:00.000Z',
+            durability: 'durable' as const,
+            storageSequence: 1,
+            source: 'backend' as const,
+            payload: {
+                outageStartedAt: '2026-09-03T07:00:00.000Z',
+                outageEndedAt: '2026-09-03T08:00:00.000Z',
+                failureReason: 'storage_write_failed',
+                boundaryBasis: 'same_process_first_degraded_at' as const,
+                observationsBackfilled: false as const,
+            },
+        };
+        const seed = storage.transact((transaction) => {
+            transaction.saveLatestRoomProjection({
+                updatedAt: duplicateGap.occurredAt,
+                projection: emptyRoomProjection(duplicateGap.occurredAt),
+                projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                volatileGuards: [],
+                recentEvents: [],
+            });
+        });
+        expect(seed.status).toBe('committed');
+        storage.close();
+
+        const database = new DatabaseSync(databasePath);
+        database.prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1').run(
+            JSON.stringify({
+                checkpointVersion: 3,
+                projection: emptyRoomProjection(duplicateGap.occurredAt),
+                projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                volatileGuards: [],
+                recentEvents: [duplicateGap, duplicateGap],
+            }),
+        );
+        database.close();
+        const lifecycle = createSqliteRoomStorageLifecycle({ databasePath, ensureDirectory() {} });
+
+        expect(() => lifecycle.probe({ verifiedHistoryGenerationId: undefined })).toThrow(
+            StorageSchemaError,
+        );
+
+        const laterGap = {
+            ...duplicateGap,
+            recordId: 'platform:storage-gap:later',
+            occurredAt: '2026-09-03T09:00:00.000Z',
+            storageSequence: 2,
+            payload: {
+                ...duplicateGap.payload,
+                outageEndedAt: '2026-09-03T09:00:00.000Z',
+            },
+        };
+        const reorderedDatabase = new DatabaseSync(databasePath);
+        reorderedDatabase
+            .prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1')
+            .run(
+                JSON.stringify({
+                    checkpointVersion: 3,
+                    projection: emptyRoomProjection(duplicateGap.occurredAt),
+                    projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                    volatileGuards: [],
+                    recentEvents: [duplicateGap, laterGap],
+                }),
+            );
+        reorderedDatabase.close();
+
+        expect(() => lifecycle.probe({ verifiedHistoryGenerationId: undefined })).toThrow(
+            StorageSchemaError,
+        );
     });
 
     it('rejects a semantically invalid version 0 checkpoint before rewriting it', () => {
@@ -686,7 +1085,7 @@ describe('SQLite room storage', () => {
         newerStorage.close();
         const newerDatabase = new DatabaseSync(newerDatabasePath);
         newerDatabase
-            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (4, ?, ?)')
+            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (5, ?, ?)')
             .run('future', 'future');
         newerDatabase.close();
 
@@ -803,6 +1202,9 @@ describe('SQLite room storage', () => {
         expect(classifySqliteError({ code: 'ERR_SQLITE_ERROR', errcode: 26 }).kind).toBe(
             'manual_intervention',
         );
+        expect(classifySqliteError({ code: 'EACCES' }).kind).toBe('availability');
+        expect(classifySqliteError({ code: 'EROFS' }).kind).toBe('availability');
+        expect(classifySqliteError({ code: 'ENOSPC' }).kind).toBe('availability');
         expect(
             classifySqliteError(new StorageMigrationError('failed migration', undefined)),
         ).toMatchObject({
@@ -827,6 +1229,10 @@ function temporaryDatabasePath(): string {
     temporaryDirectories.push(directory);
 
     return join(directory, 'room.sqlite');
+}
+
+function emptyRoomProjection(updatedAt: string) {
+    return { updatedAt, devices: [], activeCommands: [], recentCommands: [] };
 }
 
 function legacyCheckpoint() {

@@ -247,6 +247,7 @@ function createSnapshot(): RoomSnapshotProjection {
         devices: [],
         activeCommands: [],
         recentCommands: [],
+        recentEvents: [],
         platform: {
             storage: {
                 status: 'available',

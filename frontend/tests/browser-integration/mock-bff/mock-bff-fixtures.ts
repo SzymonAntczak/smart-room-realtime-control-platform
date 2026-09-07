@@ -60,6 +60,7 @@ export function createOnlineLedRoomSnapshot(): RoomSnapshotProjection {
         devices: [createOnlineLedDeviceProjection()],
         activeCommands: [],
         recentCommands: [],
+        recentEvents: [],
         platform: storagePlatform(),
     };
 }
@@ -106,6 +107,7 @@ export function createOnlineTemperatureRoomSnapshot(): RoomSnapshotProjection {
         ],
         activeCommands: [],
         recentCommands: [],
+        recentEvents: [],
         platform: storagePlatform(),
     };
 }

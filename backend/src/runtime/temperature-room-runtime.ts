@@ -17,16 +17,25 @@ import {
     temperatureScenarioActions,
 } from '@smart-room/contracts/development';
 import type { PlatformEvent } from '@smart-room/contracts/events';
+import {
+    compareRecentEventsDescending,
+    type RecentEventProjection,
+} from '@smart-room/contracts/history';
 import type {
     PlatformStorageProjection,
     RoomSnapshotProjection,
 } from '@smart-room/contracts/projections';
-import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
+import {
+    isRoomSnapshotProjection,
+    type RoomPublicationBatch,
+    type RoomPublicationDelta,
+} from '@smart-room/contracts/realtime';
 import {
     type Clock,
     createLedScenario,
     createTemperatureSensorRuntime,
     createTemperatureSensorScenario,
+    type LedCommandReceiptPort,
     type LedReceiptFailure,
     type LedScenarioName,
     type LedScenarioScheduler,
@@ -49,6 +58,10 @@ import {
     createSetPowerCommandController,
 } from '../platform/command-processing/set-power-command-controller';
 import {
+    defaultDeduplicationEntryLimit,
+    defaultDeduplicationRetentionMs,
+} from '../platform/event-processing/event-deduplicator';
+import {
     derivedCommandRecordId,
     inputFingerprint,
     logicalRecordId,
@@ -64,18 +77,22 @@ import {
     type EventProcessingResult,
     type PreparedRecord,
 } from '../platform/event-processing/event-processor';
+import { commandAvailabilityFor } from '../platform/read-model/command-availability';
 import {
     createRoomProjector,
     type RoomProjection,
+    type RoomProjectionEvidence,
     type RoomProjector,
 } from '../platform/read-model/room-projection';
 import type {
     AcceptedInputIdentity,
     RoomStorage,
+    RoomStorageLifecycle,
     RoomStorageTransaction,
+    StorageCutoverOutcome,
     StorageMetadata,
 } from '../platform/storage/room-storage';
-import { StorageError } from '../platform/storage/storage-errors';
+import { StorageAvailabilityError, StorageError } from '../platform/storage/storage-errors';
 
 import { createRoomInputCoordinator } from './room-input-coordinator';
 
@@ -95,6 +112,11 @@ export interface TemperatureRoomRuntimeConfig {
     commandTimer?: CommandTimer;
     generateCommandId?: () => string;
     storage?: RoomStorage;
+    storageLifecycle?: RoomStorageLifecycle;
+    storageFactory?: () => RoomStorage;
+    recoveryTimer?: TimerScheduler;
+    storageRecoveryProbeIntervalMs?: number;
+    storageRecoveryQueueLimit?: number;
     operationalLog?: (entry: Record<string, unknown>) => void;
     onFatalStorageError?: (error: unknown) => never;
 }
@@ -111,6 +133,7 @@ export interface TemperatureRoomRuntime {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
     subscribeRoomSnapshot(listener: RoomSnapshotListener): () => void;
+    subscribeRoomPublicationBatch(listener: RoomPublicationBatchListener): () => void;
     getDeviceScenarios(deviceId: string): DeviceScenarioList | undefined;
     runDeviceScenario(deviceId: string, action: DeviceScenarioAction): DeviceScenarioResult;
     requestCommand(
@@ -119,6 +142,7 @@ export interface TemperatureRoomRuntime {
 }
 
 export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
+export type RoomPublicationBatchListener = (batch: RoomPublicationBatch) => void;
 
 const defaultSensors: readonly TemperatureSensorDefinition[] = [
     {
@@ -180,6 +204,11 @@ export function createTemperatureRoomRuntime({
     commandTimer = realCommandTimer,
     generateCommandId = randomUUID,
     storage,
+    storageLifecycle,
+    storageFactory,
+    recoveryTimer = timer,
+    storageRecoveryProbeIntervalMs = 5_000,
+    storageRecoveryQueueLimit = 1_000,
     operationalLog = () => {},
     onFatalStorageError = (error): never => {
         throw error;
@@ -204,18 +233,40 @@ export function createTemperatureRoomRuntime({
     devices.push({ deviceId: 'led-main', name: 'Main LED', role: 'led-output' });
     let led: ReturnType<typeof createLedScenario> | undefined;
     let ledAdapter: SimulatorLedAdapter | undefined;
+    const resolvedStorageFactory = storageFactory;
+    let initialStorage = storage;
+    let startupStorageFactoryError: unknown;
+    let initialStorageMetadata: StorageMetadata | undefined;
+
+    if (!initialStorage && storageLifecycle) {
+        const startup = storageLifecycle.openAtStartup();
+
+        if (startup.kind === 'available') {
+            initialStorage = startup.storage;
+            initialStorageMetadata = startup.metadata;
+        } else {
+            startupStorageFactoryError = startup.error;
+        }
+    } else if (!initialStorage && resolvedStorageFactory) {
+        try {
+            initialStorage = resolvedStorageFactory();
+        } catch (error) {
+            startupStorageFactoryError = error;
+        }
+    }
+
     const roomProjector = createRoomProjector({
         devices,
         initialUpdatedAt: clock.now(),
     });
     let fatalRuntimeError: Error | undefined;
     const initializedCheckpoint = initializeProjectionCheckpoint(
-        storage,
+        initialStorage,
         roomProjector,
         clock.now(),
     );
     const initialStorageOutcome = initializedCheckpoint?.outcome;
-    let startupStorageError = initializedCheckpoint?.readError;
+    let startupStorageError = initializedCheckpoint?.readError ?? startupStorageFactoryError;
 
     if (initialStorageOutcome?.status === 'indeterminate') {
         terminateForStorageOutcome(initialStorageOutcome.error, 'unknown');
@@ -233,16 +284,15 @@ export function createTemperatureRoomRuntime({
     }
 
     let initialAcceptedInputIdentities: AcceptedInputIdentity[] = [];
-    let initialStorageMetadata: StorageMetadata | undefined;
 
     if (
-        storage &&
+        initialStorage &&
         !startupStorageError &&
         initialStorageOutcome?.status !== 'confirmed_rolled_back'
     ) {
         try {
-            initialAcceptedInputIdentities = storage.listAcceptedInputIdentities();
-            initialStorageMetadata = storage.getMetadata();
+            initialAcceptedInputIdentities = initialStorage.listAcceptedInputIdentities();
+            initialStorageMetadata ??= initialStorage.getMetadata();
         } catch (error) {
             startupStorageError = error;
         }
@@ -272,7 +322,7 @@ export function createTemperatureRoomRuntime({
         diagnosticEventLimit,
     });
     let storageState: PlatformStorageProjection =
-        storage &&
+        initialStorage &&
         !startupStorageError &&
         initialStorageOutcome?.status !== 'confirmed_rolled_back' &&
         initialStorageMetadata
@@ -285,10 +335,34 @@ export function createTemperatureRoomRuntime({
             : {
                   status: 'degraded',
                   changedAt: clock.now(),
-                  reason: storage ? 'storage_write_failed' : 'storage_not_configured',
-                  historyGenerationId: null,
-                  storedThroughSequence: null,
+                  reason:
+                      startupStorageError instanceof StorageError &&
+                      startupStorageError.kind === 'manual_intervention'
+                          ? 'storage_manual_intervention_required'
+                          : initialStorage || resolvedStorageFactory || storageLifecycle
+                            ? 'storage_write_failed'
+                            : 'storage_not_configured',
+                  // A lifecycle may verify metadata before a later checkpoint
+                  // read fails. Keep that generation as a recovery guard: a
+                  // missing target must never become an automatic first init.
+                  ...(initialStorageMetadata
+                      ? {
+                            historyGenerationId: initialStorageMetadata.historyGenerationId,
+                            storedThroughSequence: initialStorageMetadata.lastStorageSequence,
+                        }
+                      : { historyGenerationId: null, storedThroughSequence: null }),
               };
+    let recentEvents: RecentEventProjection[] = initializedCheckpoint?.recentEvents ?? [];
+    let recoveryGapForPublication: RecentEventProjection | undefined;
+    let activeStorage = initialStorage;
+    let verifiedHistoryGenerationId = initialStorageMetadata?.historyGenerationId;
+    const runtimeSessionId = randomUUID();
+    let recoveryTimerHandle: unknown | undefined;
+    let outageStartedAt = storageState.status === 'degraded' ? storageState.changedAt : undefined;
+    let outageBoundaryBasis: 'same_process_first_degraded_at' | 'degraded_startup_at' | undefined =
+        storageState.status === 'degraded' ? 'degraded_startup_at' : undefined;
+    let outageFailureReason = storageState.status === 'degraded' ? storageState.reason : undefined;
+    const storageRecoveryTimer = recoveryTimer ?? realTimer;
 
     if (storageState.status === 'degraded' && !initializedCheckpoint?.restored) {
         roomProjector.installProjection(
@@ -309,6 +383,7 @@ export function createTemperatureRoomRuntime({
 
     const snapshotBroadcastTimer = timer ?? (realTimer as TimerScheduler);
     const snapshotListeners = new Set<RoomSnapshotListener>();
+    const publicationBatchListeners = new Set<RoomPublicationBatchListener>();
     let bufferedAdapterEvents: Array<{ event: PlatformEvent; receivedAt: string }> | undefined;
     let hasStarted = false;
     let snapshotBroadcastTimerHandle: unknown | undefined;
@@ -350,8 +425,9 @@ export function createTemperatureRoomRuntime({
             });
         },
         listDurableOutboxIntents() {
-            return storage && typeof storage.listCommandDispatchOutboxIntents === 'function'
-                ? storage.listCommandDispatchOutboxIntents()
+            return activeStorage &&
+                typeof activeStorage.listCommandDispatchOutboxIntents === 'function'
+                ? activeStorage.listCommandDispatchOutboxIntents()
                 : [];
         },
         createDispatchScope() {
@@ -408,7 +484,10 @@ export function createTemperatureRoomRuntime({
             commandController.reschedulePendingCommands();
 
             if (storageState.status === 'available') {
+                activateRuntimeSession(clock.now());
                 commandController.reconcileOutboxAfterRecovery();
+            } else {
+                scheduleStorageRecovery();
             }
 
             for (const sensorEntry of sensors) {
@@ -437,6 +516,11 @@ export function createTemperatureRoomRuntime({
                 snapshotBroadcastTimerHandle = undefined;
             }
 
+            if (recoveryTimerHandle !== undefined) {
+                storageRecoveryTimer.clearInterval(recoveryTimerHandle);
+                recoveryTimerHandle = undefined;
+            }
+
             for (const sensorEntry of sensors) {
                 sensorEntry.adapter?.stop();
                 sensorEntry.adapter = undefined;
@@ -448,6 +532,9 @@ export function createTemperatureRoomRuntime({
             led = undefined;
 
             commandController.stop();
+            closeRuntimeSession();
+            closeStorage(activeStorage);
+            activeStorage = undefined;
             hasStarted = false;
         },
         getRoomSnapshot() {
@@ -461,6 +548,13 @@ export function createTemperatureRoomRuntime({
 
             return () => {
                 snapshotListeners.delete(listener);
+            };
+        },
+        subscribeRoomPublicationBatch(listener) {
+            publicationBatchListeners.add(listener);
+
+            return () => {
+                publicationBatchListeners.delete(listener);
             };
         },
         getDeviceScenarios(deviceId) {
@@ -626,9 +720,7 @@ export function createTemperatureRoomRuntime({
             clock,
             scheduler: ledScenarioScheduler,
             generateMessageId: generateNativeMessageId,
-            ...(storage
-                ? { receiptPort: createSqliteLedCommandReceiptPort({ storage, clock }) }
-                : {}),
+            receiptPort: createActiveStorageReceiptPort(),
             onReceiptFailure(failure) {
                 handleLedReceiptFailure(failure);
             },
@@ -646,17 +738,78 @@ export function createTemperatureRoomRuntime({
         return led;
     }
 
+    function createActiveStorageReceiptPort(): LedCommandReceiptPort {
+        const unavailable = () => ({
+            status: 'inspection_unavailable' as const,
+            error: new StorageAvailabilityError(
+                'Storage is unavailable for LED receipt handling.',
+                undefined,
+            ),
+        });
+
+        const withActiveStorage = <Value>(
+            operation: (port: LedCommandReceiptPort) => Value,
+        ): Value | ReturnType<typeof unavailable> => {
+            if (!activeStorage || storageState.status !== 'available') {
+                return unavailable();
+            }
+
+            return operation(createSqliteLedCommandReceiptPort({ storage: activeStorage, clock }));
+        };
+
+        return {
+            accept(candidate) {
+                return withActiveStorage((port) => port.accept(candidate));
+            },
+            markTerminal(receipt) {
+                return withActiveStorage((port) => port.markTerminal(receipt));
+            },
+            list() {
+                return withActiveStorage((port) => port.list());
+            },
+        };
+    }
+
     function findSensor(deviceId: string): (typeof sensors)[number] | undefined {
         return sensors.find((sensorEntry) => sensorEntry.definition.deviceId === deviceId);
     }
 
-    function notifySnapshotListeners(evaluatedAt: string, installedProjectionOnly = false): void {
+    function notifySnapshotListeners(
+        evaluatedAt: string,
+        installedProjectionOnly = false,
+        platformBeforeOutcome = false,
+    ): void {
         const snapshot = installedProjectionOnly ? installedSnapshot() : snapshotAt(evaluatedAt);
-        lastPublishedSnapshot = snapshot;
+        publishSnapshot(
+            snapshot,
+            buildPublicationDeltas(lastPublishedSnapshot, snapshot, platformBeforeOutcome),
+        );
+    }
 
-        for (const listener of snapshotListeners) {
+    function publishSnapshot(
+        snapshot: RoomSnapshotProjection,
+        deltas: RoomPublicationBatch['deltas'],
+    ): void {
+        lastPublishedSnapshot = snapshot;
+        // Freeze both audiences before invoking either callback kind. A
+        // reentrant snapshot subscriber must observe the installed baseline,
+        // not receive deltas belonging to the batch that installed it.
+        const snapshotAudience = [...snapshotListeners];
+        const batchAudience = [...publicationBatchListeners];
+
+        for (const listener of snapshotAudience) {
             try {
                 listener(snapshot);
+            } catch {
+                // A failed realtime client must not block event ingestion or other clients.
+            }
+        }
+
+        // Snapshot listeners installed while a batch is in progress observe
+        // its already-installed snapshot, but must not receive its deltas.
+        for (const listener of batchAudience) {
+            try {
+                listener({ snapshot, deltas });
             } catch {
                 // A failed realtime client must not block event ingestion or other clients.
             }
@@ -674,9 +827,10 @@ export function createTemperatureRoomRuntime({
         }
 
         const prepared = processor.prepareFreshnessProjection(ingress);
+        let platformBeforeOutcome = false;
 
-        if (storage && storageState.status === 'available') {
-            const outcome = storage.transact((transaction) => {
+        if (activeStorage && storageState.status === 'available') {
+            const outcome = activeStorage.transact((transaction) => {
                 const retiredIdentityEventIds =
                     transaction.retireExpiredRecords({ asOf: evaluatedAt }) ?? [];
                 transaction.saveLatestRoomProjection({
@@ -684,7 +838,9 @@ export function createTemperatureRoomRuntime({
                     projection: prepared.candidateState,
                     projectionEvidence: prepared.candidateEvidence,
                     volatileGuards: processor.listVolatileIdentities(),
+                    recentEvents,
                 });
+                touchRuntimeSession(transaction, evaluatedAt);
 
                 return { retiredIdentityEventIds };
             });
@@ -698,14 +854,8 @@ export function createTemperatureRoomRuntime({
             }
 
             if (outcome.status === 'confirmed_rolled_back') {
-                storageState = {
-                    status: 'degraded',
-                    changedAt: evaluatedAt,
-                    reason: 'storage_write_failed',
-                    historyGenerationId: storageState.historyGenerationId,
-                    storedThroughSequence: storageState.storedThroughSequence,
-                };
-                notifySnapshotListeners(evaluatedAt, true);
+                enterStorageDegraded(outcome.error, evaluatedAt, false);
+                platformBeforeOutcome = true;
             } else {
                 processor.forgetDurableIdentities(outcome.value.retiredIdentityEventIds);
             }
@@ -713,7 +863,7 @@ export function createTemperatureRoomRuntime({
 
         processor.commitPreparedProjection(prepared);
 
-        notifySnapshotListeners(evaluatedAt);
+        notifySnapshotListeners(evaluatedAt, false, platformBeforeOutcome);
     }
 
     function processPlatformEvent(
@@ -737,10 +887,12 @@ export function createTemperatureRoomRuntime({
         );
         const durablePreparedState = processor.materializePreparedState(prepared, 'durable');
         let result: EventProcessingResult;
+        let platformBeforeOutcome = false;
 
-        if (storage && storageState.status === 'available') {
-            const outcome = storage.transact((transaction) => {
+        if (activeStorage && storageState.status === 'available') {
+            const outcome = activeStorage.transact((transaction) => {
                 let storedThroughSequence: number | undefined;
+                const storedRecentEvents: RecentEventProjection[] = [];
 
                 if (prepared.kind === 'quarantined') {
                     transaction.appendQuarantineEntry({
@@ -755,6 +907,15 @@ export function createTemperatureRoomRuntime({
                 } else if (prepared.eventId) {
                     for (const record of prepared.records) {
                         storedThroughSequence = appendPreparedRecord(transaction, record);
+                        const recentEvent = recentEventForRecord(
+                            record,
+                            'durable',
+                            storedThroughSequence,
+                        );
+
+                        if (recentEvent) {
+                            storedRecentEvents.push(recentEvent);
+                        }
                     }
 
                     transaction.upsertAcceptedInputIdentity({
@@ -787,10 +948,12 @@ export function createTemperatureRoomRuntime({
                         projectionEvidence:
                             prepared.candidateEvidence ?? roomProjector.getEvidence(),
                         volatileGuards: volatileGuardsForCheckpoint(prepared),
+                        recentEvents: mergeRecentEvents(recentEvents, storedRecentEvents),
                     });
+                    touchRuntimeSession(transaction, receivedAt);
                 }
 
-                return { storedThroughSequence, retiredIdentityEventIds };
+                return { storedThroughSequence, retiredIdentityEventIds, storedRecentEvents };
             });
 
             if (outcome.status === 'indeterminate') {
@@ -802,18 +965,17 @@ export function createTemperatureRoomRuntime({
             }
 
             if (outcome.status === 'confirmed_rolled_back') {
-                storageState = {
-                    status: 'degraded',
-                    changedAt: receivedAt,
-                    reason: 'storage_write_failed',
-                    historyGenerationId: storageState.historyGenerationId,
-                    storedThroughSequence: storageState.storedThroughSequence,
-                };
-                notifySnapshotListeners(receivedAt, true);
+                enterStorageDegraded(outcome.error, receivedAt, false);
+                platformBeforeOutcome = true;
                 result = processor.commitPrepared(prepared, 'volatile');
                 rememberVolatileIdentity(prepared, receivedAt);
+                recentEvents = mergeRecentEvents(
+                    recentEvents,
+                    recentEventsForRecords(prepared.records, 'volatile'),
+                );
             } else {
                 result = processor.commitPrepared(prepared);
+                recentEvents = mergeRecentEvents(recentEvents, outcome.value.storedRecentEvents);
                 processor.forgetDurableIdentities(outcome.value.retiredIdentityEventIds);
 
                 if (
@@ -839,25 +1001,33 @@ export function createTemperatureRoomRuntime({
         } else {
             result = processor.commitPrepared(prepared, 'volatile');
             rememberVolatileIdentity(prepared, receivedAt);
+            recentEvents = mergeRecentEvents(
+                recentEvents,
+                recentEventsForRecords(prepared.records, 'volatile'),
+            );
         }
 
         diagnostics.recordProcessingResult(event, result);
         commandController.onEventProcessed(activeCommandIdBeforeEvent, event, result);
 
         if (result.status === 'accepted' || prepared.kind === 'accepted_non_applying') {
-            notifySnapshotListeners(result.status === 'accepted' ? result.evaluatedAt : receivedAt);
+            notifySnapshotListeners(
+                result.status === 'accepted' ? result.evaluatedAt : receivedAt,
+                false,
+                platformBeforeOutcome,
+            );
         }
 
         return result;
     }
 
     function persistOutboxMutation(mutation: CommandOutboxMutation, ingress: EventIngress): void {
-        if (!storage || storageState.status !== 'available') {
+        if (!activeStorage || storageState.status !== 'available') {
             return;
         }
 
         const projection = roomProjector.getProjection({ evaluatedAt: ingress.receivedAt });
-        const outcome = storage.transact((transaction) => {
+        const outcome = activeStorage.transact((transaction) => {
             if (mutation.kind === 'upsert') {
                 transaction.upsertCommandDispatchOutboxIntent(mutation.intent);
             } else {
@@ -869,7 +1039,9 @@ export function createTemperatureRoomRuntime({
                 projection,
                 projectionEvidence: roomProjector.getEvidence(),
                 volatileGuards: processor.listVolatileIdentities(),
+                recentEvents,
             });
+            touchRuntimeSession(transaction, ingress.receivedAt);
         });
 
         if (outcome.status === 'indeterminate') {
@@ -881,15 +1053,557 @@ export function createTemperatureRoomRuntime({
         }
 
         if (outcome.status === 'confirmed_rolled_back') {
-            storageState = {
-                status: 'degraded',
-                changedAt: ingress.receivedAt,
-                reason: 'storage_write_failed',
-                historyGenerationId: storageState.historyGenerationId,
-                storedThroughSequence: storageState.storedThroughSequence,
-            };
-            notifySnapshotListeners(ingress.receivedAt, true);
+            enterStorageDegraded(outcome.error, ingress.receivedAt);
         }
+    }
+
+    function scheduleStorageRecovery(): void {
+        if (
+            (!resolvedStorageFactory && !storageLifecycle) ||
+            (storageState.status !== 'degraded' && storageState.status !== 'recovering') ||
+            storageState.reason === 'storage_manual_intervention_required' ||
+            storageState.reason === 'storage_not_configured' ||
+            recoveryTimerHandle !== undefined
+        ) {
+            return;
+        }
+
+        recoveryTimerHandle = storageRecoveryTimer.setInterval(() => {
+            inputCoordinator.receiveTimer((ingress) => {
+                attemptStorageRecovery(ingress);
+            });
+        }, storageRecoveryProbeIntervalMs);
+    }
+
+    function cancelStorageRecovery(): void {
+        if (recoveryTimerHandle === undefined) {
+            return;
+        }
+
+        storageRecoveryTimer.clearInterval(recoveryTimerHandle);
+        recoveryTimerHandle = undefined;
+    }
+
+    function attemptStorageRecovery(ingress: EventIngress): void {
+        if (
+            (!resolvedStorageFactory && !storageLifecycle) ||
+            (storageState.status !== 'degraded' && storageState.status !== 'recovering') ||
+            storageState.reason === 'storage_manual_intervention_required' ||
+            storageState.reason === 'storage_not_configured'
+        ) {
+            return;
+        }
+
+        let candidate: RoomStorage | undefined;
+        let lifecycleProbe: ReturnType<RoomStorageLifecycle['probe']> | undefined;
+        let cutover: ReturnType<typeof inputCoordinator.beginRecoveryCutover> | undefined;
+
+        try {
+            if (storageLifecycle) {
+                lifecycleProbe = storageLifecycle.probe({
+                    verifiedHistoryGenerationId:
+                        verifiedHistoryGenerationId ??
+                        storageState.historyGenerationId ??
+                        undefined,
+                });
+
+                if (lifecycleProbe.kind === 'existing_generation') {
+                    verifiedHistoryGenerationId = lifecycleProbe.metadata.historyGenerationId;
+                }
+
+                candidate =
+                    lifecycleProbe.kind === 'existing_generation'
+                        ? lifecycleProbe.storage
+                        : undefined;
+            } else if (resolvedStorageFactory) {
+                candidate = resolvedStorageFactory();
+            }
+
+            const metadata = candidate?.getMetadata();
+            const previousStorage = storageState;
+            const recoveringGeneration =
+                metadata?.historyGenerationId ?? previousStorage.historyGenerationId;
+            const recoveringSequence =
+                metadata?.lastStorageSequence ?? previousStorage.storedThroughSequence;
+            const enteringRecovery = storageState.status !== 'recovering';
+
+            if (enteringRecovery) {
+                storageState =
+                    recoveringGeneration === null || recoveringSequence === null
+                        ? {
+                              status: 'recovering',
+                              changedAt: ingress.receivedAt,
+                              reason: 'storage_recovering',
+                              historyGenerationId: null,
+                              storedThroughSequence: null,
+                          }
+                        : {
+                              status: 'recovering',
+                              changedAt: ingress.receivedAt,
+                              reason: 'storage_recovering',
+                              historyGenerationId: recoveringGeneration,
+                              storedThroughSequence: recoveringSequence,
+                          };
+            }
+
+            cutover = inputCoordinator.beginRecoveryCutover({
+                queueLimit: storageRecoveryQueueLimit,
+            });
+
+            if (enteringRecovery) {
+                notifySnapshotListeners(ingress.receivedAt, true);
+            }
+
+            if (cutover.overflowed) {
+                closeStorage(candidate);
+                candidate = undefined;
+                storageState =
+                    previousStorage.historyGenerationId === null
+                        ? {
+                              status: 'degraded',
+                              changedAt: ingress.receivedAt,
+                              reason: 'storage_recovery_queue_overflow',
+                              historyGenerationId: null,
+                              storedThroughSequence: null,
+                          }
+                        : {
+                              status: 'degraded',
+                              changedAt: ingress.receivedAt,
+                              reason: 'storage_recovery_queue_overflow',
+                              historyGenerationId: previousStorage.historyGenerationId,
+                              storedThroughSequence: previousStorage.storedThroughSequence,
+                          };
+                notifySnapshotListeners(ingress.receivedAt, true);
+                cutover.abort();
+                scheduleStorageRecovery();
+
+                return;
+            }
+
+            const volatileProjection = roomProjector.getProjection({
+                evaluatedAt: ingress.receivedAt,
+            });
+            const restoredCheckpoint = candidate?.getLatestRoomProjection();
+            let finalProjection = volatileProjection;
+            let finalProjectionEvidence = roomProjector.getEvidence();
+            let finalRecentEvents = recentEvents;
+            const restoredDurableIdentities: AcceptedInputIdentity[] = [];
+            let recoveredVolatileGuards = processor.listVolatileIdentities();
+
+            for (const identity of candidate?.listAcceptedInputIdentities() ?? []) {
+                if (
+                    identity.durability === 'durable' &&
+                    identity.fingerprint.startsWith('fp:v1:sha256:')
+                ) {
+                    restoredDurableIdentities.push(identity);
+                }
+            }
+
+            if (restoredCheckpoint && isRoomProjection(restoredCheckpoint.projection)) {
+                if (
+                    hasVolatileDurableActiveCommandConflict(
+                        restoredCheckpoint.projection,
+                        volatileProjection,
+                    )
+                ) {
+                    closeStorage(candidate);
+                    candidate = undefined;
+                    cutover.abort();
+                    scheduleStorageRecovery();
+
+                    return;
+                }
+
+                finalProjection = mergeRecoveryProjection(
+                    restoredCheckpoint.projection,
+                    volatileProjection,
+                );
+                finalProjectionEvidence = mergeRecoveryEvidence(
+                    restoredCheckpoint.projectionEvidence,
+                    roomProjector.getEvidence(),
+                    restoredCheckpoint.projection,
+                    volatileProjection,
+                );
+                finalRecentEvents = mergeRecentEvents(
+                    restoredCheckpoint.recentEvents,
+                    recentEvents,
+                );
+                recoveredVolatileGuards = mergeVolatileGuards(
+                    restoredCheckpoint.volatileGuards,
+                    recoveredVolatileGuards,
+                    {
+                        asOf: ingress.receivedAt,
+                        retentionMs: deduplicationRetentionMs ?? defaultDeduplicationRetentionMs,
+                        entryLimit: deduplicationEntryLimit ?? defaultDeduplicationEntryLimit,
+                    },
+                );
+            }
+
+            const durableIdentityEventIds = new Set(
+                restoredDurableIdentities.map((identity) => identity.eventId),
+            );
+            recoveredVolatileGuards = recoveredVolatileGuards.filter(
+                (identity) =>
+                    !durableIdentityEventIds.has(identity.eventId) &&
+                    !processor.hasDurableIdentity(identity.eventId),
+            );
+
+            const projection = finalProjection;
+            const gapRecordId = `platform:storage-gap:${generateEventId()}`;
+            const gapPayload = {
+                outageStartedAt: outageStartedAt ?? previousStorage.changedAt,
+                outageEndedAt: ingress.receivedAt,
+                failureReason: outageFailureReason ?? previousStorage.reason,
+                boundaryBasis: outageBoundaryBasis ?? ('degraded_startup_at' as const),
+                observationsBackfilled: false as const,
+            };
+
+            const recoveryOperation = (transaction: RoomStorageTransaction) => {
+                const gapRecentEvent: RecentEventProjection = {
+                    recordId: gapRecordId,
+                    eventType: 'storage.gap.recorded',
+                    occurredAt: ingress.receivedAt,
+                    durability: 'durable',
+                    storageSequence: 0,
+                    source: 'backend',
+                    payload: gapPayload,
+                };
+                const storedGap = transaction.appendSignificantFact({
+                    recordId: gapRecordId,
+                    eventType: 'storage.gap.recorded',
+                    source: 'backend',
+                    occurredAt: ingress.receivedAt,
+                    payload: gapPayload,
+                });
+                const retiredIdentityEventIds =
+                    transaction.retireExpiredRecords({ asOf: ingress.receivedAt }) ?? [];
+                transaction.saveLatestRoomProjection({
+                    updatedAt: projection.updatedAt,
+                    projection,
+                    projectionEvidence: finalProjectionEvidence,
+                    volatileGuards: recoveredVolatileGuards,
+                    recentEvents: mergeRecentEvents(finalRecentEvents, [
+                        { ...gapRecentEvent, storageSequence: storedGap.storageSequence },
+                    ]),
+                });
+                transaction.activateRuntimeSession({
+                    sessionId: runtimeSessionId,
+                    sessionStartedAt: ingress.receivedAt,
+                    lastDurableCommitAt: ingress.receivedAt,
+                });
+
+                return { storageSequence: storedGap.storageSequence, retiredIdentityEventIds };
+            };
+
+            const outcome =
+                storageLifecycle && lifecycleProbe
+                    ? (() => {
+                          closeStorage(candidate);
+                          candidate = undefined;
+
+                          return storageLifecycle.cutover({
+                              probe: lifecycleProbe,
+                              shouldAbort: () => cutover?.shouldAbort() ?? false,
+                              operation: recoveryOperation,
+                          });
+                      })()
+                    : candidate?.transact(recoveryOperation);
+
+            if (!outcome) {
+                throw new StorageError(
+                    'No storage candidate was available for recovery.',
+                    'fatal',
+                    undefined,
+                );
+            }
+
+            if (outcome.status === 'indeterminate') {
+                closeStorage(candidate);
+                terminateForStorageOutcome(outcome.error, 'unknown');
+            }
+
+            if (outcome.status === 'aborted') {
+                if (cutover.shouldAbort()) {
+                    storageState =
+                        previousStorage.historyGenerationId === null
+                            ? {
+                                  status: 'degraded',
+                                  changedAt: ingress.receivedAt,
+                                  reason: 'storage_recovery_queue_overflow',
+                                  historyGenerationId: null,
+                                  storedThroughSequence: null,
+                              }
+                            : {
+                                  status: 'degraded',
+                                  changedAt: ingress.receivedAt,
+                                  reason: 'storage_recovery_queue_overflow',
+                                  historyGenerationId: previousStorage.historyGenerationId,
+                                  storedThroughSequence: previousStorage.storedThroughSequence,
+                              };
+                    notifySnapshotListeners(ingress.receivedAt, true);
+                } else {
+                    storageState = previousStorage;
+                    notifySnapshotListeners(ingress.receivedAt, true);
+                }
+
+                cutover.abort();
+                scheduleStorageRecovery();
+
+                return;
+            }
+
+            if (outcome.status === 'confirmed_rolled_back') {
+                closeStorage(candidate);
+                candidate = undefined;
+                enterStorageDegraded(outcome.error, ingress.receivedAt);
+                cutover.abort();
+
+                return;
+            }
+
+            const committedStorage = isLifecycleCutoverCommit(outcome)
+                ? outcome.storage
+                : candidate;
+            const committedMetadata = isLifecycleCutoverCommit(outcome)
+                ? outcome.metadata
+                : metadata;
+
+            if (!committedStorage || !committedMetadata) {
+                throw new StorageError(
+                    'Recovery committed without an active storage generation.',
+                    'fatal',
+                    outcome,
+                );
+            }
+
+            closeStorage(activeStorage);
+            activeStorage = committedStorage;
+            verifiedHistoryGenerationId = committedMetadata.historyGenerationId;
+            roomProjector.installProjection(
+                finalProjection,
+                ingress.receivedAt,
+                finalProjectionEvidence,
+            );
+
+            for (const identity of restoredDurableIdentities) {
+                processor.rememberDurableIdentity(
+                    identity.eventId,
+                    identity.fingerprint as `fp:v1:sha256:${string}`,
+                    identity.acceptedAt,
+                );
+            }
+
+            // A degraded startup has not yet installed the checkpoint guards
+            // into the processor. Keep those guards as volatile evidence after
+            // cutover so that an event-id reuse cannot become acceptable merely
+            // because recovery was the first successful storage interaction.
+            for (const identity of recoveredVolatileGuards) {
+                processor.rememberVolatileIdentity(
+                    identity.eventId,
+                    identity.fingerprint as `fp:v1:sha256:${string}`,
+                    identity.acceptedAt,
+                );
+            }
+
+            processor.forgetDurableIdentities(outcome.value.retiredIdentityEventIds);
+
+            storageState = {
+                status: 'available',
+                changedAt: ingress.receivedAt,
+                historyGenerationId: committedMetadata.historyGenerationId,
+                storedThroughSequence: outcome.value.storageSequence,
+            };
+            recentEvents = mergeRecentEvents(finalRecentEvents, [
+                {
+                    recordId: gapRecordId,
+                    eventType: 'storage.gap.recorded',
+                    occurredAt: ingress.receivedAt,
+                    durability: 'durable',
+                    storageSequence: outcome.value.storageSequence,
+                    source: 'backend',
+                    payload: gapPayload,
+                },
+            ]);
+            recoveryGapForPublication = {
+                recordId: gapRecordId,
+                eventType: 'storage.gap.recorded',
+                occurredAt: ingress.receivedAt,
+                durability: 'durable',
+                storageSequence: outcome.value.storageSequence,
+                source: 'backend',
+                payload: gapPayload,
+            };
+            outageStartedAt = undefined;
+            outageBoundaryBasis = undefined;
+            outageFailureReason = undefined;
+            cancelStorageRecovery();
+            publishRecoveryCommit();
+
+            if (!hasConflictingActiveCommands(projection)) {
+                commandController.reconcileOutboxAfterRecovery();
+            }
+
+            cutover.commit();
+        } catch (error) {
+            if (fatalRuntimeError) {
+                throw error;
+            }
+
+            closeStorage(candidate);
+            enterStorageDegraded(error, ingress.receivedAt);
+            cutover?.abort();
+        }
+    }
+
+    function publishRecoveryCommit(): void {
+        const snapshot = installedSnapshot();
+        const previous = lastPublishedSnapshot;
+        const committedGap = recoveryGapForPublication;
+        const nonGapEvents = recentEvents.filter(
+            (event) => event.eventType !== 'storage.gap.recorded',
+        );
+        const reconciliationRequired =
+            previous === undefined ||
+            !sameJson(previous.devices, snapshot.devices) ||
+            !sameJson(previous.activeCommands, snapshot.activeCommands) ||
+            !sameJson(previous.recentCommands, snapshot.recentCommands) ||
+            !sameJson(
+                previous.recentEvents.filter((event) => event.eventType !== 'storage.gap.recorded'),
+                nonGapEvents,
+            );
+
+        publishSnapshot(snapshot, [
+            ...(reconciliationRequired
+                ? [
+                      {
+                          messageType: 'commands.updated' as const,
+                          payload: {
+                              devices: snapshot.devices,
+                              activeCommands: snapshot.activeCommands,
+                              recentCommands: snapshot.recentCommands,
+                              recentEvents: nonGapEvents,
+                          },
+                      },
+                  ]
+                : []),
+            {
+                messageType: 'platform.updated' as const,
+                payload: {
+                    storage: snapshot.platform.storage,
+                    recentEvents: committedGap ? [committedGap] : [],
+                },
+            },
+        ]);
+        recoveryGapForPublication = undefined;
+    }
+
+    function enterStorageDegraded(error: unknown, changedAt: string, publish = true): void {
+        if (!(error instanceof StorageError) || isFatalStorageError(error)) {
+            terminateForStorageOutcome(error, 'fatal');
+        }
+
+        const manual = error instanceof StorageError && error.kind === 'manual_intervention';
+
+        if (manual) {
+            cancelStorageRecovery();
+        }
+
+        closeStorage(activeStorage);
+        activeStorage = undefined;
+
+        if (outageStartedAt === undefined) {
+            outageStartedAt = changedAt;
+            outageBoundaryBasis = 'same_process_first_degraded_at';
+        }
+
+        outageFailureReason ??= manual
+            ? 'storage_manual_intervention_required'
+            : 'storage_write_failed';
+        const reason = manual ? 'storage_manual_intervention_required' : 'storage_write_failed';
+        const unchanged = storageState.status === 'degraded' && storageState.reason === reason;
+        storageState =
+            storageState.historyGenerationId === null
+                ? {
+                      status: 'degraded',
+                      changedAt: unchanged ? storageState.changedAt : changedAt,
+                      reason,
+                      historyGenerationId: null,
+                      storedThroughSequence: null,
+                  }
+                : {
+                      status: 'degraded',
+                      changedAt: unchanged ? storageState.changedAt : changedAt,
+                      reason,
+                      historyGenerationId: storageState.historyGenerationId,
+                      storedThroughSequence: storageState.storedThroughSequence,
+                  };
+
+        if (publish && !unchanged) {
+            notifySnapshotListeners(changedAt, true);
+        }
+
+        if (!manual) {
+            scheduleStorageRecovery();
+        }
+    }
+
+    function closeRuntimeSession(): void {
+        if (!activeStorage || storageState.status !== 'available') {
+            return;
+        }
+
+        const outcome = activeStorage.transact((transaction) => {
+            if (typeof transaction.closeRuntimeSession === 'function') {
+                transaction.closeRuntimeSession({
+                    sessionId: runtimeSessionId,
+                    closedAt: clock.now(),
+                });
+            }
+        });
+
+        if (outcome.status === 'indeterminate') {
+            terminateForStorageOutcome(outcome.error, 'unknown');
+        }
+
+        if (outcome.status === 'confirmed_rolled_back' && isFatalStorageError(outcome.error)) {
+            terminateForStorageOutcome(outcome.error, 'fatal');
+        }
+    }
+
+    function activateRuntimeSession(now: string): void {
+        if (!activeStorage || storageState.status !== 'available') {
+            return;
+        }
+
+        const outcome = activeStorage.transact((transaction) => {
+            if (typeof transaction.activateRuntimeSession === 'function') {
+                transaction.activateRuntimeSession({
+                    sessionId: runtimeSessionId,
+                    sessionStartedAt: now,
+                    lastDurableCommitAt: now,
+                });
+            }
+        });
+
+        if (outcome.status === 'indeterminate') {
+            terminateForStorageOutcome(outcome.error, 'unknown');
+        }
+
+        if (outcome.status === 'confirmed_rolled_back') {
+            enterStorageDegraded(outcome.error, now);
+        }
+    }
+
+    function touchRuntimeSession(transaction: RoomStorageTransaction, now: string): void {
+        if (typeof transaction.activateRuntimeSession !== 'function') {
+            return;
+        }
+
+        transaction.activateRuntimeSession({
+            sessionId: runtimeSessionId,
+            sessionStartedAt: now,
+            lastDurableCommitAt: now,
+        });
     }
 
     function closeExpiredCommandBeforeStateReport(
@@ -1015,11 +1729,11 @@ export function createTemperatureRoomRuntime({
     }
 
     function snapshotAt(evaluatedAt: string): RoomSnapshotProjection {
-        return toRoomSnapshot(roomName, roomProjector, evaluatedAt, storageState);
+        return toRoomSnapshot(roomName, roomProjector, evaluatedAt, storageState, recentEvents);
     }
 
     function installedSnapshot(): RoomSnapshotProjection {
-        return toRoomSnapshot(roomName, roomProjector, undefined, storageState);
+        return toRoomSnapshot(roomName, roomProjector, undefined, storageState, recentEvents);
     }
 
     function assertRuntimeIsHealthy(): void {
@@ -1030,7 +1744,7 @@ export function createTemperatureRoomRuntime({
 
     function reconcileExpiredDurableIdentity(eventId: string, receivedAt: string): void {
         if (
-            !storage ||
+            !activeStorage ||
             storageState.status !== 'available' ||
             !processor.hasDurableIdentity(eventId)
         ) {
@@ -1038,7 +1752,7 @@ export function createTemperatureRoomRuntime({
         }
 
         try {
-            if (!storage.isAcceptedInputIdentityActive(eventId, receivedAt)) {
+            if (!activeStorage.isAcceptedInputIdentityActive(eventId, receivedAt)) {
                 processor.forgetDurableIdentities([eventId]);
             }
         } catch (error) {
@@ -1046,14 +1760,7 @@ export function createTemperatureRoomRuntime({
                 terminateForStorageOutcome(error, 'fatal');
             }
 
-            storageState = {
-                status: 'degraded',
-                changedAt: receivedAt,
-                reason: 'storage_write_failed',
-                historyGenerationId: storageState.historyGenerationId,
-                storedThroughSequence: storageState.storedThroughSequence,
-            };
-            notifySnapshotListeners(receivedAt, true);
+            enterStorageDegraded(error, receivedAt);
         }
     }
 
@@ -1083,14 +1790,7 @@ export function createTemperatureRoomRuntime({
         }
 
         if (storageState.status === 'available') {
-            storageState = {
-                status: 'degraded',
-                changedAt: clock.now(),
-                reason: 'storage_write_failed',
-                historyGenerationId: storageState.historyGenerationId,
-                storedThroughSequence: storageState.storedThroughSequence,
-            };
-            notifySnapshotListeners(clock.now(), true);
+            enterStorageDegraded(failure.error, clock.now());
         }
     }
 
@@ -1101,6 +1801,12 @@ export function createTemperatureRoomRuntime({
         );
 
         return onFatalStorageError(fatalRuntimeError);
+    }
+}
+
+function closeStorage(storage: RoomStorage | undefined): void {
+    if (storage && typeof storage.close === 'function') {
+        storage.close();
     }
 }
 
@@ -1122,6 +1828,7 @@ function initializeProjectionCheckpoint(
             outcome: retentionOutcome,
             restored: false,
             volatileGuards: [],
+            recentEvents: [],
         };
     }
 
@@ -1134,6 +1841,7 @@ function initializeProjectionCheckpoint(
             readError: error,
             restored: false,
             volatileGuards: [],
+            recentEvents: [],
         };
     }
 
@@ -1151,7 +1859,11 @@ function initializeProjectionCheckpoint(
     if (checkpoint && JSON.stringify(checkpoint.projection) === JSON.stringify(projection)) {
         projector.installProjection(projection, evaluatedAt, projectionEvidence);
 
-        return { restored: true, volatileGuards: checkpoint.volatileGuards };
+        return {
+            restored: true,
+            volatileGuards: checkpoint.volatileGuards,
+            recentEvents: checkpoint.recentEvents,
+        };
     }
 
     const outcome = storage.transact((transaction) => {
@@ -1161,6 +1873,7 @@ function initializeProjectionCheckpoint(
             projection,
             projectionEvidence,
             volatileGuards: checkpoint?.volatileGuards ?? [],
+            recentEvents: checkpoint?.recentEvents ?? [],
         });
     });
 
@@ -1172,6 +1885,7 @@ function initializeProjectionCheckpoint(
         outcome,
         restored: false,
         volatileGuards: checkpoint?.volatileGuards ?? [],
+        recentEvents: checkpoint?.recentEvents ?? [],
     };
 }
 
@@ -1195,6 +1909,297 @@ function withBootstrapDurability(
     };
 }
 
+function mergeRecoveryProjection(
+    durable: RoomProjection,
+    volatile: RoomProjection,
+): RoomProjection {
+    const volatileDevices = new Map(volatile.devices.map((device) => [device.deviceId, device]));
+    const durableCommands = [...durable.activeCommands, ...durable.recentCommands];
+    const volatileCommands = [...volatile.activeCommands, ...volatile.recentCommands];
+    const commands = new Map(durableCommands.map((command) => [command.commandId, command]));
+
+    for (const command of volatileCommands) {
+        const durableCommand = commands.get(command.commandId);
+
+        if (!durableCommand || isTerminalCommand(command) || !isTerminalCommand(durableCommand)) {
+            commands.set(command.commandId, command);
+        }
+    }
+
+    const mergedCommands = [...commands.values()].sort(
+        (left, right) =>
+            Date.parse(right.requestedAt) - Date.parse(left.requestedAt) ||
+            right.commandId.localeCompare(left.commandId),
+    );
+    const activeCommands = mergedCommands.filter(
+        (command): command is (typeof durable.activeCommands)[number] =>
+            !isTerminalCommand(command),
+    );
+    const activeCommandIdByDevice = new Map(
+        activeCommands.map((command) => [command.deviceId, command.commandId]),
+    );
+    const mergedDevices = durable.devices.map((durableDevice) => {
+        const volatileDevice = volatileDevices.get(durableDevice.deviceId);
+
+        if (!volatileDevice) {
+            return durableDevice;
+        }
+
+        const observations = Object.fromEntries(
+            [
+                ...new Set([
+                    ...Object.keys(durableDevice.observationStatus),
+                    ...Object.keys(volatileDevice.observationStatus),
+                ]),
+            ].flatMap((capability) => {
+                const durableObservation = durableDevice.observationStatus[capability];
+                const volatileObservation = volatileDevice.observationStatus[capability];
+
+                if (!durableObservation) {
+                    return volatileObservation ? [[capability, volatileObservation]] : [];
+                }
+
+                if (!volatileObservation) {
+                    return [[capability, durableObservation]];
+                }
+
+                return [
+                    [
+                        capability,
+                        isStrictlyLaterTimestamp(
+                            volatileObservation.lastObservedAt,
+                            durableObservation.lastObservedAt,
+                        )
+                            ? volatileObservation
+                            : durableObservation,
+                    ],
+                ];
+            }),
+        ) as typeof durableDevice.observationStatus;
+        const volatileObservationCapabilities = new Set(
+            Object.entries(observations)
+                .filter(
+                    ([capability, observation]) =>
+                        observation === volatileDevice.observationStatus[capability],
+                )
+                .map(([capability]) => capability),
+        );
+
+        const mergedDevice = {
+            ...durableDevice,
+            reportedState: mergeRecoveryReportedState(
+                durableDevice.reportedState,
+                volatileDevice.reportedState,
+                volatileObservationCapabilities,
+            ),
+            observationStatus: observations,
+        };
+
+        if (
+            Date.parse(volatileDevice.availabilityChangedAt) >
+            Date.parse(durableDevice.availabilityChangedAt)
+        ) {
+            mergedDevice.availability = volatileDevice.availability;
+            mergedDevice.availabilityChangedAt = volatileDevice.availabilityChangedAt;
+            mergedDevice.availabilityDurability = volatileDevice.availabilityDurability;
+
+            if (volatileDevice.availability === 'offline') {
+                mergedDevice.availabilityReason = volatileDevice.availabilityReason;
+            } else {
+                delete mergedDevice.availabilityReason;
+            }
+        }
+
+        if (
+            Date.parse(volatileDevice.healthChangedAt) > Date.parse(durableDevice.healthChangedAt)
+        ) {
+            mergedDevice.health = volatileDevice.health;
+            mergedDevice.healthChangedAt = volatileDevice.healthChangedAt;
+            mergedDevice.healthDurability = volatileDevice.healthDurability;
+
+            if (volatileDevice.health === 'degraded') {
+                mergedDevice.healthReason = volatileDevice.healthReason;
+            } else {
+                delete mergedDevice.healthReason;
+            }
+        }
+
+        return {
+            ...mergedDevice,
+            commandAvailability: commandAvailabilityFor(
+                mergedDevice.role,
+                mergedDevice.availability,
+                mergedDevice.health,
+                mergedDevice.healthReason,
+            ),
+        };
+    });
+
+    return {
+        updatedAt:
+            Date.parse(volatile.updatedAt) > Date.parse(durable.updatedAt)
+                ? volatile.updatedAt
+                : durable.updatedAt,
+        devices: mergedDevices.map((device) => {
+            const activeCommandId = activeCommandIdByDevice.get(device.deviceId);
+            const withoutActiveCommand = { ...device };
+            delete withoutActiveCommand.activeCommandId;
+
+            return activeCommandId === undefined
+                ? withoutActiveCommand
+                : { ...withoutActiveCommand, activeCommandId };
+        }),
+        activeCommands,
+        recentCommands: mergedCommands
+            .filter(isTerminalCommand)
+            .sort(compareTerminalCommands)
+            .slice(0, 20),
+    };
+}
+
+function mergeRecoveryReportedState(
+    durable: RoomProjection['devices'][number]['reportedState'],
+    volatile: RoomProjection['devices'][number]['reportedState'],
+    volatileObservationCapabilities: ReadonlySet<string>,
+): RoomProjection['devices'][number]['reportedState'] {
+    const merged = { ...durable };
+
+    for (const [property, value] of Object.entries(volatile)) {
+        const capability = property === 'temperatureUnit' ? 'temperature' : property;
+
+        if (volatileObservationCapabilities.has(capability)) {
+            merged[property] = value;
+        }
+    }
+
+    return merged;
+}
+
+function mergeRecoveryEvidence(
+    durableEvidence: RoomProjectionEvidence,
+    volatileEvidence: RoomProjectionEvidence,
+    durable: RoomProjection,
+    volatile: RoomProjection,
+): RoomProjectionEvidence {
+    const durableDevices = new Map(durable.devices.map((device) => [device.deviceId, device]));
+    const durableAvailability = new Set(durableEvidence.availabilityDeviceIds);
+    const volatileAvailability = new Set(volatileEvidence.availabilityDeviceIds);
+    const durableHealth = new Set(durableEvidence.healthDeviceIds);
+    const volatileHealth = new Set(volatileEvidence.healthDeviceIds);
+    const availabilityDeviceIds = new Set<string>();
+    const healthDeviceIds = new Set<string>();
+
+    for (const volatileDevice of volatile.devices) {
+        const durableDevice = durableDevices.get(volatileDevice.deviceId);
+
+        if (!durableDevice) {
+            if (volatileAvailability.has(volatileDevice.deviceId)) {
+                availabilityDeviceIds.add(volatileDevice.deviceId);
+            }
+
+            if (volatileHealth.has(volatileDevice.deviceId)) {
+                healthDeviceIds.add(volatileDevice.deviceId);
+            }
+
+            continue;
+        }
+
+        const newerAvailability =
+            Date.parse(volatileDevice.availabilityChangedAt) >
+            Date.parse(durableDevice.availabilityChangedAt);
+        const newerHealth =
+            Date.parse(volatileDevice.healthChangedAt) > Date.parse(durableDevice.healthChangedAt);
+
+        if (
+            (newerAvailability && volatileAvailability.has(volatileDevice.deviceId)) ||
+            (!newerAvailability && durableAvailability.has(volatileDevice.deviceId))
+        ) {
+            availabilityDeviceIds.add(volatileDevice.deviceId);
+        }
+
+        if (
+            (newerHealth && volatileHealth.has(volatileDevice.deviceId)) ||
+            (!newerHealth && durableHealth.has(volatileDevice.deviceId))
+        ) {
+            healthDeviceIds.add(volatileDevice.deviceId);
+        }
+    }
+
+    const confirmationSources = new Map(
+        durableEvidence.commandConfirmationSources?.map((source) => [source.commandId, source]) ??
+            [],
+    );
+
+    for (const source of volatileEvidence.commandConfirmationSources ?? []) {
+        if (!confirmationSources.has(source.commandId)) {
+            confirmationSources.set(source.commandId, source);
+        }
+    }
+
+    return {
+        availabilityDeviceIds: [...availabilityDeviceIds].sort(),
+        healthDeviceIds: [...healthDeviceIds].sort(),
+        commandConfirmationSources: [...confirmationSources.values()].sort((left, right) =>
+            left.commandId.localeCompare(right.commandId),
+        ),
+    };
+}
+
+function isTerminalCommand(
+    command: RoomProjection['activeCommands'][number] | RoomProjection['recentCommands'][number],
+): command is RoomProjection['recentCommands'][number] {
+    return ['confirmed', 'failed', 'timed_out'].includes(command.status);
+}
+
+function compareTerminalCommands(
+    left: RoomProjection['recentCommands'][number],
+    right: RoomProjection['recentCommands'][number],
+): number {
+    return (
+        Date.parse(terminalCommandTimestamp(right)) - Date.parse(terminalCommandTimestamp(left)) ||
+        right.commandId.localeCompare(left.commandId)
+    );
+}
+
+function terminalCommandTimestamp(command: RoomProjection['recentCommands'][number]): string {
+    if (command.status === 'confirmed') {
+        return command.confirmedAt;
+    }
+
+    return command.status === 'failed' ? command.failedAt : command.timedOutAt;
+}
+
+function hasConflictingActiveCommands(projection: RoomProjection): boolean {
+    const commandIdsByDevice = new Map<string, Set<string>>();
+
+    for (const command of projection.activeCommands) {
+        const commandIds = commandIdsByDevice.get(command.deviceId) ?? new Set<string>();
+        commandIds.add(command.commandId);
+        commandIdsByDevice.set(command.deviceId, commandIds);
+
+        if (commandIds.size > 1) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function hasVolatileDurableActiveCommandConflict(
+    durable: RoomProjection,
+    volatile: RoomProjection,
+): boolean {
+    const durableByDevice = new Map(
+        durable.activeCommands.map((command) => [command.deviceId, command]),
+    );
+
+    return volatile.activeCommands.some((command) => {
+        const durableCommand = durableByDevice.get(command.deviceId);
+
+        return durableCommand !== undefined && durableCommand.commandId !== command.commandId;
+    });
+}
+
 function terminalOutboxClosure(
     event: PlatformEvent,
     records: readonly PreparedRecord[],
@@ -1214,6 +2219,145 @@ function terminalOutboxClosure(
     return confirmation
         ? { commandId: confirmation.commandId, closedAt: confirmation.occurredAt }
         : undefined;
+}
+
+function isLifecycleCutoverCommit<Value>(
+    outcome: { status: 'committed'; value: Value } | StorageCutoverOutcome<Value>,
+): outcome is Extract<StorageCutoverOutcome<Value>, { status: 'committed' }> {
+    return outcome.status === 'committed' && 'storage' in outcome && 'metadata' in outcome;
+}
+
+function isStrictlyLaterTimestamp(
+    candidate: string | undefined,
+    baseline: string | undefined,
+): boolean {
+    if (candidate === undefined) {
+        return false;
+    }
+
+    if (baseline === undefined) {
+        return true;
+    }
+
+    return Date.parse(candidate) > Date.parse(baseline);
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * The runtime, which owns the domain transition, also owns the semantic
+ * description of that transition.  Keeping this out of the SSE adapter makes
+ * a publication batch a real boundary: the BFF only numbers and serializes
+ * already-decided deltas.
+ */
+function buildPublicationDeltas(
+    previous: RoomSnapshotProjection | undefined,
+    next: RoomSnapshotProjection,
+    platformBeforeOutcome: boolean,
+): readonly RoomPublicationDelta[] {
+    if (!previous) {
+        return [];
+    }
+
+    const deltas: RoomPublicationDelta[] = [];
+    const previousDevices = new Map(previous.devices.map((device) => [device.deviceId, device]));
+    const commandDeviceIds = changedCommandDeviceIds(previous, next);
+
+    const platformDelta = !sameJson(previous.platform, next.platform)
+        ? (() => {
+              const gapEvents = next.recentEvents.filter(
+                  (event) => event.eventType === 'storage.gap.recorded',
+              );
+
+              return {
+                  messageType: 'platform.updated' as const,
+                  payload: {
+                      storage: next.platform.storage,
+                      ...(gapEvents.length > 0 ? { recentEvents: gapEvents } : {}),
+                  },
+              };
+          })()
+        : undefined;
+
+    if (platformBeforeOutcome && platformDelta) {
+        deltas.push(platformDelta);
+    }
+
+    for (const device of next.devices) {
+        if (
+            !commandDeviceIds.has(device.deviceId) &&
+            !sameJson(previousDevices.get(device.deviceId), device)
+        ) {
+            deltas.push({ messageType: 'device.updated', payload: device });
+        }
+    }
+
+    const nonGapEventsChanged = !sameJson(
+        previous.recentEvents.filter((event) => event.eventType !== 'storage.gap.recorded'),
+        next.recentEvents.filter((event) => event.eventType !== 'storage.gap.recorded'),
+    );
+
+    if (commandDeviceIds.size > 0 || nonGapEventsChanged) {
+        deltas.push({
+            messageType: 'commands.updated',
+            payload: {
+                devices: next.devices,
+                activeCommands: next.activeCommands,
+                recentCommands: next.recentCommands,
+                ...(nonGapEventsChanged
+                    ? {
+                          recentEvents: next.recentEvents.filter(
+                              (event) => event.eventType !== 'storage.gap.recorded',
+                          ),
+                      }
+                    : {}),
+            },
+        });
+    }
+
+    if (!platformBeforeOutcome && platformDelta) {
+        deltas.push(platformDelta);
+    }
+
+    return deltas;
+}
+
+function changedCommandDeviceIds(
+    previous: RoomSnapshotProjection,
+    next: RoomSnapshotProjection,
+): Set<string> {
+    const previousCommands = new Map(
+        [...previous.activeCommands, ...previous.recentCommands].map((command) => [
+            command.commandId,
+            command,
+        ]),
+    );
+    const nextCommands = new Map(
+        [...next.activeCommands, ...next.recentCommands].map((command) => [
+            command.commandId,
+            command,
+        ]),
+    );
+    const deviceIds = new Set<string>();
+
+    for (const commandId of new Set([...previousCommands.keys(), ...nextCommands.keys()])) {
+        const before = previousCommands.get(commandId);
+        const after = nextCommands.get(commandId);
+
+        if (!sameJson(before, after)) {
+            if (before) {
+                deviceIds.add(before.deviceId);
+            }
+
+            if (after) {
+                deviceIds.add(after.deviceId);
+            }
+        }
+    }
+
+    return deviceIds;
 }
 
 function isFatalStorageError(error: unknown): boolean {
@@ -1242,6 +2386,7 @@ function isRoomProjection(value: unknown): value is RoomProjection {
         devices: value.devices,
         activeCommands: value.activeCommands,
         recentCommands: value.recentCommands,
+        recentEvents: [],
         platform: {
             storage: {
                 status: 'available',
@@ -1291,6 +2436,7 @@ function toRoomSnapshot(
     roomProjector: RoomProjector,
     evaluatedAt: string | undefined,
     storage: PlatformStorageProjection,
+    recentEvents: RecentEventProjection[],
 ): RoomSnapshotProjection {
     const projection =
         evaluatedAt === undefined
@@ -1303,6 +2449,7 @@ function toRoomSnapshot(
         devices: projection.devices,
         activeCommands: projection.activeCommands,
         recentCommands: projection.recentCommands,
+        recentEvents,
         platform: { storage },
     };
 }
@@ -1333,4 +2480,135 @@ function hasObservationStatusChange(
             );
         });
     });
+}
+
+function recentEventsForRecords(
+    records: readonly PreparedRecord[],
+    durability: 'durable' | 'volatile',
+): RecentEventProjection[] {
+    return records.flatMap((record) => {
+        const recentEvent = recentEventForRecord(record, durability);
+
+        return recentEvent ? [recentEvent] : [];
+    });
+}
+
+function recentEventForRecord(
+    record: PreparedRecord,
+    durability: 'durable' | 'volatile',
+    storageSequence?: number,
+): RecentEventProjection | undefined {
+    if (record.kind === 'telemetry') {
+        return undefined;
+    }
+
+    const storage = durability === 'durable' ? { storageSequence } : {};
+
+    if (record.kind === 'derived_command_confirmed') {
+        if (storageSequence === undefined && durability === 'durable') {
+            throw new Error('Durable recent events require a storage sequence.');
+        }
+
+        return {
+            recordId: derivedCommandRecordId(record.commandId, 'confirmed'),
+            eventType: 'command.confirmed',
+            occurredAt: record.occurredAt,
+            durability,
+            ...storage,
+            deviceId: record.deviceId,
+            commandId: record.commandId,
+            source: 'backend',
+            payload: record.payload,
+        } as RecentEventProjection;
+    }
+
+    const event = record.event;
+
+    if (storageSequence === undefined && durability === 'durable') {
+        throw new Error('Durable recent events require a storage sequence.');
+    }
+
+    return {
+        recordId: logicalRecordId(event, 'input_fact'),
+        eventType: event.eventType,
+        occurredAt: event.occurredAt,
+        durability,
+        ...storage,
+        deviceId: event.deviceId,
+        ...(event.commandId === undefined ? {} : { commandId: event.commandId }),
+        source: event.source,
+        payload: event.payload,
+    } as RecentEventProjection;
+}
+
+function mergeRecentEvents(
+    current: readonly RecentEventProjection[],
+    additions: readonly RecentEventProjection[],
+): RecentEventProjection[] {
+    const byRecordId = new Map(current.map((event) => [event.recordId, event]));
+
+    for (const event of additions) {
+        const existing = byRecordId.get(event.recordId);
+
+        // A durable record is the historical fact.  A later volatile copy of
+        // the same record must never demote it while recovery is merging the
+        // two sides of the boundary.
+        if (existing?.durability === 'durable' && event.durability === 'volatile') {
+            continue;
+        }
+
+        if (existing?.durability === 'volatile' && event.durability === 'durable') {
+            byRecordId.set(event.recordId, event);
+
+            continue;
+        }
+
+        if (
+            !existing ||
+            Date.parse(event.occurredAt) > Date.parse(existing.occurredAt) ||
+            (event.occurredAt === existing.occurredAt && event.recordId > existing.recordId)
+        ) {
+            byRecordId.set(event.recordId, event);
+        }
+    }
+
+    return [...byRecordId.values()].sort(compareRecentEventsDescending).slice(0, 20);
+}
+
+function mergeVolatileGuards(
+    restored: readonly AcceptedInputIdentity[],
+    live: readonly AcceptedInputIdentity[],
+    { asOf, retentionMs, entryLimit }: { asOf: string; retentionMs: number; entryLimit: number },
+): AcceptedInputIdentity[] {
+    const guards = new Map<string, AcceptedInputIdentity>();
+    const cutoff = Date.parse(asOf) - retentionMs;
+
+    for (const candidate of [...restored, ...live]) {
+        if (
+            candidate.durability !== 'volatile' ||
+            !candidate.fingerprint.startsWith('fp:v1:sha256:') ||
+            Date.parse(candidate.acceptedAt) <= cutoff
+        ) {
+            continue;
+        }
+
+        const existing = guards.get(candidate.eventId);
+
+        // Keep the oldest accepted identity when an unavailable startup has
+        // observed a conflicting event-id before its checkpoint could be
+        // restored. Both candidates remain guards semantically; retaining the
+        // earliest one makes the conflict deterministic and never promotes it
+        // to a durable accepted identity.
+        if (!existing || candidate.acceptedAt < existing.acceptedAt) {
+            guards.set(candidate.eventId, candidate);
+        }
+    }
+
+    return [...guards.values()]
+        .sort(
+            (left, right) =>
+                left.acceptedAt.localeCompare(right.acceptedAt) ||
+                left.eventId.localeCompare(right.eventId),
+        )
+        .slice(-entryLimit);
 }

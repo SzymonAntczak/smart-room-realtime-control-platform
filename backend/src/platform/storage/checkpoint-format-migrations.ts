@@ -4,7 +4,7 @@ import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 
 import { StorageMigrationError } from './storage-errors';
 
-const latestCheckpointVersion = 2;
+const latestCheckpointVersion = 3;
 
 /** Migrates the JSON document stored in the singleton room-projection row. */
 export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): void {
@@ -25,11 +25,13 @@ export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): v
     }
 
     const migrated =
-        checkpoint.checkpointVersion === 1
-            ? migrateVersionOneCheckpoint(checkpoint)
-            : 'checkpointVersion' in checkpoint
-              ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
-              : migrateVersionZeroCheckpoint(checkpoint);
+        checkpoint.checkpointVersion === 2
+            ? migrateVersionTwoCheckpoint(checkpoint)
+            : checkpoint.checkpointVersion === 1
+              ? migrateVersionOneCheckpoint(checkpoint)
+              : 'checkpointVersion' in checkpoint
+                ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
+                : migrateVersionZeroCheckpoint(checkpoint);
 
     assertMigratedCheckpointIsValid(migrated);
 
@@ -54,20 +56,30 @@ function migrateVersionZeroCheckpoint(
 
     const migratedActiveCommands = activeCommands.map((command) => migrateCommand(command));
 
-    return normalizeActiveCommandIds({
-        ...checkpoint,
-        checkpointVersion: latestCheckpointVersion,
-        projection: {
-            ...projection,
-            activeCommands: migratedActiveCommands,
-            recentCommands: recentCommands.map((command) => migrateCommand(command)),
-            devices,
-        },
-    });
+    return {
+        ...normalizeActiveCommandIds({
+            ...checkpoint,
+            checkpointVersion: latestCheckpointVersion,
+            projection: {
+                ...projection,
+                activeCommands: migratedActiveCommands,
+                recentCommands: recentCommands.map((command) => migrateCommand(command)),
+                devices,
+            },
+        }),
+        recentEvents: [],
+    };
 }
 
 function migrateVersionOneCheckpoint(checkpoint: Record<string, unknown>): Record<string, unknown> {
-    return normalizeActiveCommandIds({ ...checkpoint, checkpointVersion: latestCheckpointVersion });
+    return {
+        ...normalizeActiveCommandIds({ ...checkpoint, checkpointVersion: latestCheckpointVersion }),
+        recentEvents: [],
+    };
+}
+
+function migrateVersionTwoCheckpoint(checkpoint: Record<string, unknown>): Record<string, unknown> {
+    return { ...checkpoint, checkpointVersion: latestCheckpointVersion, recentEvents: [] };
 }
 
 function unsupportedCheckpointVersion(checkpointVersion: unknown): never {
@@ -199,6 +211,7 @@ function assertMigratedCheckpointIsValid(checkpoint: Record<string, unknown>): v
             devices: projection.devices,
             activeCommands: projection.activeCommands,
             recentCommands: projection.recentCommands,
+            recentEvents: checkpoint.recentEvents,
             platform: {
                 storage: {
                     status: 'available',

@@ -4,6 +4,14 @@ This list records deliberately deferred implementation work. It does not define
 binding system behavior; promote a durable rule to architecture documentation or
 an ADR as part of the related change.
 
+## Task Sizing Rule
+
+Each unchecked item should normally produce one independently reviewable change:
+one primary responsibility, a narrow public boundary and focused verification.
+Do not combine a contract change, persistence/runtime change, BFF endpoint and
+Dashboard feature in one item. A later integration item may compose already
+completed pieces, but must not silently expand their behavior.
+
 ## Open Follow-ups
 
 ### Stage 4 - Simulator Platform Readiness
@@ -149,7 +157,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       storage-failure ordering and prove a volatile command does not require
       durable receipt persistence.
 
-- [ ] Implement platform storage status and automatic recovery.
+- [x] Implement platform storage status and automatic recovery.
       Add `available`, `degraded` and `recovering` to the room projection and
       publish revision-linked `platform.updated` changes. Allow degraded startup,
       live observations, freshness and volatile commands. Classify failures as
@@ -188,255 +196,357 @@ explainable operation without full event sourcing or a new MQTT runtime.
       cutover assignment, bounded queued input, recovery conflicts, gap delivery
       and return to available.
 
-- [ ] Restore runtime state and command timers from SQLite at startup.
-      Rehydrate the latest projection, active commands and newest 20
-      `recentCommands` plus the bounded `recentEvents` projection cache.
-      Before exposing the first snapshot, reevaluate every configured freshness
-      policy against the injected startup clock and restored `lastObservedAt`;
-      persist any resulting projection-only stale state without history, feed,
-      deduplication or watermark and preserve its evidence durability.
-      Order recent commands by descending discriminated terminal time, then
+- [ ] Restore the persisted room projection and bounded caches at startup.
+      Rehydrate the latest projection, active commands, newest 20
+      `recentCommands` and the bounded `recentEvents` projection cache before
+      the first snapshot. Restore volatile feed entries without turning them
+      into HTTP history; retain volatile device-evidence and command-durability
+      markers until later durable evidence replaces them.
+      Done when: a restart exposes the saved projection and bounded explanations
+      with their original durability markers.
+
+- [ ] Define one deterministic ordering and maintenance path for recent caches.
+      Order recent commands by descending discriminated terminal time and then
       descending `commandId`, identically during live insertion, checkpoint and
-      restore.
-      Keep both recent caches independent of 30-day history retirement: old
-      entries retain visible timestamps, and each new eligible candidate
-      recomputes the greatest 20 by the cache's deterministic order. Never emit
-      an SSE removal for history retirement.
-      Reschedule a durable command's remaining timeout, or emit a terminal
-      timeout immediately when its deadline passed. Never redispatch a
-      checkpointed active volatile command; persist it as failed with
-      `volatile_command_lost_on_restart` before exposing the first snapshot.
-      Restore volatile feed cache entries without converting them into HTTP
-      history, and preserve volatile device-evidence and command durability
-      markers until a later durable fact replaces them. Detect an unclosed prior runtime session and record a conservative
-      gap from the later of its persisted `sessionStartedAt` and
-      `lastDurableCommitAt` before the first snapshot. Close a clean-shutdown
-      marker only after intake stops and the serialized coordinator drains;
-      leave it active when shutdown cannot complete that boundary.
-      Advance `lastDurableCommitAt` on every transaction that persists the full
-      checkpoint, including freshness-only and command/outbox writes, but not a
-      quarantine-only transaction.
-      Treat replacement of a corrupt database as an explicit operator startup
-      action, preserve the invalid file, create a new history generation and
-      emit `storage_history_replaced` without fabricating a prior gap. Choose a
-      concrete one-shot CLI or configuration mechanism in the storage
-      composition task; missing storage without replacement intent is only
-      first-ever initialization. Start the replacement generation with no
-      inherited outbox or simulator receipts and never redispatch inaccessible
-      prior work.
-      Done when: restart retains bounded command/feed explanations, exposes
-      time-correct freshness and never redispatches volatile work or reconfirms
-      an already terminal command.
+      restore. Keep the command and event caches independent of 30-day history
+      retirement: each eligible candidate recomputes the greatest 20 while old
+      retained cache entries preserve their visible timestamps. Do not emit an
+      SSE removal merely because history retires a row.
+      Done when: unit tests prove identical cache contents after live insertion,
+      checkpoint/restore and history retirement.
+
+- [ ] Re-evaluate device freshness during startup recovery.
+      Before the first snapshot, evaluate every configured freshness policy
+      against the injected startup clock and restored `lastObservedAt`. Persist
+      a resulting stale projection without history, feed, deduplication or
+      watermark changes, preserving its evidence durability.
+      Done when: a restart exposes time-correct fresh/stale state and the
+      freshness-only write has no historical side effect.
+
+- [ ] Restore durable command deadlines without redispatching work.
+      Reschedule each active durable command for its remaining timeout, or emit
+      its terminal timeout immediately when the persisted deadline has passed.
+      Do not redispatch a restored command as part of this change.
+      Done when: deterministic timer tests cover both remaining and elapsed
+      deadlines and confirm that startup causes no extra handoff.
+
+- [ ] Close restored volatile commands safely on restart.
+      Convert each checkpointed active volatile command to a persisted failed
+      lifecycle with `volatile_command_lost_on_restart` before the first
+      snapshot. Do not restore its source plan or redispatch it.
+      Done when: restart tests prove a volatile command is visible as failed and
+      cannot produce a later restored confirmation.
+
+- [ ] Add runtime-session markers and conservative crash-gap recovery.
+      Record session start and advance `lastDurableCommitAt` for every full
+      checkpoint transaction, including freshness-only and command/outbox
+      writes but not quarantine-only writes. Detect an unclosed earlier session
+      and record a gap from the later of `sessionStartedAt` and
+      `lastDurableCommitAt` before the first snapshot. Close the marker only
+      after intake stops and the serialized coordinator drains.
+      Done when: clean and interrupted shutdown tests prove the correct session
+      marker and conservative gap boundary.
+
+- [ ] Provide an explicit corrupt-storage replacement startup action.
+      Choose and document one one-shot CLI or configuration mechanism in storage
+      composition. It must preserve the invalid file, create a new history
+      generation, emit `storage_history_replaced`, start without inherited
+      outbox or simulator receipts and never redispatch inaccessible work.
+      Missing storage without this explicit action remains first-ever
+      initialization and must not fabricate a prior gap.
+      Done when: composition tests distinguish first initialization from
+      operator-authorized replacement.
 
 #### Observability and contracts
 
-- [ ] Configure structured backend logging.
-      Configure Fastify/Pino for JSON stdout with `LOG_LEVEL`, correlation
-      fields (`eventId`, `commandId`, `deviceId`, `source`, `reason`) and
-      redaction of authentication/cookie fields. Logs must not become the domain
-      history or a database table.
-      Done when: startup, migration, rejected input, command handling and
-      storage failure are logged safely and can be correlated with facts.
+- [ ] Configure JSON backend logging with an explicit `LOG_LEVEL`.
+      Configure Fastify/Pino to write structured JSON to stdout; logs remain an
+      operational surface, not domain history or a database table.
+      Done when: the configured level controls startup and migration output.
 
-- [ ] Define shared history contracts and validation.
-      Add TypeBox schemas for a bounded newest-first recent-event feed,
-      cursor-based raw telemetry pages, bounded trend-history responses and
-      durable diagnostics. Add record and command durability, platform storage
-      status with `historyGenerationId` and `storedThroughSequence` only inside
-      `platform.storage`, history `historyGenerationId`, `throughSequence`,
-      `retentionAsOf`, `platform.updated`, multi-record
-      `recentEvents` deltas and stable `recordId`. Define record identity by
-      logical source/event/record kind, command/lifecycle kind or persisted
-      platform-generated ID so retry and volatile-to-durable redelivery reuse
-      one ID while multi-record input stays distinct. Command contracts expose
-      `durability` and `lifecycleDurability`; availability, health and each
-      observation expose evidence durability. Keep SSE revisions separate from
-      durable history cursors.
-      Key physical records by generation/sequence rather than unique
-      `recordId`; allow a post-dedup replay to reuse the logical ID only when its
-      former row is retired, while cursor positions remain sequence-based.
-      Define pre-admission error unions without command durability and admitted
-      known-device rejection unions with both axes; `platform_recovering` is a
-      retryable 503 and creates no command lifecycle. Define HTTP durability as
-      the synchronous admission outcome only; later SSE projections own current
-      lifecycle durability.
-      Replace mandatory pending/terminal `dispatchedAt` with delivery evidence:
-      `handed_off` carries `dispatchedAt` and `deadlineAt`, while `uncertain`
-      carries `firstAttemptedAt` and `deadlineAt`. Preserve that evidence in
-      `recentCommands`.
-      Define `storedThroughSequence: 0` for an empty store and keep storage
-      `changedAt` stable across watermark-only updates.
-      Trend queries require a non-empty half-open `[from, to)` range and
-      `pointLimit >= 2`; use equal-time half-open buckets with min/max raw
-      samples, assigning an internal-boundary sample to the later bucket, then
-      order the complete response
-      ascending by `(occurredAt, storageSequence)` without replacing stored raw
-      samples. Break equal minima toward the earliest sample and equal maxima
-      toward the latest so flat buckets retain their endpoints.
-      Capture generation, through-sequence and retention time in one read
-      transaction and return original raw-sample identity on each point so live
-      SSE telemetry can deduplicate against the bounded baseline.
-      Define typed expired-cursor, history-generation-changed and
-      cursor-query-mismatch responses. Bind each cursor to a canonical dataset,
-      device/metric filters, time range, ordering and page size from its first
-      page. Define a typed `invalid_cursor`; make cursors tamper-evident or back
-      them with equivalent server state, without promising survival across
-      backend restart. Preserve the separate 20-entry `recentCommands` contract. Allow
-      `historyGenerationId: null` and `storedThroughSequence: null` only
-      together before the first valid database commits, including its degraded
-      and recovering states; a runtime degradation retains the last known pair.
-      Done when: contract tests reject malformed, unordered, over-limit,
-      timestamp-inconsistent and dangling entries.
+- [ ] Add safe correlation fields to backend logs.
+      Include applicable `eventId`, `commandId`, `deviceId`, `source` and
+      `reason` fields in rejected input, command-handling and storage-failure
+      logs.
+      Done when: focused log tests prove affected facts can be correlated.
 
-- [ ] Apply Stage 4 retention rules in storage reads and writes.
-      Expose accepted data for at most 30 days by `occurredAt` and quarantine by
-      `recordedAt`. Enforce independent hard caps: retain the 10,000 greatest
-      `(occurredAt, storageSequence)` telemetry rows per device, the 5,000
-      greatest significant facts globally and the 1,000 greatest quarantine
-      rows by `(recordedAt, internalSequence)`. Mark eviction with an injected-
-      clock `retiredAt`; clean at startup, in each write and before a first-page
-      query. Pin `historyGenerationId`, `throughSequence` and `retentionAsOf`.
-      Preserve retired
-      payloads for the fixed five-minute cursor lifetime before physical purge.
-      Do not aggregate or
-      replace raw telemetry; at the normal ten-second simulator cadence, 10,000
-      samples retain about 27.8 hours per device. Keep an accepted `eventId`
-      until its last derived significant or telemetry record is evicted.
-      Done when: deterministic tests cover time/count eviction, an immediately
-      evicted late fact, multi-record input deduplication and ordering at every
+- [ ] Redact credentials from structured backend logs.
+      Redact authentication and cookie fields in the Pino/Fastify configuration
+      and test representative request/error payloads.
+      Done when: logged output never exposes the configured secret fields.
+
+- [ ] Define shared durability, storage-status and record-identity contracts.
+      Add TypeBox schemas for record and command durability, evidence durability
+      for availability/health/observations, platform storage status,
+      `platform.updated`, multi-record `recentEvents` deltas and stable
+      `recordId`. Keep `historyGenerationId` and `storedThroughSequence` inside
+      `platform.storage`, separate SSE revisions from durable cursors, and key
+      physical rows by generation/sequence rather than unique `recordId`.
+      Define logical identity so retry and volatile-to-durable redelivery reuse
+      an ID while multi-record input remains distinct; permit reuse after the
+      former physical row is retired.
+      Done when: shared schemas express the complete identity/durability model.
+
+- [ ] Define storage-watermark nullability and update semantics.
+      Specify `storedThroughSequence: 0` for an empty store and keep storage
+      `changedAt` stable across watermark-only changes. Permit
+      `historyGenerationId: null` and `storedThroughSequence: null` only as a
+      pair before the first valid database commit, including degraded/recovering
+      startup; a later degradation retains the last known pair.
+      Done when: contract tests reject invalid watermark combinations.
+
+- [ ] Define shared command-admission and delivery-evidence contracts.
+      Model pre-admission errors without command durability, admitted known-
+      device rejections with both durability axes, and retryable 503
+      `platform_recovering` with no lifecycle fact. Define HTTP durability as
+      the synchronous admission result and SSE as lifecycle durability. Replace
+      mandatory pending/terminal `dispatchedAt`: `handed_off` contains
+      `dispatchedAt` and `deadlineAt`; `uncertain` contains `firstAttemptedAt`
+      and `deadlineAt`, including in `recentCommands`.
+      Done when: contract tests distinguish all admission and delivery variants.
+
+- [ ] Define recent-event, diagnostics and cursor-page contracts.
+      Add bounded newest-first recent-event feed, durable diagnostics and
+      cursor-based raw-telemetry page schemas with generation,
+      through-sequence, retention time and original raw-sample identity.
+      Done when: schemas reject over-limit, unordered, dangling and
+      timestamp-inconsistent entries.
+
+- [ ] Define trend-query and response contracts.
+      Require a non-empty half-open `[from, to)` range and `pointLimit >= 2`.
+      Specify equal-time half-open buckets with min/max raw samples, assigning
+      internal-boundary samples to the later bucket; order the whole response by
+      `(occurredAt, storageSequence)`, breaking equal minima toward the earliest
+      and equal maxima toward the latest sample.
+      Done when: contract tests cover bucket and ordering boundaries.
+
+- [ ] Define typed, scoped cursor failures and binding.
+      Model expired-cursor, history-generation-changed, cursor-query-mismatch
+      and `invalid_cursor` responses. Bind a cursor to canonical dataset,
+      device/metric filters, time range, ordering and page size; make it
+      tamper-evident or equivalently server-backed without promising survival
+      across backend restart. Preserve the separate 20-entry `recentCommands`
+      contract.
+      Done when: contract tests reject altered scope and invalid cursor state.
+
+- [ ] Implement time-based retirement for accepted and quarantined records.
+      Retire accepted data after 30 days by `occurredAt` and quarantine after
+      30 days by `recordedAt`, marking eviction with injected-clock `retiredAt`.
+      Run cleanup at startup, on each write and before a first-page query.
+      Done when: deterministic tests cover exact time boundaries and an
+      immediately retired late fact.
+
+- [ ] Implement independent retention caps without telemetry aggregation.
+      Retain the 10,000 greatest `(occurredAt, storageSequence)` telemetry rows
+      per device, 5,000 greatest significant facts globally and 1,000 greatest
+      quarantine rows by `(recordedAt, internalSequence)`. Do not aggregate or
+      replace raw telemetry; preserve the stated ten-second-cadence capacity.
+      Done when: deterministic count-boundary tests prove independent caps and
+      ordering.
+
+- [ ] Retain deduplication evidence until all derived records retire.
+      Keep an accepted `eventId` until its final significant or telemetry record
+      is retired, including multi-record input handling.
+      Done when: tests prove deduplication at the final-record eviction
       boundary.
 
-- [ ] Extend the BFF with history APIs and revision-linked SSE.
-      Add cursor-paginated significant-fact history, selected-device telemetry
-      history and bounded trend endpoints; retain diagnostics as the technical
-      inspection surface. The first history page pins a global
-      `historyGenerationId` and `throughSequence`, and every cursor page
-      preserves both. Reject a cursor from another generation without reading
-      its sequence against the current database, and reject changed query scope
-      without reinterpreting its position. Send a recent-event
-      baseline in `room.snapshot`, then contiguous SSE updates for feed-worthy
-      significant facts, telemetry and platform status. Allow `platform.updated`
-      to carry `storage.gap.recorded` and use a following watermark-only platform
-      delta after each accepted durable outcome. Support the recovery-only full
-      `commands.updated` reconciliation before the available/gap platform delta.
-      Queue each multi-revision result as a non-interleaving batch after
-      installing final state; a concurrent connection receives the final
-      revision-0 snapshot and no partial batch.
-      Return service unavailable for durable reads while degraded. On reconnect or recovery, refetch each open
-      HTTP range. Create a bounded live overlay before the first request, retain
-      every SSE-delivered addition across all page requests and merge by
-      `recordId` without replacing the overlay. Treat a pagination session as
-      complete through its pinned bound; significant facts excluded
-      from the feed and committed above that bound appear only after an explicit
-      refetch or new session. Keep retired rows visible to that bound for a fixed
-      five-minute cursor lifetime; expired cursors start a new session without
-      discarding the overlay before the new baseline merges. Do not add replay
-      or `Last-Event-ID`.
-      When a reconnect snapshot exposes a changed generation, invalidate old
-      pages, cursor and overlay, keep the last view only as visibly unavailable,
-      then rebuild from the replacement baseline. Retain the last known non-null
-      generation through degraded `null` and apply the same comparison to a
-      later `platform.updated`; a matching generation is ordinary recovery.
-      Done when: BFF and client tests prove reconnect baselines, cursor handling,
-      pinned snapshot isolation, 503 recovery, malformed-message rejection and
-      preservation of the last valid view.
+- [ ] Pin read retention state and purge retired payloads safely.
+      Capture `historyGenerationId`, `throughSequence` and `retentionAsOf` in
+      the first-page read transaction. Keep retired payloads for the fixed
+      five-minute cursor lifetime before physical purge.
+      Done when: a cursor session can read its pinned retired data until expiry
+      and cannot read it after safe purge.
+
+- [ ] Add BFF endpoints for significant-fact, telemetry and trend history.
+      Expose cursor-paginated significant facts, selected-device raw telemetry
+      and bounded trends; diagnostics remain a technical inspection API. Pin
+      global `historyGenerationId` and `throughSequence` on the first page and
+      preserve them on every following page.
+      Done when: BFF tests validate each endpoint's schema-valid pinned
+      response.
+
+- [ ] Enforce generation and query-scope safety for history cursors.
+      Reject a cursor from another generation before reading its sequence from
+      the current database; reject changed query scope without reinterpreting
+      its position.
+      Done when: BFF tests prove cross-generation and scope-change rejection.
+
+- [ ] Publish revision-linked history baselines and deltas over SSE.
+      Include a recent-event baseline in `room.snapshot`; emit contiguous
+      updates for feed-worthy significant facts, telemetry and platform status.
+      Let `platform.updated` carry `storage.gap.recorded`, follow every accepted
+      durable outcome with a watermark-only platform delta and support
+      recovery-only full `commands.updated` reconciliation before the
+      available/gap platform delta.
+      Done when: SSE tests prove the documented baseline and delta sequence.
+
+- [ ] Make multi-revision BFF results atomic to connected clients.
+      Queue every multi-revision result as a non-interleaving batch after final
+      state is installed. A connection opened concurrently must receive the
+      final revision-0 snapshot, never a partial batch.
+      Done when: concurrency tests cover batch emission and concurrent connect.
+
+- [ ] Return durable-history unavailability explicitly.
+      Return service unavailable for durable reads while storage is degraded.
+      Done when: BFF tests distinguish degraded reads from ordinary empty
+      results.
+
+- [ ] Maintain a bounded client live overlay for open history sessions.
+      Create the overlay before the first request, retain every SSE-delivered
+      addition through all page requests and merge by `recordId` without
+      replacement. A session completes through its pinned bound; non-feed facts
+      above it require explicit refetch/new session. Do not add replay or
+      `Last-Event-ID`.
+      Done when: client tests prove no live addition is lost across pagination.
+
+- [ ] Rebuild client history safely after reconnect, expiry or generation change.
+      On reconnect/recovery refetch each open range. An expired cursor starts a
+      new session without discarding its overlay before the new baseline merges;
+      retired rows remain visible through the pinned bound for five minutes.
+      On changed generation, invalidate old pages/cursor/overlay, keep the last
+      view visibly unavailable and rebuild from replacement baseline. Retain the
+      last known non-null generation through degraded `null`; a matching later
+      generation is ordinary recovery.
+      Done when: client tests cover reconnect, cursor expiry, generation
+      replacement and last-valid-view preservation.
 
 #### Dashboard and simulator scenarios
 
-- [ ] Make freshness policy device- and capability-specific.
-      Each periodic-observation device definition declares its expected
-      reporting interval; the room projector centrally derives freshness as
-      `stale` only after `3 × expectedIntervalMs` without a newer accepted
-      observation. Keep availability independent. Configure the two simulator
-      temperature sensors for their own normal cadences, starting with ten
-      seconds for the desk sensor and twenty seconds for the window sensor.
-      Keep the development-only `emit_next_reading` scenario as an immediate
-      observation through the ordinary runtime path.
-      Done when: deterministic tests prove that different device intervals use
-      different stale thresholds, a delayed report does not alter availability,
-      and a manually emitted reading restores freshness.
+- [ ] Add expected reporting intervals to periodic-observation device definitions.
+      Model the interval per applicable capability and configure the simulator
+      desk and window temperature sensors initially at ten and twenty seconds.
+      Done when: device definitions expose their own cadence without changing
+      unrelated device roles.
 
-- [ ] Add a permanently visible Dashboard feed of significant facts.
-      Render availability and health changes, command lifecycle facts and LED
-      state reports that change `reportedState` or confirm an active command,
-      with device, time and command context. Exclude non-applying/no-change
-      facts and individual telemetry readings from this feed.
-      Done when: a user can explain availability, health and a command outcome
-      without interpreting raw payloads or opening logs.
+- [ ] Derive freshness from the configured device interval.
+      Make the room projector mark an observation stale only after
+      `3 × expectedIntervalMs` without a newer accepted reading; leave
+      availability independent.
+      Done when: injected-clock projector tests prove distinct thresholds and
+      no availability change from a delayed report.
 
-- [ ] Show platform storage durability in the Dashboard.
+- [ ] Preserve the ordinary path for manual simulator readings.
+      Keep development-only `emit_next_reading` as an immediate observation sent
+      through the normal runtime path.
+      Done when: a deterministic scenario test proves it restores freshness.
+
+- [ ] Render a permanently visible Dashboard feed from recent-event contracts.
+      Render availability/health changes, command lifecycle facts and LED state
+      reports that change `reportedState` or confirm an active command, with
+      device, time and command context.
+      Done when: the component renders each supported feed record intelligibly.
+
+- [ ] Exclude non-feed-worthy records from the Dashboard feed.
+      Do not render non-applying/no-change facts or individual telemetry
+      readings in the significant-fact feed.
+      Done when: UI tests prove excluded input cannot create a feed item.
+
+- [ ] Add browser coverage for explainable significant-fact feed entries.
+      Verify a user can identify availability, health and a command outcome
+      without inspecting raw payloads or logs.
+      Done when: mocked-BFF browser tests cover representative entries and
+      exclusions.
+
+- [ ] Show the current storage status prominently in the Dashboard.
       Keep an error or recovery banner visible while storage is `degraded` or
-      `recovering`. Mark volatile observations, feed records and commands so the
-      UI never implies they survive restart. Continue rendering fresh realtime
-      state while durable history views explain their temporary unavailability.
-      Keep eligible controls enabled with a volatility warning in `degraded`,
-      disable command admission controls in `recovering`, and handle a racing
-      `503 platform_recovering` without creating local command state or
-      automatically resubmitting user intent.
-      Done when: storage failure and recovery are understandable without logs,
-      and realtime read/control remains usable with honest durability labels.
+      `recovering`, while continuing to render fresh realtime state and
+      explaining temporary durable-history unavailability.
+      Done when: UI tests cover available, degraded and recovering states.
 
-- [ ] Add telemetry details to temperature device cards.
-      Add a telemetry trigger that opens a device-specific view with a trend
-      chart and accessible value/time/unit table. Fetch its baseline over HTTP
-      and append new readings from SSE only up to a bounded rendering limit;
-      raw history remains cursor-paginated in SQLite rather than held in
-      frontend memory. On realtime reconnect, re-fetch the needed history range
-      before continuing live appends.
-      Done when: a new simulator reading appears in both chart and table without
-      manual refresh, while stale/offline labels remain honest.
+- [ ] Label volatile Dashboard evidence and command state.
+      Mark volatile observations, feed records and commands so the UI never
+      implies they survive restart.
+      Done when: component tests cover all three volatile evidence surfaces.
 
-- [ ] Complete API-based diagnostics and development scenarios.
-      Persist bounded quarantine metadata behind `GET /diagnostics`; add
-      development-only malformed and future-dated input scenarios alongside
-      duplicate and invalid input. Every resulting observation must still use
-      the normal adapter, processor and persistence path. Diagnostics are
-      verified via the technical API and structured logs, not a new Dashboard
-      or frontend contract; the existing dev-panel diagnostic affordance may
-      remain a development convenience.
-      Done when: duplicate, malformed and future-dated inputs are explainable by
-      diagnostics API and logs but cannot affect projection, history or feed.
+- [ ] Apply storage-aware command-control behavior in the Dashboard.
+      Keep eligible controls enabled with a volatility warning in `degraded`;
+      disable command admission controls in `recovering`. Handle a racing
+      `503 platform_recovering` without local command state or automatic
+      resubmission of user intent.
+      Done when: mocked-BFF browser tests cover degraded admission and racing
+      recovering rejection.
+
+- [ ] Add a device-specific telemetry-details entry point and accessible view.
+      Add a trigger on temperature cards that opens a trend chart plus accessible
+      value/time/unit table for the selected device.
+      Done when: component tests cover opening the view and table semantics.
+
+- [ ] Load bounded telemetry baselines into the details view.
+      Fetch the requested baseline over HTTP and retain only a bounded rendering
+      set in frontend memory; raw history remains cursor-paginated in SQLite.
+      Done when: frontend tests prove paged history does not become an unbounded
+      in-memory collection.
+
+- [ ] Merge live telemetry into the displayed chart and table.
+      Append new SSE readings up to the rendering bound; after realtime
+      reconnect, refetch the needed history range before resuming live appends.
+      Done when: browser tests show a new simulator reading in both visual
+      representations without refresh and preserve honest stale/offline labels.
+
+- [ ] Expose bounded persisted quarantine metadata through `GET /diagnostics`.
+      Keep diagnostics a technical API surface rather than a Dashboard or
+      frontend contract.
+      Done when: API tests return schema-valid bounded diagnostics.
+
+- [ ] Add malformed and future-dated simulator development scenarios.
+      Extend the existing duplicate/invalid scenarios with development-only
+      malformed and future-dated inputs. Every observation must use the normal
+      adapter, processor and persistence path.
+      Done when: scenario tests trace each input through the ordinary boundary.
+
+- [ ] Verify ignored-input diagnostics remain non-applying.
+      Prove duplicate, malformed and future-dated inputs are explainable through
+      diagnostics API and structured logs without changing projection, accepted
+      history or the Dashboard feed.
+      Done when: focused integration tests cover each rejected/ignored class.
 
 #### Verification and acceptance
 
-- [ ] Extend backend, contract and frontend tests for Stage 4 behavior.
-      Cover migrations, transactions, degraded continuation, retention,
-      restart/timeout recovery, durable deduplication, outbox retry, volatile
-      command non-retry, source idempotency, SQLite error classification,
-      recovery cutover, checkpoint/gap, two-axis command and per-evidence
-      durability, pinned HTTP generation/cursor/watermark merging, bounded trend responses,
-      SSE revisions, feed-bearing `platform.updated`, feed rendering and
-      telemetry details. Cover uncertain-handoff pending/timeout behavior,
-      terminal definite no-handoff and explicit refetch of concurrent non-feed
-      facts. Cover terminal projections that remain uncertain without a fake
-      `dispatchedAt`, watermark-only platform deltas and retention between
-      cursor pages. Inject receipt-operation failure at its source-owned port
-      while proving that the co-located SQLite error follows shared platform
-      storage status and ordering; also cover the receipt-free volatile command
-      path and rejection of cursors
-      after history-generation replacement. Cover per-device
-      cadence and `3 × expectedIntervalMs` freshness with injected clocks and
-      timers. Add mocked-BFF Playwright coverage without starting the real
-      backend or simulator.
-      Done when: browser tests use schema-valid fixtures and deterministic
-      synchronization, with no state injection or arbitrary waits.
+- [ ] Audit Stage 4 verification against the completed backlog items.
+      Confirm every completed item's stated focused test evidence exists at the
+      lowest credible layer and record any missing coverage as a new, narrowly
+      scoped follow-up rather than enlarging this task.
+      Done when: the Stage 4 checklist links each implemented behavior to its
+      focused automated evidence.
 
-- [ ] Write and execute the Stage 4 local acceptance checklist and walkthrough.
-      Cover normal telemetry, stale/offline/recovery, degraded/recovered health,
-      confirmation/rejection/timeout/late report, history persistence after
-      restart and API/log diagnostics for ignored inputs. Demonstrate normal
-      telemetry at each configured device cadence, then freshness changing after
-      the corresponding per-device threshold without changing availability.
-      Done when: a reviewer can run the simulator route without hardware, follow
-      the walkthrough and find a dated record with the verification commands.
+- [ ] Validate mocked-BFF fixtures used by Stage 4 browser tests.
+      Ensure all added browser scenarios use shared schema-valid fixtures and
+      deterministic synchronization, with no state injection, arbitrary waits,
+      real backend or simulator startup.
+      Done when: the browser fixture-validation test suite passes.
+
+- [ ] Write the Stage 4 local acceptance checklist and walkthrough.
+      Document runnable steps for normal telemetry, stale/offline/recovery,
+      degraded/recovered health, confirmation/rejection/timeout/late report,
+      restart persistence and API/log diagnostics. Include normal cadence and
+      per-device freshness-threshold observations without availability change.
+      Done when: the checklist contains commands, expected results and a place
+      for a dated verification record.
+
+- [ ] Execute and record the Stage 4 local acceptance walkthrough.
+      Run the documented simulator-only route and record the date, commands and
+      observed results without requiring hardware.
+      Done when: a reviewer can reproduce the walkthrough from the dated record.
 
 ### Stage 6 - Physical LED Actuation
 
-- [ ] Implement physical LED actuation according to the external-actuation ADR
-      before Stage 6 hardware acceptance. A physical state report must update
-      observed state even during a Dashboard command; a matching report confirms
-      the requested outcome without asserting causal attribution, while a
-      non-matching report leaves the command pending.
-      Done when: simulator or hardware-adapter tests and UI tests cover physical
-      actuation with no active command, matching and non-matching active
-      commands, and a matching report after timeout.
+- [ ] Map physical LED reports through the external-actuation adapter boundary.
+      Implement physical LED actuation according to the external-actuation ADR
+      before Stage 6 hardware acceptance, without bypassing the normal event
+      path.
+      Done when: adapter tests cover valid physical reports and their contract
+      translation.
+
+- [ ] Project physical LED reports independently of active Dashboard commands.
+      A physical report always updates observed state, including while a
+      Dashboard command is pending. A matching report confirms requested outcome
+      without asserting causal attribution; a non-matching report leaves the
+      command pending.
+      Done when: simulator or hardware-adapter tests cover no active command and
+      matching/non-matching active commands.
+
+- [ ] Verify Dashboard behavior for physical LED reports and late confirmation.
+      Cover physical state changes and a matching report after timeout through
+      user-visible behavior.
+      Done when: UI tests prove observed state and command lifecycle remain
+      honest in these cases.

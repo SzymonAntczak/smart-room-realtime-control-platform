@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
+import {
+    isRecentEventsOrdered,
+    type RecentEventProjection,
+    recentEventsProjectionSchema,
+} from '@smart-room/contracts/history';
+import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
+import { isSchema } from '@smart-room/contracts/validation';
+
 import { migrateLatestRoomProjectionCheckpoint } from './checkpoint-format-migrations';
 import type {
     AcceptedInputIdentity,
@@ -18,25 +26,44 @@ import type {
     StoredTelemetrySample,
     TelemetrySampleInput,
 } from './room-storage';
-import { migrateSqliteDatabase, roomStorageMigrations } from './sqlite-migrations';
-import { classifySqliteError, StorageInvariantError, StorageSchemaError } from './storage-errors';
+import {
+    migrateSqliteDatabase,
+    roomStorageMigrations,
+    validateAppliedMigrationManifest,
+} from './sqlite-migrations';
+import {
+    classifySqliteError,
+    StorageInvariantError,
+    StorageManualInterventionError,
+    StorageSchemaError,
+} from './storage-errors';
 
 export interface SqliteRoomStorageConfig {
     databasePath: string;
     generateHistoryGenerationId?: () => string;
+    initialize?: boolean;
+    migrateCheckpoint?: boolean;
 }
 
 export function createSqliteRoomStorage({
     databasePath,
     generateHistoryGenerationId = randomUUID,
+    initialize = true,
+    migrateCheckpoint = true,
 }: SqliteRoomStorageConfig): RoomStorage {
-    const database = openDatabase(databasePath);
+    const database = openSqliteDatabase(databasePath);
     let closed = false;
 
     try {
-        migrateSqliteDatabase(database, generateHistoryGenerationId());
-        validateExpectedSchema(database);
-        migrateLatestRoomProjectionCheckpoint(database);
+        if (initialize) {
+            migrateSqliteDatabase(database, generateHistoryGenerationId());
+        }
+
+        validateExpectedSqliteSchema(database);
+
+        if (migrateCheckpoint) {
+            migrateLatestRoomProjectionCheckpoint(database);
+        }
     } catch (error) {
         database.close();
 
@@ -45,10 +72,10 @@ export function createSqliteRoomStorage({
 
     return {
         getMetadata() {
-            return run(() => readMetadata(database));
+            return run(() => readSqliteStorageMetadata(database));
         },
-        transact(operation) {
-            return run(() => executeStorageTransaction(database, operation));
+        transact(operation, options) {
+            return run(() => executeStorageTransaction(database, operation, options));
         },
         listAcceptedInputIdentities() {
             return run(() =>
@@ -212,7 +239,69 @@ export function createSqliteRoomStorage({
     }
 }
 
-function openDatabase(databasePath: string): DatabaseSync {
+/** Opens an already verified generation without applying migrations. */
+export function openExistingSqliteRoomStorage(databasePath: string): RoomStorage {
+    return createSqliteRoomStorage({ databasePath, initialize: false, migrateCheckpoint: false });
+}
+
+/** Validates an existing generation and proves immediate-write availability without committing. */
+export function probeExistingSqliteRoomStorage(databasePath: string): void {
+    const database = openSqliteDatabase(databasePath);
+
+    try {
+        assertExistingDatabaseIsManaged(database);
+        validateExpectedSqliteSchema(database);
+        const checkpoint = database
+            .prepare('SELECT updated_at, projection_json FROM latest_room_projection WHERE id = 1')
+            .get();
+
+        if (checkpoint) {
+            toLatestRoomProjection(checkpoint);
+        }
+
+        database.exec('BEGIN IMMEDIATE');
+        database.exec('ROLLBACK');
+    } catch (error) {
+        try {
+            if (database.isTransaction) {
+                database.exec('ROLLBACK');
+            }
+        } catch {
+            throw new StorageInvariantError('SQLite probe rollback is indeterminate.', error);
+        }
+
+        throw classifySqliteError(error);
+    } finally {
+        database.close();
+    }
+}
+
+function assertExistingDatabaseIsManaged(database: DatabaseSync): void {
+    const migrations = database
+        .prepare(
+            "SELECT 1 AS present FROM sqlite_schema WHERE type = 'table' AND name = 'schema_migrations'",
+        )
+        .get();
+
+    if (migrations) {
+        return;
+    }
+
+    const userTable = database
+        .prepare(
+            "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
+        )
+        .get();
+
+    if (userTable && isRecord(userTable) && typeof userTable.name === 'string') {
+        throw new StorageManualInterventionError(
+            `SQLite target has unmanaged user table: ${userTable.name}.`,
+            userTable,
+        );
+    }
+}
+
+export function openSqliteDatabase(databasePath: string): DatabaseSync {
     let database: DatabaseSync | undefined;
 
     try {
@@ -238,7 +327,7 @@ function openDatabase(databasePath: string): DatabaseSync {
     }
 }
 
-function validateExpectedSchema(database: DatabaseSync): void {
+export function validateExpectedSqliteSchema(database: DatabaseSync): void {
     for (const [tableName, expectedColumns] of Object.entries(expectedTableColumns)) {
         const table = database
             .prepare(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?`)
@@ -313,6 +402,8 @@ function validateExpectedSchema(database: DatabaseSync): void {
         }
     }
 
+    validateAppliedMigrationManifest(database);
+
     const schemaVersion = readSchemaVersion(database);
 
     if (schemaVersion !== roomStorageMigrations.length) {
@@ -340,7 +431,7 @@ function normalizeSchemaSql(sql: string): string {
     return sql.replaceAll(/\s+/g, ' ').trim().toLowerCase();
 }
 
-function readMetadata(database: DatabaseSync): StorageMetadata {
+export function readSqliteStorageMetadata(database: DatabaseSync): StorageMetadata {
     const row = database
         .prepare(
             `SELECT history_generation_id, last_storage_sequence
@@ -393,6 +484,7 @@ function readSchemaVersion(database: DatabaseSync): number {
 export function executeStorageTransaction<Value>(
     database: DatabaseSync,
     operation: (transaction: RoomStorageTransaction) => Value,
+    options: { beforeCommit?: () => boolean } = {},
 ): StorageTransactionOutcome<Value> {
     try {
         database.exec('BEGIN IMMEDIATE');
@@ -421,140 +513,7 @@ export function executeStorageTransaction<Value>(
     let value: Value;
 
     try {
-        value = operation({
-            appendSignificantFact(input) {
-                return insertSignificantFact(database, input);
-            },
-            appendTelemetrySample(input) {
-                return insertTelemetrySample(database, input);
-            },
-            appendQuarantineEntry(input) {
-                return insertQuarantineEntry(database, input);
-            },
-            upsertAcceptedInputIdentity(input) {
-                database
-                    .prepare(
-                        `INSERT INTO accepted_input_identities (event_id, fingerprint, durability, accepted_at)
-                         VALUES (?, ?, ?, ?)
-                         ON CONFLICT(event_id) DO UPDATE SET
-                             fingerprint = excluded.fingerprint,
-                             durability = excluded.durability,
-                             accepted_at = excluded.accepted_at`,
-                    )
-                    .run(input.eventId, input.fingerprint, input.durability, input.acceptedAt);
-            },
-            retireExpiredRecords(input) {
-                return retireExpiredRecords(database, input.asOf);
-            },
-            saveLatestRoomProjection(input) {
-                database
-                    .prepare(
-                        `INSERT INTO latest_room_projection (id, updated_at, projection_json)
-                         VALUES (1, ?, ?)
-                         ON CONFLICT(id) DO UPDATE SET
-                            updated_at = excluded.updated_at,
-                            projection_json = excluded.projection_json`,
-                    )
-                    .run(input.updatedAt, stringifyJson(toStoredCheckpoint(input)));
-            },
-            upsertCommandDispatchOutboxIntent(input) {
-                database
-                    .prepare(
-                        `INSERT INTO command_dispatch_outbox (
-                            command_id, device_id, command_type, requested_power, target, state,
-                            created_at, attempted_at, first_attempted_at, handed_off_at, deadline_at,
-                            next_attempt_at, closed_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(command_id) DO UPDATE SET
-                            state = excluded.state,
-                            attempted_at = excluded.attempted_at,
-                            first_attempted_at = excluded.first_attempted_at,
-                            handed_off_at = excluded.handed_off_at,
-                            deadline_at = excluded.deadline_at,
-                            next_attempt_at = excluded.next_attempt_at,
-                            closed_at = excluded.closed_at`,
-                    )
-                    .run(
-                        input.commandId,
-                        input.deviceId,
-                        input.commandType,
-                        input.requestedPower,
-                        input.target,
-                        input.state,
-                        canonicalStorageTimestamp(input.createdAt),
-                        input.attemptedAt ? canonicalStorageTimestamp(input.attemptedAt) : null,
-                        input.firstAttemptedAt
-                            ? canonicalStorageTimestamp(input.firstAttemptedAt)
-                            : null,
-                        input.handedOffAt ? canonicalStorageTimestamp(input.handedOffAt) : null,
-                        input.deadlineAt ? canonicalStorageTimestamp(input.deadlineAt) : null,
-                        input.nextAttemptAt ? canonicalStorageTimestamp(input.nextAttemptAt) : null,
-                        input.closedAt ? canonicalStorageTimestamp(input.closedAt) : null,
-                    );
-            },
-            closeCommandDispatchOutboxIntent(input) {
-                database
-                    .prepare(
-                        `UPDATE command_dispatch_outbox
-                         SET state = 'closed', closed_at = ?, next_attempt_at = NULL
-                         WHERE command_id = ?`,
-                    )
-                    .run(canonicalStorageTimestamp(input.closedAt), input.commandId);
-            },
-            getSimulatorCommandReceipt(source, commandId) {
-                const row = database
-                    .prepare(
-                        `SELECT source, command_id, updated_at, terminal_at, receipt_json
-                         FROM simulator_command_receipts
-                         WHERE source = ? AND command_id = ?`,
-                    )
-                    .get(source, commandId);
-
-                return row ? toSimulatorCommandReceipt(row) : undefined;
-            },
-            insertSimulatorCommandReceipt(input) {
-                const result = database
-                    .prepare(
-                        `INSERT INTO simulator_command_receipts (
-                            source, command_id, updated_at, terminal_at, receipt_json
-                        ) VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(source, command_id) DO NOTHING`,
-                    )
-                    .run(
-                        input.source,
-                        input.commandId,
-                        canonicalStorageTimestamp(input.updatedAt),
-                        input.terminalAt ? canonicalStorageTimestamp(input.terminalAt) : null,
-                        stringifyJson(input.receipt),
-                    );
-
-                return result.changes === 1;
-            },
-            updateSimulatorCommandReceipt(input) {
-                database
-                    .prepare(
-                        `UPDATE simulator_command_receipts
-                         SET updated_at = ?, terminal_at = ?, receipt_json = ?
-                         WHERE source = ? AND command_id = ?`,
-                    )
-                    .run(
-                        canonicalStorageTimestamp(input.updatedAt),
-                        input.terminalAt ? canonicalStorageTimestamp(input.terminalAt) : null,
-                        stringifyJson(input.receipt),
-                        input.source,
-                        input.commandId,
-                    );
-            },
-            retireTerminalSimulatorCommandReceipts({ source, asOf }) {
-                const cutoff = retentionCutoff(asOf);
-                database
-                    .prepare(
-                        `DELETE FROM simulator_command_receipts
-                         WHERE source = ? AND terminal_at IS NOT NULL AND terminal_at < ?`,
-                    )
-                    .run(source, cutoff);
-            },
-        });
+        value = operation(createSqliteRoomStorageTransaction(database));
     } catch (error) {
         if (!database.isTransaction) {
             return { status: 'indeterminate', error: classifySqliteError(error) };
@@ -580,6 +539,18 @@ export function executeStorageTransaction<Value>(
     }
 
     try {
+        if (options.beforeCommit && !options.beforeCommit()) {
+            database.exec('ROLLBACK');
+
+            return {
+                status: 'confirmed_rolled_back',
+                error: new StorageInvariantError(
+                    'SQLite transaction was intentionally aborted before commit.',
+                    undefined,
+                ),
+            };
+        }
+
         database.exec('COMMIT');
 
         return { status: 'committed', value };
@@ -594,6 +565,168 @@ export function executeStorageTransaction<Value>(
 
         return { status: 'indeterminate', error: classifySqliteError(error) };
     }
+}
+
+/** Builds the port used inside an already-open caller-owned SQLite transaction. */
+export function createSqliteRoomStorageTransaction(database: DatabaseSync): RoomStorageTransaction {
+    return {
+        getMetadata() {
+            return readSqliteStorageMetadata(database);
+        },
+        appendSignificantFact(input) {
+            return insertSignificantFact(database, input);
+        },
+        appendTelemetrySample(input) {
+            return insertTelemetrySample(database, input);
+        },
+        appendQuarantineEntry(input) {
+            return insertQuarantineEntry(database, input);
+        },
+        upsertAcceptedInputIdentity(input) {
+            database
+                .prepare(
+                    `INSERT INTO accepted_input_identities (event_id, fingerprint, durability, accepted_at)
+                         VALUES (?, ?, ?, ?)
+                         ON CONFLICT(event_id) DO UPDATE SET
+                             fingerprint = excluded.fingerprint,
+                             durability = excluded.durability,
+                             accepted_at = excluded.accepted_at`,
+                )
+                .run(input.eventId, input.fingerprint, input.durability, input.acceptedAt);
+        },
+        retireExpiredRecords(input) {
+            return retireExpiredRecords(database, input.asOf);
+        },
+        saveLatestRoomProjection(input) {
+            database
+                .prepare(
+                    `INSERT INTO latest_room_projection (id, updated_at, projection_json)
+                         VALUES (1, ?, ?)
+                         ON CONFLICT(id) DO UPDATE SET
+                            updated_at = excluded.updated_at,
+                            projection_json = excluded.projection_json`,
+                )
+                .run(input.updatedAt, stringifyJson(toStoredCheckpoint(input)));
+        },
+        upsertCommandDispatchOutboxIntent(input) {
+            database
+                .prepare(
+                    `INSERT INTO command_dispatch_outbox (
+                            command_id, device_id, command_type, requested_power, target, state,
+                            created_at, attempted_at, first_attempted_at, handed_off_at, deadline_at,
+                            next_attempt_at, closed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(command_id) DO UPDATE SET
+                            state = excluded.state,
+                            attempted_at = excluded.attempted_at,
+                            first_attempted_at = excluded.first_attempted_at,
+                            handed_off_at = excluded.handed_off_at,
+                            deadline_at = excluded.deadline_at,
+                            next_attempt_at = excluded.next_attempt_at,
+                            closed_at = excluded.closed_at`,
+                )
+                .run(
+                    input.commandId,
+                    input.deviceId,
+                    input.commandType,
+                    input.requestedPower,
+                    input.target,
+                    input.state,
+                    canonicalStorageTimestamp(input.createdAt),
+                    input.attemptedAt ? canonicalStorageTimestamp(input.attemptedAt) : null,
+                    input.firstAttemptedAt
+                        ? canonicalStorageTimestamp(input.firstAttemptedAt)
+                        : null,
+                    input.handedOffAt ? canonicalStorageTimestamp(input.handedOffAt) : null,
+                    input.deadlineAt ? canonicalStorageTimestamp(input.deadlineAt) : null,
+                    input.nextAttemptAt ? canonicalStorageTimestamp(input.nextAttemptAt) : null,
+                    input.closedAt ? canonicalStorageTimestamp(input.closedAt) : null,
+                );
+        },
+        closeCommandDispatchOutboxIntent(input) {
+            database
+                .prepare(
+                    `UPDATE command_dispatch_outbox
+                         SET state = 'closed', closed_at = ?, next_attempt_at = NULL
+                         WHERE command_id = ?`,
+                )
+                .run(canonicalStorageTimestamp(input.closedAt), input.commandId);
+        },
+        getSimulatorCommandReceipt(source, commandId) {
+            const row = database
+                .prepare(
+                    `SELECT source, command_id, updated_at, terminal_at, receipt_json
+                         FROM simulator_command_receipts
+                         WHERE source = ? AND command_id = ?`,
+                )
+                .get(source, commandId);
+
+            return row ? toSimulatorCommandReceipt(row) : undefined;
+        },
+        insertSimulatorCommandReceipt(input) {
+            const result = database
+                .prepare(
+                    `INSERT INTO simulator_command_receipts (
+                            source, command_id, updated_at, terminal_at, receipt_json
+                        ) VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(source, command_id) DO NOTHING`,
+                )
+                .run(
+                    input.source,
+                    input.commandId,
+                    canonicalStorageTimestamp(input.updatedAt),
+                    input.terminalAt ? canonicalStorageTimestamp(input.terminalAt) : null,
+                    stringifyJson(input.receipt),
+                );
+
+            return result.changes === 1;
+        },
+        updateSimulatorCommandReceipt(input) {
+            database
+                .prepare(
+                    `UPDATE simulator_command_receipts
+                         SET updated_at = ?, terminal_at = ?, receipt_json = ?
+                         WHERE source = ? AND command_id = ?`,
+                )
+                .run(
+                    canonicalStorageTimestamp(input.updatedAt),
+                    input.terminalAt ? canonicalStorageTimestamp(input.terminalAt) : null,
+                    stringifyJson(input.receipt),
+                    input.source,
+                    input.commandId,
+                );
+        },
+        retireTerminalSimulatorCommandReceipts({ source, asOf }) {
+            const cutoff = retentionCutoff(asOf);
+            database
+                .prepare(
+                    `DELETE FROM simulator_command_receipts
+                         WHERE source = ? AND terminal_at IS NOT NULL AND terminal_at < ?`,
+                )
+                .run(source, cutoff);
+        },
+        activateRuntimeSession(input) {
+            database
+                .prepare(
+                    `INSERT INTO runtime_sessions (
+                            session_id, session_started_at, last_durable_commit_at, closed_at
+                        ) VALUES (?, ?, ?, NULL)
+                        ON CONFLICT(session_id) DO UPDATE SET
+                            last_durable_commit_at = excluded.last_durable_commit_at,
+                            closed_at = NULL`,
+                )
+                .run(
+                    input.sessionId,
+                    canonicalStorageTimestamp(input.sessionStartedAt),
+                    canonicalStorageTimestamp(input.lastDurableCommitAt),
+                );
+        },
+        closeRuntimeSession(input) {
+            database
+                .prepare(`UPDATE runtime_sessions SET closed_at = ? WHERE session_id = ?`)
+                .run(canonicalStorageTimestamp(input.closedAt), input.sessionId);
+        },
+    };
 }
 
 function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
@@ -1008,27 +1141,32 @@ function toCommandDispatchOutboxIntent(row: unknown): CommandDispatchOutboxInten
 
 function toStoredCheckpoint(input: LatestRoomProjectionInput): Pick<
     LatestRoomProjectionInput,
-    'projection' | 'projectionEvidence' | 'volatileGuards'
+    'projection' | 'projectionEvidence' | 'volatileGuards' | 'recentEvents'
 > & {
-    checkpointVersion: 2;
+    checkpointVersion: 3;
 } {
     return {
-        checkpointVersion: 2,
+        checkpointVersion: 3,
         projection: input.projection,
         projectionEvidence: input.projectionEvidence,
         volatileGuards: input.volatileGuards,
+        recentEvents: input.recentEvents,
     };
 }
 
 function fromStoredCheckpoint(
     value: unknown,
-): Pick<LatestRoomProjectionInput, 'projection' | 'projectionEvidence' | 'volatileGuards'> {
+): Pick<
+    LatestRoomProjectionInput,
+    'projection' | 'projectionEvidence' | 'volatileGuards' | 'recentEvents'
+> {
     if (
         !isRecord(value) ||
-        value.checkpointVersion !== 2 ||
-        !('projection' in value) ||
+        value.checkpointVersion !== 3 ||
+        !isStoredRoomProjection(value.projection) ||
         !isProjectionEvidence(value.projectionEvidence) ||
-        !Array.isArray(value.volatileGuards)
+        !Array.isArray(value.volatileGuards) ||
+        !isStoredRecentEvents(value.recentEvents)
     ) {
         throw new StorageSchemaError(
             'Stored room projection checkpoint has an invalid shape.',
@@ -1040,7 +1178,44 @@ function fromStoredCheckpoint(
         projection: value.projection,
         projectionEvidence: value.projectionEvidence,
         volatileGuards: value.volatileGuards.map(toCheckpointIdentity),
+        recentEvents: value.recentEvents as RecentEventProjection[],
     };
+}
+
+function isStoredRecentEvents(value: unknown): value is RecentEventProjection[] {
+    if (!isSchema(recentEventsProjectionSchema, value)) {
+        return false;
+    }
+
+    const events = value as RecentEventProjection[];
+
+    return (
+        new Set(events.map((event) => event.recordId)).size === events.length &&
+        isRecentEventsOrdered(events)
+    );
+}
+
+function isStoredRoomProjection(value: unknown): value is LatestRoomProjectionInput['projection'] {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    return isRoomSnapshotProjection({
+        roomName: 'Stored room projection validation',
+        updatedAt: value.updatedAt,
+        devices: value.devices,
+        activeCommands: value.activeCommands,
+        recentCommands: value.recentCommands,
+        recentEvents: [],
+        platform: {
+            storage: {
+                status: 'available',
+                changedAt: value.updatedAt,
+                historyGenerationId: 'stored-projection-validation',
+                storedThroughSequence: 0,
+            },
+        },
+    });
 }
 
 function isProjectionEvidence(
@@ -1173,6 +1348,7 @@ const expectedTableColumns = {
         'next_attempt_at',
         'closed_at',
     ],
+    runtime_sessions: ['session_id', 'session_started_at', 'last_durable_commit_at', 'closed_at'],
     latest_room_projection: ['id', 'updated_at', 'projection_json'],
 } as const satisfies Record<string, readonly string[]>;
 
@@ -1241,6 +1417,12 @@ const expectedTableSqlFragments = {
         'target text not null',
         "state text not null check (state in ('ready', 'uncertain', 'delivered', 'closed'))",
         'created_at text not null',
+    ],
+    runtime_sessions: [
+        'session_id text primary key',
+        'session_started_at text not null',
+        'last_durable_commit_at text not null',
+        'closed_at text',
     ],
     latest_room_projection: [
         'id integer primary key check (id = 1)',

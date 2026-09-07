@@ -1,7 +1,10 @@
 import type { PowerState } from '@smart-room/contracts/devices';
 import type { PlatformEventSource } from '@smart-room/contracts/events';
+import type { RecentEventProjection } from '@smart-room/contracts/history';
 
 import type { RoomProjectionEvidence } from '../read-model/room-projection';
+
+import type { StorageError } from './storage-errors';
 
 export interface StorageMetadata {
     historyGenerationId: string;
@@ -23,6 +26,7 @@ export interface RoomStorageCheckpoint {
     projection: unknown;
     projectionEvidence: RoomProjectionEvidence;
     volatileGuards: AcceptedInputIdentity[];
+    recentEvents: RecentEventProjection[];
 }
 
 export type StorageTransactionOutcome<Value> =
@@ -31,6 +35,8 @@ export type StorageTransactionOutcome<Value> =
     | { status: 'indeterminate'; error: unknown };
 
 export interface RoomStorageTransaction {
+    /** Reads metadata from the same SQLite transaction as the pending write. */
+    getMetadata(): StorageMetadata;
     appendSignificantFact(input: SignificantFactInput): StoredSignificantFact;
     appendTelemetrySample(input: TelemetrySampleInput): StoredTelemetrySample;
     appendQuarantineEntry(input: QuarantineEntryInput): StoredQuarantineEntry;
@@ -46,6 +52,14 @@ export interface RoomStorageTransaction {
     insertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): boolean;
     updateSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): void;
     retireTerminalSimulatorCommandReceipts(input: { source: string; asOf: string }): void;
+    activateRuntimeSession(input: RuntimeSessionInput): void;
+    closeRuntimeSession(input: { sessionId: string; closedAt: string }): void;
+}
+
+export interface RuntimeSessionInput {
+    sessionId: string;
+    sessionStartedAt: string;
+    lastDurableCommitAt: string;
 }
 
 export type CommandDispatchOutboxState = 'ready' | 'uncertain' | 'delivered' | 'closed';
@@ -121,6 +135,7 @@ export interface RoomStorage {
     getMetadata(): StorageMetadata;
     transact<Value>(
         operation: (transaction: RoomStorageTransaction) => Value,
+        options?: { beforeCommit?: () => boolean },
     ): StorageTransactionOutcome<Value>;
     listAcceptedInputIdentities(): AcceptedInputIdentity[];
     isAcceptedInputIdentityActive(eventId: string, asOf: string): boolean;
@@ -142,3 +157,43 @@ export interface RoomStorage {
     listCommandDispatchOutboxIntents(): CommandDispatchOutboxIntent[];
     close(): void;
 }
+
+/**
+ * Owns opening and probing storage. Keeping this boundary outside the runtime
+ * lets startup enter degraded mode instead of failing before recovery exists.
+ */
+export interface RoomStorageLifecycle {
+    openAtStartup(): StorageStartupResult;
+    probe(context: StorageProbeContext): StorageProbeResult;
+    cutover<Value>(input: StorageCutoverInput<Value>): StorageCutoverOutcome<Value>;
+}
+
+export interface StorageProbeContext {
+    /** A generation successfully verified earlier must never be replaced automatically. */
+    verifiedHistoryGenerationId: string | undefined;
+}
+
+export type StorageStartupResult =
+    | { kind: 'available'; storage: RoomStorage; metadata: StorageMetadata }
+    | { kind: 'degraded'; error: StorageError };
+
+export type StorageProbeResult =
+    | {
+          kind: 'existing_generation';
+          storage: RoomStorage;
+          metadata: StorageMetadata;
+      }
+    | { kind: 'first_initialization' };
+
+export interface StorageCutoverInput<Value> {
+    probe: StorageProbeResult;
+    /** This latch is read immediately before the SQLite commit. */
+    shouldAbort(): boolean;
+    operation(transaction: RoomStorageTransaction): Value;
+}
+
+export type StorageCutoverOutcome<Value> =
+    | { status: 'committed'; value: Value; storage: RoomStorage; metadata: StorageMetadata }
+    | { status: 'confirmed_rolled_back'; error: unknown }
+    | { status: 'aborted' }
+    | { status: 'indeterminate'; error: unknown };

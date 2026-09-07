@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events';
 
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
+import type {
+    RoomPublicationBatch,
+    RoomRealtimeServerMessage,
+} from '@smart-room/contracts/realtime';
 import { describe, expect, it } from 'vitest';
 
 import { type RoomRealtimeWritable, startRoomRealtimePublisher } from './room-bff-sse';
@@ -94,6 +97,110 @@ describe('startRoomRealtimePublisher', () => {
         expect(room.subscriptionCount()).toBe(0);
         expect(stream.writes).toHaveLength(writesBeforeError);
     });
+
+    it('delivers a new durable storage gap with the available platform revision', () => {
+        const stream = new ControlledWritable([true, true]);
+        const room = createRoomHarness(createSnapshot());
+
+        startRoomRealtimePublisher(stream, room.config);
+        room.publish({
+            ...createSnapshot({ storedThroughSequence: 1 }),
+            recentEvents: [storageGap()],
+        });
+
+        const gapUpdate = messages(stream).at(-1);
+
+        expect(gapUpdate).toMatchObject({
+            messageType: 'platform.updated',
+            payload: {
+                storage: { storedThroughSequence: 1 },
+                recentEvents: [expect.objectContaining({ eventType: 'storage.gap.recorded' })],
+            },
+        });
+    });
+
+    it('assigns contiguous revisions to an explicit recovery reconciliation batch', () => {
+        const stream = new ControlledWritable([true, true, true]);
+        const room = createRoomHarness(createSnapshot());
+        startRoomRealtimePublisher(stream, room.config);
+        const recovered = {
+            ...createSnapshot({ storedThroughSequence: 1 }),
+            recentEvents: [storageGap()],
+        };
+
+        room.publishBatch({
+            snapshot: recovered,
+            deltas: [
+                {
+                    messageType: 'commands.updated',
+                    payload: {
+                        devices: recovered.devices,
+                        activeCommands: recovered.activeCommands,
+                        recentCommands: recovered.recentCommands,
+                        recentEvents: [],
+                    },
+                },
+                {
+                    messageType: 'platform.updated',
+                    payload: {
+                        storage: recovered.platform.storage,
+                        recentEvents: [storageGap()],
+                    },
+                },
+            ],
+        });
+
+        expect(messages(stream).map((message) => message.messageType)).toEqual([
+            'room.snapshot',
+            'commands.updated',
+            'platform.updated',
+        ]);
+        expect(revisions(messages(stream))).toEqual([
+            [undefined, 0],
+            [0, 1],
+            [1, 2],
+        ]);
+    });
+
+    it('gives a connection opened after a recovery batch only its final revision-zero baseline', () => {
+        const firstStream = new ControlledWritable([true, true, true]);
+        const room = createRoomHarness(createSnapshot());
+        startRoomRealtimePublisher(firstStream, room.config);
+        const recovered = {
+            ...createSnapshot({ storedThroughSequence: 1 }),
+            recentEvents: [storageGap()],
+        };
+
+        room.publishBatch({
+            snapshot: recovered,
+            deltas: [
+                {
+                    messageType: 'commands.updated',
+                    payload: {
+                        devices: recovered.devices,
+                        activeCommands: recovered.activeCommands,
+                        recentCommands: recovered.recentCommands,
+                        recentEvents: [],
+                    },
+                },
+                {
+                    messageType: 'platform.updated',
+                    payload: { storage: recovered.platform.storage, recentEvents: [storageGap()] },
+                },
+            ],
+        });
+
+        const secondStream = new ControlledWritable([true]);
+        startRoomRealtimePublisher(secondStream, room.config);
+
+        expect(messages(secondStream)).toEqual([
+            expect.objectContaining({
+                messageType: 'room.snapshot',
+                revision: 0,
+                payload: recovered,
+            }),
+        ]);
+    });
 });
 
 class ControlledWritable extends EventEmitter implements RoomRealtimeWritable {
@@ -128,6 +235,7 @@ class ControlledWritable extends EventEmitter implements RoomRealtimeWritable {
 function createRoomHarness(initial: RoomSnapshotProjection) {
     let snapshot = initial;
     const listeners = new Set<(next: RoomSnapshotProjection) => void>();
+    const batchListeners = new Set<(batch: RoomPublicationBatch) => void>();
 
     return {
         config: {
@@ -141,19 +249,61 @@ function createRoomHarness(initial: RoomSnapshotProjection) {
                     listeners.delete(listener);
                 };
             },
+            subscribeRoomPublicationBatch(listener: (batch: RoomPublicationBatch) => void) {
+                batchListeners.add(listener);
+
+                return () => {
+                    batchListeners.delete(listener);
+                };
+            },
             now() {
                 return '2026-09-03T08:00:00Z';
             },
         },
         publish(next: RoomSnapshotProjection) {
+            const previous = snapshot;
             snapshot = next;
+            const deltas: Array<RoomPublicationBatch['deltas'][number]> = [];
 
-            for (const listener of listeners) {
-                listener(next);
+            if (
+                JSON.stringify(previous.activeCommands) !== JSON.stringify(next.activeCommands) ||
+                JSON.stringify(previous.recentCommands) !== JSON.stringify(next.recentCommands)
+            ) {
+                deltas.push({
+                    messageType: 'commands.updated',
+                    payload: {
+                        devices: next.devices,
+                        activeCommands: next.activeCommands,
+                        recentCommands: next.recentCommands,
+                    },
+                });
+            }
+
+            if (JSON.stringify(previous.platform) !== JSON.stringify(next.platform)) {
+                deltas.push({
+                    messageType: 'platform.updated',
+                    payload: {
+                        storage: next.platform.storage,
+                        ...(next.recentEvents.length > 0
+                            ? { recentEvents: next.recentEvents }
+                            : {}),
+                    },
+                });
+            }
+
+            for (const listener of batchListeners) {
+                listener({ snapshot: next, deltas });
+            }
+        },
+        publishBatch(batch: RoomPublicationBatch) {
+            snapshot = batch.snapshot;
+
+            for (const listener of batchListeners) {
+                listener(batch);
             }
         },
         subscriptionCount() {
-            return listeners.size;
+            return listeners.size + batchListeners.size;
         },
     };
 }
@@ -233,6 +383,7 @@ function createSnapshot({
         recentCommands: confirmedCommand
             ? [confirmedCommand, ...recentCommands.slice(0, 19)]
             : recentCommands,
+        recentEvents: [],
         platform: {
             storage: {
                 status: 'available',
@@ -261,6 +412,24 @@ function createRecentCommands(): RoomSnapshotProjection['recentCommands'] {
         },
         confirmedAt: `2026-09-03T07:${String(59 - index).padStart(2, '0')}:02Z`,
     }));
+}
+
+function storageGap(): RoomSnapshotProjection['recentEvents'][number] {
+    return {
+        recordId: 'platform:storage-gap:test',
+        eventType: 'storage.gap.recorded',
+        occurredAt: '2026-09-03T08:00:01Z',
+        durability: 'durable',
+        storageSequence: 1,
+        source: 'backend',
+        payload: {
+            outageStartedAt: '2026-09-03T08:00:00Z',
+            outageEndedAt: '2026-09-03T08:00:01Z',
+            failureReason: 'storage_write_failed',
+            boundaryBasis: 'same_process_first_degraded_at',
+            observationsBackfilled: false,
+        },
+    };
 }
 
 function messages(stream: ControlledWritable): RoomRealtimeServerMessage[] {

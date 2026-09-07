@@ -23,7 +23,10 @@ import {
     type RoomSnapshotProjection,
     roomSnapshotProjectionSchema,
 } from '@smart-room/contracts/projections';
-import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
+import {
+    isRoomSnapshotProjection,
+    type RoomPublicationBatch,
+} from '@smart-room/contracts/realtime';
 import { isSchema } from '@smart-room/contracts/validation';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 
@@ -40,7 +43,7 @@ import { startRoomRealtimeStream } from './room-bff-sse';
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
-    subscribeRoomSnapshot(listener: (snapshot: RoomSnapshotProjection) => void): () => void;
+    subscribeRoomPublicationBatch(listener: (batch: RoomPublicationBatch) => void): () => void;
     requestCommand?: (request: SetPowerCommandRequest) => CommandRequestResult;
     runDeviceScenario?: (deviceId: string, action: DeviceScenarioAction) => DeviceScenarioResult;
     getDeviceScenarios?: (deviceId: string) => DeviceScenarioList | undefined;
@@ -50,7 +53,7 @@ export interface RoomBffConfig {
 export function createRoomBffServer({
     getRoomSnapshot,
     getDiagnosticsSnapshot,
-    subscribeRoomSnapshot,
+    subscribeRoomPublicationBatch,
     requestCommand,
     runDeviceScenario,
     getDeviceScenarios,
@@ -108,7 +111,11 @@ export function createRoomBffServer({
     });
 
     server.get('/room/realtime', (_, response) => {
-        startRoomRealtimeStream(response, { getRoomSnapshot, subscribeRoomSnapshot, now });
+        startRoomRealtimeStream(response, {
+            getRoomSnapshot,
+            subscribeRoomPublicationBatch,
+            now,
+        });
     });
 
     server.get(

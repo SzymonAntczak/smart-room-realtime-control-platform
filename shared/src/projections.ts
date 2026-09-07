@@ -15,6 +15,8 @@ import {
     type ObservationFreshness,
     observationFreshnessStates,
 } from './devices';
+import type { RecentEventProjection } from './history';
+import { recentEventsProjectionSchema } from './history';
 import { isoTimestampSchema, nonEmptyStringSchema } from './validation';
 
 export interface DeviceProjection {
@@ -64,6 +66,7 @@ export interface RoomSnapshotProjection {
     devices: DeviceProjection[];
     activeCommands: ActiveCommandProjection[];
     recentCommands: TerminalCommandProjection[];
+    recentEvents: RecentEventProjection[];
     platform: { storage: PlatformStorageProjection };
 }
 
@@ -223,6 +226,7 @@ export const roomSnapshotProjectionSchema = Type.Object(
         devices: Type.Array(deviceProjectionSchema),
         activeCommands: Type.Array(activeCommandProjectionSchema),
         recentCommands: recentCommandProjectionsSchema,
+        recentEvents: recentEventsProjectionSchema,
         platform: Type.Object(
             {
                 storage: platformStorageProjectionSchema,

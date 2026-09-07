@@ -118,15 +118,15 @@ export const platformEventCandidateSchema = Type.Object({
     commandId: Type.Optional(nonEmptyStringSchema),
     payload: Type.Unknown(),
 });
-const deviceStateReportedPayloadSchema = Type.Object({
+export const deviceStateReportedPayloadSchema = Type.Object({
     reportedState: deviceStateSchema,
 });
-const deviceHealthChangedPayloadSchema = Type.Object({
+export const deviceHealthChangedPayloadSchema = Type.Object({
     previousHealth: Type.Union(deviceOperationalHealthStates.map((value) => Type.Literal(value))),
     health: Type.Union(deviceOperationalHealthStates.map((value) => Type.Literal(value))),
     reason: nonEmptyStringSchema,
 });
-const deviceAvailabilityChangedPayloadSchema = Type.Object({
+export const deviceAvailabilityChangedPayloadSchema = Type.Object({
     previousAvailability: Type.Union(deviceAvailabilityStates.map((value) => Type.Literal(value))),
     availability: Type.Union(deviceAvailabilityStates.map((value) => Type.Literal(value))),
     reason: nonEmptyStringSchema,
@@ -136,28 +136,28 @@ export const telemetryReadingRecordedPayloadSchema = Type.Object({
     value: Type.Number(),
     unit: Type.Literal('celsius'),
 });
-const commandRequestedPayloadSchema = Type.Object({
+export const commandRequestedPayloadSchema = Type.Object({
     commandType: Type.Literal('set.power'),
     requestedState: powerStateProjectionSchema,
     requestedBy: Type.Union(commandRequestedByValues.map((value) => Type.Literal(value))),
 });
-const commandDispatchedPayloadSchema = Type.Object({
+export const commandDispatchedPayloadSchema = Type.Object({
     commandType: Type.Literal('set.power'),
     target: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
 });
-const commandDeliveryUncertainPayloadSchema = Type.Object({
+export const commandDeliveryUncertainPayloadSchema = Type.Object({
     commandType: Type.Literal('set.power'),
     target: Type.Union(platformEventSources.map((source) => Type.Literal(source))),
     reason: nonEmptyStringSchema,
 });
-const commandFailedPayloadSchema = Type.Object({
+export const commandFailedPayloadSchema = Type.Object({
     reason: nonEmptyStringSchema,
     message: nonEmptyStringSchema,
     commandType: Type.Optional(Type.Literal('set.power')),
     requestedState: Type.Optional(powerStateProjectionSchema),
     requestedAt: Type.Optional(isoTimestampSchema),
 });
-const commandTimedOutPayloadSchema = Type.Object({
+export const commandTimedOutPayloadSchema = Type.Object({
     timeoutMs: Type.Integer({ minimum: 1 }),
     reason: nonEmptyStringSchema,
 });

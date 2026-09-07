@@ -21,6 +21,12 @@ Runtime composition resolves its local database to
 different local path. Accepted events use the storage transaction path before
 their projection is published; a confirmed storage rollback leaves the running
 process explicitly degraded and continues with volatile realtime state.
+Recoverable availability failures are probed at
+`SMART_ROOM_STORAGE_RECOVERY_PROBE_INTERVAL_MS` (default `5000`). Recovery
+uses a serialized cutover, persists one `storage.gap.recorded` checkpoint
+boundary, and publishes reconciliation before the available watermark. The raw
+cutover queue is bounded by `SMART_ROOM_STORAGE_RECOVERY_QUEUE_LIMIT` (default
+`1000`); overflow aborts the cutover and preserves FIFO volatile processing.
 
 ## Structure
 

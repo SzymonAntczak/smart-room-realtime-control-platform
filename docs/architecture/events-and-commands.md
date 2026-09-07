@@ -79,8 +79,9 @@ once evidence exists, equal or older transitions remain non-applying.
 
 The implemented Stage 4 processor preserves accepted non-applying transitions
 as auditable significant facts with diagnostics metadata. It also keeps raw
-telemetry separate from significant history. The bounded recent-event feed
-remains a follow-up and is not emitted yet. The classification is defined in
+telemetry separate from significant history. The projection carries a bounded
+recent-event cache, including the durable recovery gap, while HTTP history and
+trend APIs remain later work. The classification is defined in
 [ADR: Stage 4 Storage and Observability](../decisions/adr-stage-4-storage-and-observability.md)
 and governs the current storage-backed runtime.
 
@@ -320,16 +321,15 @@ a very late record that falls outside retention immediately may still be
 processed but has no durable deduplication guarantee afterward.
 
 During Stage 4 degraded operation, only bounded in-memory deduplication is
-available. Automatic recovery is a follow-up: it will not backfill volatile
-observations and will instead persist a current-state checkpoint plus one
+available. Automatic recovery does not backfill volatile observations and
+instead persists a current-state checkpoint plus one
 derived `storage.gap.recorded` fact for the outage interval.
 
 That checkpoint retains bounded volatile dedup guards with canonical input
 fingerprints over normalized validated semantic fields, excluding contract-
 ignored envelope extras. Identical replay while degraded is ignored; identical
 source redelivery after a later durable startup performs one durable
-reconciliation and atomically promotes the guard. Future automatic recovery
-will use the same reconciliation rule. The same `eventId` with another
+reconciliation and atomically promotes the guard. The same `eventId` with another
 fingerprint is quarantined as an identity conflict. Recovery will not synthesize
 input.
 

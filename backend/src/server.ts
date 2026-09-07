@@ -1,7 +1,6 @@
 import { isDevScenarioControlsEnabled } from './api/dev-scenario-controls';
 import { createRoomBffServer } from './api/room-bff';
-import { createSqliteRoomStorage } from './platform/storage/sqlite-room-storage';
-import { StorageError } from './platform/storage/storage-errors';
+import { createSqliteRoomStorageLifecycle } from './platform/storage/sqlite-room-storage-lifecycle';
 import { readDeduplicationRuntimeConfig } from './runtime/deduplication-runtime-config';
 import { ensureStorageDirectory, readStorageRuntimeConfig } from './runtime/storage-runtime-config';
 import { createTemperatureRoomRuntime } from './runtime/temperature-room-runtime';
@@ -19,7 +18,7 @@ const enableDevScenarioControls = isDevScenarioControlsEnabled(process.env.ENABL
 const server = createRoomBffServer({
     getRoomSnapshot: runtime.getRoomSnapshot,
     getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
-    subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
+    subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
     requestCommand: runtime.requestCommand,
     runDeviceScenario: enableDevScenarioControls ? runtime.runDeviceScenario : undefined,
     getDeviceScenarios: enableDevScenarioControls ? runtime.getDeviceScenarios : undefined,
@@ -42,21 +41,18 @@ async function startServer(): Promise<void> {
 }
 
 function resolveStorage() {
-    const { databasePath } = readStorageRuntimeConfig(process.env);
+    const { databasePath, recoveryProbeIntervalMs, recoveryQueueLimit } = readStorageRuntimeConfig(
+        process.env,
+    );
 
-    try {
-        ensureStorageDirectory(databasePath);
-
-        return { storage: createSqliteRoomStorage({ databasePath }) };
-    } catch (error) {
-        if (error instanceof StorageError && error.kind !== 'fatal') {
-            console.error({ event: 'storage_startup_degraded', reason: error.kind });
-
-            return {};
-        }
-
-        throw error;
-    }
+    return {
+        storageRecoveryProbeIntervalMs: recoveryProbeIntervalMs,
+        storageRecoveryQueueLimit: recoveryQueueLimit,
+        storageLifecycle: createSqliteRoomStorageLifecycle({
+            databasePath,
+            ensureDirectory: ensureStorageDirectory,
+        }),
+    };
 }
 
 function readPort(value: string | undefined): number {

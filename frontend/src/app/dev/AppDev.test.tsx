@@ -165,6 +165,7 @@ function createRoomSnapshotMessage(devices: unknown[] = [createTemperatureDevice
             updatedAt: '2026-06-08T09:30:00Z',
             activeCommands: [],
             recentCommands: [],
+            recentEvents: [],
             devices,
             platform: { storage: availableStorage() },
         },

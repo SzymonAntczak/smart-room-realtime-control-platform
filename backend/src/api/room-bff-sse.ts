@@ -2,6 +2,7 @@ import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     isRoomRealtimeServerMessage,
     isRoomSnapshotProjection,
+    type RoomPublicationBatch,
     type RoomRealtimeServerMessage,
 } from '@smart-room/contracts/realtime';
 import { normalizeIsoTimestamp } from '@smart-room/contracts/validation';
@@ -9,7 +10,7 @@ import type { FastifyReply } from 'fastify';
 
 interface RoomRealtimeStreamConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
-    subscribeRoomSnapshot(listener: (snapshot: RoomSnapshotProjection) => void): () => void;
+    subscribeRoomPublicationBatch(listener: (batch: RoomPublicationBatch) => void): () => void;
     now(): string;
 }
 
@@ -51,7 +52,7 @@ export function startRoomRealtimeStream(
 
 export function startRoomRealtimePublisher(
     stream: RoomRealtimeWritable,
-    { getRoomSnapshot, subscribeRoomSnapshot, now }: RoomRealtimeStreamConfig,
+    { getRoomSnapshot, subscribeRoomPublicationBatch, now }: RoomRealtimeStreamConfig,
 ): void {
     let baseline = getRoomSnapshot();
     let revision = 0;
@@ -82,18 +83,19 @@ export function startRoomRealtimePublisher(
         }
     });
 
-    unsubscribe = subscribeRoomSnapshot((snapshot) => {
-        if (isClosed || !isBaselineSent) {
-            return;
-        }
-
-        if (!isRoomSnapshotProjection(snapshot) || !hasSameDeviceSet(baseline, snapshot)) {
+    unsubscribe = subscribeRoomPublicationBatch((batch) => {
+        if (
+            isClosed ||
+            !isBaselineSent ||
+            !isRoomSnapshotProjection(batch.snapshot) ||
+            !hasSameDeviceSet(baseline, batch.snapshot)
+        ) {
             close();
 
             return;
         }
 
-        const built = buildRoomDeltaBatch(baseline, snapshot, revision, now);
+        const built = buildExplicitRoomDeltaBatch(batch, revision, now);
 
         if (built.kind === 'invalid') {
             close();
@@ -101,7 +103,7 @@ export function startRoomRealtimePublisher(
             return;
         }
 
-        baseline = snapshot;
+        baseline = batch.snapshot;
 
         if (built.kind === 'empty') {
             return;
@@ -210,25 +212,15 @@ function buildRoomSnapshotBatch(
     );
 }
 
-function buildRoomDeltaBatch(
-    previous: RoomSnapshotProjection,
-    next: RoomSnapshotProjection,
+function buildExplicitRoomDeltaBatch(
+    batch: RoomPublicationBatch,
     revision: number,
     now: () => string,
 ): BatchBuildResult {
     const messages: RoomRealtimeServerMessage[] = [];
     let nextRevision = revision;
-    const previousDevices = new Map(previous.devices.map((device) => [device.deviceId, device]));
-    const commandDeviceIds = changedCommandDeviceIds(previous, next);
 
-    for (const device of next.devices) {
-        if (
-            commandDeviceIds.has(device.deviceId) ||
-            sameJson(previousDevices.get(device.deviceId), device)
-        ) {
-            continue;
-        }
-
+    for (const delta of batch.deltas) {
         const sentAt = normalizedNow(now);
 
         if (!sentAt) {
@@ -237,53 +229,14 @@ function buildRoomDeltaBatch(
 
         nextRevision += 1;
         messages.push({
-            messageType: 'device.updated',
+            ...delta,
             previousRevision: nextRevision - 1,
             revision: nextRevision,
             sentAt,
-            payload: device,
         } as RoomRealtimeServerMessage);
     }
 
-    if (commandDeviceIds.size > 0) {
-        const sentAt = normalizedNow(now);
-
-        if (!sentAt) {
-            return { kind: 'invalid' };
-        }
-
-        nextRevision += 1;
-        messages.push({
-            messageType: 'commands.updated',
-            previousRevision: nextRevision - 1,
-            revision: nextRevision,
-            sentAt,
-            payload: {
-                devices: next.devices,
-                activeCommands: next.activeCommands,
-                recentCommands: next.recentCommands,
-            },
-        } as RoomRealtimeServerMessage);
-    }
-
-    if (next.platform && !sameJson(previous.platform, next.platform)) {
-        const sentAt = normalizedNow(now);
-
-        if (!sentAt) {
-            return { kind: 'invalid' };
-        }
-
-        nextRevision += 1;
-        messages.push({
-            messageType: 'platform.updated',
-            previousRevision: nextRevision - 1,
-            revision: nextRevision,
-            sentAt,
-            payload: next.platform,
-        } as RoomRealtimeServerMessage);
-    }
-
-    return buildBatch(messages, nextRevision);
+    return messages.length === 0 ? { kind: 'empty' } : buildBatch(messages, nextRevision);
 }
 
 function buildBatch(
@@ -315,49 +268,8 @@ function normalizedNow(now: () => string): string | undefined {
     }
 }
 
-function changedCommandDeviceIds(
-    previous: RoomSnapshotProjection,
-    next: RoomSnapshotProjection,
-): Set<string> {
-    const deviceIds = new Set<string>();
-    const previousCommands = new Map(
-        [...previous.activeCommands, ...previous.recentCommands].map((command) => [
-            command.commandId,
-            command,
-        ]),
-    );
-    const nextCommands = new Map(
-        [...next.activeCommands, ...next.recentCommands].map((command) => [
-            command.commandId,
-            command,
-        ]),
-    );
-    const commandIds = new Set([...previousCommands.keys(), ...nextCommands.keys()]);
-
-    for (const commandId of commandIds) {
-        const previousCommand = previousCommands.get(commandId);
-        const nextCommand = nextCommands.get(commandId);
-
-        if (!sameJson(previousCommand, nextCommand)) {
-            if (previousCommand) {
-                deviceIds.add(previousCommand.deviceId);
-            }
-
-            if (nextCommand) {
-                deviceIds.add(nextCommand.deviceId);
-            }
-        }
-    }
-
-    return deviceIds;
-}
-
 function formatSseMessage(message: RoomRealtimeServerMessage): string {
     return `event: ${message.messageType}\ndata: ${JSON.stringify(message)}\n\n`;
-}
-
-function sameJson(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function hasSameDeviceSet(previous: RoomSnapshotProjection, next: RoomSnapshotProjection): boolean {

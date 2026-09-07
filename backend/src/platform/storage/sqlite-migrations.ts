@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 
-import { StorageMigrationError, StorageSchemaError } from './storage-errors';
+import {
+    StorageManualInterventionError,
+    StorageMigrationError,
+    StorageSchemaError,
+} from './storage-errors';
 
 export interface Migration {
     version: number;
@@ -128,6 +132,15 @@ CREATE INDEX simulator_command_receipts_terminal_by_source
     WHERE terminal_at IS NOT NULL;
 `;
 
+const migrationFourSql = `
+CREATE TABLE runtime_sessions (
+    session_id TEXT PRIMARY KEY,
+    session_started_at TEXT NOT NULL,
+    last_durable_commit_at TEXT NOT NULL,
+    closed_at TEXT
+) STRICT;
+`;
+
 export const roomStorageMigrations: readonly Migration[] = [
     {
         version: 1,
@@ -159,23 +172,44 @@ export const roomStorageMigrations: readonly Migration[] = [
             database.exec(migrationThreeSql);
         },
     },
+    {
+        version: 4,
+        name: 'runtime-session-marker',
+        checksum: checksum(migrationFourSql),
+        apply(database) {
+            database.exec(migrationFourSql);
+        },
+    },
 ];
 
 export function migrateSqliteDatabase(
     database: DatabaseSync,
     historyGenerationId: string,
     migrations: readonly Migration[] = roomStorageMigrations,
+    options: { transaction?: 'own' | 'caller' } = {},
 ): void {
     assertMigrationManifest(migrations);
     assertDatabaseCanBeMigrated(database);
     ensureMigrationHistory(database);
-
     const applied = readAppliedMigrations(database);
     validateAppliedMigrations(applied, migrations);
 
     for (const migration of migrations.slice(applied.length)) {
-        applyMigration(database, migration, historyGenerationId);
+        applyMigration(database, migration, historyGenerationId, options.transaction ?? 'own');
     }
+}
+
+/**
+ * Validates the immutable migration history of an already-managed database.
+ * Recovery probes must use this rather than inferring compatibility from the
+ * highest version alone.
+ */
+export function validateAppliedMigrationManifest(
+    database: DatabaseSync,
+    migrations: readonly Migration[] = roomStorageMigrations,
+): void {
+    assertMigrationManifest(migrations);
+    validateAppliedMigrations(readAppliedMigrations(database), migrations);
 }
 
 function assertMigrationManifest(migrations: readonly Migration[]): void {
@@ -212,8 +246,8 @@ function assertDatabaseCanBeMigrated(database: DatabaseSync): void {
         .get() as { name: string } | undefined;
 
     if (userTable) {
-        throw new StorageSchemaError(
-            `Database has an unmanaged user table: ${userTable.name}.`,
+        throw new StorageManualInterventionError(
+            `Database has an unmanaged user table and requires manual intervention: ${userTable.name}.`,
             userTable,
         );
     }
@@ -274,19 +308,28 @@ function applyMigration(
     database: DatabaseSync,
     migration: Migration,
     historyGenerationId: string,
+    transaction: 'own' | 'caller',
 ): void {
     try {
-        database.exec('BEGIN IMMEDIATE');
+        if (transaction === 'own') {
+            database.exec('BEGIN IMMEDIATE');
+        }
+
         migration.apply(database, historyGenerationId);
         database
             .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (?, ?, ?)')
             .run(migration.version, migration.name, migration.checksum);
-        database.exec('COMMIT');
+
+        if (transaction === 'own') {
+            database.exec('COMMIT');
+        }
     } catch (error) {
-        try {
-            database.exec('ROLLBACK');
-        } catch {
-            // Migration errors are fatal even if rollback itself cannot be observed.
+        if (transaction === 'own') {
+            try {
+                database.exec('ROLLBACK');
+            } catch {
+                // Migration errors are fatal even if rollback itself cannot be observed.
+            }
         }
 
         throw new StorageMigrationError(

@@ -2,7 +2,10 @@ import type { AddressInfo } from 'node:net';
 
 import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
+import type {
+    RoomPublicationBatch,
+    RoomRealtimeServerMessage,
+} from '@smart-room/contracts/realtime';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -319,7 +322,7 @@ describe('createRoomBffServer', () => {
             createRoomBffServer({
                 getRoomSnapshot: runtime.getRoomSnapshot,
                 getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
-                subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
+                subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
                 runDeviceScenario: runtime.runDeviceScenario,
                 getDeviceScenarios: runtime.getDeviceScenarios,
             }),
@@ -636,7 +639,7 @@ describe('createRoomBffServer', () => {
             createRoomBffServer({
                 getRoomSnapshot: runtime.getRoomSnapshot,
                 getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
-                subscribeRoomSnapshot: runtime.subscribeRoomSnapshot,
+                subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
             }),
         );
         openServers.push(server);
@@ -712,6 +715,9 @@ function createRoomBffConfig({
         subscribeRoomSnapshot() {
             return () => undefined;
         },
+        subscribeRoomPublicationBatch() {
+            return () => undefined;
+        },
     };
 }
 
@@ -741,7 +747,7 @@ function createRoomBffHarness({
     onSubscribe?: () => void;
 }) {
     let currentRoomSnapshot = roomSnapshot;
-    const listeners = new Set<(snapshot: RoomSnapshotProjection) => void>();
+    const listeners = new Set<(batch: RoomPublicationBatch) => void>();
     const pendingSentAt = [...sentAt];
 
     return {
@@ -752,7 +758,7 @@ function createRoomBffHarness({
             getDiagnosticsSnapshot() {
                 return createDiagnosticsSnapshot();
             },
-            subscribeRoomSnapshot(listener: (snapshot: RoomSnapshotProjection) => void) {
+            subscribeRoomPublicationBatch(listener: (batch: RoomPublicationBatch) => void) {
                 listeners.add(listener);
                 onSubscribe?.();
 
@@ -771,10 +777,35 @@ function createRoomBffHarness({
             },
         },
         publishRoomSnapshot(snapshot: RoomSnapshotProjection) {
+            const previous = currentRoomSnapshot;
             currentRoomSnapshot = snapshot;
+            const commandsChanged =
+                JSON.stringify(previous.activeCommands) !==
+                    JSON.stringify(snapshot.activeCommands) ||
+                JSON.stringify(previous.recentCommands) !== JSON.stringify(snapshot.recentCommands);
+            const deltas: RoomPublicationBatch['deltas'] = commandsChanged
+                ? [
+                      {
+                          messageType: 'commands.updated',
+                          payload: {
+                              devices: snapshot.devices,
+                              activeCommands: snapshot.activeCommands,
+                              recentCommands: snapshot.recentCommands,
+                          },
+                      },
+                  ]
+                : snapshot.devices
+                      .filter(
+                          (device, index) =>
+                              JSON.stringify(previous.devices[index]) !== JSON.stringify(device),
+                      )
+                      .map((device) => ({
+                          messageType: 'device.updated' as const,
+                          payload: device,
+                      }));
 
             for (const listener of listeners) {
-                listener(snapshot);
+                listener({ snapshot, deltas });
             }
         },
         setRoomSnapshot(snapshot: RoomSnapshotProjection) {
@@ -831,6 +862,7 @@ function createRoomSnapshot({
         ],
         activeCommands: [],
         recentCommands: [],
+        recentEvents: [],
         platform: { storage: availableStorage() },
     };
 }
@@ -892,6 +924,7 @@ function createLedRoomSnapshot({
                       },
                   ]
                 : [],
+        recentEvents: [],
         platform: { storage: availableStorage() },
     };
 }
