@@ -1934,18 +1934,111 @@ describe('createTemperatureRoomRuntime', () => {
                 requestedState: { power: 'on' },
             });
             await flushCommandDispatch();
+            const outboxBeforeRestart = initialStorage.listCommandDispatchOutboxIntents();
             initialRuntime.stop();
             initialStorage.close();
             clock.advanceBy(5_000);
 
             recoveredStorage = createSqliteRoomStorage({ databasePath });
+            const commandDispatchedFactsBeforeStartup = recoveredStorage
+                .listSignificantFacts()
+                .filter((fact) => fact.eventType === 'command.dispatched');
+            const recoveredCommandTimer = createCommandTimer();
             recoveredRuntime = createTemperatureRoomRuntime({
                 clock,
                 storage: recoveredStorage,
                 ledScenario: 'omit_confirmation',
-                commandTimer: createCommandTimer(),
+                commandTimer: recoveredCommandTimer,
             });
             recoveredRuntime.start();
+
+            expect(recoveredRuntime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(recoveredRuntime.getRoomSnapshot().recentCommands).toEqual([
+                expect.objectContaining({ commandId: command.commandId, status: 'timed_out' }),
+            ]);
+            expect(recoveredStorage.listSignificantFacts()).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        eventType: 'command.timed_out',
+                        commandId: command.commandId,
+                    }),
+                ]),
+            );
+            expect(recoveredCommandTimer.size()).toBe(0);
+            expect(recoveredStorage.listCommandDispatchOutboxIntents()).toEqual([
+                expect.objectContaining({
+                    ...outboxBeforeRestart[0],
+                    state: 'closed',
+                    closedAt: '2026-08-05T10:00:05.000Z',
+                }),
+            ]);
+            expect(
+                recoveredStorage
+                    .listSignificantFacts()
+                    .filter((fact) => fact.eventType === 'command.dispatched'),
+            ).toEqual(commandDispatchedFactsBeforeStartup);
+        } finally {
+            initialRuntime.stop();
+            initialStorage.close();
+            recoveredRuntime?.stop();
+            recoveredStorage?.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('restores a durable command timeout for its remaining time without another handoff', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const clock = createMutableClock('2026-08-05T10:00:00Z');
+        const initialStorage = createSqliteRoomStorage({ databasePath });
+        const initialRuntime = createTemperatureRoomRuntime({
+            clock,
+            storage: initialStorage,
+            ledScenario: 'omit_confirmation',
+            commandTimer: createCommandTimer(),
+        });
+        let recoveredStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let recoveredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            initialRuntime.start();
+            const command = initialRuntime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            await flushCommandDispatch();
+            const outboxBeforeRestart = initialStorage.listCommandDispatchOutboxIntents();
+            initialRuntime.stop();
+            initialStorage.close();
+            clock.advanceBy(2_000);
+
+            recoveredStorage = createSqliteRoomStorage({ databasePath });
+            const commandDispatchedFactsBeforeStartup = recoveredStorage
+                .listSignificantFacts()
+                .filter((fact) => fact.eventType === 'command.dispatched');
+            const recoveredCommandTimer = createCommandTimer();
+            recoveredRuntime = createTemperatureRoomRuntime({
+                clock,
+                storage: recoveredStorage,
+                ledScenario: 'omit_confirmation',
+                commandTimer: recoveredCommandTimer,
+            });
+            recoveredRuntime.start();
+
+            expect(recoveredRuntime.getRoomSnapshot().activeCommands).toEqual([
+                expect.objectContaining({ commandId: command.commandId, status: 'pending' }),
+            ]);
+            expect(recoveredCommandTimer.delays).toEqual([3_000]);
+            expect(recoveredStorage.listCommandDispatchOutboxIntents()).toEqual(outboxBeforeRestart);
+            expect(
+                recoveredStorage
+                    .listSignificantFacts()
+                    .filter((fact) => fact.eventType === 'command.dispatched'),
+            ).toEqual(commandDispatchedFactsBeforeStartup);
+
+            clock.advanceBy(3_000);
+            recoveredCommandTimer.runAll();
 
             expect(recoveredRuntime.getRoomSnapshot().activeCommands).toEqual([]);
             expect(recoveredRuntime.getRoomSnapshot().recentCommands).toEqual([
@@ -3802,12 +3895,15 @@ function createLedScheduler() {
 
 function createCommandTimer() {
     const callbacks = new Map<number, () => void>();
+    const delays: number[] = [];
     let nextHandle = 1;
 
     return {
-        setTimeout(callback: () => void) {
+        delays,
+        setTimeout(callback: () => void, delayMs: number) {
             const handle = nextHandle++;
             callbacks.set(handle, callback);
+            delays.push(delayMs);
 
             return handle;
         },

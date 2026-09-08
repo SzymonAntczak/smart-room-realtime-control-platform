@@ -1112,11 +1112,86 @@ describe('createSetPowerCommandController', () => {
         expect(dispatchedCommands).toEqual([]);
     });
 
+    it('restores a durable command timer for exactly its remaining deadline without dispatching', () => {
+        const events: PlatformEvent[] = [];
+        const scheduled: Array<{ delayMs: number; callback: () => void }> = [];
+        let dispatches = 0;
+        const controller = createSetPowerCommandController({
+            routes: [
+                {
+                    deviceId: 'led-main',
+                    target: 'simulator-adapter',
+                    dispatcher: {
+                        dispatch() {
+                            dispatches += 1;
+
+                            return {
+                                status: 'handed_off' as const,
+                                handedOffAt: '2026-08-05T10:00:02.000Z',
+                            };
+                        },
+                    },
+                },
+            ],
+            emitEvent(event) {
+                events.push(event);
+
+                return acceptedEvent();
+            },
+            createDispatchScope: immediateDispatchScope,
+            getRoomSnapshot: () => pendingLedSnapshot,
+            clock: { now: () => '2026-08-05T10:00:02.000Z' },
+            commandTimer: {
+                setTimeout(callback, delayMs) {
+                    scheduled.push({ callback, delayMs });
+
+                    return scheduled.length;
+                },
+                clearTimeout() {},
+            },
+            generateEventId: () => 'evt-restored-timeout-1',
+        });
+
+        controller.reschedulePendingCommands();
+
+        expect(scheduled).toHaveLength(1);
+        expect(scheduled[0]).toEqual(expect.objectContaining({ delayMs: 3_000 }));
+        expect(events).toEqual([]);
+        expect(dispatches).toBe(0);
+
+        scheduled[0]?.callback();
+
+        expect(events).toEqual([
+            expect.objectContaining({
+                eventType: 'command.timed_out',
+                commandId: 'cmd-led-pending',
+                occurredAt: '2026-08-05T10:00:05Z',
+            }),
+        ]);
+        expect(dispatches).toBe(0);
+    });
+
     it('times out a restored command synchronously when its deadline has passed', () => {
         const events: PlatformEvent[] = [];
         let scheduledTimeouts = 0;
+        let dispatches = 0;
         const controller = createSetPowerCommandController({
-            routes: [],
+            routes: [
+                {
+                    deviceId: 'led-main',
+                    target: 'simulator-adapter',
+                    dispatcher: {
+                        dispatch() {
+                            dispatches += 1;
+
+                            return {
+                                status: 'handed_off' as const,
+                                handedOffAt: '2026-08-05T10:00:05Z',
+                            };
+                        },
+                    },
+                },
+            ],
             emitEvent(event) {
                 events.push(event);
 
@@ -1145,6 +1220,7 @@ describe('createSetPowerCommandController', () => {
             }),
         ]);
         expect(scheduledTimeouts).toBe(0);
+        expect(dispatches).toBe(0);
     });
 });
 

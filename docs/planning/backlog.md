@@ -223,7 +223,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       Done when: a restart exposes time-correct fresh/stale state and the
       freshness-only write has no historical side effect.
 
-- [ ] Restore durable command deadlines without redispatching work.
+- [x] Restore durable command deadlines without redispatching work.
       Reschedule each active durable command for its remaining timeout, or emit
       its terminal timeout immediately when the persisted deadline has passed.
       Do not redispatch a restored command as part of this change.
