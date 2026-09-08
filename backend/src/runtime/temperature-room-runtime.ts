@@ -1868,7 +1868,6 @@ function initializeProjectionCheckpoint(
     }
 
     const outcome = storage.transact((transaction) => {
-        transaction.retireExpiredRecords({ asOf: evaluatedAt });
         transaction.saveLatestRoomProjection({
             updatedAt: projection.updatedAt,
             projection,

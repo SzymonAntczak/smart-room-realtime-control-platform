@@ -215,7 +215,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       Done when: unit tests prove identical cache contents after live insertion,
       checkpoint/restore and history retirement.
 
-- [ ] Re-evaluate device freshness during startup recovery.
+- [x] Re-evaluate device freshness during startup recovery.
       Before the first snapshot, evaluate every configured freshness policy
       against the injected startup clock and restored `lastObservedAt`. Persist
       a resulting stale projection without history, feed, deduplication or

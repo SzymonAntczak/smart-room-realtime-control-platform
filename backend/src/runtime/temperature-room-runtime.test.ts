@@ -2017,6 +2017,140 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('re-evaluates restored freshness before the first snapshot without historical side effects', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-freshness-restart-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const clock = createMutableClock('2026-08-05T10:00:00.000Z');
+        const checkpoint = createMixedRestartCheckpoint(clock);
+        const expectedProjection = structuredClone(checkpoint.projection);
+        const restoredTemperature = expectedProjection.devices.find(
+            (candidate) => candidate.deviceId === 'temp-desk',
+        );
+
+        if (!restoredTemperature?.observationStatus.temperature) {
+            throw new Error(
+                'Expected the checkpoint fixture to include a temperature observation.',
+            );
+        }
+
+        restoredTemperature.observationStatus.temperature = {
+            ...restoredTemperature.observationStatus.temperature,
+            freshness: 'stale',
+        };
+
+        const initialStorage = createSqliteRoomStorage({ databasePath });
+        let recoveredStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let recoveredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            const persisted = initialStorage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'freshness-recovery-significant-fact',
+                    eventId: 'evt-freshness-recovery-significant-fact',
+                    eventType: 'device.availability.changed',
+                    deviceId: 'temp-desk',
+                    source: 'simulator-adapter',
+                    occurredAt: clock.now(),
+                    payload: { availability: 'online' },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'freshness-recovery-telemetry',
+                    eventId: 'evt-freshness-recovery-telemetry',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 22.4,
+                    unit: 'celsius',
+                    occurredAt: clock.now(),
+                    payload: { temperature: 22.4, temperatureUnit: 'celsius' },
+                });
+                transaction.upsertAcceptedInputIdentity({
+                    eventId: 'evt-freshness-recovery-significant-fact',
+                    fingerprint: `fp:v1:sha256:${'0'.repeat(64)}`,
+                    durability: 'durable',
+                    acceptedAt: clock.now(),
+                });
+                transaction.upsertAcceptedInputIdentity({
+                    eventId: 'evt-freshness-recovery-telemetry',
+                    fingerprint: `fp:v1:sha256:${'1'.repeat(64)}`,
+                    durability: 'durable',
+                    acceptedAt: clock.now(),
+                });
+                transaction.saveLatestRoomProjection(checkpoint);
+            });
+
+            expect(persisted.status).toBe('committed');
+            const historyBeforeRestart = initialStorage.listSignificantFacts();
+            const telemetryBeforeRestart = initialStorage.listTelemetrySamples({
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+            });
+            const identitiesBeforeRestart = initialStorage.listAcceptedInputIdentities();
+            const metadataBeforeRestart = initialStorage.getMetadata();
+            initialStorage.close();
+            clock.advanceBy(2_501);
+
+            recoveredStorage = createSqliteRoomStorage({ databasePath });
+            recoveredRuntime = createTemperatureRoomRuntime({
+                clock,
+                storage: recoveredStorage,
+                timer: createManualTimer(),
+                commandTimer: createCommandTimer(),
+            });
+
+            const restoredCheckpoint = recoveredStorage.getLatestRoomProjection();
+            const snapshot = recoveredRuntime.getRoomSnapshot();
+
+            expect(restoredCheckpoint).toMatchObject({
+                projection: expectedProjection,
+                projectionEvidence: checkpoint.projectionEvidence,
+                volatileGuards: checkpoint.volatileGuards,
+                recentEvents: checkpoint.recentEvents,
+            });
+            expect(snapshot.devices).toEqual(expectedProjection.devices);
+            expect(snapshot.activeCommands).toEqual(expectedProjection.activeCommands);
+            expect(snapshot.recentCommands).toEqual(expectedProjection.recentCommands);
+            expect(
+                snapshot.devices.find((candidate) => candidate.deviceId === 'temp-desk')
+                    ?.observationStatus.temperature,
+            ).toEqual(restoredTemperature.observationStatus.temperature);
+            expect(recoveredStorage.listSignificantFacts()).toEqual(historyBeforeRestart);
+            expect(
+                recoveredStorage.listTelemetrySamples({
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                }),
+            ).toEqual(telemetryBeforeRestart);
+            expect(recoveredStorage.listAcceptedInputIdentities()).toEqual(identitiesBeforeRestart);
+            expect(recoveredStorage.getMetadata()).toEqual(metadataBeforeRestart);
+        } finally {
+            initialStorage.close();
+            recoveredRuntime?.stop();
+            recoveredStorage?.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('does not rewrite a restored checkpoint when startup freshness is unchanged', () => {
+        const clock = createMutableClock('2026-08-05T10:00:00.000Z');
+        const storage = createScriptedStorage();
+        const checkpoint = createMixedRestartCheckpoint(clock);
+        storage.seedCheckpoint(checkpoint);
+
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            timer: createManualTimer(),
+            commandTimer: createCommandTimer(),
+        });
+
+        try {
+            expect(storage.transactionOperations).toEqual([['retireExpiredRecords']]);
+            expect(runtime.getRoomSnapshot().devices).toEqual(checkpoint.projection.devices);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('starts from a migrated legacy checkpoint without retaining a terminal command as active', async () => {
         const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
         const databasePath = join(directory, 'room.sqlite');
@@ -3701,6 +3835,7 @@ function createScriptedStorage() {
     const quarantineEntries: StoredQuarantineEntry[] = [];
     const identities: AcceptedInputIdentity[] = [];
     const receipts = new Map<string, SimulatorCommandReceiptInput>();
+    const transactionOperations: string[][] = [];
     let storageSequence = 0;
     let internalSequence = 0;
     let latestCheckpoint: LatestRoomProjectionInput | undefined;
@@ -3813,6 +3948,7 @@ function createScriptedStorage() {
                 },
             };
             const value = operation(transaction);
+            transactionOperations.push([...operations]);
             const hook = beforeOutcome;
             const hookHandled = hook?.(operations);
 
@@ -3916,6 +4052,7 @@ function createScriptedStorage() {
         telemetrySamples,
         quarantineEntries,
         identities,
+        transactionOperations,
         get latestCheckpoint() {
             return latestCheckpoint;
         },
