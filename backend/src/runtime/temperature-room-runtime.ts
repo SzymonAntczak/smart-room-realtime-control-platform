@@ -17,7 +17,7 @@ import {
     ledScenarioActions,
     temperatureScenarioActions,
 } from '@smart-room/contracts/development';
-import type { PlatformEvent } from '@smart-room/contracts/events';
+import type { CommandFailedEvent, PlatformEvent } from '@smart-room/contracts/events';
 import {
     compareRecentEventsDescending,
     type RecentEventProjection,
@@ -165,6 +165,14 @@ const defaultSensors: readonly TemperatureSensorDefinition[] = [
 ];
 
 const readingPattern = [0, 0.2, 0.4, 0.1, -0.1, -0.3] as const;
+const volatileCommandLostOnRestartReason = 'volatile_command_lost_on_restart';
+const volatileCommandLostOnRestartMessage =
+    'The volatile command was lost when the backend restarted.';
+
+interface PendingStartupVolatileCommandFailure {
+    event: CommandFailedEvent;
+    acceptedAt: string;
+}
 
 function isTemperatureScenarioAction(
     action: DeviceScenarioAction,
@@ -354,6 +362,7 @@ export function createTemperatureRoomRuntime({
                       : { historyGenerationId: null, storedThroughSequence: null }),
               };
     let recentEvents: RecentEventProjection[] = initializedCheckpoint?.recentEvents ?? [];
+    let pendingStartupVolatileCommandFailures: PendingStartupVolatileCommandFailure[] = [];
     let recoveryGapForPublication: RecentEventProjection | undefined;
     let activeStorage = initialStorage;
     let verifiedHistoryGenerationId = initialStorageMetadata?.historyGenerationId;
@@ -468,6 +477,8 @@ export function createTemperatureRoomRuntime({
         generateCommandId,
         generateEventId,
     });
+
+    closeRestoredVolatileCommands();
 
     return {
         start() {
@@ -1190,6 +1201,7 @@ export function createTemperatureRoomRuntime({
             let finalRecentEvents = recentEvents;
             const restoredDurableIdentities: AcceptedInputIdentity[] = [];
             let recoveredVolatileGuards = processor.listVolatileIdentities();
+            const startupFailuresToPersist = [...pendingStartupVolatileCommandFailures];
 
             for (const identity of candidate?.listAcceptedInputIdentities() ?? []) {
                 if (
@@ -1240,13 +1252,23 @@ export function createTemperatureRoomRuntime({
                 );
             }
 
+            if (startupFailuresToPersist.length > 0) {
+                finalProjection = promoteStartupVolatileCommandFailures(
+                    finalProjection,
+                    startupFailuresToPersist,
+                );
+            }
+
             const durableIdentityEventIds = new Set(
                 restoredDurableIdentities.map((identity) => identity.eventId),
             );
             recoveredVolatileGuards = recoveredVolatileGuards.filter(
                 (identity) =>
                     !durableIdentityEventIds.has(identity.eventId) &&
-                    !processor.hasDurableIdentity(identity.eventId),
+                    !processor.hasDurableIdentity(identity.eventId) &&
+                    !startupFailuresToPersist.some(
+                        (failure) => failure.event.eventId === identity.eventId,
+                    ),
             );
 
             const projection = finalProjection;
@@ -1269,6 +1291,27 @@ export function createTemperatureRoomRuntime({
                     source: 'backend',
                     payload: gapPayload,
                 };
+                const storedStartupFailureRecentEvents = startupFailuresToPersist.map((failure) => {
+                    const record: PreparedRecord = {
+                        kind: 'input_significant_fact',
+                        event: failure.event,
+                    };
+                    const storageSequence = appendPreparedRecord(transaction, record);
+                    const recentEvent = recentEventForRecord(record, 'durable', storageSequence);
+
+                    if (!recentEvent) {
+                        throw new Error('Startup command failure must produce a recent event.');
+                    }
+
+                    transaction.upsertAcceptedInputIdentity({
+                        eventId: failure.event.eventId,
+                        fingerprint: inputFingerprint(failure.event),
+                        durability: 'durable',
+                        acceptedAt: failure.acceptedAt,
+                    });
+
+                    return recentEvent;
+                });
                 const storedGap = transaction.appendSignificantFact({
                     recordId: gapRecordId,
                     eventType: 'storage.gap.recorded',
@@ -1284,6 +1327,7 @@ export function createTemperatureRoomRuntime({
                     projectionEvidence: finalProjectionEvidence,
                     volatileGuards: recoveredVolatileGuards,
                     recentEvents: mergeRecentEvents(finalRecentEvents, [
+                        ...storedStartupFailureRecentEvents,
                         { ...gapRecentEvent, storageSequence: storedGap.storageSequence },
                     ]),
                 });
@@ -1293,7 +1337,11 @@ export function createTemperatureRoomRuntime({
                     lastDurableCommitAt: ingress.receivedAt,
                 });
 
-                return { storageSequence: storedGap.storageSequence, retiredIdentityEventIds };
+                return {
+                    storageSequence: storedGap.storageSequence,
+                    retiredIdentityEventIds,
+                    storedStartupFailureRecentEvents,
+                };
             };
 
             const outcome =
@@ -1394,6 +1442,16 @@ export function createTemperatureRoomRuntime({
                 );
             }
 
+            for (const failure of startupFailuresToPersist) {
+                processor.rememberDurableIdentity(
+                    failure.event.eventId,
+                    inputFingerprint(failure.event),
+                    failure.acceptedAt,
+                );
+            }
+
+            pendingStartupVolatileCommandFailures = [];
+
             // A degraded startup has not yet installed the checkpoint guards
             // into the processor. Keep those guards as volatile evidence after
             // cutover so that an event-id reuse cannot become acceptable merely
@@ -1415,6 +1473,7 @@ export function createTemperatureRoomRuntime({
                 storedThroughSequence: outcome.value.storageSequence,
             };
             recentEvents = mergeRecentEvents(finalRecentEvents, [
+                ...outcome.value.storedStartupFailureRecentEvents,
                 {
                     recordId: gapRecordId,
                     eventType: 'storage.gap.recorded',
@@ -1727,6 +1786,39 @@ export function createTemperatureRoomRuntime({
 
     function getCurrentRoomSnapshot(): RoomSnapshotProjection {
         return snapshotAt(clock.now());
+    }
+
+    function closeRestoredVolatileCommands(): void {
+        const restoredVolatileCommands = roomProjector
+            .getProjection()
+            .activeCommands.filter((command) => command.durability === 'volatile');
+
+        for (const command of restoredVolatileCommands) {
+            const occurredAt = clock.now();
+            const event = {
+                eventId: generateEventId(),
+                eventType: 'command.failed',
+                occurredAt,
+                source: 'backend',
+                deviceId: command.deviceId,
+                commandId: command.commandId,
+                payload: {
+                    reason: volatileCommandLostOnRestartReason,
+                    message: volatileCommandLostOnRestartMessage,
+                },
+            } satisfies CommandFailedEvent;
+            const result = inputCoordinator.receive(event);
+
+            if (result?.status !== 'accepted') {
+                throw new Error(
+                    `Could not close restored volatile command ${command.commandId} during startup.`,
+                );
+            }
+
+            if (storageState.status !== 'available') {
+                pendingStartupVolatileCommandFailures.push({ event, acceptedAt: occurredAt });
+            }
+        }
     }
 
     function snapshotAt(evaluatedAt: string): RoomSnapshotProjection {
@@ -2552,6 +2644,37 @@ function mergeRecentEvents(
     }
 
     return [...byRecordId.values()].sort(compareRecentEventsDescending).slice(0, 20);
+}
+
+function promoteStartupVolatileCommandFailures(
+    projection: RoomProjection,
+    failures: readonly PendingStartupVolatileCommandFailure[],
+): RoomProjection {
+    const commandIds = new Set(failures.map((failure) => failure.event.commandId));
+    const recentCommands = projection.recentCommands.map((command) => {
+        if (!commandIds.has(command.commandId)) {
+            return command;
+        }
+
+        if (
+            command.status !== 'failed' ||
+            command.reason !== volatileCommandLostOnRestartReason ||
+            command.durability !== 'volatile'
+        ) {
+            throw new Error(
+                `Startup volatile command ${command.commandId} was not restored as the expected failure.`,
+            );
+        }
+
+        return { ...command, lifecycleDurability: 'durable' as const };
+    });
+
+    // recentCommands is a bounded cache. During a prolonged degraded period a
+    // newer terminal command can evict this startup failure before recovery.
+    // The recovery transaction persists the failure fact and identity either
+    // way; only a retained terminal projection can expose a lifecycle-axis
+    // promotion in the checkpoint cache.
+    return { ...projection, recentCommands: selectRecentCommands(recentCommands) };
 }
 
 function mergeVolatileGuards(

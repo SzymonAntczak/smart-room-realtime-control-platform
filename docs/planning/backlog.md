@@ -230,7 +230,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       Done when: deterministic timer tests cover both remaining and elapsed
       deadlines and confirm that startup causes no extra handoff.
 
-- [ ] Close restored volatile commands safely on restart.
+- [x] Close restored volatile commands safely on restart.
       Convert each checkpointed active volatile command to a persisted failed
       lifecycle with `volatile_command_lost_on_restart` before the first
       snapshot. Do not restore its source plan or redispatch it.

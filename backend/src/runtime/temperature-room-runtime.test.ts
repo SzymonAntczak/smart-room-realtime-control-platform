@@ -1986,6 +1986,342 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('closes a checkpointed volatile command before its first snapshot without redispatching it', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-volatile-restart-'));
+        const databasePath = join(directory, 'room.sqlite');
+        const clock = createMutableClock('2026-08-05T10:00:01.000Z');
+        const checkpoint = createVolatileRestartCheckpoint(clock);
+        const initialStorage = createSqliteRoomStorage({ databasePath });
+        let restoredStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let restoredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+        let secondStorage: ReturnType<typeof createSqliteRoomStorage> | undefined;
+        let secondRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            expect(
+                initialStorage.transact((transaction) => {
+                    transaction.saveLatestRoomProjection(checkpoint);
+                }).status,
+            ).toBe('committed');
+            initialStorage.close();
+
+            const commandTimer = createCommandTimer();
+            restoredStorage = createSqliteRoomStorage({ databasePath });
+            restoredRuntime = createTemperatureRoomRuntime({
+                clock,
+                storage: restoredStorage,
+                commandTimer,
+                generateEventId: createEventIdGenerator(),
+            });
+
+            const firstSnapshot = restoredRuntime.getRoomSnapshot();
+            const restoredFailure = firstSnapshot.recentCommands.find(
+                (command) => command.commandId === 'checkpoint-active-command',
+            );
+
+            expect(firstSnapshot.activeCommands).toEqual([]);
+            expect(
+                firstSnapshot.devices.find((device) => device.deviceId === 'led-main'),
+            ).not.toHaveProperty('activeCommandId');
+            expect(restoredFailure).toMatchObject({
+                status: 'failed',
+                reason: 'volatile_command_lost_on_restart',
+                message: 'The volatile command was lost when the backend restarted.',
+                durability: 'volatile',
+                lifecycleDurability: 'durable',
+                delivery: pendingDelivery(checkpoint),
+            });
+            expect(
+                restoredStorage
+                    .listSignificantFacts()
+                    .filter((fact) => fact.eventType === 'command.failed'),
+            ).toEqual([
+                expect.objectContaining({
+                    commandId: 'checkpoint-active-command',
+                    payload: {
+                        reason: 'volatile_command_lost_on_restart',
+                        message: 'The volatile command was lost when the backend restarted.',
+                    },
+                }),
+            ]);
+            expect(restoredStorage.listCommandDispatchOutboxIntents()).toEqual([]);
+
+            restoredRuntime.start();
+
+            expect(commandTimer.size()).toBe(0);
+            expect(
+                restoredRuntime
+                    .getRoomSnapshot()
+                    .recentCommands.find(
+                        (command) => command.commandId === 'checkpoint-active-command',
+                    ),
+            ).toMatchObject({ status: 'failed', lifecycleDurability: 'durable' });
+            expect(
+                restoredStorage
+                    .listSignificantFacts()
+                    .filter((fact) => fact.eventType === 'command.confirmed'),
+            ).toEqual([]);
+
+            restoredRuntime.stop();
+            restoredStorage.close();
+            restoredRuntime = undefined;
+            restoredStorage = undefined;
+            secondStorage = createSqliteRoomStorage({ databasePath });
+            secondRuntime = createTemperatureRoomRuntime({ clock, storage: secondStorage });
+
+            expect(secondRuntime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(
+                secondStorage
+                    .listSignificantFacts()
+                    .filter((fact) => fact.eventType === 'command.failed'),
+            ).toHaveLength(1);
+        } finally {
+            initialStorage.close();
+            restoredRuntime?.stop();
+            restoredStorage?.close();
+            secondRuntime?.stop();
+            secondStorage?.close();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('closes a checkpointed volatile accepted command before its first snapshot', () => {
+        const clock = createMutableClock('2026-08-05T10:00:01.000Z');
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint(createVolatileRestartCheckpoint(clock, 'accepted'));
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            expect(runtime.getRoomSnapshot().activeCommands).toEqual([]);
+            expect(
+                runtime
+                    .getRoomSnapshot()
+                    .recentCommands.find(
+                        (command) => command.commandId === 'checkpoint-active-command',
+                    ),
+            ).toMatchObject({
+                status: 'failed',
+                durability: 'volatile',
+                lifecycleDurability: 'durable',
+                reason: 'volatile_command_lost_on_restart',
+            });
+            expect(
+                storage.significantFacts.filter((fact) => fact.eventType === 'command.failed'),
+            ).toHaveLength(1);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('preserves uncertain delivery evidence while closing a checkpointed volatile command', () => {
+        const clock = createMutableClock('2026-08-05T10:00:01.000Z');
+        const checkpoint = createVolatileRestartCheckpoint(clock, 'pending', 'uncertain');
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint(checkpoint);
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            expect(
+                runtime
+                    .getRoomSnapshot()
+                    .recentCommands.find(
+                        (command) => command.commandId === 'checkpoint-active-command',
+                    ),
+            ).toMatchObject({
+                status: 'failed',
+                delivery: pendingDelivery(checkpoint),
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('persists a startup volatile-command failure after recovery from a rollback', () => {
+        const clock = createMutableClock('2026-08-05T10:00:01.000Z');
+        const storage = createScriptedStorage();
+        const recoveryTimer = createManualTimer();
+        const checkpoint = createVolatileRestartCheckpoint(clock);
+        storage.seedCheckpoint(checkpoint);
+        storage.failTransactionContaining(
+            'appendSignificantFact',
+            'confirmed_rolled_back',
+            new StorageAvailabilityError('startup command failure write unavailable', undefined),
+        );
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            storageFactory: () => storage.port,
+            recoveryTimer,
+            commandTimer: createCommandTimer(),
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            const degradedSnapshot = runtime.getRoomSnapshot();
+
+            expect(degradedSnapshot).toMatchObject({
+                activeCommands: [],
+                platform: { storage: { status: 'degraded' } },
+            });
+            expect(
+                degradedSnapshot.recentCommands.find(
+                    (command) => command.commandId === 'checkpoint-active-command',
+                ),
+            ).toMatchObject({
+                status: 'failed',
+                durability: 'volatile',
+                lifecycleDurability: 'volatile',
+            });
+            expect(storage.significantFacts).toEqual([]);
+
+            runtime.start();
+            recoveryTimer.runLatest();
+
+            const recoveredSnapshot = runtime.getRoomSnapshot();
+
+            expect(recoveredSnapshot).toMatchObject({
+                activeCommands: [],
+                platform: { storage: { status: 'available' } },
+            });
+            expect(
+                recoveredSnapshot.recentCommands.find(
+                    (command) => command.commandId === 'checkpoint-active-command',
+                ),
+            ).toMatchObject({
+                status: 'failed',
+                durability: 'volatile',
+                lifecycleDurability: 'durable',
+            });
+            expect(
+                storage.significantFacts.filter((fact) => fact.eventType === 'command.failed'),
+            ).toEqual([
+                expect.objectContaining({
+                    commandId: 'checkpoint-active-command',
+                    payload: {
+                        reason: 'volatile_command_lost_on_restart',
+                        message: 'The volatile command was lost when the backend restarted.',
+                    },
+                }),
+            ]);
+            expect(
+                storage.identities.filter((identity) => identity.durability === 'durable'),
+            ).toHaveLength(1);
+            expect(recoveredSnapshot.platform.storage.storedThroughSequence).toBe(
+                Math.max(...storage.significantFacts.map((fact) => fact.storageSequence)),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('persists an evicted startup volatile-command failure after recovery from a rollback', async () => {
+        const clock = createMutableClock('2026-08-05T10:00:01.000Z');
+        const storage = createScriptedStorage();
+        const recoveryTimer = createManualTimer();
+        storage.seedCheckpoint(createVolatileRestartCheckpoint(clock));
+        storage.failTransactionContaining(
+            'appendSignificantFact',
+            'confirmed_rolled_back',
+            new StorageAvailabilityError('startup command failure write unavailable', undefined),
+        );
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            storageFactory: () => storage.port,
+            recoveryTimer,
+            commandTimer: createCommandTimer(),
+            ledScenario: 'reject_command',
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+
+            for (let index = 0; index < 20; index += 1) {
+                clock.advanceBy(1);
+                const response = runtime.requestCommand({
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: index % 2 === 0 ? 'on' : 'off' },
+                });
+
+                expect(response).toEqual(expect.objectContaining({ status: 'accepted' }));
+                await flushCommandDispatch();
+            }
+
+            expect(
+                runtime
+                    .getRoomSnapshot()
+                    .recentCommands.some(
+                        (command) => command.commandId === 'checkpoint-active-command',
+                    ),
+            ).toBe(false);
+
+            recoveryTimer.runLatest();
+
+            const recoveredSnapshot = runtime.getRoomSnapshot();
+
+            expect(recoveredSnapshot.platform.storage.status).toBe('available');
+            expect(
+                recoveredSnapshot.recentCommands.some(
+                    (command) => command.commandId === 'checkpoint-active-command',
+                ),
+            ).toBe(false);
+            expect(
+                storage.significantFacts.filter(
+                    (fact) =>
+                        fact.eventType === 'command.failed' &&
+                        fact.commandId === 'checkpoint-active-command',
+                ),
+            ).toEqual([
+                expect.objectContaining({
+                    payload: {
+                        reason: 'volatile_command_lost_on_restart',
+                        message: 'The volatile command was lost when the backend restarted.',
+                    },
+                }),
+            ]);
+            expect(
+                storage.identities.filter((identity) => identity.durability === 'durable'),
+            ).toEqual([
+                expect.objectContaining({
+                    eventId: expect.any(String),
+                    fingerprint: expect.stringMatching(/^fp:v1:sha256:/),
+                }),
+            ]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('terminates before exposing a snapshot when startup volatile-command closure is indeterminate', () => {
+        const clock = createMutableClock('2026-08-05T10:00:01.000Z');
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint(createVolatileRestartCheckpoint(clock));
+        storage.failTransactionContaining(
+            'appendSignificantFact',
+            'indeterminate',
+            new Error('startup command failure commit outcome unknown'),
+        );
+
+        expect(() =>
+            createTemperatureRoomRuntime({
+                clock,
+                storage: storage.port,
+                generateEventId: createEventIdGenerator(),
+            }),
+        ).toThrow('storage_commit_outcome_unknown');
+        expect(storage.significantFacts).toEqual([]);
+    });
+
     it('restores a durable command timeout for its remaining time without another handoff', async () => {
         const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-'));
         const databasePath = join(directory, 'room.sqlite');
@@ -2030,7 +2366,9 @@ describe('createTemperatureRoomRuntime', () => {
                 expect.objectContaining({ commandId: command.commandId, status: 'pending' }),
             ]);
             expect(recoveredCommandTimer.delays).toEqual([3_000]);
-            expect(recoveredStorage.listCommandDispatchOutboxIntents()).toEqual(outboxBeforeRestart);
+            expect(recoveredStorage.listCommandDispatchOutboxIntents()).toEqual(
+                outboxBeforeRestart,
+            );
             expect(
                 recoveredStorage
                     .listSignificantFacts()
@@ -2102,6 +2440,12 @@ describe('createTemperatureRoomRuntime', () => {
             });
             expect(snapshot.recentEvents[0]).not.toHaveProperty('storageSequence');
             expect(restoredStorage.listSignificantFacts()).toEqual(historyBeforeRestart);
+
+            restoredRuntime.start();
+
+            expect(restoredRuntime.getRoomSnapshot().activeCommands).toEqual(
+                checkpoint.projection.activeCommands,
+            );
         } finally {
             initialStorage.close();
             restoredRuntime?.stop();
@@ -3754,6 +4098,71 @@ function createMixedRestartCheckpoint(clock: Clock): LatestRoomProjectionInput &
     };
 }
 
+function createVolatileRestartCheckpoint(
+    clock: Clock,
+    status: 'accepted' | 'pending' = 'pending',
+    deliveryStatus: 'handed_off' | 'uncertain' = 'handed_off',
+): LatestRoomProjectionInput & {
+    projection: Pick<
+        RoomSnapshotProjection,
+        'updatedAt' | 'devices' | 'activeCommands' | 'recentCommands'
+    >;
+} {
+    const checkpoint = createMixedRestartCheckpoint(clock);
+    const active = checkpoint.projection.activeCommands[0];
+
+    if (!active) {
+        throw new Error('Expected a checkpoint fixture with an active command.');
+    }
+
+    const volatileCommand = {
+        ...active,
+        durability: 'volatile' as const,
+        lifecycleDurability: 'volatile' as const,
+        ...(status === 'accepted'
+            ? { status: 'accepted' as const }
+            : {
+                  status: 'pending' as const,
+                  delivery:
+                      deliveryStatus === 'handed_off'
+                          ? {
+                                status: 'handed_off' as const,
+                                dispatchedAt: active.requestedAt,
+                                deadlineAt: new Date(
+                                    Date.parse(active.requestedAt) + 5_000,
+                                ).toISOString(),
+                            }
+                          : {
+                                status: 'uncertain' as const,
+                                firstAttemptedAt: active.requestedAt,
+                                deadlineAt: new Date(
+                                    Date.parse(active.requestedAt) + 5_000,
+                                ).toISOString(),
+                            },
+              }),
+    } satisfies ActiveCommandProjection;
+
+    return {
+        ...checkpoint,
+        projection: {
+            ...checkpoint.projection,
+            activeCommands: [volatileCommand],
+        },
+    };
+}
+
+function pendingDelivery(checkpoint: {
+    projection: Pick<RoomSnapshotProjection, 'activeCommands'>;
+}) {
+    const command = checkpoint.projection.activeCommands[0];
+
+    if (!command || command.status !== 'pending') {
+        throw new Error('Expected a checkpoint fixture with a pending command.');
+    }
+
+    return command.delivery;
+}
+
 function writeLegacyCommandCheckpoint(databasePath: string): string {
     const database = new DatabaseSync(databasePath);
     const row = database
@@ -3938,6 +4347,12 @@ function createScriptedStorage() {
     let nextOutcome:
         | { status: 'confirmed_rolled_back' | 'indeterminate'; error: unknown }
         | undefined;
+    let transactionFailure:
+        | {
+              operation: string;
+              outcome: { status: 'confirmed_rolled_back' | 'indeterminate'; error: unknown };
+          }
+        | undefined;
     let receiptFailure:
         | {
               operation: string;
@@ -4059,7 +4474,9 @@ function createScriptedStorage() {
                 ? receiptFailure && operations.includes(receiptFailure.operation)
                     ? receiptFailure.outcome
                     : undefined
-                : nextOutcome;
+                : transactionFailure && operations.includes(transactionFailure.operation)
+                  ? transactionFailure.outcome
+                  : nextOutcome;
 
             if (usesReceiptPort && configuredOutcome) {
                 receiptFailure = undefined;
@@ -4067,6 +4484,10 @@ function createScriptedStorage() {
 
             if (!usesReceiptPort) {
                 nextOutcome = undefined;
+
+                if (transactionFailure && operations.includes(transactionFailure.operation)) {
+                    transactionFailure = undefined;
+                }
             }
 
             if (configuredOutcome) {
@@ -4154,6 +4575,13 @@ function createScriptedStorage() {
         },
         failNext(status: 'confirmed_rolled_back' | 'indeterminate', error: unknown) {
             nextOutcome = { status, error };
+        },
+        failTransactionContaining(
+            operation: string,
+            status: 'confirmed_rolled_back' | 'indeterminate',
+            error: unknown,
+        ) {
+            transactionFailure = { operation, outcome: { status, error } };
         },
         failReceiptTransactionContaining(
             operation: string,
