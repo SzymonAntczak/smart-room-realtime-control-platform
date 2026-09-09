@@ -62,6 +62,10 @@ export interface RuntimeSessionInput {
     lastDurableCommitAt: string;
 }
 
+export interface RuntimeSession extends RuntimeSessionInput {
+    closedAt?: string;
+}
+
 export type CommandDispatchOutboxState = 'ready' | 'uncertain' | 'delivered' | 'closed';
 
 export interface CommandDispatchOutboxIntent {
@@ -155,6 +159,7 @@ export interface RoomStorage {
     listSimulatorCommandReceipts(source: string): SimulatorCommandReceiptInput[];
     getLatestRoomProjection(): LatestRoomProjectionInput | undefined;
     listCommandDispatchOutboxIntents(): CommandDispatchOutboxIntent[];
+    listUnclosedRuntimeSessions(): RuntimeSession[];
     close(): void;
 }
 

@@ -146,6 +146,43 @@ describe('createRoomInputCoordinator', () => {
             ...Array.from({ length: 1_001 }, (_, index) => `queued-before-token-${index + 1}`),
         ]);
     });
+
+    it('closes intake and rejects later source events after a successful drain', () => {
+        const dispatched: string[] = [];
+        const coordinator = createRoomInputCoordinator({
+            now: () => '2026-08-31T09:00:10Z',
+            dispatch(input) {
+                dispatched.push(input.event.eventId);
+
+                return input.event.eventId;
+            },
+        });
+
+        coordinator.receive(event('before-shutdown'));
+
+        expect(coordinator.closeIntakeAndDrain()).toEqual({ status: 'drained' });
+        expect(coordinator.receive(event('after-shutdown'))).toBeUndefined();
+        coordinator.receiveTimer(() => dispatched.push('timer-after-shutdown'));
+
+        expect(dispatched).toEqual(['before-shutdown']);
+    });
+
+    it('leaves a cutover unresolved when shutdown closes intake', () => {
+        const coordinator = createRoomInputCoordinator({
+            now: () => '2026-08-31T09:00:10Z',
+            dispatch(input) {
+                return input.event.eventId;
+            },
+        });
+        const cutover = coordinator.beginRecoveryCutover();
+
+        coordinator.receive(event('queued-during-cutover'));
+
+        expect(coordinator.closeIntakeAndDrain()).toEqual({
+            status: 'interrupted_by_recovery_cutover',
+        });
+        expect(cutover.queuedInputCount).toBe(0);
+    });
 });
 
 function event(eventId: string): PlatformEvent {

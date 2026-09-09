@@ -237,7 +237,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       Done when: restart tests prove a volatile command is visible as failed and
       cannot produce a later restored confirmation.
 
-- [ ] Add runtime-session markers and conservative crash-gap recovery.
+- [x] Add runtime-session markers and conservative crash-gap recovery.
       Record session start and advance `lastDurableCommitAt` for every full
       checkpoint transaction, including freshness-only and command/outbox
       writes but not quarantine-only writes. Detect an unclosed earlier session

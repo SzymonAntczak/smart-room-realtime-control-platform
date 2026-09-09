@@ -90,6 +90,7 @@ import type {
     RoomStorage,
     RoomStorageLifecycle,
     RoomStorageTransaction,
+    RuntimeSession,
     StorageCutoverOutcome,
     StorageMetadata,
 } from '../platform/storage/room-storage';
@@ -246,6 +247,8 @@ export function createTemperatureRoomRuntime({
     let initialStorage = storage;
     let startupStorageFactoryError: unknown;
     let initialStorageMetadata: StorageMetadata | undefined;
+    const runtimeSessionId = randomUUID();
+    const runtimeSessionStartedAt = clock.now();
 
     if (!initialStorage && storageLifecycle) {
         const startup = storageLifecycle.openAtStartup();
@@ -266,16 +269,39 @@ export function createTemperatureRoomRuntime({
 
     const roomProjector = createRoomProjector({
         devices,
-        initialUpdatedAt: clock.now(),
+        initialUpdatedAt: runtimeSessionStartedAt,
     });
     let fatalRuntimeError: Error | undefined;
+    let initialUnclosedRuntimeSessions: RuntimeSession[] = [];
+    let startupRuntimeSessionReadError: unknown;
+
+    if (initialStorage) {
+        try {
+            initialUnclosedRuntimeSessions =
+                typeof initialStorage.listUnclosedRuntimeSessions === 'function'
+                    ? initialStorage.listUnclosedRuntimeSessions()
+                    : [];
+        } catch (error) {
+            startupRuntimeSessionReadError = error;
+        }
+    }
+
     const initializedCheckpoint = initializeProjectionCheckpoint(
-        initialStorage,
+        startupRuntimeSessionReadError ? undefined : initialStorage,
         roomProjector,
-        clock.now(),
+        runtimeSessionStartedAt,
+        {
+            runtimeSessionId,
+            sessionStartedAt: runtimeSessionStartedAt,
+            priorUnclosedRuntimeSessions: initialUnclosedRuntimeSessions,
+            generateEventId,
+        },
     );
     const initialStorageOutcome = initializedCheckpoint?.outcome;
-    let startupStorageError = initializedCheckpoint?.readError ?? startupStorageFactoryError;
+    let startupStorageError =
+        initializedCheckpoint?.readError ??
+        startupRuntimeSessionReadError ??
+        startupStorageFactoryError;
 
     if (initialStorageOutcome?.status === 'indeterminate') {
         terminateForStorageOutcome(initialStorageOutcome.error, 'unknown');
@@ -366,7 +392,6 @@ export function createTemperatureRoomRuntime({
     let recoveryGapForPublication: RecentEventProjection | undefined;
     let activeStorage = initialStorage;
     let verifiedHistoryGenerationId = initialStorageMetadata?.historyGenerationId;
-    const runtimeSessionId = randomUUID();
     let recoveryTimerHandle: unknown | undefined;
     let outageStartedAt = storageState.status === 'degraded' ? storageState.changedAt : undefined;
     let outageBoundaryBasis: 'same_process_first_degraded_at' | 'degraded_startup_at' | undefined =
@@ -488,6 +513,7 @@ export function createTemperatureRoomRuntime({
                 return;
             }
 
+            inputCoordinator.openIntake();
             hasStarted = true;
             const startedLed = attachLedScenario('off');
             startedLed.restoreDurablePlans();
@@ -496,7 +522,6 @@ export function createTemperatureRoomRuntime({
             commandController.reschedulePendingCommands();
 
             if (storageState.status === 'available') {
-                activateRuntimeSession(clock.now());
                 commandController.reconcileOutboxAfterRecovery();
             } else {
                 scheduleStorageRecovery();
@@ -544,7 +569,12 @@ export function createTemperatureRoomRuntime({
             led = undefined;
 
             commandController.stop();
-            closeRuntimeSession();
+            const inputShutdown = inputCoordinator.closeIntakeAndDrain();
+
+            if (inputShutdown.status === 'drained') {
+                closeRuntimeSession();
+            }
+
             closeStorage(activeStorage);
             activeStorage = undefined;
             hasStarted = false;
@@ -1132,6 +1162,12 @@ export function createTemperatureRoomRuntime({
             }
 
             const metadata = candidate?.getMetadata();
+            const interruptedRuntimeSessions =
+                typeof candidate?.listUnclosedRuntimeSessions === 'function'
+                    ? candidate
+                          .listUnclosedRuntimeSessions()
+                          .filter((session) => session.sessionId !== runtimeSessionId)
+                    : [];
             const previousStorage = storageState;
             const recoveringGeneration =
                 metadata?.historyGenerationId ?? previousStorage.historyGenerationId;
@@ -1272,12 +1308,20 @@ export function createTemperatureRoomRuntime({
             );
 
             const projection = finalProjection;
+            const unclosedSessionGapStartedAt = conservativeSessionGapStart(
+                interruptedRuntimeSessions,
+            );
             const gapRecordId = `platform:storage-gap:${generateEventId()}`;
             const gapPayload = {
-                outageStartedAt: outageStartedAt ?? previousStorage.changedAt,
+                outageStartedAt:
+                    unclosedSessionGapStartedAt ?? outageStartedAt ?? previousStorage.changedAt,
                 outageEndedAt: ingress.receivedAt,
-                failureReason: outageFailureReason ?? previousStorage.reason,
-                boundaryBasis: outageBoundaryBasis ?? ('degraded_startup_at' as const),
+                failureReason: unclosedSessionGapStartedAt
+                    ? 'runtime_session_interrupted'
+                    : (outageFailureReason ?? previousStorage.reason),
+                boundaryBasis: unclosedSessionGapStartedAt
+                    ? ('unclosed_session_later_bound' as const)
+                    : (outageBoundaryBasis ?? ('degraded_startup_at' as const)),
                 observationsBackfilled: false as const,
             };
 
@@ -1336,6 +1380,13 @@ export function createTemperatureRoomRuntime({
                     sessionStartedAt: ingress.receivedAt,
                     lastDurableCommitAt: ingress.receivedAt,
                 });
+
+                for (const interruptedSession of interruptedRuntimeSessions) {
+                    transaction.closeRuntimeSession({
+                        sessionId: interruptedSession.sessionId,
+                        closedAt: ingress.receivedAt,
+                    });
+                }
 
                 return {
                     storageSequence: storedGap.storageSequence,
@@ -1630,30 +1681,6 @@ export function createTemperatureRoomRuntime({
         }
     }
 
-    function activateRuntimeSession(now: string): void {
-        if (!activeStorage || storageState.status !== 'available') {
-            return;
-        }
-
-        const outcome = activeStorage.transact((transaction) => {
-            if (typeof transaction.activateRuntimeSession === 'function') {
-                transaction.activateRuntimeSession({
-                    sessionId: runtimeSessionId,
-                    sessionStartedAt: now,
-                    lastDurableCommitAt: now,
-                });
-            }
-        });
-
-        if (outcome.status === 'indeterminate') {
-            terminateForStorageOutcome(outcome.error, 'unknown');
-        }
-
-        if (outcome.status === 'confirmed_rolled_back') {
-            enterStorageDegraded(outcome.error, now);
-        }
-    }
-
     function touchRuntimeSession(transaction: RoomStorageTransaction, now: string): void {
         if (typeof transaction.activateRuntimeSession !== 'function') {
             return;
@@ -1661,7 +1688,7 @@ export function createTemperatureRoomRuntime({
 
         transaction.activateRuntimeSession({
             sessionId: runtimeSessionId,
-            sessionStartedAt: now,
+            sessionStartedAt: runtimeSessionStartedAt,
             lastDurableCommitAt: now,
         });
     }
@@ -1907,18 +1934,37 @@ function initializeProjectionCheckpoint(
     storage: RoomStorage | undefined,
     projector: RoomProjector,
     evaluatedAt: string,
+    {
+        runtimeSessionId,
+        sessionStartedAt,
+        priorUnclosedRuntimeSessions,
+        generateEventId,
+    }: {
+        runtimeSessionId: string;
+        sessionStartedAt: string;
+        priorUnclosedRuntimeSessions: readonly RuntimeSession[];
+        generateEventId(): string;
+    },
 ) {
     if (!storage) {
         return undefined;
     }
 
-    const retentionOutcome = storage.transact((transaction) =>
-        transaction.retireExpiredRecords({ asOf: evaluatedAt }),
-    );
+    const startupMarkerOutcome = storage.transact((transaction) => {
+        transaction.retireExpiredRecords({ asOf: evaluatedAt });
 
-    if (retentionOutcome.status !== 'committed') {
+        if (typeof transaction.activateRuntimeSession === 'function') {
+            transaction.activateRuntimeSession({
+                sessionId: runtimeSessionId,
+                sessionStartedAt,
+                lastDurableCommitAt: evaluatedAt,
+            });
+        }
+    });
+
+    if (startupMarkerOutcome.status !== 'committed') {
         return {
-            outcome: retentionOutcome,
+            outcome: startupMarkerOutcome,
             restored: false,
             volatileGuards: [],
             recentEvents: [],
@@ -1948,25 +1994,83 @@ function initializeProjectionCheckpoint(
 
     const projection = projector.getProjection({ evaluatedAt });
     const projectionEvidence = projector.getEvidence();
+    const projectionChanged =
+        !checkpoint || JSON.stringify(checkpoint.projection) !== JSON.stringify(projection);
+    const gapStartedAt = conservativeSessionGapStart(priorUnclosedRuntimeSessions);
+    const gapRecordId = gapStartedAt ? `platform:storage-gap:${generateEventId()}` : undefined;
+    const gapPayload = gapStartedAt
+        ? {
+              outageStartedAt: gapStartedAt,
+              outageEndedAt: evaluatedAt,
+              failureReason: 'runtime_session_interrupted',
+              boundaryBasis: 'unclosed_session_later_bound' as const,
+              observationsBackfilled: false as const,
+          }
+        : undefined;
 
-    if (checkpoint && JSON.stringify(checkpoint.projection) === JSON.stringify(projection)) {
+    if (!projectionChanged && !gapRecordId) {
         projector.installProjection(projection, evaluatedAt, projectionEvidence);
 
         return {
             restored: true,
-            volatileGuards: checkpoint.volatileGuards,
-            recentEvents: checkpoint.recentEvents,
+            volatileGuards: checkpoint?.volatileGuards ?? [],
+            recentEvents: checkpoint?.recentEvents ?? [],
         };
     }
 
     const outcome = storage.transact((transaction) => {
-        transaction.saveLatestRoomProjection({
-            updatedAt: projection.updatedAt,
-            projection,
-            projectionEvidence,
-            volatileGuards: checkpoint?.volatileGuards ?? [],
-            recentEvents: checkpoint?.recentEvents ?? [],
-        });
+        let gapRecentEvent: RecentEventProjection | undefined;
+
+        if (gapRecordId && gapPayload) {
+            const storedGap = transaction.appendSignificantFact({
+                recordId: gapRecordId,
+                eventType: 'storage.gap.recorded',
+                source: 'backend',
+                occurredAt: evaluatedAt,
+                payload: gapPayload,
+            });
+            gapRecentEvent = {
+                recordId: gapRecordId,
+                eventType: 'storage.gap.recorded',
+                occurredAt: evaluatedAt,
+                durability: 'durable',
+                storageSequence: storedGap.storageSequence,
+                source: 'backend',
+                payload: gapPayload,
+            };
+        }
+
+        if (projectionChanged || gapRecentEvent) {
+            transaction.saveLatestRoomProjection({
+                updatedAt: projection.updatedAt,
+                projection,
+                projectionEvidence,
+                volatileGuards: checkpoint?.volatileGuards ?? [],
+                recentEvents: mergeRecentEvents(
+                    checkpoint?.recentEvents ?? [],
+                    gapRecentEvent ? [gapRecentEvent] : [],
+                ),
+            });
+        }
+
+        if (typeof transaction.activateRuntimeSession === 'function') {
+            transaction.activateRuntimeSession({
+                sessionId: runtimeSessionId,
+                sessionStartedAt,
+                lastDurableCommitAt: evaluatedAt,
+            });
+        }
+
+        for (const priorSession of priorUnclosedRuntimeSessions) {
+            if (typeof transaction.closeRuntimeSession === 'function') {
+                transaction.closeRuntimeSession({
+                    sessionId: priorSession.sessionId,
+                    closedAt: evaluatedAt,
+                });
+            }
+        }
+
+        return gapRecentEvent;
     });
 
     if (outcome.status !== 'indeterminate') {
@@ -1975,10 +2079,30 @@ function initializeProjectionCheckpoint(
 
     return {
         outcome,
-        restored: false,
+        restored: checkpoint !== undefined,
         volatileGuards: checkpoint?.volatileGuards ?? [],
-        recentEvents: checkpoint?.recentEvents ?? [],
+        recentEvents:
+            outcome.status === 'committed' && outcome.value
+                ? mergeRecentEvents(checkpoint?.recentEvents ?? [], [outcome.value])
+                : (checkpoint?.recentEvents ?? []),
     };
+}
+
+function conservativeSessionGapStart(sessions: readonly RuntimeSession[]): string | undefined {
+    let earliestBound: string | undefined;
+
+    for (const session of sessions) {
+        const sessionBound =
+            Date.parse(session.sessionStartedAt) >= Date.parse(session.lastDurableCommitAt)
+                ? session.sessionStartedAt
+                : session.lastDurableCommitAt;
+
+        if (!earliestBound || Date.parse(sessionBound) < Date.parse(earliestBound)) {
+            earliestBound = sessionBound;
+        }
+    }
+
+    return earliestBound;
 }
 
 function withBootstrapDurability(

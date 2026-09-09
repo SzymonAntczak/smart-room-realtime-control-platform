@@ -444,6 +444,197 @@ describe('createTemperatureRoomRuntime', () => {
         expect(() => runtime.stop()).toThrow('storage_fatal_error');
     });
 
+    it('records and resolves an unclosed prior session before exposing the first snapshot', () => {
+        const clock = createMutableClock('2026-09-09T10:10:00.000Z');
+        const storage = createScriptedStorage();
+        storage.seedRuntimeSession({
+            sessionId: 'interrupted-session',
+            sessionStartedAt: '2026-09-09T10:00:00.000Z',
+            lastDurableCommitAt: '2026-09-09T10:05:00.000Z',
+        });
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            expect(runtime.getRoomSnapshot().recentEvents).toEqual([
+                expect.objectContaining({
+                    eventType: 'storage.gap.recorded',
+                    occurredAt: '2026-09-09T10:10:00.000Z',
+                    payload: {
+                        outageStartedAt: '2026-09-09T10:05:00.000Z',
+                        outageEndedAt: '2026-09-09T10:10:00.000Z',
+                        failureReason: 'runtime_session_interrupted',
+                        boundaryBasis: 'unclosed_session_later_bound',
+                        observationsBackfilled: false,
+                    },
+                }),
+            ]);
+            expect(storage.significantFacts).toEqual([
+                expect.objectContaining({ eventType: 'storage.gap.recorded' }),
+            ]);
+            expect(storage.runtimeSessions.get('interrupted-session')).toMatchObject({
+                closedAt: '2026-09-09T10:10:00.000Z',
+            });
+            expect(storage.port.listUnclosedRuntimeSessions()).toHaveLength(1);
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('reconciles crash markers during recovery after the startup gap transaction rolls back', () => {
+        const clock = createMutableClock('2026-09-09T10:10:00.000Z');
+        const recoveryTimer = createManualTimer();
+        const storage = createScriptedStorage();
+        storage.seedRuntimeSession({
+            sessionId: 'interrupted-session',
+            sessionStartedAt: '2026-09-09T10:00:00.000Z',
+            lastDurableCommitAt: '2026-09-09T10:05:00.000Z',
+        });
+        storage.failTransactionContaining(
+            'appendSignificantFact',
+            'confirmed_rolled_back',
+            new StorageAvailabilityError('startup gap unavailable', undefined),
+        );
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            storageFactory: () => storage.port,
+            recoveryTimer,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            recoveryTimer.runLatest();
+
+            expect(storage.significantFacts).toEqual([
+                expect.objectContaining({
+                    eventType: 'storage.gap.recorded',
+                    payload: expect.objectContaining({
+                        outageStartedAt: '2026-09-09T10:05:00.000Z',
+                        boundaryBasis: 'unclosed_session_later_bound',
+                    }),
+                }),
+            ]);
+            expect(storage.runtimeSessions.get('interrupted-session')).toMatchObject({
+                closedAt: '2026-09-09T10:10:00.000Z',
+            });
+        } finally {
+            runtime.stop();
+        }
+
+        const restartedRuntime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            expect(
+                storage.significantFacts.filter(
+                    (record) => record.eventType === 'storage.gap.recorded',
+                ),
+            ).toHaveLength(1);
+        } finally {
+            restartedRuntime.stop();
+        }
+    });
+
+    it('does not advance the session marker for quarantine-only writes', () => {
+        const clock = createMutableClock('2026-09-09T10:00:00.000Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+            const beforeQuarantine = storage.port.listUnclosedRuntimeSessions()[0];
+
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_invalid_reading');
+
+            expect(storage.port.listUnclosedRuntimeSessions()[0]).toMatchObject({
+                lastDurableCommitAt: beforeQuarantine?.lastDurableCommitAt,
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('advances the session marker in the command and outbox checkpoint transaction', () => {
+        const clock = createMutableClock('2026-09-09T10:00:00.000Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+            generateCommandId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            storage.transactionOperations.splice(0);
+            clock.advanceBy(1_000);
+
+            runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+
+            expect(storage.transactionOperations).toContainEqual(
+                expect.arrayContaining([
+                    'appendSignificantFact',
+                    'saveLatestRoomProjection',
+                    'upsertCommandDispatchOutboxIntent',
+                    'activateRuntimeSession',
+                ]),
+            );
+            expect(storage.port.listUnclosedRuntimeSessions()[0]).toMatchObject({
+                lastDurableCommitAt: '2026-09-09T10:00:01.000Z',
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('closes a clean session but leaves its marker active when the close transaction rolls back', () => {
+        const clock = createMutableClock('2026-09-09T10:00:00.000Z');
+        const cleanStorage = createScriptedStorage();
+        const cleanRuntime = createTemperatureRoomRuntime({
+            clock,
+            storage: cleanStorage.port,
+        });
+
+        cleanRuntime.start();
+        cleanRuntime.stop();
+
+        expect(cleanStorage.port.listUnclosedRuntimeSessions()).toEqual([]);
+
+        const interruptedStorage = createScriptedStorage();
+        const interruptedRuntime = createTemperatureRoomRuntime({
+            clock,
+            storage: interruptedStorage.port,
+        });
+
+        interruptedRuntime.start();
+        interruptedStorage.failNext(
+            'confirmed_rolled_back',
+            new StorageAvailabilityError('session close unavailable', undefined),
+        );
+        interruptedRuntime.stop();
+
+        expect(interruptedStorage.port.listUnclosedRuntimeSessions()).toHaveLength(1);
+    });
+
     it('starts degraded when a checkpoint read has an availability failure', () => {
         const storage = {
             transact() {
@@ -2581,7 +2772,9 @@ describe('createTemperatureRoomRuntime', () => {
         });
 
         try {
-            expect(storage.transactionOperations).toEqual([['retireExpiredRecords']]);
+            expect(storage.transactionOperations).toEqual([
+                ['retireExpiredRecords', 'activateRuntimeSession'],
+            ]);
             expect(runtime.getRoomSnapshot().devices).toEqual(checkpoint.projection.devices);
         } finally {
             runtime.stop();
@@ -4340,6 +4533,15 @@ function createScriptedStorage() {
     const quarantineEntries: StoredQuarantineEntry[] = [];
     const identities: AcceptedInputIdentity[] = [];
     const receipts = new Map<string, SimulatorCommandReceiptInput>();
+    const runtimeSessions = new Map<
+        string,
+        {
+            sessionId: string;
+            sessionStartedAt: string;
+            lastDurableCommitAt: string;
+            closedAt?: string;
+        }
+    >();
     const transactionOperations: string[][] = [];
     let storageSequence = 0;
     let internalSequence = 0;
@@ -4379,6 +4581,7 @@ function createScriptedStorage() {
             let stagedStorageSequence = storageSequence;
             let stagedInternalSequence = internalSequence;
             const stagedReceipts = new Map(receipts);
+            const stagedRuntimeSessions = new Map(runtimeSessions);
             const transaction: RoomStorageTransaction = {
                 getMetadata() {
                     return {
@@ -4451,11 +4654,30 @@ function createScriptedStorage() {
                 retireTerminalSimulatorCommandReceipts() {
                     operations.push('retireTerminalSimulatorCommandReceipts');
                 },
-                activateRuntimeSession() {
+                activateRuntimeSession(input) {
                     operations.push('activateRuntimeSession');
+                    const existing = stagedRuntimeSessions.get(input.sessionId);
+                    stagedRuntimeSessions.set(input.sessionId, {
+                        sessionId: input.sessionId,
+                        sessionStartedAt: existing?.sessionStartedAt ?? input.sessionStartedAt,
+                        lastDurableCommitAt:
+                            existing &&
+                            Date.parse(existing.lastDurableCommitAt) >
+                                Date.parse(input.lastDurableCommitAt)
+                                ? existing.lastDurableCommitAt
+                                : input.lastDurableCommitAt,
+                    });
                 },
-                closeRuntimeSession() {
+                closeRuntimeSession(input) {
                     operations.push('closeRuntimeSession');
+                    const existing = stagedRuntimeSessions.get(input.sessionId);
+
+                    if (existing) {
+                        stagedRuntimeSessions.set(input.sessionId, {
+                            ...existing,
+                            closedAt: input.closedAt,
+                        });
+                    }
                 },
             };
             const value = operation(transaction);
@@ -4522,6 +4744,12 @@ function createScriptedStorage() {
                 receipts.set(key, receipt);
             }
 
+            runtimeSessions.clear();
+
+            for (const [sessionId, session] of stagedRuntimeSessions) {
+                runtimeSessions.set(sessionId, session);
+            }
+
             return { status: 'committed', value };
         },
         listAcceptedInputIdentities() {
@@ -4560,6 +4788,15 @@ function createScriptedStorage() {
         listCommandDispatchOutboxIntents() {
             return [];
         },
+        listUnclosedRuntimeSessions() {
+            return [...runtimeSessions.values()]
+                .filter((session) => !session.closedAt)
+                .sort(
+                    (left, right) =>
+                        left.sessionStartedAt.localeCompare(right.sessionStartedAt) ||
+                        left.sessionId.localeCompare(right.sessionId),
+                );
+        },
         close() {},
     };
 
@@ -4570,6 +4807,7 @@ function createScriptedStorage() {
         quarantineEntries,
         identities,
         transactionOperations,
+        runtimeSessions,
         get latestCheckpoint() {
             return latestCheckpoint;
         },
@@ -4595,6 +4833,14 @@ function createScriptedStorage() {
         },
         seedCheckpoint(checkpoint: LatestRoomProjectionInput) {
             latestCheckpoint = checkpoint;
+        },
+        seedRuntimeSession(session: {
+            sessionId: string;
+            sessionStartedAt: string;
+            lastDurableCommitAt: string;
+            closedAt?: string;
+        }) {
+            runtimeSessions.set(session.sessionId, session);
         },
     };
 }

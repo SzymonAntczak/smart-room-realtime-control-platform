@@ -640,6 +640,16 @@ manual-intervention database while preserving its metadata. If no durable
 baseline or session marker has ever existed, degraded startup time is the
 explicit conservative start basis.
 
+A successful startup recovery writes that gap, activates the new session and
+closes every reconciled earlier marker in one transaction. This prevents a
+later restart from recording the same loss again; for a crash-reconciled marker,
+`closed_at` records the reconciliation boundary rather than a clean shutdown.
+If more than one earlier marker remains unclosed after repeated interruption,
+the runtime writes one conservative gap beginning at the earliest of their
+individual later-of-start-or-last-commit bounds, then closes all of them in the
+same transaction. Clean shutdown still closes only its own marker after intake
+closure and coordinator drain.
+
 Replacing a corrupt database is an explicit operator startup action rather
 than something inferred from a missing file. The storage composition task will
 choose the concrete one-shot CLI or configuration mechanism, but normal

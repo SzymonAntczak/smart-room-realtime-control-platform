@@ -19,6 +19,7 @@ import type {
     QuarantineEntryInput,
     RoomStorage,
     RoomStorageTransaction,
+    RuntimeSession,
     SignificantFactInput,
     SimulatorCommandReceiptInput,
     StorageMetadata,
@@ -218,6 +219,19 @@ export function createSqliteRoomStorage({
                     )
                     .all()
                     .map(toCommandDispatchOutboxIntent),
+            );
+        },
+        listUnclosedRuntimeSessions() {
+            return run(() =>
+                database
+                    .prepare(
+                        `SELECT session_id, session_started_at, last_durable_commit_at, closed_at
+                         FROM runtime_sessions
+                         WHERE closed_at IS NULL
+                         ORDER BY session_started_at ASC, session_id ASC`,
+                    )
+                    .all()
+                    .map(toRuntimeSession),
             );
         },
         close() {
@@ -714,7 +728,11 @@ export function createSqliteRoomStorageTransaction(database: DatabaseSync): Room
                             session_id, session_started_at, last_durable_commit_at, closed_at
                         ) VALUES (?, ?, ?, NULL)
                         ON CONFLICT(session_id) DO UPDATE SET
-                            last_durable_commit_at = excluded.last_durable_commit_at,
+                            last_durable_commit_at = CASE
+                                WHEN excluded.last_durable_commit_at > runtime_sessions.last_durable_commit_at
+                                    THEN excluded.last_durable_commit_at
+                                ELSE runtime_sessions.last_durable_commit_at
+                            END,
                             closed_at = NULL`,
                 )
                 .run(
@@ -1138,6 +1156,23 @@ function toCommandDispatchOutboxIntent(row: unknown): CommandDispatchOutboxInten
         ...(optionalStringField(value, 'closed_at')
             ? { closedAt: optionalStringField(value, 'closed_at') }
             : {}),
+    };
+}
+
+function toRuntimeSession(row: unknown): RuntimeSession {
+    const value = record(row, 'runtime session');
+    const sessionId = stringField(value, 'session_id');
+    const sessionStartedAt = canonicalStorageTimestamp(stringField(value, 'session_started_at'));
+    const lastDurableCommitAt = canonicalStorageTimestamp(
+        stringField(value, 'last_durable_commit_at'),
+    );
+    const closedAt = optionalStringField(value, 'closed_at');
+
+    return {
+        sessionId,
+        sessionStartedAt,
+        lastDurableCommitAt,
+        ...(closedAt ? { closedAt: canonicalStorageTimestamp(closedAt) } : {}),
     };
 }
 

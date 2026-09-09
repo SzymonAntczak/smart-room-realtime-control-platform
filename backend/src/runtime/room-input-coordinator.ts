@@ -13,7 +13,13 @@ export interface RoomInputCoordinator<Result, Context = undefined> {
     receiveAt(event: PlatformEvent, receivedAt: string, context?: Context): Result | undefined;
     receiveTimer(dispatch: (ingress: EventIngress) => void): void;
     beginRecoveryCutover(options?: { queueLimit?: number }): RecoveryCutoverToken;
+    openIntake(): void;
+    closeIntakeAndDrain(): RoomInputShutdownResult;
 }
+
+export type RoomInputShutdownResult =
+    | { status: 'drained' }
+    | { status: 'interrupted_by_recovery_cutover' | 'interrupted_while_draining' };
 
 /**
  * A recovery cutover owns the dequeue boundary. Inputs received while it is
@@ -41,6 +47,8 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
     > = [];
     let ingestSequence = 0;
     let draining = false;
+    let intakeOpen = true;
+    let discardQueuedInputs = false;
     let recoveryCutover:
         | {
               queueLimit: number;
@@ -55,6 +63,10 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
         },
         receiveAt,
         receiveTimer(timerDispatch) {
+            if (!intakeOpen) {
+                return;
+            }
+
             queue.push({
                 kind: 'timer',
                 ingress: { receivedAt: now(), ingestSequence: ++ingestSequence },
@@ -116,6 +128,31 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
                 drainQueue();
             }
         },
+        openIntake() {
+            intakeOpen = true;
+            discardQueuedInputs = false;
+        },
+        closeIntakeAndDrain() {
+            intakeOpen = false;
+
+            if (recoveryCutover) {
+                discardQueuedInputs = true;
+                queue.length = 0;
+
+                return { status: 'interrupted_by_recovery_cutover' };
+            }
+
+            if (draining) {
+                discardQueuedInputs = true;
+                queue.length = 0;
+
+                return { status: 'interrupted_while_draining' };
+            }
+
+            drainQueue();
+
+            return { status: 'drained' };
+        },
     };
 
     function receiveAt(
@@ -123,6 +160,10 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
         receivedAt: string,
         context?: Context,
     ): Result | undefined {
+        if (!intakeOpen) {
+            return undefined;
+        }
+
         const queued: { kind: 'event'; input: CoordinatedRoomInput<Context>; result?: Result } = {
             kind: 'event',
             input: {
@@ -147,7 +188,7 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
         draining = true;
 
         try {
-            while (queue.length > 0 && !recoveryCutover) {
+            while (queue.length > 0 && !recoveryCutover && !discardQueuedInputs) {
                 const queuedInput = queue.shift();
 
                 if (!queuedInput) {
@@ -162,6 +203,10 @@ export function createRoomInputCoordinator<Result, Context = undefined>({
             }
         } finally {
             draining = false;
+
+            if (discardQueuedInputs) {
+                queue.length = 0;
+            }
         }
     }
 

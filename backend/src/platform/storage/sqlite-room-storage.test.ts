@@ -25,6 +25,56 @@ afterEach(() => {
 });
 
 describe('SQLite room storage', () => {
+    it('lists open runtime sessions and never moves their durable commit timestamp backwards', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+
+        try {
+            storage.transact((transaction) => {
+                transaction.activateRuntimeSession({
+                    sessionId: 'later-session',
+                    sessionStartedAt: '2026-09-09T10:01:00.000Z',
+                    lastDurableCommitAt: '2026-09-09T10:03:00.000Z',
+                });
+                transaction.activateRuntimeSession({
+                    sessionId: 'earlier-session',
+                    sessionStartedAt: '2026-09-09T10:00:00.000Z',
+                    lastDurableCommitAt: '2026-09-09T10:02:00.000Z',
+                });
+                transaction.activateRuntimeSession({
+                    sessionId: 'later-session',
+                    sessionStartedAt: '2026-09-09T10:01:00.000Z',
+                    lastDurableCommitAt: '2026-09-09T10:02:30.000Z',
+                });
+            });
+
+            expect(storage.listUnclosedRuntimeSessions()).toEqual([
+                {
+                    sessionId: 'earlier-session',
+                    sessionStartedAt: '2026-09-09T10:00:00.000Z',
+                    lastDurableCommitAt: '2026-09-09T10:02:00.000Z',
+                },
+                {
+                    sessionId: 'later-session',
+                    sessionStartedAt: '2026-09-09T10:01:00.000Z',
+                    lastDurableCommitAt: '2026-09-09T10:03:00.000Z',
+                },
+            ]);
+
+            storage.transact((transaction) => {
+                transaction.closeRuntimeSession({
+                    sessionId: 'earlier-session',
+                    closedAt: '2026-09-09T10:04:00.000Z',
+                });
+            });
+
+            expect(storage.listUnclosedRuntimeSessions()).toEqual([
+                expect.objectContaining({ sessionId: 'later-session' }),
+            ]);
+        } finally {
+            storage.close();
+        }
+    });
+
     it('keeps a missing recovery target absent after a rollback-only first-initialization probe', () => {
         const databasePath = temporaryDatabasePath();
         const lifecycle = createSqliteRoomStorageLifecycle({
