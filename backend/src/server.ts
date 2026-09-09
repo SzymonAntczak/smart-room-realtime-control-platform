@@ -1,18 +1,24 @@
 import { isDevScenarioControlsEnabled } from './api/dev-scenario-controls';
 import { createRoomBffServer } from './api/room-bff';
-import { createSqliteRoomStorageLifecycle } from './platform/storage/sqlite-room-storage-lifecycle';
 import { readDeduplicationRuntimeConfig } from './runtime/deduplication-runtime-config';
-import { ensureStorageDirectory, readStorageRuntimeConfig } from './runtime/storage-runtime-config';
+import { resolveStorageRuntimeComposition } from './runtime/storage-runtime-composition';
 import { createTemperatureRoomRuntime } from './runtime/temperature-room-runtime';
 
 const defaultPort = 4310;
 const port = readPort(process.env.PORT);
+
+const operationalLog = (entry: Record<string, unknown>) => {
+    console.log(JSON.stringify(entry));
+};
+
 const runtime = createTemperatureRoomRuntime({
     ...readDeduplicationRuntimeConfig(process.env),
-    ...resolveStorage(),
-    operationalLog(entry) {
-        console.log(JSON.stringify(entry));
-    },
+    ...resolveStorageRuntimeComposition({
+        environment: process.env,
+        argv: process.argv.slice(2),
+        operationalLog,
+    }),
+    operationalLog,
 });
 const enableDevScenarioControls = isDevScenarioControlsEnabled(process.env.ENABLE_DEV_SCENARIOS);
 const server = createRoomBffServer({
@@ -38,21 +44,6 @@ async function startServer(): Promise<void> {
     }
 
     console.log(`Smart Room BFF listening on http://localhost:${port}`);
-}
-
-function resolveStorage() {
-    const { databasePath, recoveryProbeIntervalMs, recoveryQueueLimit } = readStorageRuntimeConfig(
-        process.env,
-    );
-
-    return {
-        storageRecoveryProbeIntervalMs: recoveryProbeIntervalMs,
-        storageRecoveryQueueLimit: recoveryQueueLimit,
-        storageLifecycle: createSqliteRoomStorageLifecycle({
-            databasePath,
-            ensureDirectory: ensureStorageDirectory,
-        }),
-    };
 }
 
 function readPort(value: string | undefined): number {

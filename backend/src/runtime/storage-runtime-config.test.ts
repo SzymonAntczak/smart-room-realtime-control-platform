@@ -9,6 +9,7 @@ import {
     defaultStorageDatabasePath,
     ensureStorageDirectory,
     readStorageRuntimeConfig,
+    readStorageStartupAction,
 } from './storage-runtime-config';
 
 describe('readStorageRuntimeConfig', () => {
@@ -57,5 +58,21 @@ describe('readStorageRuntimeConfig', () => {
         expect(() =>
             ensureStorageDirectory('C:/state/smart-room.sqlite', unexpectedDirectoryFailure),
         ).toThrow(StorageInvariantError);
+    });
+});
+
+describe('readStorageStartupAction', () => {
+    it('defaults to normal startup and accepts the explicit replacement flag once', () => {
+        expect(readStorageStartupAction([])).toBe('normal');
+        expect(readStorageStartupAction(['--replace-corrupt-storage'])).toBe(
+            'replace_corrupt_storage',
+        );
+    });
+
+    it('rejects unknown or repeated startup arguments', () => {
+        expect(() => readStorageStartupAction(['--other'])).toThrow(RangeError);
+        expect(() =>
+            readStorageStartupAction(['--replace-corrupt-storage', '--replace-corrupt-storage']),
+        ).toThrow(RangeError);
     });
 });

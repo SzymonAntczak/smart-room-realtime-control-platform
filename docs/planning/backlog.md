@@ -247,7 +247,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       Done when: clean and interrupted shutdown tests prove the correct session
       marker and conservative gap boundary.
 
-- [ ] Provide an explicit corrupt-storage replacement startup action.
+- [x] Provide an explicit corrupt-storage replacement startup action.
       Choose and document one one-shot CLI or configuration mechanism in storage
       composition. It must preserve the invalid file, create a new history
       generation, emit `storage_history_replaced`, start without inherited

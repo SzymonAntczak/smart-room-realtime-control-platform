@@ -21,6 +21,25 @@ Runtime composition resolves its local database to
 different local path. Accepted events use the storage transaction path before
 their projection is published; a confirmed storage rollback leaves the running
 process explicitly degraded and continues with volatile realtime state.
+
+If SQLite starts in `storage_manual_intervention_required`, an operator may
+replace that inaccessible history only with the one-shot backend argument
+`--replace-corrupt-storage`:
+
+```bash
+npm --prefix backend run dev -- --replace-corrupt-storage
+```
+
+Use the same `SMART_ROOM_STORAGE_PATH` value that identified the failed target.
+The action refuses a missing, pristine, healthy or fatal-schema target. For an
+eligible manual-intervention target it preserves the database and any SQLite
+`-wal`/`-shm` sidecars in a sibling `*.replaced-<timestamp>-<id>` directory,
+then creates a fresh history generation. It never imports history, checkpoints,
+outbox intents or simulator receipts, and it does not create a storage gap. A
+JSON `storage_history_replaced` log records the resulting generation and the
+preserved path. Do not retain this argument in a service definition: it is an
+intentional one-startup operator action.
+
 Recoverable availability failures are probed at
 `SMART_ROOM_STORAGE_RECOVERY_PROBE_INTERVAL_MS` (default `5000`). Recovery
 uses a serialized cutover, persists one `storage.gap.recorded` checkpoint

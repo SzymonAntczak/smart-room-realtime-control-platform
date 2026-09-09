@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, openSync, statSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import type {
     RoomStorageLifecycle,
@@ -41,7 +42,7 @@ export function createSqliteRoomStorageLifecycle({
                 ensureDirectory(databasePath);
                 // Startup may apply the deterministic migration chain. Recovery
                 // probes deliberately use the stricter exact-schema branch below.
-                classifyTarget(databasePath, { validateExpectedSchema: false });
+                inspectSqliteRoomStorageTarget(databasePath, { validateExpectedSchema: false });
                 const storage = createSqliteRoomStorage({
                     databasePath,
                     generateHistoryGenerationId,
@@ -61,7 +62,7 @@ export function createSqliteRoomStorageLifecycle({
         probe(context): StorageProbeResult {
             try {
                 ensureDirectory(databasePath);
-                const target = classifyTarget(databasePath);
+                const target = inspectSqliteRoomStorageTarget(databasePath);
 
                 if (target.kind === 'existing') {
                     if (
@@ -135,7 +136,7 @@ function cutoverExistingGeneration<Value>(
     }
 
     try {
-        const target = classifyTarget(databasePath);
+        const target = inspectSqliteRoomStorageTarget(databasePath);
 
         if (
             target.kind !== 'existing' ||
@@ -343,20 +344,48 @@ function probeFirstInitialization(
 
 type TargetClassification = { kind: 'pristine' } | { kind: 'existing'; metadata: StorageMetadata };
 
-function classifyTarget(
+export function inspectSqliteRoomStorageTarget(
     databasePath: string,
-    { validateExpectedSchema = true }: { validateExpectedSchema?: boolean } = {},
+    {
+        validateExpectedSchema = true,
+        readOnly = false,
+    }: { validateExpectedSchema?: boolean; readOnly?: boolean } = {},
 ): TargetClassification {
     if (!existsSync(databasePath) || statSync(databasePath).size === 0) {
         return { kind: 'pristine' };
     }
 
-    const database = openSqliteDatabase(databasePath);
+    const database = readOnly
+        ? openReadOnlySqliteDatabase(databasePath)
+        : openSqliteDatabase(databasePath);
 
     try {
         return classifyTargetInOpenDatabase(database, databasePath, validateExpectedSchema);
     } finally {
         database.close();
+    }
+}
+
+function openReadOnlySqliteDatabase(databasePath: string): DatabaseSync {
+    let database: DatabaseSync | undefined;
+
+    try {
+        database = new DatabaseSync(databasePath, {
+            allowExtension: false,
+            readOnly: true,
+        });
+        database.enableDefensive(true);
+        database.enableLoadExtension(false);
+
+        return database;
+    } catch (error) {
+        try {
+            database?.close();
+        } catch {
+            // Preserve the original failure classification when cleanup cannot be observed.
+        }
+
+        throw classifySqliteError(error);
     }
 }
 

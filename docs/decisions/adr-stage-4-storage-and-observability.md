@@ -651,17 +651,19 @@ same transaction. Clean shutdown still closes only its own marker after intake
 closure and coordinator drain.
 
 Replacing a corrupt database is an explicit operator startup action rather
-than something inferred from a missing file. The storage composition task will
-choose the concrete one-shot CLI or configuration mechanism, but normal
-startup must never silently overwrite or reinterpret an invalid database. On
-explicit replacement, the backend preserves the invalid file for manual
-inspection, creates a database with a new `historyGenerationId` and emits a
-correlated `storage_history_replaced` JSON log containing the replacement time,
-the new generation ID and the previous ID when it was still readable. Because
-the old timeline is unavailable, it does not fabricate exact boundaries or
-backfill a gap into the new generation. This manual replacement exception is
-distinct from automatic recovery of the same database and from first-ever
-creation when no database exists and no replacement intent was supplied.
+than something inferred from a missing file. The backend accepts the one-shot
+CLI argument `--replace-corrupt-storage`; normal startup must never silently
+overwrite or reinterpret an invalid database. The action refuses a missing,
+pristine, healthy or fatal-schema target and only replaces a target classified
+as manual intervention. On explicit replacement, the backend preserves the
+invalid database and its SQLite `-wal`/`-shm` sidecars for manual inspection,
+creates a database with a new `historyGenerationId` and emits a correlated
+`storage_history_replaced` JSON log containing the replacement time, the new
+generation ID and the previous ID when it was still readable. Because the old
+timeline is unavailable, it does not fabricate exact boundaries or backfill a
+gap into the new generation. This manual replacement exception is distinct from
+automatic recovery of the same database and from first-ever creation when no
+database exists and no replacement intent was supplied.
 Because the Stage 4 simulator receipts and backend outbox are co-located, the
 new generation starts with both empty and never reconstructs or redispatches a
 command from the replaced file.

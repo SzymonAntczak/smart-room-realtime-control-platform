@@ -13,6 +13,8 @@ export interface StorageRuntimeConfig {
     recoveryQueueLimit: number;
 }
 
+export type StorageStartupAction = 'normal' | 'replace_corrupt_storage';
+
 export const defaultStorageDatabasePath = fileURLToPath(
     new URL('../../../data/smart-room.sqlite', import.meta.url),
 );
@@ -33,6 +35,27 @@ export function readStorageRuntimeConfig(environment: NodeJS.ProcessEnv): Storag
             'SMART_ROOM_STORAGE_RECOVERY_QUEUE_LIMIT',
         ),
     };
+}
+
+/**
+ * Replacement is intentionally a process-local CLI action rather than durable
+ * configuration. An operator must opt in again for every startup attempt.
+ */
+export function readStorageStartupAction(argv: readonly string[]): StorageStartupAction {
+    const replacementFlag = '--replace-corrupt-storage';
+    const replacementFlagCount = argv.filter((argument) => argument === replacementFlag).length;
+
+    if (replacementFlagCount > 1) {
+        throw new RangeError(`${replacementFlag} may be supplied only once.`);
+    }
+
+    const unknownArguments = argv.filter((argument) => argument !== replacementFlag);
+
+    if (unknownArguments.length > 0) {
+        throw new RangeError(`Unknown backend startup argument: ${unknownArguments[0]}.`);
+    }
+
+    return replacementFlagCount === 1 ? 'replace_corrupt_storage' : 'normal';
 }
 
 function readPositiveInteger(
