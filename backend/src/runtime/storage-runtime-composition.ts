@@ -38,6 +38,7 @@ export function resolveStorageRuntimeComposition({
         storageLifecycle: createSqliteRoomStorageLifecycle({
             databasePath,
             ensureDirectory: ensureStorageDirectory,
+            operationalLog,
         }),
     };
 }

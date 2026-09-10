@@ -68,6 +68,14 @@ frontend runtime reads room state from `http://localhost:4310/room/realtime` usi
 endpoint. Runtime event processing diagnostics are available at
 `GET http://localhost:4310/diagnostics`. The port can be overridden with `PORT`.
 
+Backend logs are structured JSON records written to stdout by the direct backend
+process. Set `LOG_LEVEL` to one of `trace`, `debug`, `info`, `warn`, `error`,
+`fatal` or `silent`; it defaults to `info` when unset or blank. An unsupported
+value prevents backend startup before the runtime is initialized. The configured
+level applies to Fastify request logs and backend startup and storage-migration
+records. The root `npm run dev` launcher may prefix child-process output for its
+own terminal presentation.
+
 The in-memory event deduplicator can be configured at server startup with
 `DEDUPLICATION_RETENTION_MS` (default `600000`) and
 `DEDUPLICATION_ENTRY_LIMIT` (default `1000`). Both values must be positive safe

@@ -82,7 +82,13 @@ describe('storage runtime composition', () => {
 
         try {
             expect(startup.kind).toBe('available');
-            expect(logs).toEqual([]);
+            expect(logs).toEqual([
+                {
+                    event: 'storage_migration_check_completed',
+                    source: 'sqlite-storage',
+                    schemaVersion: 4,
+                },
+            ]);
             expect(existsSync(databasePath)).toBe(true);
 
             if (startup.kind === 'available') {
@@ -120,6 +126,11 @@ describe('storage runtime composition', () => {
                     newHistoryGenerationId: expect.any(String),
                     preservedStoragePath: expect.any(String),
                 }),
+                {
+                    event: 'storage_migration_check_completed',
+                    source: 'sqlite-storage',
+                    schemaVersion: 4,
+                },
             ]);
 
             if (startup.kind === 'available') {

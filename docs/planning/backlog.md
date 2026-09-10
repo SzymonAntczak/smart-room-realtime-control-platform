@@ -259,7 +259,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
 
 #### Observability and contracts
 
-- [ ] Configure JSON backend logging with an explicit `LOG_LEVEL`.
+- [x] Configure JSON backend logging with an explicit `LOG_LEVEL`.
       Configure Fastify/Pino to write structured JSON to stdout; logs remain an
       operational surface, not domain history or a database table.
       Done when: the configured level controls startup and migration output.

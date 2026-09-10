@@ -28,7 +28,12 @@ import {
     type RoomPublicationBatch,
 } from '@smart-room/contracts/realtime';
 import { isSchema } from '@smart-room/contracts/validation';
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import Fastify, {
+    type FastifyBaseLogger,
+    type FastifyInstance,
+    type FastifyReply,
+    type FastifyRequest,
+} from 'fastify';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 
@@ -47,6 +52,7 @@ export interface RoomBffConfig {
     requestCommand?: (request: SetPowerCommandRequest) => CommandRequestResult;
     runDeviceScenario?: (deviceId: string, action: DeviceScenarioAction) => DeviceScenarioResult;
     getDeviceScenarios?: (deviceId: string) => DeviceScenarioList | undefined;
+    loggerInstance?: FastifyBaseLogger;
     now?: () => string;
 }
 
@@ -57,9 +63,10 @@ export function createRoomBffServer({
     requestCommand,
     runDeviceScenario,
     getDeviceScenarios,
+    loggerInstance,
     now = realClock,
 }: RoomBffConfig): FastifyInstance {
-    const server = Fastify();
+    const server = loggerInstance ? Fastify({ loggerInstance }) : Fastify();
     const handlers: RoomBffHandlers = {
         getRoomSnapshot,
         getDiagnosticsSnapshot,

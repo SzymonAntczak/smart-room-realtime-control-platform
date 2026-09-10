@@ -31,10 +31,12 @@ export function createSqliteRoomStorageLifecycle({
     databasePath,
     ensureDirectory,
     generateHistoryGenerationId = randomUUID,
+    operationalLog = () => {},
 }: {
     databasePath: string;
     ensureDirectory: (databasePath: string) => void;
     generateHistoryGenerationId?: () => string;
+    operationalLog?: (entry: Record<string, unknown>) => void;
 }): RoomStorageLifecycle {
     return {
         openAtStartup() {
@@ -47,8 +49,15 @@ export function createSqliteRoomStorageLifecycle({
                     databasePath,
                     generateHistoryGenerationId,
                 });
+                const metadata = storage.getMetadata();
 
-                return { kind: 'available', storage, metadata: storage.getMetadata() };
+                operationalLog({
+                    event: 'storage_migration_check_completed',
+                    source: 'sqlite-storage',
+                    schemaVersion: metadata.schemaVersion,
+                });
+
+                return { kind: 'available', storage, metadata };
             } catch (error) {
                 const classified = classifySqliteError(error);
 
