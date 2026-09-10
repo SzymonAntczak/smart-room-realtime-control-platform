@@ -275,7 +275,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       and test representative request/error payloads.
       Done when: logged output never exposes the configured secret fields.
 
-- [ ] Define shared durability, storage-status and record-identity contracts.
+- [x] Define shared durability, storage-status and record-identity contracts.
       Add TypeBox schemas for record and command durability, evidence durability
       for availability/health/observations, platform storage status,
       `platform.updated`, multi-record `recentEvents` deltas and stable

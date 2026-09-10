@@ -137,7 +137,6 @@ describe('startRoomRealtimePublisher', () => {
                         devices: recovered.devices,
                         activeCommands: recovered.activeCommands,
                         recentCommands: recovered.recentCommands,
-                        recentEvents: [],
                     },
                 },
                 {
@@ -180,7 +179,6 @@ describe('startRoomRealtimePublisher', () => {
                         devices: recovered.devices,
                         activeCommands: recovered.activeCommands,
                         recentCommands: recovered.recentCommands,
-                        recentEvents: [],
                     },
                 },
                 {
@@ -416,7 +414,7 @@ function createRecentCommands(): RoomSnapshotProjection['recentCommands'] {
 
 function storageGap(): RoomSnapshotProjection['recentEvents'][number] {
     return {
-        recordId: 'platform:storage-gap:test',
+        recordId: `rec:v1:sha256:${'1'.repeat(64)}`,
         eventType: 'storage.gap.recorded',
         occurredAt: '2026-09-03T08:00:01Z',
         durability: 'durable',

@@ -1,10 +1,14 @@
 import { Type } from '@sinclair/typebox';
 
 import type { PowerState } from './devices';
+import {
+    type CommandDurability,
+    commandDurabilitySchema,
+} from './storage';
 import { nonEmptyStringSchema } from './validation';
 
-export const durabilityValues = ['durable', 'volatile'] as const;
-export type Durability = (typeof durabilityValues)[number];
+export { durabilityValues } from './storage';
+export type Durability = CommandDurability;
 
 export const commandTypes = ['set.power'] as const;
 export type CommandType = (typeof commandTypes)[number];
@@ -19,16 +23,16 @@ export interface SetPowerCommandRequest {
 export interface AcceptedCommandResponse {
     commandId: string;
     status: 'accepted';
-    durability: Durability;
-    lifecycleDurability: Durability;
+    durability: CommandDurability;
+    lifecycleDurability: CommandDurability;
 }
 export interface RejectedCommandResponse {
     commandId: string;
     status: 'rejected';
     reason: string;
     message: string;
-    durability: Durability;
-    lifecycleDurability: Durability;
+    durability: CommandDurability;
+    lifecycleDurability: CommandDurability;
 }
 interface PreAdmissionCommandErrorResponseBase {
     message: string;
@@ -54,8 +58,8 @@ interface CommandProjectionBase {
     commandType: 'set.power';
     requestedState: { power: PowerState };
     requestedAt: string;
-    durability: Durability;
-    lifecycleDurability: Durability;
+    durability: CommandDurability;
+    lifecycleDurability: CommandDurability;
 }
 export type AcceptedCommandProjection = CommandProjectionBase & { status: 'accepted' };
 export type PendingCommandProjection = CommandProjectionBase & {
@@ -149,8 +153,8 @@ export const acceptedCommandResponseSchema = Type.Object(
     {
         commandId: nonEmptyStringSchema,
         status: Type.Literal('accepted'),
-        durability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
-        lifecycleDurability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+        durability: commandDurabilitySchema,
+        lifecycleDurability: commandDurabilitySchema,
     },
     { additionalProperties: false },
 );
@@ -160,8 +164,8 @@ export const rejectedCommandResponseSchema = Type.Object(
         status: Type.Literal('rejected'),
         reason: nonEmptyStringSchema,
         message: nonEmptyStringSchema,
-        durability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
-        lifecycleDurability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+        durability: commandDurabilitySchema,
+        lifecycleDurability: commandDurabilitySchema,
     },
     { additionalProperties: false },
 );

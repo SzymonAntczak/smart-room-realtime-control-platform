@@ -296,7 +296,7 @@ describe('connectTemperatureRealtime', () => {
                 },
                 recentEvents: [
                     {
-                        recordId: 'platform:storage-gap:test',
+                        recordId: `rec:v1:sha256:${'1'.repeat(64)}`,
                         eventType: 'storage.gap.recorded',
                         occurredAt: '2026-09-03T08:00:01Z',
                         durability: 'durable',

@@ -146,10 +146,18 @@ transaction and persist it with the record. These schemes are globally
 namespaced by record family and configured source where applicable. Retry,
 volatile-to-durable redelivery and SSE/HTTP views of the same logical fact
 therefore reuse one `recordId`; unrelated generations or runtime facts cannot
-collide. Exact string encoding remains contract-task work.
+collide. The wire representation is the opaque, versioned
+`rec:v1:sha256:<64 lowercase hexadecimal characters>` format. Input-derived,
+derived-command and platform-generated records hash their documented stable
+identity tuple into that format. Migration v5 rewrites legacy
+`platform:storage-gap:<operationKey>` rows and checkpoint feed entries using
+the same platform identity tuple before the new shared schema validates them.
 
 A durable physical row is identified by its generation and
-`storageSequence`, not by a unique `recordId` constraint. While an accepted
+`storageSequence`, not by a unique `recordId` constraint. SQLite stores that
+pair explicitly as `(history_generation_id, storage_sequence)` while keeping
+the generation out of individual realtime records; `platform.storage` remains
+the sole wire owner of the generation and watermark. While an accepted
 event identity is active, it prevents a second row for that logical fact. After
 that dedup horizon ends, a replay may receive a new storage sequence with the
 same logical `recordId`; this matters for an immediately retired fact whose old

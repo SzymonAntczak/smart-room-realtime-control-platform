@@ -141,6 +141,124 @@ CREATE TABLE runtime_sessions (
 ) STRICT;
 `;
 
+function applyRecordIdentityMigration(database: DatabaseSync, historyGenerationId: string): void {
+    database.exec(`
+        CREATE TABLE significant_facts_v5 (
+            history_generation_id TEXT NOT NULL,
+            storage_sequence INTEGER NOT NULL,
+            record_id TEXT NOT NULL,
+            event_id TEXT,
+            event_type TEXT NOT NULL,
+            device_id TEXT,
+            command_id TEXT,
+            source TEXT,
+            occurred_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            retired_at TEXT,
+            PRIMARY KEY (history_generation_id, storage_sequence)
+        ) STRICT;
+        CREATE TABLE telemetry_samples_v5 (
+            history_generation_id TEXT NOT NULL,
+            storage_sequence INTEGER NOT NULL,
+            record_id TEXT NOT NULL,
+            event_id TEXT,
+            device_id TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            value REAL NOT NULL,
+            unit TEXT NOT NULL,
+            occurred_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            retired_at TEXT,
+            PRIMARY KEY (history_generation_id, storage_sequence)
+        ) STRICT;
+    `);
+    database
+        .prepare(
+            `INSERT INTO significant_facts_v5 (
+                history_generation_id, storage_sequence, record_id, event_id, event_type, device_id,
+                command_id, source, occurred_at, payload_json, retired_at
+            ) SELECT ?, storage_sequence, record_id, event_id, event_type, device_id,
+                command_id, source, occurred_at, payload_json, retired_at
+            FROM significant_facts`,
+        )
+        .run(historyGenerationId);
+    database
+        .prepare(
+            `INSERT INTO telemetry_samples_v5 (
+                history_generation_id, storage_sequence, record_id, event_id, device_id, metric,
+                value, unit, occurred_at, payload_json, retired_at
+            ) SELECT ?, storage_sequence, record_id, event_id, device_id, metric,
+                value, unit, occurred_at, payload_json, retired_at
+            FROM telemetry_samples`,
+        )
+        .run(historyGenerationId);
+    database.exec(`
+        DROP TABLE significant_facts;
+        DROP TABLE telemetry_samples;
+        ALTER TABLE significant_facts_v5 RENAME TO significant_facts;
+        ALTER TABLE telemetry_samples_v5 RENAME TO telemetry_samples;
+
+        CREATE INDEX telemetry_samples_by_device_metric_time
+            ON telemetry_samples (device_id, metric, occurred_at, storage_sequence);
+        CREATE INDEX significant_facts_by_device_time
+            ON significant_facts (device_id, occurred_at, storage_sequence);
+        CREATE INDEX significant_facts_active_by_time
+            ON significant_facts (occurred_at DESC, storage_sequence DESC)
+            WHERE retired_at IS NULL;
+        CREATE INDEX telemetry_samples_active_by_device_time
+            ON telemetry_samples (device_id, occurred_at DESC, storage_sequence DESC)
+            WHERE retired_at IS NULL;
+        CREATE INDEX significant_facts_active_by_event_id
+            ON significant_facts (event_id)
+            WHERE retired_at IS NULL;
+        CREATE INDEX telemetry_samples_active_by_event_id
+            ON telemetry_samples (event_id)
+            WHERE retired_at IS NULL;
+    `);
+
+    rewriteLegacyPlatformRecordIds(database, 'significant_facts');
+    rewriteLegacyPlatformRecordIds(database, 'telemetry_samples');
+}
+
+function rewriteLegacyPlatformRecordIds(
+    database: DatabaseSync,
+    table: 'significant_facts' | 'telemetry_samples',
+): void {
+    const rows = database
+        .prepare(
+            `SELECT history_generation_id, storage_sequence, record_id
+             FROM ${table}
+             WHERE record_id LIKE 'platform:storage-gap:%'`,
+        )
+        .all() as { history_generation_id: string; storage_sequence: number; record_id: string }[];
+
+    const update = database.prepare(
+        `UPDATE ${table}
+         SET record_id = ?
+         WHERE history_generation_id = ? AND storage_sequence = ?`,
+    );
+
+    for (const row of rows) {
+        const operationKey = row.record_id.slice('platform:storage-gap:'.length);
+
+        if (operationKey.length === 0) {
+            throw new StorageMigrationError('Legacy storage-gap record has no operation key.', row);
+        }
+
+        update.run(platformRecordId(operationKey), row.history_generation_id, row.storage_sequence);
+    }
+}
+
+function platformRecordId(operationKey: string): string {
+    const canonicalIdentity = JSON.stringify({
+        family: 'platform',
+        operationKey,
+        recordKind: 'storage.gap.recorded',
+    });
+
+    return `rec:v1:sha256:${createHash('sha256').update(canonicalIdentity).digest('hex')}`;
+}
+
 export const roomStorageMigrations: readonly Migration[] = [
     {
         version: 1,
@@ -178,6 +296,22 @@ export const roomStorageMigrations: readonly Migration[] = [
         checksum: checksum(migrationFourSql),
         apply(database) {
             database.exec(migrationFourSql);
+        },
+    },
+    {
+        version: 5,
+        name: 'generation-keyed-history-and-versioned-record-identities',
+        checksum: checksum('generation-keyed-history-and-versioned-record-identities'),
+        apply(database) {
+            const metadata = database
+                .prepare('SELECT history_generation_id FROM storage_metadata WHERE id = 1')
+                .get() as { history_generation_id?: unknown } | undefined;
+
+            if (!metadata || typeof metadata.history_generation_id !== 'string') {
+                throw new StorageMigrationError('Storage metadata has no history generation.', metadata);
+            }
+
+            applyRecordIdentityMigration(database, metadata.history_generation_id);
         },
     },
 ];

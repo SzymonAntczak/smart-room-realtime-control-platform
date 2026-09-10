@@ -1,7 +1,7 @@
 import { type Static, Type } from '@sinclair/typebox';
 
-import type { ActiveCommandProjection, Durability, TerminalCommandProjection } from './commands';
-import { durabilityValues, powerStateProjectionSchema } from './commands';
+import type { ActiveCommandProjection, TerminalCommandProjection } from './commands';
+import { powerStateProjectionSchema } from './commands';
 import {
     type CommandAvailability,
     commandAvailabilityPolicies,
@@ -17,6 +17,13 @@ import {
 } from './devices';
 import type { RecentEventProjection } from './history';
 import { recentEventsProjectionSchema } from './history';
+import {
+    commandDurabilitySchema,
+    type EvidenceDurability,
+    evidenceDurabilitySchema,
+    historyGenerationIdSchema,
+    storedThroughSequenceSchema,
+} from './storage';
 import { isoTimestampSchema, nonEmptyStringSchema } from './validation';
 
 export interface DeviceProjection {
@@ -25,16 +32,16 @@ export interface DeviceProjection {
     role: DeviceRole;
     availability: DeviceAvailability;
     availabilityChangedAt: string;
-    availabilityDurability: Durability;
+    availabilityDurability: EvidenceDurability;
     availabilityReason?: string;
     health: DeviceOperationalHealth;
     healthChangedAt: string;
-    healthDurability: Durability;
+    healthDurability: EvidenceDurability;
     healthReason?: string;
     reportedState: DeviceState;
     observationStatus: Record<
         string,
-        { freshness: ObservationFreshness; lastObservedAt?: string; durability: Durability }
+        { freshness: ObservationFreshness; lastObservedAt?: string; durability: EvidenceDurability }
     >;
     commandAvailability: CommandAvailability;
     activeCommandId?: string;
@@ -87,7 +94,7 @@ const observationStatusSchema = Type.Record(
         {
             freshness: Type.Union(observationFreshnessStates.map((value) => Type.Literal(value))),
             lastObservedAt: Type.Optional(isoTimestampSchema),
-            durability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+            durability: evidenceDurabilitySchema,
         },
         { additionalProperties: false },
     ),
@@ -99,11 +106,11 @@ export const deviceProjectionSchema = Type.Object(
         role: Type.Union(deviceRoles.map((role) => Type.Literal(role))),
         availability: Type.Union(deviceAvailabilityStates.map((value) => Type.Literal(value))),
         availabilityChangedAt: isoTimestampSchema,
-        availabilityDurability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+        availabilityDurability: evidenceDurabilitySchema,
         availabilityReason: Type.Optional(nonEmptyStringSchema),
         health: Type.Union(deviceOperationalHealthStates.map((value) => Type.Literal(value))),
         healthChangedAt: isoTimestampSchema,
-        healthDurability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+        healthDurability: evidenceDurabilitySchema,
         healthReason: Type.Optional(nonEmptyStringSchema),
         reportedState: deviceStateSchema,
         observationStatus: observationStatusSchema,
@@ -118,8 +125,8 @@ const commandProjectionBaseShape = {
     commandType: Type.Literal('set.power'),
     requestedState: powerStateProjectionSchema,
     requestedAt: isoTimestampSchema,
-    durability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
-    lifecycleDurability: Type.Union(durabilityValues.map((value) => Type.Literal(value))),
+    durability: commandDurabilitySchema,
+    lifecycleDurability: commandDurabilitySchema,
 };
 const commandDeliveryEvidenceSchema = Type.Union([
     Type.Object(
@@ -193,8 +200,8 @@ export const platformStorageProjectionSchema = Type.Union([
         {
             status: Type.Literal('available'),
             changedAt: isoTimestampSchema,
-            historyGenerationId: nonEmptyStringSchema,
-            storedThroughSequence: Type.Integer({ minimum: 0 }),
+            historyGenerationId: historyGenerationIdSchema,
+            storedThroughSequence: storedThroughSequenceSchema,
         },
         { additionalProperties: false },
     ),
@@ -213,8 +220,8 @@ export const platformStorageProjectionSchema = Type.Union([
             status: Type.Union([Type.Literal('degraded'), Type.Literal('recovering')]),
             changedAt: isoTimestampSchema,
             reason: nonEmptyStringSchema,
-            historyGenerationId: nonEmptyStringSchema,
-            storedThroughSequence: Type.Integer({ minimum: 0 }),
+            historyGenerationId: historyGenerationIdSchema,
+            storedThroughSequence: storedThroughSequenceSchema,
         },
         { additionalProperties: false },
     ),

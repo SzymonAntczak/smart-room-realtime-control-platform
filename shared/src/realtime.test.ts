@@ -5,6 +5,50 @@ import { isRecentEventsOrdered } from './history';
 import { isRoomRealtimeServerMessage, isRoomSnapshotProjection } from './realtime';
 
 describe('realtime schemas', () => {
+    it('accepts an ordered multi-record platform delta and rejects empty, duplicate or legacy IDs', () => {
+        const later = createStorageGapRecord('b');
+        const earlier = createStorageGapRecord('a');
+        const update = {
+            messageType: 'platform.updated',
+            previousRevision: 0,
+            revision: 1,
+            sentAt: '2026-09-10T10:00:01.000Z',
+            payload: {
+                storage: {
+                    status: 'available',
+                    changedAt: '2026-09-10T10:00:00.000Z',
+                    historyGenerationId: 'generation-1',
+                    storedThroughSequence: 2,
+                },
+                recentEvents: [later, earlier],
+            },
+        } as const;
+
+        expect(isRoomRealtimeServerMessage(update)).toBe(true);
+        expect(isRoomRealtimeServerMessage({ ...update, payload: { ...update.payload, recentEvents: [] } })).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: { ...update.payload, recentEvents: [later, later] },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: { ...update.payload, recentEvents: [earlier, later] },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: {
+                    ...update.payload,
+                    recentEvents: [{ ...later, recordId: 'platform:storage-gap:legacy' }],
+                },
+            }),
+        ).toBe(false);
+    });
+
     it('orders same-timestamp recent events by lexical record ID', () => {
         const laterLexically = {
             recordId: 'platform:a',
@@ -848,5 +892,23 @@ function availableStorage() {
         changedAt: '2026-06-08T09:30:00Z',
         historyGenerationId: 'generation-test',
         storedThroughSequence: 0,
+    };
+}
+
+function createStorageGapRecord(lastHexDigit: 'a' | 'b') {
+    return {
+        recordId: `rec:v1:sha256:${'0'.repeat(63)}${lastHexDigit}`,
+        eventType: 'storage.gap.recorded' as const,
+        occurredAt: '2026-09-10T10:00:00.000Z',
+        durability: 'durable' as const,
+        storageSequence: lastHexDigit === 'a' ? 1 : 2,
+        source: 'backend' as const,
+        payload: {
+            outageStartedAt: '2026-09-10T09:00:00.000Z',
+            outageEndedAt: '2026-09-10T10:00:00.000Z',
+            failureReason: 'storage_unavailable',
+            boundaryBasis: 'same_process_first_degraded_at' as const,
+            observationsBackfilled: false as const,
+        },
     };
 }

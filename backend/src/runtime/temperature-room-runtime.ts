@@ -66,6 +66,7 @@ import {
     derivedCommandRecordId,
     inputFingerprint,
     logicalRecordId,
+    platformRecordId,
 } from '../platform/event-processing/event-identity';
 import {
     createEventProcessingDiagnostics,
@@ -1434,7 +1435,7 @@ export function createTemperatureRoomRuntime({
             const unclosedSessionGapStartedAt = conservativeSessionGapStart(
                 interruptedRuntimeSessions,
             );
-            const gapRecordId = `platform:storage-gap:${generateEventId()}`;
+            const gapRecordId = platformRecordId('storage.gap.recorded', generateEventId());
             const gapPayload = {
                 outageStartedAt:
                     unclosedSessionGapStartedAt ?? outageStartedAt ?? previousStorage.changedAt,
@@ -2135,7 +2136,9 @@ function initializeProjectionCheckpoint(
     const projectionChanged =
         !checkpoint || JSON.stringify(checkpoint.projection) !== JSON.stringify(projection);
     const gapStartedAt = conservativeSessionGapStart(priorUnclosedRuntimeSessions);
-    const gapRecordId = gapStartedAt ? `platform:storage-gap:${generateEventId()}` : undefined;
+    const gapRecordId = gapStartedAt
+        ? platformRecordId('storage.gap.recorded', generateEventId())
+        : undefined;
     const gapPayload = gapStartedAt
         ? {
               outageStartedAt: gapStartedAt,

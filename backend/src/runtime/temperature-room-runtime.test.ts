@@ -88,7 +88,7 @@ describe('createTemperatureRoomRuntime', () => {
             commandId: `cmd-retained-${String(19 - index).padStart(2, '0')}`,
         }));
         const cachedEvent = {
-            recordId: 'platform:storage-gap:retained-through-history-retirement',
+            recordId: recordIdForTest(1),
             eventType: 'storage.gap.recorded',
             occurredAt: '2026-08-01T10:00:00.000Z',
             durability: 'durable',
@@ -104,7 +104,7 @@ describe('createTemperatureRoomRuntime', () => {
         } satisfies RecentEventProjection;
         const cachedEvents = Array.from({ length: 20 }, (_, index) => ({
             ...cachedEvent,
-            recordId: `platform:storage-gap:retained-${String(19 - index).padStart(2, '0')}`,
+            recordId: recordIdForTest(19 - index),
             storageSequence: 20 - index,
         }));
         let runtime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
@@ -1191,7 +1191,7 @@ describe('createTemperatureRoomRuntime', () => {
         }
 
         const futureCache: RecentEventProjection[] = Array.from({ length: 20 }, (_, index) => ({
-            recordId: `future-fact-${index}`,
+            recordId: recordIdForTest(100 - index),
             eventType: 'device.availability.changed' as const,
             occurredAt: '2026-09-03T09:02:00.000Z',
             durability: 'durable' as const,
@@ -2655,7 +2655,7 @@ describe('createTemperatureRoomRuntime', () => {
             expect(snapshot.recentEvents).toEqual(checkpoint.recentEvents);
             expect(snapshot.recentEvents).toHaveLength(2);
             expect(snapshot.recentEvents[0]).toMatchObject({
-                recordId: 'checkpoint-volatile-feed',
+                recordId: recordIdForTest(201),
                 durability: 'volatile',
             });
             expect(snapshot.recentEvents[0]).not.toHaveProperty('storageSequence');
@@ -4558,7 +4558,7 @@ function createMixedRestartCheckpoint(clock: Clock): LatestRoomProjectionInput &
     >;
     const recentEvents: RecentEventProjection[] = [
         {
-            recordId: 'checkpoint-volatile-feed',
+            recordId: recordIdForTest(201),
             eventType: 'device.availability.changed',
             occurredAt: timestamp,
             durability: 'volatile',
@@ -4571,7 +4571,7 @@ function createMixedRestartCheckpoint(clock: Clock): LatestRoomProjectionInput &
             },
         },
         {
-            recordId: 'checkpoint-durable-feed',
+            recordId: recordIdForTest(200),
             eventType: 'device.availability.changed',
             occurredAt: new Date(Date.parse(timestamp) - 1_000).toISOString(),
             durability: 'durable',
@@ -4899,14 +4899,22 @@ function createScriptedStorage() {
                 },
                 appendSignificantFact(input: SignificantFactInput) {
                     operations.push('appendSignificantFact');
-                    const stored = { ...input, storageSequence: ++stagedStorageSequence };
+                    const stored = {
+                        ...input,
+                        historyGenerationId: 'scripted-generation',
+                        storageSequence: ++stagedStorageSequence,
+                    };
                     stagedFacts.push(stored);
 
                     return stored;
                 },
                 appendTelemetrySample(input: TelemetrySampleInput) {
                     operations.push('appendTelemetrySample');
-                    const stored = { ...input, storageSequence: ++stagedStorageSequence };
+                    const stored = {
+                        ...input,
+                        historyGenerationId: 'scripted-generation',
+                        storageSequence: ++stagedStorageSequence,
+                    };
                     stagedTelemetry.push(stored);
 
                     return stored;
@@ -5268,6 +5276,10 @@ function createCapturingStorage() {
             close() {},
         } as unknown as RoomStorage,
     };
+}
+
+function recordIdForTest(seed: number): string {
+    return `rec:v1:sha256:${seed.toString(16).padStart(64, '0')}`;
 }
 
 async function flushCommandDispatch(): Promise<void> {

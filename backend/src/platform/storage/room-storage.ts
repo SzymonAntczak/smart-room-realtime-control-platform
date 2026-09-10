@@ -1,6 +1,7 @@
 import type { PowerState } from '@smart-room/contracts/devices';
 import type { PlatformEventSource } from '@smart-room/contracts/events';
 import type { RecentEventProjection } from '@smart-room/contracts/history';
+import type { HistoryGenerationId, RecordDurability } from '@smart-room/contracts/storage';
 
 import type { RoomProjectionEvidence } from '../read-model/room-projection';
 
@@ -11,8 +12,6 @@ export interface StorageMetadata {
     schemaVersion: number;
     lastStorageSequence: number;
 }
-
-export type RecordDurability = 'durable' | 'volatile';
 
 export interface AcceptedInputIdentity {
     eventId: string;
@@ -96,6 +95,7 @@ export interface SignificantFactInput {
 }
 
 export interface StoredSignificantFact extends SignificantFactInput {
+    historyGenerationId: HistoryGenerationId;
     storageSequence: number;
 }
 
@@ -111,6 +111,7 @@ export interface TelemetrySampleInput {
 }
 
 export interface StoredTelemetrySample extends TelemetrySampleInput {
+    historyGenerationId: HistoryGenerationId;
     storageSequence: number;
 }
 

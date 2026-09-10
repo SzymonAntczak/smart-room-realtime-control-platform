@@ -1,7 +1,7 @@
 import type { PlatformEvent } from '@smart-room/contracts/events';
 import { describe, expect, it } from 'vitest';
 
-import { derivedCommandRecordId, logicalRecordId } from './event-identity';
+import { derivedCommandRecordId, logicalRecordId, platformRecordId } from './event-identity';
 
 describe('event record identity', () => {
     it('keeps logical input record IDs stable while separating record kinds and sources', () => {
@@ -30,6 +30,16 @@ describe('event record identity', () => {
         );
         expect(derivedCommandRecordId('command-1', 'confirmed')).not.toBe(
             derivedCommandRecordId('command-2', 'confirmed'),
+        );
+    });
+
+    it('gives platform records the same versioned ID family while separating operations', () => {
+        expect(platformRecordId('storage.gap.recorded', 'gap-1')).toMatch(/^rec:v1:sha256:[a-f0-9]{64}$/);
+        expect(platformRecordId('storage.gap.recorded', 'gap-1')).toBe(
+            platformRecordId('storage.gap.recorded', 'gap-1'),
+        );
+        expect(platformRecordId('storage.gap.recorded', 'gap-1')).not.toBe(
+            platformRecordId('storage.gap.recorded', 'gap-2'),
         );
     });
 });

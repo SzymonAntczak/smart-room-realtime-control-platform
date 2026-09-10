@@ -85,6 +85,17 @@ export function derivedCommandRecordId(commandId: string, lifecycleKind: string)
     )}`;
 }
 
+/**
+ * Gives platform-generated records the same opaque, versioned identity format
+ * as input-derived and command-lifecycle records. The caller owns the stable
+ * operation key for retries of the one platform record.
+ */
+export function platformRecordId(recordKind: string, operationKey: string): LogicalRecordId {
+    return `rec:v1:sha256:${sha256(
+        canonicalJson({ family: 'platform', recordKind, operationKey }),
+    )}`;
+}
+
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
 }

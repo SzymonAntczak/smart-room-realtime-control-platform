@@ -6,7 +6,10 @@ import {
     type TerminalCommandProjection,
 } from './commands';
 import type { RecentEventProjection } from './history';
-import { isRecentEventsOrdered, recentEventsProjectionSchema } from './history';
+import {
+    isRecentEventsOrdered,
+    recentEventsDeltaSchema,
+} from './history';
 import type { DeviceProjection, PlatformStorageProjection } from './projections';
 import {
     activeCommandProjectionSchema,
@@ -56,7 +59,7 @@ export const commandsUpdatedMessageSchema = Type.Object(
                 devices: Type.Array(deviceProjectionSchema),
                 activeCommands: Type.Array(activeCommandProjectionSchema),
                 recentCommands: recentCommandProjectionsSchema,
-                recentEvents: Type.Optional(recentEventsProjectionSchema),
+                recentEvents: Type.Optional(recentEventsDeltaSchema),
             },
             { additionalProperties: false },
         ),
@@ -72,7 +75,7 @@ export const platformUpdatedMessageSchema = Type.Object(
         payload: Type.Object(
             {
                 storage: platformStorageProjectionSchema,
-                recentEvents: Type.Optional(recentEventsProjectionSchema),
+                recentEvents: Type.Optional(recentEventsDeltaSchema),
             },
             { additionalProperties: false },
         ),

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 
 import {
@@ -24,12 +25,10 @@ export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): v
     const serializedCheckpoint = stringField(storedRow, 'projection_json');
     const checkpoint = parseCheckpoint(serializedCheckpoint);
 
-    if (checkpoint.checkpointVersion === latestCheckpointVersion) {
-        return;
-    }
-
-    const migrated =
-        checkpoint.checkpointVersion === 3
+    const migratedBeforeRecordIdentity =
+        checkpoint.checkpointVersion === latestCheckpointVersion
+            ? checkpoint
+            : checkpoint.checkpointVersion === 3
             ? migrateVersionThreeCheckpoint(checkpoint)
             : checkpoint.checkpointVersion === 2
               ? migrateVersionTwoCheckpoint(checkpoint)
@@ -38,8 +37,13 @@ export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): v
                 : 'checkpointVersion' in checkpoint
                   ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
                   : migrateVersionZeroCheckpoint(checkpoint);
+    const migrated = rewriteLegacyRecentEventRecordIds(migratedBeforeRecordIdentity);
 
     assertMigratedCheckpointIsValid(migrated);
+
+    if (JSON.stringify(migrated) === serializedCheckpoint) {
+        return;
+    }
 
     try {
         database.exec('BEGIN IMMEDIATE');
@@ -50,6 +54,43 @@ export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): v
     } catch (error) {
         rollbackMigration(database, error);
     }
+}
+
+function rewriteLegacyRecentEventRecordIds(checkpoint: Record<string, unknown>): Record<string, unknown> {
+    const recentEvents = array(checkpoint.recentEvents, 'checkpoint recent events');
+
+    return {
+        ...checkpoint,
+        recentEvents: recentEvents.map((event) => {
+            const storedEvent = record(event, 'checkpoint recent event');
+            const recordId = nonEmptyStringField(storedEvent, 'recordId');
+
+            if (!recordId.startsWith('platform:storage-gap:')) {
+                return storedEvent;
+            }
+
+            const operationKey = recordId.slice('platform:storage-gap:'.length);
+
+            if (operationKey.length === 0) {
+                throw new StorageMigrationError(
+                    'Legacy storage-gap checkpoint record has no operation key.',
+                    storedEvent,
+                );
+            }
+
+            return { ...storedEvent, recordId: platformRecordId(operationKey) };
+        }),
+    };
+}
+
+function platformRecordId(operationKey: string): string {
+    const canonicalIdentity = JSON.stringify({
+        family: 'platform',
+        operationKey,
+        recordKind: 'storage.gap.recorded',
+    });
+
+    return `rec:v1:sha256:${createHash('sha256').update(canonicalIdentity).digest('hex')}`;
 }
 
 function migrateVersionZeroCheckpoint(

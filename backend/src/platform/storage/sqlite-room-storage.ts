@@ -99,7 +99,7 @@ export function createSqliteRoomStorage({
             return run(() =>
                 database
                     .prepare(
-                        `SELECT storage_sequence, record_id, event_id, event_type, device_id, command_id,
+                        `SELECT history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
                                 source, occurred_at, payload_json
                          FROM significant_facts
                          WHERE retired_at IS NULL
@@ -126,7 +126,7 @@ export function createSqliteRoomStorage({
 
                 return database
                     .prepare(
-                        `SELECT storage_sequence, record_id, event_id, device_id, metric, value, unit,
+                        `SELECT history_generation_id, storage_sequence, record_id, event_id, device_id, metric, value, unit,
                                 occurred_at, payload_json
                          FROM telemetry_samples
                          WHERE retired_at IS NULL AND ${clauses.join(' AND ')}
@@ -910,14 +910,16 @@ function insertSignificantFact(
 ): StoredSignificantFact {
     const occurredAt = canonicalStorageTimestamp(input.occurredAt);
     const storageSequence = allocateStorageSequence(database);
+    const historyGenerationId = readSqliteStorageMetadata(database).historyGenerationId;
     database
         .prepare(
             `INSERT INTO significant_facts (
-                storage_sequence, record_id, event_id, event_type, device_id, command_id,
+                history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
                 source, occurred_at, payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
+            historyGenerationId,
             storageSequence,
             input.recordId,
             input.eventId ?? null,
@@ -929,7 +931,7 @@ function insertSignificantFact(
             stringifyJson(input.payload),
         );
 
-    return { ...input, occurredAt, storageSequence };
+    return { ...input, occurredAt, historyGenerationId, storageSequence };
 }
 
 function insertTelemetrySample(
@@ -938,14 +940,16 @@ function insertTelemetrySample(
 ): StoredTelemetrySample {
     const occurredAt = canonicalStorageTimestamp(input.occurredAt);
     const storageSequence = allocateStorageSequence(database);
+    const historyGenerationId = readSqliteStorageMetadata(database).historyGenerationId;
     database
         .prepare(
             `INSERT INTO telemetry_samples (
-                storage_sequence, record_id, event_id, device_id, metric, value, unit,
+                history_generation_id, storage_sequence, record_id, event_id, device_id, metric, value, unit,
                 occurred_at, payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
+            historyGenerationId,
             storageSequence,
             input.recordId,
             input.eventId ?? null,
@@ -957,7 +961,7 @@ function insertTelemetrySample(
             stringifyJson(input.payload),
         );
 
-    return { ...input, occurredAt, storageSequence };
+    return { ...input, occurredAt, historyGenerationId, storageSequence };
 }
 
 function insertQuarantineEntry(
@@ -1052,6 +1056,7 @@ function toStoredTelemetrySample(row: unknown): StoredTelemetrySample {
     const value = record(row, 'telemetry sample');
 
     return {
+        historyGenerationId: stringField(value, 'history_generation_id'),
         storageSequence: numberField(value, 'storage_sequence'),
         recordId: stringField(value, 'record_id'),
         eventId: optionalStringField(value, 'event_id'),
@@ -1068,6 +1073,7 @@ function toStoredSignificantFact(row: unknown): StoredSignificantFact {
     const value = record(row, 'significant fact');
 
     return {
+        historyGenerationId: stringField(value, 'history_generation_id'),
         storageSequence: numberField(value, 'storage_sequence'),
         recordId: stringField(value, 'record_id'),
         eventId: optionalStringField(value, 'event_id'),
@@ -1339,6 +1345,7 @@ const expectedTableColumns = {
     schema_migrations: ['version', 'name', 'checksum'],
     storage_metadata: ['id', 'history_generation_id', 'last_storage_sequence'],
     significant_facts: [
+        'history_generation_id',
         'storage_sequence',
         'record_id',
         'event_id',
@@ -1351,6 +1358,7 @@ const expectedTableColumns = {
         'retired_at',
     ],
     telemetry_samples: [
+        'history_generation_id',
         'storage_sequence',
         'record_id',
         'event_id',
@@ -1409,7 +1417,8 @@ const expectedTableSqlFragments = {
         'last_storage_sequence integer not null default 0 check (last_storage_sequence >= 0)',
     ],
     significant_facts: [
-        'storage_sequence integer primary key',
+        'history_generation_id text not null',
+        'storage_sequence integer not null',
         'record_id text not null',
         'event_id text',
         'event_type text not null',
@@ -1419,9 +1428,11 @@ const expectedTableSqlFragments = {
         'occurred_at text not null',
         'payload_json text not null',
         'retired_at text',
+        'primary key (history_generation_id, storage_sequence)',
     ],
     telemetry_samples: [
-        'storage_sequence integer primary key',
+        'history_generation_id text not null',
+        'storage_sequence integer not null',
         'record_id text not null',
         'event_id text',
         'device_id text not null',
@@ -1431,6 +1442,7 @@ const expectedTableSqlFragments = {
         'occurred_at text not null',
         'payload_json text not null',
         'retired_at text',
+        'primary key (history_generation_id, storage_sequence)',
     ],
     quarantine_entries: [
         'internal_sequence integer primary key autoincrement',

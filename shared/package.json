@@ -11,6 +11,7 @@
         "./history": "./src/history.ts",
         "./projections": "./src/projections.ts",
         "./realtime": "./src/realtime.ts",
+        "./storage": "./src/storage.ts",
         "./validation": "./src/validation.ts"
     },
     "scripts": {

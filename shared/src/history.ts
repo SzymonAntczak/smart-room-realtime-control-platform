@@ -11,6 +11,10 @@ import {
     deviceStateReportedPayloadSchema,
     platformEventSources,
 } from './events';
+import {
+    recordIdSchema,
+    storageSequenceSchema,
+} from './storage';
 import { canonicalUtcTimestampSchema, nonEmptyStringSchema } from './validation';
 
 export const storageGapBoundaryBases = [
@@ -30,11 +34,11 @@ export interface StorageGapRecordedPayload {
 
 const durableFields = {
     durability: Type.Literal('durable'),
-    storageSequence: Type.Integer({ minimum: 1 }),
+    storageSequence: storageSequenceSchema,
 };
 const volatileFields = { durability: Type.Literal('volatile') };
 const commonFields = {
-    recordId: nonEmptyStringSchema,
+    recordId: recordIdSchema,
     occurredAt: canonicalUtcTimestampSchema,
 };
 const deviceEventFields = {
@@ -136,6 +140,11 @@ export const recentEventProjectionSchema = Type.Union([
 ]);
 
 export const recentEventsProjectionSchema = Type.Array(recentEventProjectionSchema, {
+    maxItems: 20,
+});
+/** A publication delta never carries an empty no-op feed update. */
+export const recentEventsDeltaSchema = Type.Array(recentEventProjectionSchema, {
+    minItems: 1,
     maxItems: 20,
 });
 /** Exact wire/cache union: durable records have a sequence; volatile never do. */

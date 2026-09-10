@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { migrateSqliteDatabase, roomStorageMigrations } from './sqlite-migrations';
 import { createSqliteRoomStorage, executeStorageTransaction } from './sqlite-room-storage';
 import { createSqliteRoomStorageLifecycle } from './sqlite-room-storage-lifecycle';
 import {
@@ -188,7 +189,7 @@ describe('SQLite room storage', () => {
             shouldAbort: () => false,
             operation(transaction) {
                 return transaction.appendSignificantFact({
-                    recordId: 'platform:storage-gap:test',
+                    recordId: `rec:v1:sha256:${'1'.repeat(64)}`,
                     eventType: 'storage.gap.recorded',
                     source: 'backend',
                     occurredAt: '2026-09-03T08:00:00.000Z',
@@ -221,7 +222,7 @@ describe('SQLite room storage', () => {
             shouldAbort: () => true,
             operation(transaction) {
                 transaction.appendSignificantFact({
-                    recordId: 'platform:storage-gap:aborted',
+                    recordId: `rec:v1:sha256:${'2'.repeat(64)}`,
                     eventType: 'storage.gap.recorded',
                     source: 'backend',
                     occurredAt: '2026-09-03T08:00:00.000Z',
@@ -342,7 +343,7 @@ describe('SQLite room storage', () => {
         const storage = createSqliteRoomStorage({ databasePath });
         storage.close();
         const database = new DatabaseSync(databasePath);
-        database.prepare('DELETE FROM schema_migrations WHERE version = 4').run();
+        database.prepare('DELETE FROM schema_migrations WHERE version = 5').run();
         database.close();
         const lifecycle = createSqliteRoomStorageLifecycle({
             databasePath,
@@ -357,7 +358,7 @@ describe('SQLite room storage', () => {
         expect(
             after.prepare('SELECT MAX(version) AS version FROM schema_migrations').get(),
         ).toEqual({
-            version: 3,
+            version: 4,
         });
         after.close();
     });
@@ -374,11 +375,113 @@ describe('SQLite room storage', () => {
             historyGenerationId: expect.stringMatching(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             ),
-            schemaVersion: 4,
+            schemaVersion: 5,
             lastStorageSequence: 0,
         });
         expect(reopened.getMetadata()).toEqual(initialMetadata);
         reopened.close();
+    });
+
+    it('migrates legacy storage-gap IDs and keys retained history rows by generation and sequence', () => {
+        const databasePath = temporaryDatabasePath();
+        const generation = 'legacy-generation';
+        const database = new DatabaseSync(databasePath);
+        migrateSqliteDatabase(database, generation, roomStorageMigrations.slice(0, 4));
+        database
+            .prepare(
+                `INSERT INTO significant_facts (
+                    storage_sequence, record_id, event_type, source, occurred_at, payload_json, retired_at
+                ) VALUES (1, ?, 'storage.gap.recorded', 'backend', ?, '{}', NULL)`,
+            )
+            .run('platform:storage-gap:legacy-gap', '2026-09-10T10:00:00.000Z');
+        database
+            .prepare(
+                `INSERT INTO significant_facts (
+                    storage_sequence, record_id, event_type, source, occurred_at, payload_json, retired_at
+                ) VALUES (2, ?, 'storage.gap.recorded', 'backend', ?, '{}', ?)`,
+            )
+            .run(
+                'platform:storage-gap:legacy-gap',
+                '2026-08-01T10:00:00.000Z',
+                '2026-09-01T10:00:00.000Z',
+            );
+        database.prepare('UPDATE storage_metadata SET last_storage_sequence = 2 WHERE id = 1').run();
+        database
+            .prepare(
+                `INSERT INTO latest_room_projection (id, updated_at, projection_json)
+                 VALUES (1, ?, ?)`,
+            )
+            .run(
+                '2026-09-10T10:00:00.000Z',
+                JSON.stringify({
+                    checkpointVersion: 4,
+                    updatedAt: '2026-09-10T10:00:00.000Z',
+                    projection: emptyRoomProjection('2026-09-10T10:00:00.000Z'),
+                    projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                    volatileGuards: [],
+                    recentEvents: [
+                        {
+                            recordId: 'platform:storage-gap:legacy-gap',
+                            eventType: 'storage.gap.recorded',
+                            occurredAt: '2026-09-10T10:00:00.000Z',
+                            durability: 'durable',
+                            storageSequence: 1,
+                            source: 'backend',
+                            payload: {
+                                outageStartedAt: '2026-09-10T09:00:00.000Z',
+                                outageEndedAt: '2026-09-10T10:00:00.000Z',
+                                failureReason: 'storage_write_failed',
+                                boundaryBasis: 'same_process_first_degraded_at',
+                                observationsBackfilled: false,
+                            },
+                        },
+                    ],
+                }),
+            );
+        database.close();
+
+        const storage = createSqliteRoomStorage({ databasePath });
+        const expectedRecordId = /^rec:v1:sha256:[a-f0-9]{64}$/;
+
+        expect(storage.getMetadata()).toMatchObject({
+            historyGenerationId: generation,
+            schemaVersion: 5,
+            lastStorageSequence: 2,
+        });
+        expect(storage.listSignificantFacts()).toEqual([
+            expect.objectContaining({
+                historyGenerationId: generation,
+                storageSequence: 1,
+                recordId: expect.stringMatching(expectedRecordId),
+            }),
+        ]);
+        expect(storage.getLatestRoomProjection()?.recentEvents).toEqual([
+            expect.objectContaining({ recordId: expect.stringMatching(expectedRecordId) }),
+        ]);
+        storage.close();
+
+        const migrated = new DatabaseSync(databasePath, { readOnly: true });
+        expect(
+            migrated.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'significant_facts'").get(),
+        ).toEqual(
+            expect.objectContaining({
+                sql: expect.stringMatching(/primary key \(history_generation_id, storage_sequence\)/i),
+            }),
+        );
+        expect(
+            migrated
+                .prepare(
+                    `SELECT history_generation_id, storage_sequence, record_id
+                     FROM significant_facts
+                     WHERE storage_sequence = 2`,
+                )
+                .get(),
+        ).toEqual({
+            history_generation_id: generation,
+            storage_sequence: 2,
+            record_id: expect.stringMatching(expectedRecordId),
+        });
+        migrated.close();
     });
 
     it('stores and reads every Stage 4 storage category through the port', () => {
@@ -922,7 +1025,7 @@ describe('SQLite room storage', () => {
         };
         const recentEvents = [
             {
-                recordId: 'platform:storage-gap:retained',
+                recordId: `rec:v1:sha256:${'3'.repeat(64)}`,
                 eventType: 'storage.gap.recorded' as const,
                 occurredAt: '2026-08-01T00:00:00.000Z',
                 durability: 'durable' as const,
@@ -1039,7 +1142,7 @@ describe('SQLite room storage', () => {
         const databasePath = temporaryDatabasePath();
         const storage = createSqliteRoomStorage({ databasePath });
         const duplicateGap = {
-            recordId: 'platform:storage-gap:duplicate',
+            recordId: `rec:v1:sha256:${'4'.repeat(64)}`,
             eventType: 'storage.gap.recorded' as const,
             occurredAt: '2026-09-03T08:00:00.000Z',
             durability: 'durable' as const,
@@ -1084,7 +1187,7 @@ describe('SQLite room storage', () => {
 
         const laterGap = {
             ...duplicateGap,
-            recordId: 'platform:storage-gap:later',
+            recordId: `rec:v1:sha256:${'5'.repeat(64)}`,
             occurredAt: '2026-09-03T09:00:00.000Z',
             storageSequence: 2,
             payload: {
@@ -1296,7 +1399,7 @@ describe('SQLite room storage', () => {
         newerStorage.close();
         const newerDatabase = new DatabaseSync(newerDatabasePath);
         newerDatabase
-            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (5, ?, ?)')
+            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (6, ?, ?)')
             .run('future', 'future');
         newerDatabase.close();
 
