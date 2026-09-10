@@ -264,7 +264,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       operational surface, not domain history or a database table.
       Done when: the configured level controls startup and migration output.
 
-- [ ] Add safe correlation fields to backend logs.
+- [x] Add safe correlation fields to backend logs.
       Include applicable `eventId`, `commandId`, `deviceId`, `source` and
       `reason` fields in rejected input, command-handling and storage-failure
       logs.

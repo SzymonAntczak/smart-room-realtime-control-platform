@@ -146,6 +146,14 @@ export interface TemperatureRoomRuntime {
 export type RoomSnapshotListener = (snapshot: RoomSnapshotProjection) => void;
 export type RoomPublicationBatchListener = (batch: RoomPublicationBatch) => void;
 
+interface OperationalLogCorrelation {
+    eventId?: string;
+    commandId?: string;
+    deviceId?: string;
+    source?: string;
+    reason?: string;
+}
+
 const defaultSensors: readonly TemperatureSensorDefinition[] = [
     {
         deviceId: 'temp-desk',
@@ -251,13 +259,17 @@ export function createTemperatureRoomRuntime({
     const runtimeSessionStartedAt = clock.now();
 
     if (!initialStorage && storageLifecycle) {
-        const startup = storageLifecycle.openAtStartup();
+        try {
+            const startup = storageLifecycle.openAtStartup();
 
-        if (startup.kind === 'available') {
-            initialStorage = startup.storage;
-            initialStorageMetadata = startup.metadata;
-        } else {
-            startupStorageFactoryError = startup.error;
+            if (startup.kind === 'available') {
+                initialStorage = startup.storage;
+                initialStorageMetadata = startup.metadata;
+            } else {
+                startupStorageFactoryError = startup.error;
+            }
+        } catch (error) {
+            startupStorageFactoryError = error;
         }
     } else if (!initialStorage && resolvedStorageFactory) {
         try {
@@ -314,7 +326,13 @@ export function createTemperatureRoomRuntime({
         terminateForStorageOutcome(initialStorageOutcome.error, 'fatal');
     }
 
+    if (initialStorageOutcome?.status === 'confirmed_rolled_back') {
+        startupStorageError ??= initialStorageOutcome.error;
+    }
+
     if (startupStorageError && !isDegradableStorageError(startupStorageError)) {
+        logStorageFailure(startupStorageError, 'storage_fatal_error', {});
+
         throw startupStorageError;
     }
 
@@ -334,6 +352,8 @@ export function createTemperatureRoomRuntime({
     }
 
     if (startupStorageError && !isDegradableStorageError(startupStorageError)) {
+        logStorageFailure(startupStorageError, 'storage_fatal_error', {});
+
         throw startupStorageError;
     }
 
@@ -356,6 +376,14 @@ export function createTemperatureRoomRuntime({
         clock,
         diagnosticEventLimit,
     });
+    const startupStorageFailureReason =
+        startupStorageError instanceof StorageError &&
+        startupStorageError.kind === 'manual_intervention'
+            ? 'storage_manual_intervention_required'
+            : initialStorage || resolvedStorageFactory || storageLifecycle
+              ? 'storage_write_failed'
+              : 'storage_not_configured';
+
     let storageState: PlatformStorageProjection =
         initialStorage &&
         !startupStorageError &&
@@ -370,13 +398,7 @@ export function createTemperatureRoomRuntime({
             : {
                   status: 'degraded',
                   changedAt: clock.now(),
-                  reason:
-                      startupStorageError instanceof StorageError &&
-                      startupStorageError.kind === 'manual_intervention'
-                          ? 'storage_manual_intervention_required'
-                          : initialStorage || resolvedStorageFactory || storageLifecycle
-                            ? 'storage_write_failed'
-                            : 'storage_not_configured',
+                  reason: startupStorageFailureReason,
                   // A lifecycle may verify metadata before a later checkpoint
                   // read fails. Keep that generation as a recovery guard: a
                   // missing target must never become an automatic first init.
@@ -387,6 +409,11 @@ export function createTemperatureRoomRuntime({
                         }
                       : { historyGenerationId: null, storedThroughSequence: null }),
               };
+
+    if (startupStorageError) {
+        logStorageFailure(startupStorageError, startupStorageFailureReason, {});
+    }
+
     let recentEvents: RecentEventProjection[] = initializedCheckpoint?.recentEvents ?? [];
     let pendingStartupVolatileCommandFailures: PendingStartupVolatileCommandFailure[] = [];
     let recoveryGapForPublication: RecentEventProjection | undefined;
@@ -921,7 +948,7 @@ export function createTemperatureRoomRuntime({
                   .getProjection()
                   .activeCommands.find((command) => command.deviceId === event.deviceId)?.commandId
             : undefined;
-        reconcileExpiredDurableIdentity(event.eventId, receivedAt);
+        reconcileExpiredDurableIdentity(event, receivedAt);
         const prepared = processor.prepareEvent(
             event,
             ingress,
@@ -999,15 +1026,28 @@ export function createTemperatureRoomRuntime({
             });
 
             if (outcome.status === 'indeterminate') {
-                return terminateForStorageOutcome(outcome.error, 'unknown');
+                return terminateForStorageOutcome(
+                    outcome.error,
+                    'unknown',
+                    correlationForEvent(event),
+                );
             }
 
             if (outcome.status === 'confirmed_rolled_back' && isFatalStorageError(outcome.error)) {
-                return terminateForStorageOutcome(outcome.error, 'fatal');
+                return terminateForStorageOutcome(
+                    outcome.error,
+                    'fatal',
+                    correlationForEvent(event),
+                );
             }
 
             if (outcome.status === 'confirmed_rolled_back') {
-                enterStorageDegraded(outcome.error, receivedAt, false);
+                enterStorageDegraded(
+                    outcome.error,
+                    receivedAt,
+                    false,
+                    correlationForEvent(event),
+                );
                 platformBeforeOutcome = true;
                 result = processor.commitPrepared(prepared, 'volatile');
                 rememberVolatileIdentity(prepared, receivedAt);
@@ -1050,6 +1090,7 @@ export function createTemperatureRoomRuntime({
         }
 
         diagnostics.recordProcessingResult(event, result);
+        logEventProcessingOutcome(event, prepared, result);
         commandController.onEventProcessed(activeCommandIdBeforeEvent, event, result);
 
         if (result.status === 'accepted' || prepared.kind === 'accepted_non_applying') {
@@ -1061,6 +1102,83 @@ export function createTemperatureRoomRuntime({
         }
 
         return result;
+    }
+
+    function logEventProcessingOutcome(
+        event: PlatformEvent,
+        prepared: ReturnType<typeof processor.prepareEvent>,
+        result: EventProcessingResult,
+    ): void {
+        const reason = result.status === 'ignored' ? result.reason : reasonForEvent(event);
+
+        if (result.status === 'ignored') {
+            operationalLog({
+                event: 'platform_event_rejected',
+                ...correlationForEvent(event, reason),
+            });
+        }
+
+        if (isCommandLifecycleEvent(event)) {
+            operationalLog({
+                event: 'command_handled',
+                eventType: event.eventType,
+                ...correlationForEvent(event, reason),
+            });
+        }
+
+        for (const record of prepared.records) {
+            if (record.kind !== 'derived_command_confirmed') {
+                continue;
+            }
+
+            operationalLog({
+                event: 'command_handled',
+                eventType: 'command.confirmed',
+                eventId: record.eventId,
+                commandId: record.commandId,
+                deviceId: record.deviceId,
+                source: 'backend',
+            });
+        }
+    }
+
+    function correlationForEvent(
+        event: PlatformEvent,
+        reason?: string,
+    ): OperationalLogCorrelation {
+        return {
+            eventId: event.eventId,
+            ...(event.commandId === undefined ? {} : { commandId: event.commandId }),
+            ...(event.deviceId === undefined ? {} : { deviceId: event.deviceId }),
+            source: event.source,
+            ...(reason === undefined ? {} : { reason }),
+        };
+    }
+
+    function correlationForOutboxMutation(
+        mutation: CommandOutboxMutation,
+    ): OperationalLogCorrelation {
+        return mutation.kind === 'upsert'
+            ? {
+                  commandId: mutation.intent.commandId,
+                  deviceId: mutation.intent.deviceId,
+                  source: 'backend',
+              }
+            : { commandId: mutation.commandId, source: 'backend' };
+    }
+
+    function logStorageFailure(
+        error: unknown,
+        reason: string,
+        correlation: OperationalLogCorrelation,
+    ): void {
+        operationalLog({
+            event: 'storage_failure',
+            ...correlation,
+            source: correlation.source ?? 'backend',
+            reason,
+            storageFailureKind: error instanceof StorageError ? error.kind : 'unknown',
+        });
     }
 
     function persistOutboxMutation(mutation: CommandOutboxMutation, ingress: EventIngress): void {
@@ -1087,15 +1205,20 @@ export function createTemperatureRoomRuntime({
         });
 
         if (outcome.status === 'indeterminate') {
-            terminateForStorageOutcome(outcome.error, 'unknown');
+            terminateForStorageOutcome(outcome.error, 'unknown', correlationForOutboxMutation(mutation));
         }
 
         if (outcome.status === 'confirmed_rolled_back' && isFatalStorageError(outcome.error)) {
-            terminateForStorageOutcome(outcome.error, 'fatal');
+            terminateForStorageOutcome(outcome.error, 'fatal', correlationForOutboxMutation(mutation));
         }
 
         if (outcome.status === 'confirmed_rolled_back') {
-            enterStorageDegraded(outcome.error, ingress.receivedAt);
+            enterStorageDegraded(
+                outcome.error,
+                ingress.receivedAt,
+                true,
+                correlationForOutboxMutation(mutation),
+            );
         }
     }
 
@@ -1608,9 +1731,14 @@ export function createTemperatureRoomRuntime({
         recoveryGapForPublication = undefined;
     }
 
-    function enterStorageDegraded(error: unknown, changedAt: string, publish = true): void {
+    function enterStorageDegraded(
+        error: unknown,
+        changedAt: string,
+        publish = true,
+        correlation: OperationalLogCorrelation = {},
+    ): void {
         if (!(error instanceof StorageError) || isFatalStorageError(error)) {
-            terminateForStorageOutcome(error, 'fatal');
+            terminateForStorageOutcome(error, 'fatal', correlation);
         }
 
         const manual = error instanceof StorageError && error.kind === 'manual_intervention';
@@ -1631,6 +1759,7 @@ export function createTemperatureRoomRuntime({
             ? 'storage_manual_intervention_required'
             : 'storage_write_failed';
         const reason = manual ? 'storage_manual_intervention_required' : 'storage_write_failed';
+        logStorageFailure(error, reason, correlation);
         const unchanged = storageState.status === 'degraded' && storageState.reason === reason;
         storageState =
             storageState.historyGenerationId === null
@@ -1862,31 +1991,30 @@ export function createTemperatureRoomRuntime({
         }
     }
 
-    function reconcileExpiredDurableIdentity(eventId: string, receivedAt: string): void {
+    function reconcileExpiredDurableIdentity(event: PlatformEvent, receivedAt: string): void {
         if (
             !activeStorage ||
             storageState.status !== 'available' ||
-            !processor.hasDurableIdentity(eventId)
+            !processor.hasDurableIdentity(event.eventId)
         ) {
             return;
         }
 
         try {
-            if (!activeStorage.isAcceptedInputIdentityActive(eventId, receivedAt)) {
-                processor.forgetDurableIdentities([eventId]);
+            if (!activeStorage.isAcceptedInputIdentityActive(event.eventId, receivedAt)) {
+                processor.forgetDurableIdentities([event.eventId]);
             }
         } catch (error) {
             if (!isDegradableStorageError(error)) {
-                terminateForStorageOutcome(error, 'fatal');
+                terminateForStorageOutcome(error, 'fatal', correlationForEvent(event));
             }
 
-            enterStorageDegraded(error, receivedAt);
+            enterStorageDegraded(error, receivedAt, true, correlationForEvent(event));
         }
     }
 
     function handleLedReceiptFailure(failure: LedReceiptFailure): void {
-        operationalLog({
-            event: 'simulator_command_receipt_failure',
+        const correlation = {
             source: 'simulator-led',
             commandId: failure.commandId,
             deviceId: 'led-main',
@@ -1899,22 +2027,32 @@ export function createTemperatureRoomRuntime({
                       : 'storage_commit_outcome_unknown',
             storageFailureKind:
                 failure.error instanceof StorageError ? failure.error.kind : 'unknown',
-        });
+        } satisfies OperationalLogCorrelation & Record<string, unknown>;
+        operationalLog({ event: 'simulator_command_receipt_failure', ...correlation });
 
         if (failure.outcome === 'indeterminate') {
-            terminateForStorageOutcome(failure.error, 'unknown');
+            terminateForStorageOutcome(failure.error, 'unknown', correlation);
         }
 
         if (failure.error instanceof StorageError && failure.error.kind === 'fatal') {
-            terminateForStorageOutcome(failure.error, 'fatal');
+            terminateForStorageOutcome(failure.error, 'fatal', correlation);
         }
 
         if (storageState.status === 'available') {
-            enterStorageDegraded(failure.error, clock.now());
+            enterStorageDegraded(failure.error, clock.now(), true, correlation);
         }
     }
 
-    function terminateForStorageOutcome(cause: unknown, kind: 'unknown' | 'fatal'): never {
+    function terminateForStorageOutcome(
+        cause: unknown,
+        kind: 'unknown' | 'fatal',
+        correlation: OperationalLogCorrelation = {},
+    ): never {
+        logStorageFailure(
+            cause,
+            kind === 'unknown' ? 'storage_commit_outcome_unknown' : 'storage_fatal_error',
+            correlation,
+        );
         fatalRuntimeError ??= new Error(
             kind === 'unknown' ? 'storage_commit_outcome_unknown' : 'storage_fatal_error',
             { cause },
@@ -2625,6 +2763,23 @@ const realClock: Clock = {
         return new Date().toISOString();
     },
 };
+
+function isCommandLifecycleEvent(event: PlatformEvent): boolean {
+    return event.eventType.startsWith('command.');
+}
+
+function reasonForEvent(event: PlatformEvent): string | undefined {
+    if (
+        typeof event.payload !== 'object' ||
+        event.payload === null ||
+        !('reason' in event.payload) ||
+        typeof event.payload.reason !== 'string'
+    ) {
+        return undefined;
+    }
+
+    return event.payload.reason;
+}
 
 function toRoomSnapshot(
     roomName: string,

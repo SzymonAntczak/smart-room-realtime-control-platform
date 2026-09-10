@@ -11,6 +11,7 @@ import type { RecentEventProjection } from '@smart-room/contracts/history';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomPublicationBatch } from '@smart-room/contracts/realtime';
 import type { Clock, TimerScheduler } from '@smart-room/simulator';
+import { fingerprintLedSetPowerCommand } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
 import { inputFingerprint } from '../platform/event-processing/event-identity';
@@ -659,6 +660,34 @@ describe('createTemperatureRoomRuntime', () => {
                 historyGenerationId: null,
                 storedThroughSequence: null,
             });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('logs a classified storage failure when startup enters degraded mode', () => {
+        const logs: Record<string, unknown>[] = [];
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-06-08T09:30:00Z'),
+            storageFactory() {
+                throw new StorageAvailabilityError('database is busy', undefined);
+            },
+            operationalLog(entry) {
+                logs.push(entry);
+            },
+        });
+
+        try {
+            expect(logs).toEqual([
+                expect.objectContaining({
+                    event: 'storage_failure',
+                    source: 'backend',
+                    reason: 'storage_write_failed',
+                    storageFailureKind: 'availability',
+                }),
+            ]);
+            expect(logs[0]).not.toHaveProperty('err');
+            expect(logs[0]).not.toHaveProperty('error');
         } finally {
             runtime.stop();
         }
@@ -3565,6 +3594,284 @@ describe('createTemperatureRoomRuntime', () => {
             ).toEqual(['future_dated_report', 'duplicate_event', 'invalid_payload']);
         } finally {
             runtime.stop();
+        }
+    });
+
+    it('writes safe correlation logs for rejected input and command lifecycle handling', async () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const commandTimer = createCommandTimer();
+        const logs: Record<string, unknown>[] = [];
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            commandTimer,
+            generateEventId: createEventIdGenerator(),
+            ledScenario: 'omit_confirmation',
+            operationalLog(entry) {
+                logs.push(entry);
+            },
+        });
+
+        try {
+            runtime.start();
+            logs.length = 0;
+            runtime.runDeviceScenario('temp-window', 'emit_invalid_reading');
+
+            expect(logs).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        event: 'platform_event_rejected',
+                        eventId: expect.any(String),
+                        deviceId: 'temp-window',
+                        source: 'simulator-adapter',
+                        reason: 'invalid_payload',
+                    }),
+                ]),
+            );
+
+            const command = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            await flushCommandDispatch();
+            clock.advanceBy(5_000);
+            commandTimer.runAll();
+
+            expect(logs).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        event: 'command_handled',
+                        eventType: 'command.requested',
+                        eventId: expect.any(String),
+                        commandId: command.commandId,
+                        deviceId: 'led-main',
+                        source: 'backend',
+                    }),
+                    expect.objectContaining({
+                        event: 'command_handled',
+                        eventType: 'command.dispatched',
+                        eventId: expect.any(String),
+                        commandId: command.commandId,
+                        deviceId: 'led-main',
+                        source: 'backend',
+                    }),
+                    expect.objectContaining({
+                        event: 'command_handled',
+                        eventType: 'command.timed_out',
+                        eventId: expect.any(String),
+                        commandId: command.commandId,
+                        deviceId: 'led-main',
+                        source: 'backend',
+                        reason: 'confirmation_not_received',
+                    }),
+                ]),
+            );
+
+            for (const log of logs) {
+                expect(log).not.toHaveProperty('payload');
+                expect(log).not.toHaveProperty('request');
+                expect(log).not.toHaveProperty('err');
+                expect(log).not.toHaveProperty('error');
+            }
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('correlates a storage rollback with the event that triggered it', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const storage = createScriptedStorage();
+        const logs: Record<string, unknown>[] = [];
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            storage: storage.port,
+            generateEventId: createEventIdGenerator(),
+            operationalLog(entry) {
+                logs.push(entry);
+            },
+        });
+
+        try {
+            runtime.start();
+            logs.length = 0;
+            storage.failNext(
+                'confirmed_rolled_back',
+                new StorageAvailabilityError('database busy', undefined),
+            );
+
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+            expect(logs).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        event: 'storage_failure',
+                        eventId: expect.any(String),
+                        deviceId: 'temp-desk',
+                        source: 'simulator-adapter',
+                        reason: 'storage_write_failed',
+                        storageFailureKind: 'availability',
+                    }),
+                ]),
+            );
+            expect(logs).not.toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ payload: expect.anything() }),
+                    expect.objectContaining({ err: expect.anything() }),
+                    expect.objectContaining({ error: expect.anything() }),
+                ]),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('correlates rejected, uncertain and derived command outcomes', async () => {
+        const rejectedLogs: Record<string, unknown>[] = [];
+        const rejectedRuntime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-08-05T10:00:00Z'),
+            generateEventId: createEventIdGenerator(),
+            ledScenario: 'reject_command',
+            operationalLog(entry) {
+                rejectedLogs.push(entry);
+            },
+        });
+
+        try {
+            rejectedRuntime.start();
+            rejectedLogs.length = 0;
+            const command = rejectedRuntime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            await flushCommandDispatch();
+
+            expect(rejectedLogs).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        event: 'command_handled',
+                        eventType: 'command.failed',
+                        eventId: expect.any(String),
+                        commandId: command.commandId,
+                        deviceId: 'led-main',
+                        source: 'simulator-adapter',
+                        reason: 'command_rejected',
+                    }),
+                ]),
+            );
+        } finally {
+            rejectedRuntime.stop();
+        }
+
+        const confirmedLogs: Record<string, unknown>[] = [];
+        const confirmedScheduler = createLedScheduler();
+        const confirmedClock = createMutableClock('2026-08-05T10:00:00Z');
+        const confirmedRuntime = createTemperatureRoomRuntime({
+            clock: confirmedClock,
+            generateEventId: createEventIdGenerator(),
+            ledScenario: 'confirm_delayed',
+            ledScenarioScheduler: confirmedScheduler,
+            operationalLog(entry) {
+                confirmedLogs.push(entry);
+            },
+        });
+
+        try {
+            confirmedRuntime.start();
+            confirmedLogs.length = 0;
+            const command = confirmedRuntime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            await flushCommandDispatch();
+            confirmedClock.advanceBy(2_000);
+            confirmedScheduler.runAll();
+
+            expect(confirmedLogs).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        event: 'command_handled',
+                        eventType: 'command.confirmed',
+                        eventId: expect.any(String),
+                        commandId: command.commandId,
+                        deviceId: 'led-main',
+                        source: 'backend',
+                    }),
+                ]),
+            );
+        } finally {
+            confirmedRuntime.stop();
+        }
+
+        const storage = createScriptedStorage();
+        const uncertainLogs: Record<string, unknown>[] = [];
+        const uncertainCommandId = 'cmd-uncertain';
+        const nativeCommand = {
+            messageType: 'led.command.set_power',
+            commandId: uncertainCommandId,
+            deviceId: 'led-main-native',
+            commandType: 'set.power',
+            requestedState: { power: 'on' },
+        } as const;
+        const acceptedAt = '2026-08-05T10:00:00.000Z';
+        storage.port.upsertSimulatorCommandReceipt({
+            source: 'simulator-led',
+            commandId: uncertainCommandId,
+            updatedAt: acceptedAt,
+            terminalAt: acceptedAt,
+            receipt: {
+                version: 1,
+                source: 'simulator-led',
+                commandId: uncertainCommandId,
+                fingerprint: fingerprintLedSetPowerCommand(nativeCommand),
+                command: nativeCommand,
+                scenario: 'omit_confirmation',
+                acceptedAt,
+                outcomes: [],
+                terminalAt: acceptedAt,
+            },
+        });
+        const uncertainRuntime = createTemperatureRoomRuntime({
+            clock: createMutableClock(acceptedAt),
+            storage: storage.port,
+            generateCommandId: () => uncertainCommandId,
+            generateEventId: createEventIdGenerator(),
+            operationalLog(entry) {
+                uncertainLogs.push(entry);
+            },
+        });
+
+        try {
+            uncertainRuntime.start();
+            uncertainLogs.length = 0;
+            storage.failReceiptTransactionContaining(
+                'getSimulatorCommandReceipt',
+                'confirmed_rolled_back',
+                new StorageAvailabilityError('receipt inspection unavailable', undefined),
+            );
+            const command = uncertainRuntime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            await flushCommandDispatch();
+
+            expect(uncertainLogs).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        event: 'command_handled',
+                        eventType: 'command.delivery_uncertain',
+                        eventId: expect.any(String),
+                        commandId: command.commandId,
+                        deviceId: 'led-main',
+                        source: 'backend',
+                        reason: 'receipt_prior_acceptance_unknown',
+                    }),
+                ]),
+            );
+        } finally {
+            uncertainRuntime.stop();
         }
     });
 

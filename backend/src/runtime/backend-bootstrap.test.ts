@@ -114,11 +114,20 @@ describe('backend bootstrap logging', () => {
         expect(failures).toHaveLength(1);
         expect(capture.records()).toEqual([
             expect.objectContaining({
+                event: 'storage_failure',
+                source: 'backend',
+                reason: 'storage_fatal_error',
+                storageFailureKind: 'fatal',
+                level: 30,
+            }),
+            expect.objectContaining({
                 event: 'backend_startup_failed',
                 source: 'backend',
+                reason: 'backend_startup_failed',
                 level: 60,
             }),
         ]);
+        expect(capture.records()[1]).not.toHaveProperty('err');
         expect(capture.records()).not.toContainEqual(
             expect.objectContaining({ event: 'storage_migration_check_completed' }),
         );

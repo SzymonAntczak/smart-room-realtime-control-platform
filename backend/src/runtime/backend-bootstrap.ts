@@ -117,7 +117,11 @@ export async function runBackend({
     } catch (error) {
         const failureLogger = resolvedLogger ?? createBackendLogger('info');
 
-        failureLogger.fatal({ event: 'backend_startup_failed', source: 'backend', err: error });
+        failureLogger.fatal({
+            event: 'backend_startup_failed',
+            source: 'backend',
+            reason: 'backend_startup_failed',
+        });
 
         if (onStartupFailure) {
             onStartupFailure(error);
