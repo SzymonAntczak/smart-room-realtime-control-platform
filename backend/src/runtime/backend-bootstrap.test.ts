@@ -19,6 +19,50 @@ afterEach(() => {
 });
 
 describe('backend bootstrap logging', () => {
+    it('redacts credential headers from Pino request, response and error records', () => {
+        const capture = createLogCapture('info');
+        const requestCredentials = credentialHeaders('request');
+        const responseCredentials = credentialHeaders('response');
+        const errorCredentials = credentialHeaders('error');
+        const nestedRequestCredentials = credentialHeaders('nested-request');
+        const error = Object.assign(new Error('representative failure'), {
+            headers: errorCredentials,
+            request: { headers: nestedRequestCredentials },
+        });
+
+        capture.logger.info({
+            req: { headers: requestCredentials },
+            res: {
+                headers: {
+                    ...responseCredentials,
+                    'content-type': 'application/json',
+                },
+            },
+        });
+        capture.logger.error({ err: error });
+
+        expect(capture.records()).toEqual([
+            expect.objectContaining({
+                req: expect.objectContaining({ headers: redactedHeaders(requestCredentials) }),
+                res: expect.objectContaining({
+                    headers: expect.objectContaining({
+                        ...redactedHeaders(responseCredentials),
+                        'content-type': 'application/json',
+                    }),
+                }),
+            }),
+            expect.objectContaining({
+                err: expect.objectContaining({
+                    headers: redactedHeaders(errorCredentials),
+                    request: expect.objectContaining({
+                        headers: redactedHeaders(nestedRequestCredentials),
+                    }),
+                }),
+            }),
+        ]);
+        expect(capture.lines().join('')).not.toContain('credential-secret-');
+    });
+
     it('writes JSON startup, migration and Fastify request records at info', async () => {
         const capture = createLogCapture('info');
         const backend = await runBackend({
@@ -37,7 +81,11 @@ describe('backend bootstrap logging', () => {
                 return;
             }
 
-            const response = await backend.server.inject({ method: 'GET', url: '/room' });
+            const response = await backend.server.inject({
+                method: 'GET',
+                url: '/room',
+                headers: credentialHeaders('fastify-request'),
+            });
 
             expect(response.statusCode).toBe(200);
             expect(capture.records()).toEqual(
@@ -56,6 +104,7 @@ describe('backend bootstrap logging', () => {
                     expect.objectContaining({ res: expect.objectContaining({ statusCode: 200 }) }),
                 ]),
             );
+            expect(capture.lines().join('')).not.toContain('credential-secret-');
         } finally {
             await stopBackend(backend);
         }
@@ -184,6 +233,7 @@ describe('backend bootstrap logging', () => {
 
 function createLogCapture(logLevel: 'info' | 'warn' | 'silent'): {
     logger: Logger;
+    lines(): string[];
     records(): unknown[];
 } {
     const lines: string[] = [];
@@ -194,10 +244,30 @@ function createLogCapture(logLevel: 'info' | 'warn' | 'silent'): {
                 lines.push(line);
             },
         }),
+        lines() {
+            return lines;
+        },
         records() {
             return lines.map((line) => JSON.parse(line) as unknown);
         },
     };
+}
+
+function credentialHeaders(scenario: string): Record<string, string> {
+    return {
+        authorization: `credential-secret-${scenario}-authorization`,
+        'proxy-authorization': `credential-secret-${scenario}-proxy-authorization`,
+        cookie: `credential-secret-${scenario}-cookie`,
+        'set-cookie': `credential-secret-${scenario}-set-cookie`,
+        'x-api-key': `credential-secret-${scenario}-x-api-key`,
+    };
+}
+
+function redactedHeaders(headers: Record<string, string>): Record<string, '[Redacted]'> {
+    return Object.fromEntries(Object.keys(headers).map((header) => [header, '[Redacted]'])) as Record<
+        string,
+        '[Redacted]'
+    >;
 }
 
 async function stopBackend(backend: BackendInstance | undefined): Promise<void> {

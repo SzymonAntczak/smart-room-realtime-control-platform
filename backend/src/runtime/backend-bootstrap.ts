@@ -13,6 +13,28 @@ import {
 } from './temperature-room-runtime';
 
 const defaultPort = 4310;
+const credentialHeaderRedactionPaths = [
+    'req.headers.authorization',
+    'req.headers["proxy-authorization"]',
+    'req.headers.cookie',
+    'req.headers["set-cookie"]',
+    'req.headers["x-api-key"]',
+    'res.headers.authorization',
+    'res.headers["proxy-authorization"]',
+    'res.headers.cookie',
+    'res.headers["set-cookie"]',
+    'res.headers["x-api-key"]',
+    'err.headers.authorization',
+    'err.headers["proxy-authorization"]',
+    'err.headers.cookie',
+    'err.headers["set-cookie"]',
+    'err.headers["x-api-key"]',
+    'err.request.headers.authorization',
+    'err.request.headers["proxy-authorization"]',
+    'err.request.headers.cookie',
+    'err.request.headers["set-cookie"]',
+    'err.request.headers["x-api-key"]',
+] as const;
 
 export interface BackendInstance {
     logger: Logger;
@@ -36,7 +58,12 @@ export function createBackendLogger(
     logLevel: BackendLogLevel,
     destination?: DestinationStream,
 ): Logger {
-    return destination ? pino({ level: logLevel }, destination) : pino({ level: logLevel });
+    const options = {
+        level: logLevel,
+        redact: { paths: [...credentialHeaderRedactionPaths] },
+    };
+
+    return destination ? pino(options, destination) : pino(options);
 }
 
 export function createBackend({

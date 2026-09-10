@@ -73,8 +73,10 @@ process. Set `LOG_LEVEL` to one of `trace`, `debug`, `info`, `warn`, `error`,
 `fatal` or `silent`; it defaults to `info` when unset or blank. An unsupported
 value prevents backend startup before the runtime is initialized. The configured
 level applies to Fastify request logs and backend startup and storage-migration
-records. The root `npm run dev` launcher may prefix child-process output for its
-own terminal presentation.
+records. The `authorization`, `proxy-authorization`, `cookie`, `set-cookie` and
+`x-api-key` HTTP header fields are redacted as `[Redacted]` in operational logs.
+The root `npm run dev` launcher may prefix child-process output for its own
+terminal presentation.
 
 The in-memory event deduplicator can be configured at server startup with
 `DEDUPLICATION_RETENTION_MS` (default `600000`) and
