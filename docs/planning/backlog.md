@@ -270,7 +270,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       logs.
       Done when: focused log tests prove affected facts can be correlated.
 
-- [ ] Redact credentials from structured backend logs.
+- [x] Redact credentials from structured backend logs.
       Redact authentication and cookie fields in the Pino/Fastify configuration
       and test representative request/error payloads.
       Done when: logged output never exposes the configured secret fields.
