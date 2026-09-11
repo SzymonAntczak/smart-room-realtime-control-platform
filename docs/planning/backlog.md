@@ -295,7 +295,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       startup; a later degradation retains the last known pair.
       Done when: contract tests reject invalid watermark combinations.
 
-- [ ] Define shared command-admission and delivery-evidence contracts.
+- [x] Define shared command-admission and delivery-evidence contracts.
       Model pre-admission errors without command durability, admitted known-
       device rejections with both durability axes, and retryable 503
       `platform_recovering` with no lifecycle fact. Define HTTP durability as

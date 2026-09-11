@@ -310,7 +310,11 @@ describe('realtime schemas', () => {
                     activeCommands: [
                         {
                             ...update.payload.activeCommands[0],
-                            dispatchedAt: '2026-06-08T09:30:01+02:00',
+                            delivery: {
+                                status: 'handed_off',
+                                dispatchedAt: '2026-06-08T09:30:01+02:00',
+                                deadlineAt: '2026-06-08T09:31:00Z',
+                            },
                         },
                     ],
                 },
@@ -357,11 +361,17 @@ describe('realtime schemas', () => {
                             commandType: 'set.power',
                             status: 'failed',
                             requestedState: { power: 'on' },
-                            requestedAt: '2026-06-08T09:30:02Z',
-                            dispatchedAt: '2026-06-08T09:30:01Z',
-                            failedAt: '2026-06-08T09:30:03Z',
+                            requestedAt: '2026-06-08T09:30:00Z',
+                            delivery: {
+                                status: 'handed_off',
+                                dispatchedAt: '2026-06-08T09:30:01Z',
+                                deadlineAt: '2026-06-08T09:30:06Z',
+                            },
+                            failedAt: '2026-06-08T09:30:00.500Z',
                             reason: 'adapter_rejected',
                             message: 'The adapter rejected the command.',
+                            durability: 'durable',
+                            lifecycleDurability: 'durable',
                         },
                     ],
                 },
@@ -439,27 +449,85 @@ describe('realtime schemas', () => {
         expect(isRoomRealtimeServerMessage(snapshot)).toBe(false);
     });
 
-    it('requires dispatchedAt for a pending command', () => {
+    it('requires discriminated delivery evidence for a pending command', () => {
+        const pending = {
+            commandId: 'cmd-1',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            status: 'pending',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-06-08T09:30:00Z',
+            delivery: {
+                status: 'handed_off',
+                dispatchedAt: '2026-06-08T09:30:01Z',
+                deadlineAt: '2026-06-08T09:31:00Z',
+            },
+        } as const;
+        const snapshot = createSnapshotWithActiveCommands([pending]);
+        const handedOffPending = snapshot.payload.activeCommands[0] as Record<string, unknown>;
+
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
         expect(
             isRoomRealtimeServerMessage({
-                messageType: 'room.snapshot',
-                revision: 0,
-                sentAt: '2026-06-08T09:30:01Z',
+                ...snapshot,
                 payload: {
-                    roomName: 'Smart Room',
-                    updatedAt: '2026-06-08T09:30:00Z',
-                    devices: [],
+                    ...snapshot.payload,
+                    activeCommands: [{ ...handedOffPending, delivery: { status: 'handed_off' } }],
+                },
+            }),
+        ).toBe(false);
+        const uncertainSnapshot = {
+            ...snapshot,
+            payload: {
+                ...snapshot.payload,
+                activeCommands: [
+                    {
+                        ...handedOffPending,
+                        delivery: {
+                            status: 'uncertain',
+                            firstAttemptedAt: '2026-06-08T09:30:01Z',
+                            deadlineAt: '2026-06-08T09:31:00Z',
+                        },
+                    },
+                ],
+            },
+        };
+
+        expect(isRoomRealtimeServerMessage(uncertainSnapshot)).toBe(true);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...uncertainSnapshot,
+                payload: {
+                    ...uncertainSnapshot.payload,
                     activeCommands: [
                         {
-                            commandId: 'cmd-1',
-                            deviceId: 'led-main',
-                            commandType: 'set.power',
-                            status: 'pending',
-                            requestedState: { power: 'on' },
-                            requestedAt: '2026-06-08T09:30:00Z',
+                            ...uncertainSnapshot.payload.activeCommands[0],
+                            delivery: {
+                                status: 'uncertain',
+                                firstAttemptedAt: '2026-06-08T09:30:01Z',
+                                dispatchedAt: '2026-06-08T09:30:01Z',
+                                deadlineAt: '2026-06-08T09:31:00Z',
+                            },
                         },
                     ],
-                    recentCommands: [],
+                },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...uncertainSnapshot,
+                payload: {
+                    ...uncertainSnapshot.payload,
+                    activeCommands: [
+                        {
+                            ...uncertainSnapshot.payload.activeCommands[0],
+                            delivery: {
+                                status: 'uncertain',
+                                firstAttemptedAt: '2026-06-08T09:31:01Z',
+                                deadlineAt: '2026-06-08T09:31:00Z',
+                            },
+                        },
+                    ],
                 },
             }),
         ).toBe(false);
@@ -624,6 +692,17 @@ describe('realtime schemas', () => {
         snapshot.payload.recentCommands[0] = {
             ...snapshot.payload.recentCommands[0],
             delivery: {
+                status: 'uncertain',
+                firstAttemptedAt: '2026-06-08T09:30:01Z',
+                deadlineAt: '2026-06-08T09:31:00Z',
+            },
+            lifecycleDurability: 'volatile',
+        };
+        expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
+
+        snapshot.payload.recentCommands[0] = {
+            ...snapshot.payload.recentCommands[0],
+            delivery: {
                 status: 'handed_off',
                 dispatchedAt: '2026-06-08T09:30:00.500Z',
                 deadlineAt: '2026-06-08T09:31:00Z',
@@ -659,6 +738,48 @@ describe('realtime schemas', () => {
                 },
             }),
         ).toBe(false);
+    });
+
+    it('preserves uncertain delivery evidence in every eligible terminal command state', () => {
+        const delivery = {
+            status: 'uncertain',
+            firstAttemptedAt: '2026-06-08T09:30:01Z',
+            deadlineAt: '2026-06-08T09:31:00Z',
+        } as const;
+        const command = {
+            commandId: 'cmd-terminal',
+            deviceId: 'led-main',
+            commandType: 'set.power',
+            requestedState: { power: 'on' },
+            requestedAt: '2026-06-08T09:30:00Z',
+            delivery,
+            durability: 'durable',
+            lifecycleDurability: 'volatile',
+        } as const;
+        const terminalCommands = [
+            { ...command, status: 'confirmed', confirmedAt: '2026-06-08T09:30:02Z' },
+            {
+                ...command,
+                status: 'failed',
+                failedAt: '2026-06-08T09:30:02Z',
+                reason: 'adapter_rejected',
+                message: 'The adapter rejected the command.',
+            },
+            {
+                ...command,
+                status: 'timed_out',
+                timedOutAt: '2026-06-08T09:31:00Z',
+                reason: 'confirmation_not_received',
+            },
+        ];
+
+        for (const terminalCommand of terminalCommands) {
+            const snapshot = createSnapshotWithActiveCommands([]);
+            snapshot.payload.devices = [createLedDevice()];
+            snapshot.payload.recentCommands = [terminalCommand];
+
+            expect(isRoomRealtimeServerMessage(snapshot)).toBe(true);
+        }
     });
 
     it('requires command-ID ordering when terminal timestamps tie', () => {
@@ -767,7 +888,6 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
             ...candidate,
             durability: 'durable',
             lifecycleDurability: 'durable',
-            ...(candidate.status === 'pending' ? { deadlineAt: '2026-06-08T09:31:00Z' } : {}),
         };
     });
 
@@ -894,14 +1014,22 @@ describe('realtime command projections', () => {
             'pending',
             {
                 status: 'pending',
-                dispatchedAt: '2026-06-08T09:30:01Z',
+                delivery: {
+                    status: 'handed_off',
+                    dispatchedAt: '2026-06-08T09:30:01Z',
+                    deadlineAt: '2026-06-08T09:31:00Z',
+                },
             },
         ],
         [
             'confirmed',
             {
                 status: 'confirmed',
-                dispatchedAt: '2026-06-08T09:30:01Z',
+                delivery: {
+                    status: 'handed_off',
+                    dispatchedAt: '2026-06-08T09:30:01Z',
+                    deadlineAt: '2026-06-08T09:31:00Z',
+                },
                 confirmedAt: '2026-06-08T09:30:02Z',
             },
         ],
@@ -1002,9 +1130,6 @@ function createCommandUpdateForProjectionTest(command: Record<string, unknown>) 
                           ...command,
                           durability: 'durable',
                           lifecycleDurability: 'durable',
-                          ...(command.status === 'pending'
-                              ? { deadlineAt: '2026-06-08T09:31:00Z' }
-                              : {}),
                       },
                   ]
                 : [],

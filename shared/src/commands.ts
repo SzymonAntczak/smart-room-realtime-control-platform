@@ -1,8 +1,8 @@
-import { Type } from '@sinclair/typebox';
+import { type Static, Type } from '@sinclair/typebox';
 
 import type { PowerState } from './devices';
 import { type CommandDurability, commandDurabilitySchema } from './storage';
-import { nonEmptyStringSchema } from './validation';
+import { isoTimestampSchema, nonEmptyStringSchema } from './validation';
 
 export { durabilityValues } from './storage';
 export type Durability = CommandDurability;
@@ -46,9 +46,25 @@ export type PreAdmissionCommandErrorResponse =
           error: 'platform_recovering';
           retryable: true;
       });
-export type CommandDeliveryEvidence =
-    | { status: 'handed_off'; dispatchedAt: string; deadlineAt: string }
-    | { status: 'uncertain'; firstAttemptedAt: string; deadlineAt: string };
+export const commandDeliveryEvidenceSchema = Type.Union([
+    Type.Object(
+        {
+            status: Type.Literal('handed_off'),
+            dispatchedAt: isoTimestampSchema,
+            deadlineAt: isoTimestampSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            status: Type.Literal('uncertain'),
+            firstAttemptedAt: isoTimestampSchema,
+            deadlineAt: isoTimestampSchema,
+        },
+        { additionalProperties: false },
+    ),
+]);
+export type CommandDeliveryEvidence = Static<typeof commandDeliveryEvidenceSchema>;
 interface CommandProjectionBase {
     commandId: string;
     deviceId: string;

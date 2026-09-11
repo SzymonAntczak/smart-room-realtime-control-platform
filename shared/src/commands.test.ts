@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     acceptedCommandResponseSchema,
+    commandDeliveryEvidenceSchema,
     isRecentCommandsOrdered,
     preAdmissionCommandErrorResponseSchema,
     rejectedCommandResponseSchema,
@@ -39,63 +40,132 @@ describe('set.power HTTP contracts', () => {
         expect(isSchema(setPowerCommandRequestSchema, { ...request, confirmed: true })).toBe(false);
     });
 
-    it('distinguishes backend acceptance from rejection without a confirmation field', () => {
+    it('requires both durability axes on admitted outcomes without claiming confirmation', () => {
+        const accepted = {
+            commandId: 'cmd-accepted',
+            status: 'accepted',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
+        } as const;
+        const rejected = {
+            commandId: 'cmd-rejected',
+            status: 'rejected',
+            reason: 'command_already_active',
+            message: 'The device already has an active command.',
+            durability: 'volatile',
+            lifecycleDurability: 'volatile',
+        } as const;
+
+        expect(isSchema(acceptedCommandResponseSchema, accepted)).toBe(true);
+        expect(isSchema(rejectedCommandResponseSchema, rejected)).toBe(true);
+
+        for (const outcome of [accepted, rejected]) {
+            expect(
+                isSchema(
+                    outcome.status === 'accepted'
+                        ? acceptedCommandResponseSchema
+                        : rejectedCommandResponseSchema,
+                    { ...outcome, confirmedAt: '2026-08-14T10:00:01.000Z' },
+                ),
+            ).toBe(false);
+            expect(
+                isSchema(
+                    outcome.status === 'accepted'
+                        ? acceptedCommandResponseSchema
+                        : rejectedCommandResponseSchema,
+                    Object.fromEntries(
+                        Object.entries(outcome).filter(([field]) => field !== 'durability'),
+                    ),
+                ),
+            ).toBe(false);
+            expect(
+                isSchema(
+                    outcome.status === 'accepted'
+                        ? acceptedCommandResponseSchema
+                        : rejectedCommandResponseSchema,
+                    Object.fromEntries(
+                        Object.entries(outcome).filter(
+                            ([field]) => field !== 'lifecycleDurability',
+                        ),
+                    ),
+                ),
+            ).toBe(false);
+        }
+    });
+
+    it('keeps pre-admission errors outside command lifecycle and durability', () => {
+        const outcomes = [
+            { error: 'unknown_device', message: 'Unknown device.' },
+            {
+                error: 'platform_recovering',
+                message: 'The platform is recovering.',
+                retryable: true,
+            },
+        ] as const;
+
+        for (const outcome of outcomes) {
+            expect(isSchema(preAdmissionCommandErrorResponseSchema, outcome)).toBe(true);
+
+            for (const forbiddenField of [
+                'commandId',
+                'status',
+                'durability',
+                'lifecycleDurability',
+            ]) {
+                expect(
+                    isSchema(preAdmissionCommandErrorResponseSchema, {
+                        ...outcome,
+                        [forbiddenField]: 'must-not-exist',
+                    }),
+                ).toBe(false);
+            }
+        }
+
         expect(
-            isSchema(acceptedCommandResponseSchema, {
-                commandId: 'cmd-1',
-                status: 'accepted',
-                durability: 'durable',
-                lifecycleDurability: 'durable',
-            }),
-        ).toBe(true);
-        expect(
-            isSchema(acceptedCommandResponseSchema, {
-                commandId: 'cmd-1',
-                status: 'confirmed',
-            }),
-        ).toBe(false);
-        expect(
-            isSchema(rejectedCommandResponseSchema, {
-                commandId: 'cmd-2',
-                status: 'rejected',
-                reason: 'command_already_active',
-                message: 'The device already has an active command.',
-                durability: 'volatile',
-                lifecycleDurability: 'volatile',
-            }),
-        ).toBe(true);
-        expect(
-            isSchema(rejectedCommandResponseSchema, {
-                status: 'rejected',
-                reason: 'command_already_active',
-                message: 'The device already has an active command.',
+            isSchema(preAdmissionCommandErrorResponseSchema, {
+                error: 'unknown_device',
+                message: 'Unknown device.',
+                retryable: true,
             }),
         ).toBe(false);
         expect(
             isSchema(preAdmissionCommandErrorResponseSchema, {
                 error: 'platform_recovering',
                 message: 'The platform is recovering.',
-                retryable: true,
             }),
-        ).toBe(true);
+        ).toBe(false);
+    });
+
+    it('distinguishes definite and uncertain delivery evidence', () => {
+        const handedOff = {
+            status: 'handed_off',
+            dispatchedAt: '2026-08-14T10:00:01.000Z',
+            deadlineAt: '2026-08-14T10:00:06.000Z',
+        } as const;
+        const uncertain = {
+            status: 'uncertain',
+            firstAttemptedAt: '2026-08-14T10:00:01.000Z',
+            deadlineAt: '2026-08-14T10:00:06.000Z',
+        } as const;
+
+        expect(isSchema(commandDeliveryEvidenceSchema, handedOff)).toBe(true);
+        expect(isSchema(commandDeliveryEvidenceSchema, uncertain)).toBe(true);
         expect(
-            isSchema(preAdmissionCommandErrorResponseSchema, {
-                error: 'unknown_device',
-                message: 'Unknown device.',
-                commandId: 'cmd-should-not-exist',
+            isSchema(commandDeliveryEvidenceSchema, { ...handedOff, firstAttemptedAt: 'x' }),
+        ).toBe(false);
+        expect(isSchema(commandDeliveryEvidenceSchema, { ...uncertain, dispatchedAt: 'x' })).toBe(
+            false,
+        );
+        expect(
+            isSchema(commandDeliveryEvidenceSchema, {
+                status: 'handed_off',
+                deadlineAt: handedOff.deadlineAt,
             }),
         ).toBe(false);
         expect(
-            isSchema(preAdmissionCommandErrorResponseSchema, {
-                error: 'unknown_device',
-                message: 'Unknown device.',
-                retryable: true,
-            }),
-        ).toBe(false);
-        expect(
-            isSchema(preAdmissionCommandErrorResponseSchema, {
-                error: 'platform_recovering',
-                message: 'The platform is recovering.',
+            isSchema(commandDeliveryEvidenceSchema, {
+                status: 'uncertain',
+                firstAttemptedAt: uncertain.firstAttemptedAt,
             }),
         ).toBe(false);
     });

@@ -1,7 +1,7 @@
 import { type Static, Type } from '@sinclair/typebox';
 
 import type { ActiveCommandProjection, TerminalCommandProjection } from './commands';
-import { powerStateProjectionSchema } from './commands';
+import { commandDeliveryEvidenceSchema, powerStateProjectionSchema } from './commands';
 import {
     type CommandAvailability,
     commandAvailabilityPolicies,
@@ -128,24 +128,6 @@ const commandProjectionBaseShape = {
     durability: commandDurabilitySchema,
     lifecycleDurability: commandDurabilitySchema,
 };
-const commandDeliveryEvidenceSchema = Type.Union([
-    Type.Object(
-        {
-            status: Type.Literal('handed_off'),
-            dispatchedAt: isoTimestampSchema,
-            deadlineAt: isoTimestampSchema,
-        },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        {
-            status: Type.Literal('uncertain'),
-            firstAttemptedAt: isoTimestampSchema,
-            deadlineAt: isoTimestampSchema,
-        },
-        { additionalProperties: false },
-    ),
-]);
 export const activeCommandProjectionSchema = Type.Union([
     Type.Object(
         { ...commandProjectionBaseShape, status: Type.Literal('accepted') },

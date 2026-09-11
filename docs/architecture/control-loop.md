@@ -167,7 +167,11 @@ separate from the future fact-oriented event-history slice. The full rule is in
 The control loop should make time visible:
 
 - `requestedAt` records when the user or automation asked for the change
-- `dispatchedAt` records when the backend sent the command
+- `delivery.dispatchedAt` records when the backend definitely handed the command
+  to an adapter; uncertain delivery instead records `delivery.firstAttemptedAt`
+  without claiming handoff
+- `delivery.deadlineAt` records the fixed confirmation deadline from the actual
+  handoff or first uncertain attempt
 - `confirmedAt`, `failedAt` or `timedOutAt` closes the command lifecycle
 - an observed state with applicable freshness should include `lastObservedAt`
 - availability, stale observation data and a command outcome should remain

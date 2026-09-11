@@ -149,7 +149,11 @@ command projections. A device links to its one active command by
             "status": "pending",
             "requestedState": { "power": "on" },
             "requestedAt": "2026-05-21T07:10:00Z",
-            "dispatchedAt": "2026-05-21T07:10:00Z"
+            "delivery": {
+                "status": "handed_off",
+                "dispatchedAt": "2026-05-21T07:10:00Z",
+                "deadlineAt": "2026-05-21T07:10:05Z"
+            }
         }
     ],
     "recentCommands": []
@@ -200,7 +204,8 @@ User clicks: turn LED on
 - reportedState.power remains off
 
 Backend dispatches the command
-- activeCommands contains the pending command with dispatchedAt
+- activeCommands contains the pending command with `delivery.status: handed_off`,
+  `dispatchedAt` and `deadlineAt`
 
 Device reports: LED on
 - reportedState.power: on

@@ -2,6 +2,7 @@ import { type Static, Type } from '@sinclair/typebox';
 
 import {
     type ActiveCommandProjection,
+    type CommandDeliveryEvidence,
     isRecentCommandsOrdered,
     type TerminalCommandProjection,
 } from './commands';
@@ -351,12 +352,7 @@ function hasCanonicalCommandTimestamps(
     );
 }
 
-function hasCanonicalDelivery(
-    delivery:
-        | { status: 'handed_off'; dispatchedAt: string; deadlineAt: string }
-        | { status: 'uncertain'; firstAttemptedAt: string; deadlineAt: string },
-    requestedAt: string,
-): boolean {
+function hasCanonicalDelivery(delivery: CommandDeliveryEvidence, requestedAt: string): boolean {
     const origin = deliveryOrigin(delivery);
 
     return (
@@ -366,11 +362,7 @@ function hasCanonicalDelivery(
     );
 }
 
-function deliveryOrigin(
-    delivery:
-        | { status: 'handed_off'; dispatchedAt: string; deadlineAt: string }
-        | { status: 'uncertain'; firstAttemptedAt: string; deadlineAt: string },
-): string {
+function deliveryOrigin(delivery: CommandDeliveryEvidence): string {
     return delivery.status === 'handed_off' ? delivery.dispatchedAt : delivery.firstAttemptedAt;
 }
 
