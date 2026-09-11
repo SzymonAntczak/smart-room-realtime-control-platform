@@ -308,7 +308,10 @@ export const roomStorageMigrations: readonly Migration[] = [
                 .get() as { history_generation_id?: unknown } | undefined;
 
             if (!metadata || typeof metadata.history_generation_id !== 'string') {
-                throw new StorageMigrationError('Storage metadata has no history generation.', metadata);
+                throw new StorageMigrationError(
+                    'Storage metadata has no history generation.',
+                    metadata,
+                );
             }
 
             applyRecordIdentityMigration(database, metadata.history_generation_id);

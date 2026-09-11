@@ -11,10 +11,7 @@ import {
     deviceStateReportedPayloadSchema,
     platformEventSources,
 } from './events';
-import {
-    recordIdSchema,
-    storageSequenceSchema,
-} from './storage';
+import { recordIdSchema, storageSequenceSchema } from './storage';
 import { canonicalUtcTimestampSchema, nonEmptyStringSchema } from './validation';
 
 export const storageGapBoundaryBases = [

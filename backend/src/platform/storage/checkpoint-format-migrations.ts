@@ -29,14 +29,14 @@ export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): v
         checkpoint.checkpointVersion === latestCheckpointVersion
             ? checkpoint
             : checkpoint.checkpointVersion === 3
-            ? migrateVersionThreeCheckpoint(checkpoint)
-            : checkpoint.checkpointVersion === 2
-              ? migrateVersionTwoCheckpoint(checkpoint)
-              : checkpoint.checkpointVersion === 1
-                ? migrateVersionOneCheckpoint(checkpoint)
-                : 'checkpointVersion' in checkpoint
-                  ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
-                  : migrateVersionZeroCheckpoint(checkpoint);
+              ? migrateVersionThreeCheckpoint(checkpoint)
+              : checkpoint.checkpointVersion === 2
+                ? migrateVersionTwoCheckpoint(checkpoint)
+                : checkpoint.checkpointVersion === 1
+                  ? migrateVersionOneCheckpoint(checkpoint)
+                  : 'checkpointVersion' in checkpoint
+                    ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
+                    : migrateVersionZeroCheckpoint(checkpoint);
     const migrated = rewriteLegacyRecentEventRecordIds(migratedBeforeRecordIdentity);
 
     assertMigratedCheckpointIsValid(migrated);
@@ -56,7 +56,9 @@ export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): v
     }
 }
 
-function rewriteLegacyRecentEventRecordIds(checkpoint: Record<string, unknown>): Record<string, unknown> {
+function rewriteLegacyRecentEventRecordIds(
+    checkpoint: Record<string, unknown>,
+): Record<string, unknown> {
     const recentEvents = array(checkpoint.recentEvents, 'checkpoint recent events');
 
     return {

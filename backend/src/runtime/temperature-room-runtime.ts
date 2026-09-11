@@ -1043,12 +1043,7 @@ export function createTemperatureRoomRuntime({
             }
 
             if (outcome.status === 'confirmed_rolled_back') {
-                enterStorageDegraded(
-                    outcome.error,
-                    receivedAt,
-                    false,
-                    correlationForEvent(event),
-                );
+                enterStorageDegraded(outcome.error, receivedAt, false, correlationForEvent(event));
                 platformBeforeOutcome = true;
                 result = processor.commitPrepared(prepared, 'volatile');
                 rememberVolatileIdentity(prepared, receivedAt);
@@ -1143,10 +1138,7 @@ export function createTemperatureRoomRuntime({
         }
     }
 
-    function correlationForEvent(
-        event: PlatformEvent,
-        reason?: string,
-    ): OperationalLogCorrelation {
+    function correlationForEvent(event: PlatformEvent, reason?: string): OperationalLogCorrelation {
         return {
             eventId: event.eventId,
             ...(event.commandId === undefined ? {} : { commandId: event.commandId }),
@@ -1206,11 +1198,19 @@ export function createTemperatureRoomRuntime({
         });
 
         if (outcome.status === 'indeterminate') {
-            terminateForStorageOutcome(outcome.error, 'unknown', correlationForOutboxMutation(mutation));
+            terminateForStorageOutcome(
+                outcome.error,
+                'unknown',
+                correlationForOutboxMutation(mutation),
+            );
         }
 
         if (outcome.status === 'confirmed_rolled_back' && isFatalStorageError(outcome.error)) {
-            terminateForStorageOutcome(outcome.error, 'fatal', correlationForOutboxMutation(mutation));
+            terminateForStorageOutcome(
+                outcome.error,
+                'fatal',
+                correlationForOutboxMutation(mutation),
+            );
         }
 
         if (outcome.status === 'confirmed_rolled_back') {

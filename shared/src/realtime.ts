@@ -6,10 +6,7 @@ import {
     type TerminalCommandProjection,
 } from './commands';
 import type { RecentEventProjection } from './history';
-import {
-    isRecentEventsOrdered,
-    recentEventsDeltaSchema,
-} from './history';
+import { isRecentEventsOrdered, recentEventsDeltaSchema } from './history';
 import type { DeviceProjection, PlatformStorageProjection } from './projections';
 import {
     activeCommandProjectionSchema,

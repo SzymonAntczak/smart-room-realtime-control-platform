@@ -1,10 +1,7 @@
 import { Type } from '@sinclair/typebox';
 
 import type { PowerState } from './devices';
-import {
-    type CommandDurability,
-    commandDurabilitySchema,
-} from './storage';
+import { type CommandDurability, commandDurabilitySchema } from './storage';
 import { nonEmptyStringSchema } from './validation';
 
 export { durabilityValues } from './storage';
