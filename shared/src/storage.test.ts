@@ -19,7 +19,11 @@ describe('storage identity contracts', () => {
     });
 
     it('keeps record, command and evidence durability in one closed vocabulary', () => {
-        for (const schema of [recordDurabilitySchema, commandDurabilitySchema, evidenceDurabilitySchema]) {
+        for (const schema of [
+            recordDurabilitySchema,
+            commandDurabilitySchema,
+            evidenceDurabilitySchema,
+        ]) {
             expect(isSchema(schema, 'durable')).toBe(true);
             expect(isSchema(schema, 'volatile')).toBe(true);
             expect(isSchema(schema, 'unknown')).toBe(false);
@@ -39,11 +43,17 @@ describe('storage identity contracts', () => {
         };
 
         expect(isSchema(recentEventProjectionSchema, durable)).toBe(true);
-        expect(isSchema(recentEventProjectionSchema, { ...durable, storageSequence: 0 })).toBe(false);
-        expect(isSchema(recentEventProjectionSchema, { ...durable, durability: 'volatile' })).toBe(false);
+        expect(isSchema(recentEventProjectionSchema, { ...durable, storageSequence: 0 })).toBe(
+            false,
+        );
+        expect(isSchema(recentEventProjectionSchema, { ...durable, durability: 'volatile' })).toBe(
+            false,
+        );
         const volatile = Object.fromEntries(
             Object.entries(durable).filter(([key]) => key !== 'storageSequence'),
         );
-        expect(isSchema(recentEventProjectionSchema, { ...volatile, durability: 'volatile' })).toBe(true);
+        expect(isSchema(recentEventProjectionSchema, { ...volatile, durability: 'volatile' })).toBe(
+            true,
+        );
     });
 });

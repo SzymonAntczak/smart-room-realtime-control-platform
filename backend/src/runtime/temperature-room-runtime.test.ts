@@ -724,11 +724,20 @@ describe('createTemperatureRoomRuntime', () => {
             expect(recoveryTimer.intervals).toEqual([5_000]);
 
             clock.advanceBy(5_000);
+            const recoveryMetadata = recoveredStorage.port.getMetadata();
             recoveryTimer.runLatest();
 
             expect(snapshots.map((snapshot) => snapshot.platform.storage.status)).toContain(
                 'recovering',
             );
+            expect(
+                snapshots.find((snapshot) => snapshot.platform.storage.status === 'recovering')
+                    ?.platform.storage,
+            ).toMatchObject({
+                status: 'recovering',
+                historyGenerationId: recoveryMetadata.historyGenerationId,
+                storedThroughSequence: recoveryMetadata.lastStorageSequence,
+            });
             expect(runtime.getRoomSnapshot().platform.storage.status).toBe('available');
             expect(recoveredStorage.significantFacts).toMatchObject([
                 {
@@ -899,6 +908,11 @@ describe('createTemperatureRoomRuntime', () => {
             expect(
                 batches.slice(-2).map((batch) => batch.snapshot.platform.storage.status),
             ).toEqual(['recovering', 'degraded']);
+            expect(batches.at(-2)?.snapshot.platform.storage).toMatchObject({
+                status: 'recovering',
+                historyGenerationId: null,
+                storedThroughSequence: null,
+            });
         } finally {
             runtime.stop();
         }
@@ -1589,6 +1603,8 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.start();
             snapshots.length = 0;
             batches.length = 0;
+            const initialStorageChangedAt = runtime.getRoomSnapshot().platform.storage.changedAt;
+            const initialStorageSequence = storage.port.getMetadata().lastStorageSequence;
             const telemetryCount = storage.telemetrySamples.length;
             const identityCount = storage.identities.length;
             const previousState = device(runtime, 'temp-desk')?.reportedState;
@@ -1614,12 +1630,30 @@ describe('createTemperatureRoomRuntime', () => {
             expect(inspectedBeforeCommit).toBe(true);
             expect(storage.telemetrySamples).toHaveLength(telemetryCount + 1);
             expect(storage.identities).toHaveLength(identityCount + 1);
+            expect(storage.port.getMetadata().lastStorageSequence).toBeGreaterThan(
+                initialStorageSequence,
+            );
             expect(snapshots).toHaveLength(1);
             expect(batches).toHaveLength(1);
             expect(batches[0]?.deltas.map((delta) => delta.messageType)).toEqual([
                 'device.updated',
                 'platform.updated',
             ]);
+            expect(runtime.getRoomSnapshot().platform.storage).toMatchObject({
+                status: 'available',
+                changedAt: initialStorageChangedAt,
+                storedThroughSequence: storage.port.getMetadata().lastStorageSequence,
+            });
+            expect(
+                batches[0]?.deltas.find((delta) => delta.messageType === 'platform.updated'),
+            ).toMatchObject({
+                payload: {
+                    storage: {
+                        changedAt: initialStorageChangedAt,
+                        storedThroughSequence: storage.port.getMetadata().lastStorageSequence,
+                    },
+                },
+            });
             expect(device(runtime, 'temp-desk')).toMatchObject({
                 reportedState: { temperature: 22.2, temperatureUnit: 'celsius' },
                 observationStatus: { temperature: { durability: 'durable' } },
@@ -1650,6 +1684,7 @@ describe('createTemperatureRoomRuntime', () => {
             const telemetryCount = storage.telemetrySamples.length;
             const identityCount = storage.identities.length;
             const checkpoint = storage.latestCheckpoint;
+            const storageBeforeFailure = runtime.getRoomSnapshot().platform.storage;
             storage.failNext(
                 'confirmed_rolled_back',
                 new StorageAvailabilityError('database is busy', undefined),
@@ -1663,7 +1698,14 @@ describe('createTemperatureRoomRuntime', () => {
                 'platform.updated',
                 'device.updated',
             ]);
-            expect(snapshots[0]?.platform.storage.status).toBe('degraded');
+            expect(snapshots[0]?.platform.storage).toMatchObject({
+                status: 'degraded',
+                historyGenerationId: storageBeforeFailure.historyGenerationId,
+                storedThroughSequence: storageBeforeFailure.storedThroughSequence,
+            });
+            expect(snapshots[0]?.platform.storage.changedAt).not.toBe(
+                storageBeforeFailure.changedAt,
+            );
             expect(
                 snapshots[0]?.devices.find((candidate) => candidate.deviceId === 'temp-desk'),
             ).toMatchObject({

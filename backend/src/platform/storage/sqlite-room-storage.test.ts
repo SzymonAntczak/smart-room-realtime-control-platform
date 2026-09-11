@@ -405,7 +405,9 @@ describe('SQLite room storage', () => {
                 '2026-08-01T10:00:00.000Z',
                 '2026-09-01T10:00:00.000Z',
             );
-        database.prepare('UPDATE storage_metadata SET last_storage_sequence = 2 WHERE id = 1').run();
+        database
+            .prepare('UPDATE storage_metadata SET last_storage_sequence = 2 WHERE id = 1')
+            .run();
         database
             .prepare(
                 `INSERT INTO latest_room_projection (id, updated_at, projection_json)
@@ -462,10 +464,16 @@ describe('SQLite room storage', () => {
 
         const migrated = new DatabaseSync(databasePath, { readOnly: true });
         expect(
-            migrated.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'significant_facts'").get(),
+            migrated
+                .prepare(
+                    "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'significant_facts'",
+                )
+                .get(),
         ).toEqual(
             expect.objectContaining({
-                sql: expect.stringMatching(/primary key \(history_generation_id, storage_sequence\)/i),
+                sql: expect.stringMatching(
+                    /primary key \(history_generation_id, storage_sequence\)/i,
+                ),
             }),
         );
         expect(

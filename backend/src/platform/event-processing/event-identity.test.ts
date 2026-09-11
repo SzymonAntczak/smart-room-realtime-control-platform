@@ -34,7 +34,9 @@ describe('event record identity', () => {
     });
 
     it('gives platform records the same versioned ID family while separating operations', () => {
-        expect(platformRecordId('storage.gap.recorded', 'gap-1')).toMatch(/^rec:v1:sha256:[a-f0-9]{64}$/);
+        expect(platformRecordId('storage.gap.recorded', 'gap-1')).toMatch(
+            /^rec:v1:sha256:[a-f0-9]{64}$/,
+        );
         expect(platformRecordId('storage.gap.recorded', 'gap-1')).toBe(
             platformRecordId('storage.gap.recorded', 'gap-1'),
         );

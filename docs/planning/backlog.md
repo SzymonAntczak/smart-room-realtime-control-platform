@@ -287,7 +287,7 @@ explainable operation without full event sourcing or a new MQTT runtime.
       former physical row is retired.
       Done when: shared schemas express the complete identity/durability model.
 
-- [ ] Define storage-watermark nullability and update semantics.
+- [x] Define storage-watermark nullability and update semantics.
       Specify `storedThroughSequence: 0` for an empty store and keep storage
       `changedAt` stable across watermark-only changes. Permit
       `historyGenerationId: null` and `storedThroughSequence: null` only as a

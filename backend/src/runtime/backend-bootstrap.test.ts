@@ -264,10 +264,9 @@ function credentialHeaders(scenario: string): Record<string, string> {
 }
 
 function redactedHeaders(headers: Record<string, string>): Record<string, '[Redacted]'> {
-    return Object.fromEntries(Object.keys(headers).map((header) => [header, '[Redacted]'])) as Record<
-        string,
-        '[Redacted]'
-    >;
+    return Object.fromEntries(
+        Object.keys(headers).map((header) => [header, '[Redacted]']),
+    ) as Record<string, '[Redacted]'>;
 }
 
 async function stopBackend(backend: BackendInstance | undefined): Promise<void> {

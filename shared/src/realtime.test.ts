@@ -5,6 +5,113 @@ import { isRecentEventsOrdered } from './history';
 import { isRoomRealtimeServerMessage, isRoomSnapshotProjection } from './realtime';
 
 describe('realtime schemas', () => {
+    it('accepts valid storage watermark pairs in snapshots and platform updates', () => {
+        const validStorageStates = [
+            availableStorage(),
+            {
+                status: 'degraded',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                reason: 'storage_write_failed',
+                historyGenerationId: null,
+                storedThroughSequence: null,
+            },
+            {
+                status: 'recovering',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                reason: 'storage_recovering',
+                historyGenerationId: null,
+                storedThroughSequence: null,
+            },
+            {
+                status: 'degraded',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                reason: 'storage_write_failed',
+                historyGenerationId: 'generation-known',
+                storedThroughSequence: 4,
+            },
+            {
+                status: 'recovering',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                reason: 'storage_recovering',
+                historyGenerationId: 'generation-known',
+                storedThroughSequence: 0,
+            },
+        ];
+
+        for (const storage of validStorageStates) {
+            expect(isRoomSnapshotProjection(createSnapshotWithStorage(storage))).toBe(true);
+            expect(isRoomRealtimeServerMessage(createPlatformUpdatedMessage(storage))).toBe(true);
+        }
+    });
+
+    it('rejects invalid storage watermark pairs in snapshots and platform updates', () => {
+        const invalidStorageStates = [
+            {
+                status: 'available',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                historyGenerationId: null,
+                storedThroughSequence: null,
+            },
+            {
+                status: 'available',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                historyGenerationId: 'generation-known',
+                storedThroughSequence: null,
+            },
+            {
+                status: 'available',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                historyGenerationId: null,
+                storedThroughSequence: 0,
+            },
+            {
+                status: 'degraded',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                reason: 'storage_write_failed',
+                historyGenerationId: 'generation-known',
+                storedThroughSequence: null,
+            },
+            {
+                status: 'degraded',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                reason: 'storage_write_failed',
+                historyGenerationId: null,
+                storedThroughSequence: 0,
+            },
+            {
+                status: 'recovering',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                reason: 'storage_recovering',
+                historyGenerationId: 'generation-known',
+                storedThroughSequence: null,
+            },
+            {
+                status: 'recovering',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                reason: 'storage_recovering',
+                historyGenerationId: null,
+                storedThroughSequence: 0,
+            },
+            {
+                status: 'available',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                historyGenerationId: 'generation-known',
+                storedThroughSequence: -1,
+            },
+            {
+                status: 'available',
+                changedAt: '2026-09-10T10:00:00.000Z',
+                historyGenerationId: '',
+                storedThroughSequence: 0,
+            },
+        ];
+
+        for (const storage of invalidStorageStates) {
+            expect(isRoomSnapshotProjection(createSnapshotWithStorage(storage))).toBe(false);
+            expect(isRoomRealtimeServerMessage(createPlatformUpdatedMessage(storage))).toBe(false);
+        }
+    });
+
     it('accepts an ordered multi-record platform delta and rejects empty, duplicate or legacy IDs', () => {
         const later = createStorageGapRecord('b');
         const earlier = createStorageGapRecord('a');
@@ -25,7 +132,12 @@ describe('realtime schemas', () => {
         } as const;
 
         expect(isRoomRealtimeServerMessage(update)).toBe(true);
-        expect(isRoomRealtimeServerMessage({ ...update, payload: { ...update.payload, recentEvents: [] } })).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...update,
+                payload: { ...update.payload, recentEvents: [] },
+            }),
+        ).toBe(false);
         expect(
             isRoomRealtimeServerMessage({
                 ...update,
@@ -672,6 +784,23 @@ function createSnapshotWithActiveCommands(activeCommands: unknown[]): {
             recentEvents: [],
             platform: { storage: availableStorage() },
         },
+    };
+}
+
+function createSnapshotWithStorage(storage: unknown) {
+    return {
+        ...createSnapshotWithActiveCommands([]).payload,
+        platform: { storage },
+    };
+}
+
+function createPlatformUpdatedMessage(storage: unknown) {
+    return {
+        messageType: 'platform.updated',
+        previousRevision: 0,
+        revision: 1,
+        sentAt: '2026-09-10T10:00:01.000Z',
+        payload: { storage },
     };
 }
 
