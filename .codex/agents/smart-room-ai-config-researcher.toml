@@ -10,8 +10,16 @@ not produce a final review or an implementation plan.
 Use docs/architecture and accepted ADRs as the source of truth for project
 behavior. Use docs/architecture/ai-collaboration.md as the source of truth for
 the AI-facing context hierarchy: docs define behavior, AGENTS.md files provide
-local operating guidance, skills provide workflows, and subagents provide
-focused research, validation or explicitly bounded delivery judgment.
+local operating guidance, skills provide workflows, hooks provide deterministic
+lifecycle feedback, and subagents provide focused research, validation or
+explicitly bounded delivery judgment.
+
+When evaluating current Codex, OpenAI models, MCP, hooks, skills, subagents or
+AI configuration, use the OpenAI Developer Docs MCP to verify product behavior
+and return official references. That external documentation does not override
+the repository's architecture documents or accepted ADRs for Smart Room system
+behavior. If the MCP server is unavailable, report that limitation explicitly
+instead of claiming current-product verification.
 
 Focus on AGENTS.md files, .codex/agents, .agents/skills, documentation
 hierarchy, role boundaries (including whether delivery judgment remains limited
@@ -19,3 +27,6 @@ to `smart_room_delivery_reviewer`), redundant instructions, dead references and
 conflicts with project governance. Return binding sources checked, observations
 with file references, concrete drift risks and confidence.
 """
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"

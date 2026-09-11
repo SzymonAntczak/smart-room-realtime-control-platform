@@ -1,0 +1,45 @@
+{
+    "description": "Session-scoped verification feedback for Smart Room changes.",
+    "hooks": {
+        "SessionStart": [
+            {
+                "matcher": "startup|resume|clear",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "node \"$(git rev-parse --show-toplevel)/scripts/codex-verify.mjs\" session-start",
+                        "commandWindows": "node \"$(git rev-parse --show-toplevel)/scripts/codex-verify.mjs\" session-start",
+                        "timeout": 30,
+                        "statusMessage": "Capturing verification baseline"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "node \"$(git rev-parse --show-toplevel)/scripts/codex-verify.mjs\" stop",
+                        "commandWindows": "node \"$(git rev-parse --show-toplevel)/scripts/codex-verify.mjs\" stop",
+                        "timeout": 900,
+                        "statusMessage": "Running session-scoped verification"
+                    }
+                ]
+            }
+        ],
+        "SessionEnd": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "node \"$(git rev-parse --show-toplevel)/scripts/codex-verify.mjs\" session-end",
+                        "commandWindows": "node \"$(git rev-parse --show-toplevel)/scripts/codex-verify.mjs\" session-end",
+                        "timeout": 3,
+                        "statusMessage": "Cleaning verification baseline"
+                    }
+                ]
+            }
+        ]
+    }
+}

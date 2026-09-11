@@ -26,8 +26,13 @@ or commits that the user did not request.
 
 ## Implement Through One Writer
 
-- Keep one agent responsible for all repository writes in the task. Research
-  subagents, when useful, remain read-only and return evidence.
+- Keep one agent responsible for all repository writes in one implementation
+  execution unit. An implementation Goal runs in exactly one checkout: Local
+  or one worktree. Research subagents, when useful, remain read-only and
+  return evidence.
+- Do not divide acceptance criteria of one Goal among concurrent writers.
+  Independently approved Goals may use separate worktrees and writers when
+  their checkout, scope and verification remain independent.
 - Identify the tests or other specification evidence that directly maps to each
   acceptance criterion.
 - When meaningful for behavior work, add or refine acceptance-level evidence

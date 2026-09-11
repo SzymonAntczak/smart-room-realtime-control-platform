@@ -12,7 +12,9 @@ subagent prompts.
 2. `AGENTS.md` files provide local operating instructions for AI agents working
    in a repository area.
 3. Skills provide reusable workflows for common kinds of work.
-4. Subagents provide focused research, validation or explicitly bounded
+4. Hooks provide deterministic lifecycle feedback or enforcement for workflows.
+   They do not define Smart Room system behavior.
+5. Subagents provide focused research, validation or explicitly bounded
    delivery judgment.
 
 Planning documents in `docs/planning/` remain directional context until an idea
@@ -68,21 +70,22 @@ repository. It helps choose an appropriate model and reasoning effort for a
 delivery stage; it does not define Smart Room system behavior and does not
 override the documentation hierarchy above.
 
-The current model guidance is: use Sol for frontier reasoning, Terra when
-balancing capability and cost, and Luna for efficient procedural work. Start
-with `medium` reasoning when it is appropriate for the task and increase it
-only when the extra reasoning produces a meaningful quality gain. Revisit these
+The current model guidance is: use Sol for normal frontier reasoning, Terra
+when balancing capability and cost, Luna for efficient procedural work, and
+Astra only for exceptional architecture or cross-system synthesis. Start with
+`medium` reasoning when it is appropriate for the task and increase it only
+when the extra reasoning produces a meaningful quality gain. Revisit these
 presets as model availability and observed project outcomes change; see the
 [official OpenAI model guidance](https://developers.openai.com/api/docs/guides/latest-model).
 
 | Delivery stage                               | Default selection       | Escalation or boundary                                                                                                                                                                               |
 | -------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Decompose a roadmap Stage into backlog tasks | Sol High                | Use Sol XHigh only when the Stage creates a fundamental system boundary or requires unusually difficult synthesis.                                                                                   |
-| Plan one accepted task                       | Sol High                | Use Sol XHigh only when the plan needs exceptional cross-cutting analysis. The human owner approves the plan and resolves material decisions.                                                        |
+| Decompose a roadmap Stage into backlog tasks | Sol High                | Use Sol XHigh for an unusually difficult synthesis, or Astra High only when the Stage creates a fundamental system boundary.                                                                         |
+| Plan one accepted task                       | Sol High                | Use Sol XHigh for exceptional cross-cutting analysis, or Astra High only for exceptional architecture or cross-system synthesis. The human owner approves the plan and resolves material decisions.  |
 | Implement an approved plan                   | Terra Medium            | Use the verified implementation workflow and one writer. Escalate only as needed: Terra High, then Sol Medium, then Sol High. The implementer must not silently redesign system behavior.            |
-| Review a task                                | Sol High                | Use Sol XHigh only for unusually complex review evidence. General review remains read-only; the delivery reviewer provides an independent bounded gate.                                              |
+| Review a task                                | Sol High                | Use Sol XHigh for unusually complex review evidence, or Astra High only for exceptional cross-system review. General review remains read-only; the delivery reviewer provides an independent gate.   |
 | Prepare and create a commit                  | Luna Low or Luna Medium | Keep the existing scoped commit workflow; the human owner chooses when the reviewed change is accepted for commit.                                                                                   |
-| Audit completion of a whole Stage            | Sol Ultra               | Use only for a read-only audit with separable, independent areas of evidence. It is not the default for a task or normal Stage decomposition. The human owner decides whether the Stage is complete. |
+| Audit completion of a whole Stage            | Astra Max               | Use only for a read-only audit with separable, independent areas of evidence. It is not the default for a task or normal Stage decomposition. The human owner decides whether the Stage is complete. |
 
 The main agent's model is selected manually for the task. Project configuration
 provides compatible subagent defaults and focused research presets; it cannot
@@ -106,8 +109,8 @@ The preferred task flow is:
 2. prepare a plan with stable acceptance criteria, definition-of-done items,
    non-goals and verification scenarios,
 3. obtain human approval for choices that affect behavior or architecture,
-4. implement through one writer, optionally using read-only research
-   subagents,
+4. implement through one writer in one checkout, optionally using read-only
+   research subagents,
 5. run the narrowest credible verification,
 6. pass an independent delivery review,
 7. prepare a commit only when explicitly requested.
@@ -117,6 +120,17 @@ the objective, required acceptance criteria and definition-of-done items,
 constraints, non-goals, verification, checkpoints, pause conditions and stop
 condition. The contract is a handoff of approved requirements; it must not add
 new behavior.
+
+One implementation Goal uses one checkout: Local or one worktree. It has one
+repository-writing agent. Do not split its acceptance criteria among concurrent
+writers. Separate, independently approved Goals may run in separate worktrees
+with separate writers when their scopes and verification are independent.
+
+Worktrees isolate parallel chats and their working files; they do not replace
+the Goal Execution Contract, the one-writer rule or the delivery gate. Each
+worktree must have the dependencies and local setup required for its own
+verification. Do not add ignored local files to a worktree automatically; make
+that an explicit human-owned decision when it becomes necessary.
 
 Specification evidence may be locked selectively when it directly represents
 an approved acceptance criterion. Locked evidence is not rewritten merely to
@@ -181,6 +195,8 @@ For AI-configuration reviews, subagents should check that:
 - subagent roles and prompts remain narrowly scoped to research, review
   evidence or validation, except for explicitly bounded delivery judgment or
   explicitly assigned implementation,
+- hooks remain deterministic workflow feedback rather than a source of system
+  behavior, and
 - redundant context is reduced when it creates drift risk.
 
 ## Updating AI Context
@@ -190,7 +206,9 @@ When changing AI-facing project context:
 1. Put durable behavior rules in architecture docs or accepted ADRs.
 2. Keep `AGENTS.md` files focused on local operating guidance and links.
 3. Keep skills focused on reusable workflows.
-4. Use subagents to review for drift, redundancy and missing source-of-truth
+4. Keep hooks focused on deterministic lifecycle feedback or enforcement, with
+   checks mapped to existing repository verification commands.
+5. Use subagents to review for drift, redundancy and missing source-of-truth
    links.
 
 If the hierarchy itself changes, update this document first and then align the
