@@ -62,7 +62,11 @@ the developer, or delegate implementation.
 
 A Dev Story is complete only when all of its Subtasks are complete and its
 story-level acceptance criteria have been verified. Completing one Subtask does
-not complete its parent story.
+not complete its parent story. Give every Dev Story and every Subtask its own
+Markdown completion marker. Use `[ ]` by default and change it to `[x]` only
+when the reviewed backlog already records the item as complete or the user
+explicitly asks to record completion. Never infer a completed parent story from
+partially completed Subtasks.
 
 ## Difficulty Rating
 
@@ -133,9 +137,9 @@ Begin with:
   `none`.
 - **Open decisions:** human-owned decisions, or `none`.
 
-For every Dev Story return:
+For every Dev Story return, including its completion marker in the heading:
 
-### `<DS identifier>` — `<title>`
+### [ ] `<DS identifier>` — `<title>`
 
 - **Value:** the independently useful increment.
 - **Observable outcome:** what can be demonstrated when complete.
@@ -150,9 +154,10 @@ For every Dev Story return:
 - **Story verification:** the narrowest credible end-to-end or integration
   evidence.
 
-Then list every Subtask under its parent story:
+Then list every Subtask under its parent story, including its independent
+completion marker in the heading:
 
-#### `<ST identifier>` — `<title>`
+#### [ ] `<ST identifier>` — `<title>`
 
 - **Parent story:** Dev Story identifier.
 - **Purpose:** the concrete technical outcome.
@@ -162,6 +167,10 @@ Then list every Subtask under its parent story:
 - **Difficulty rationale:** concise engineering-risk evidence.
 - **Verification:** the narrowest credible check or test layer.
 - **Done when:** an observable stopping condition.
+
+When adapting an existing compact backlog that uses a table for Subtasks, put
+the marker in the identifier cell, for example `[ ] ST-4-01-01`, rather than
+dropping the per-Subtask completion state.
 
 After all stories include:
 

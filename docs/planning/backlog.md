@@ -330,7 +330,7 @@ Each item has one difficulty rating only:
 - **Open decisions:** none. Cursor encoding and exact endpoint paths are bounded
   implementation choices under the accepted semantics.
 
-### `DS-4-01` — Coherent durable-history contract
+### [ ] `DS-4-01` — Coherent durable-history contract
 
 - **Value / observable outcome:** all consumers validate one consistent model for
   feed records, diagnostics, cursor pages, trends and typed cursor failures.
@@ -347,11 +347,11 @@ Each item has one difficulty rating only:
 | Subtask          | Purpose / primary boundary                                                      | Depends on                               | Difficulty | Verification / done when                                                                 |
 | ---------------- | ------------------------------------------------------------------------------- | ---------------------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
 | `[x] ST-4-01-01` | Complete recent-event, durable-diagnostics and cursor-page schemas in `shared`. | none                                     | `B`        | Contract tests reject unordered, oversized, dangling and timestamp-inconsistent entries. |
-| `ST-4-01-02`     | Define half-open trend query/response and raw-sample identity in `shared`.      | none                                     | `C`        | Tests cover buckets, equal extrema, boundaries and point limit.                          |
-| `ST-4-01-03`     | Define expiry, generation-change, scope-mismatch and invalid-cursor responses.  | `ST-4-01-01`                             | `B`        | Changed dataset/filter/range/order/page size cannot validate.                            |
-| `ST-4-01-04`     | Verify record identity is coherent across HTTP, SSE, feed and trend fixtures.   | `ST-4-01-01`, `ST-4-01-02`, `ST-4-01-03` | `C`        | Shared fixtures validate in every consumer without local schema copies.                  |
+| `[ ] ST-4-01-02` | Define half-open trend query/response and raw-sample identity in `shared`.      | none                                     | `C`        | Tests cover buckets, equal extrema, boundaries and point limit.                          |
+| `[ ] ST-4-01-03` | Define expiry, generation-change, scope-mismatch and invalid-cursor responses.  | `ST-4-01-01`                             | `B`        | Changed dataset/filter/range/order/page size cannot validate.                            |
+| `[ ] ST-4-01-04` | Verify record identity is coherent across HTTP, SSE, feed and trend fixtures.   | `ST-4-01-01`, `ST-4-01-02`, `ST-4-01-03` | `C`        | Shared fixtures validate in every consumer without local schema copies.                  |
 
-### `DS-4-02` — Retention with a stable read snapshot
+### [ ] `DS-4-02` — Retention with a stable read snapshot
 
 - **Value / observable outcome:** storage remains bounded while an active cursor
   reads its original five-minute snapshot safely.
@@ -365,15 +365,15 @@ Each item has one difficulty rating only:
 - **Non-goals:** telemetry aggregation or pruning count-bounded projection caches.
 - **Story verification:** deterministic SQLite integration through retention and expiry.
 
-| Subtask      | Purpose / primary boundary                                                                 | Depends on                               | Difficulty | Verification / done when                                               |
-| ------------ | ------------------------------------------------------------------------------------------ | ---------------------------------------- | ---------- | ---------------------------------------------------------------------- |
-| `ST-4-02-01` | Complete/audit 30-day accepted and quarantine retirement at startup, write and first read. | none                                     | `C`        | Exact-boundary and immediately-retired late-fact tests pass.           |
-| `ST-4-02-02` | Complete/audit independent telemetry, fact and quarantine count caps.                      | none                                     | `C`        | Count/tie-breaker tests prove one dataset cannot evict another.        |
-| `ST-4-02-03` | Keep one accepted identity until its final active derived record retires.                  | `ST-4-02-01`, `ST-4-02-02`               | `C`        | Multi-record input remains deduplicable until its last record retires. |
-| `ST-4-02-04` | Pin generation, watermark and retention time; retain tombstones for cursor lifetime.       | `ST-4-01-03`, `ST-4-02-01`, `ST-4-02-02` | `B`        | Cursor reads retired payload before expiry and cannot after purge.     |
-| `ST-4-02-05` | Verify retention, identities and pinned reads share one atomic storage view.               | `ST-4-02-03`, `ST-4-02-04`               | `B`        | Concurrent write/retire/read test exposes no intermediate state.       |
+| Subtask          | Purpose / primary boundary                                                                 | Depends on                               | Difficulty | Verification / done when                                               |
+| ---------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------- | ---------- | ---------------------------------------------------------------------- |
+| `[ ] ST-4-02-01` | Complete/audit 30-day accepted and quarantine retirement at startup, write and first read. | none                                     | `C`        | Exact-boundary and immediately-retired late-fact tests pass.           |
+| `[ ] ST-4-02-02` | Complete/audit independent telemetry, fact and quarantine count caps.                      | none                                     | `C`        | Count/tie-breaker tests prove one dataset cannot evict another.        |
+| `[ ] ST-4-02-03` | Keep one accepted identity until its final active derived record retires.                  | `ST-4-02-01`, `ST-4-02-02`               | `C`        | Multi-record input remains deduplicable until its last record retires. |
+| `[ ] ST-4-02-04` | Pin generation, watermark and retention time; retain tombstones for cursor lifetime.       | `ST-4-01-03`, `ST-4-02-01`, `ST-4-02-02` | `B`        | Cursor reads retired payload before expiry and cannot after purge.     |
+| `[ ] ST-4-02-05` | Verify retention, identities and pinned reads share one atomic storage view.               | `ST-4-02-03`, `ST-4-02-04`               | `B`        | Concurrent write/retire/read test exposes no intermediate state.       |
 
-### `DS-4-03` — Safe HTTP access to durable history
+### [ ] `DS-4-03` — Safe HTTP access to durable history
 
 - **Value / observable outcome:** frontend and operators receive pinned facts,
   telemetry and trends or an explicit unavailable/error result.
@@ -386,14 +386,14 @@ Each item has one difficulty rating only:
 - **Non-goals:** Dashboard rendering and SSE replay.
 - **Story verification:** BFF HTTP tests using an isolated SQLite database.
 
-| Subtask      | Purpose / primary boundary                                                    | Depends on                               | Difficulty | Verification / done when                                             |
-| ------------ | ----------------------------------------------------------------------------- | ---------------------------------------- | ---------- | -------------------------------------------------------------------- |
-| `ST-4-03-01` | Expose paged significant facts, selected-device telemetry and bounded trends. | `ST-4-01-01`, `ST-4-01-02`, `ST-4-02-04` | `B`        | Each endpoint returns its owning shared schema with pinned bounds.   |
-| `ST-4-03-02` | Validate generation and canonical query scope before reading cursor position. | `ST-4-01-03`, `ST-4-03-01`               | `B`        | Forged, stale-generation and changed-scope cursors are rejected.     |
-| `ST-4-03-03` | Return explicit durable-history unavailability while storage is degraded.     | `ST-4-03-01`                             | `E`        | BFF distinguishes `503` from an ordinary empty result.               |
-| `ST-4-03-04` | Verify one HTTP session stays complete only through its pinned watermark.     | `ST-4-03-01`, `ST-4-03-02`, `ST-4-03-03` | `C`        | A concurrent write never appears on a later page of the old session. |
+| Subtask          | Purpose / primary boundary                                                    | Depends on                               | Difficulty | Verification / done when                                             |
+| ---------------- | ----------------------------------------------------------------------------- | ---------------------------------------- | ---------- | -------------------------------------------------------------------- |
+| `[ ] ST-4-03-01` | Expose paged significant facts, selected-device telemetry and bounded trends. | `ST-4-01-01`, `ST-4-01-02`, `ST-4-02-04` | `B`        | Each endpoint returns its owning shared schema with pinned bounds.   |
+| `[ ] ST-4-03-02` | Validate generation and canonical query scope before reading cursor position. | `ST-4-01-03`, `ST-4-03-01`               | `B`        | Forged, stale-generation and changed-scope cursors are rejected.     |
+| `[ ] ST-4-03-03` | Return explicit durable-history unavailability while storage is degraded.     | `ST-4-03-01`                             | `E`        | BFF distinguishes `503` from an ordinary empty result.               |
+| `[ ] ST-4-03-04` | Verify one HTTP session stays complete only through its pinned watermark.     | `ST-4-03-01`, `ST-4-03-02`, `ST-4-03-03` | `C`        | A concurrent write never appears on a later page of the old session. |
 
-### `DS-4-04` — Lossless HTTP/SSE history synchronization
+### [ ] `DS-4-04` — Lossless HTTP/SSE history synchronization
 
 - **Value / observable outcome:** live additions are not lost during pagination,
   reconnect, expiry or database replacement.
@@ -407,13 +407,13 @@ Each item has one difficulty rating only:
 - **Non-goals:** `Last-Event-ID`, replay or a second history stream.
 - **Story verification:** deterministic runtime, BFF and client transport scenarios.
 
-| Subtask      | Purpose / primary boundary                                                     | Depends on                 | Difficulty | Verification / done when                                                  |
-| ------------ | ------------------------------------------------------------------------------ | -------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `ST-4-04-01` | Publish history baseline/deltas, telemetry samples, gap and watermark updates. | `DS-4-01`, `ST-4-03-01`    | `B`        | SSE tests prove snapshot, outcome, watermark-only and recovery sequences. |
-| `ST-4-04-02` | Publish each multi-revision result as an atomic, non-interleaving batch.       | `ST-4-04-01`               | `B`        | Concurrent connection sees final revision-0, never a partial batch.       |
-| `ST-4-04-03` | Keep bounded live overlay from before first request through all pages.         | `ST-4-03-01`, `ST-4-04-01` | `B`        | Additions before, during and between pages survive merge by `recordId`.   |
-| `ST-4-04-04` | Rebuild open history after reconnect, expiry or generation change.             | `ST-4-03-02`, `ST-4-04-03` | `B`        | Tests cover same-generation recovery, expiry, `503` and replacement.      |
-| `ST-4-04-05` | Verify complete no-loss behavior across actual HTTP/SSE ordering.              | `ST-4-04-02`, `ST-4-04-04` | `B`        | Controlled transport integration proves the story guarantee.              |
+| Subtask          | Purpose / primary boundary                                                     | Depends on                 | Difficulty | Verification / done when                                                  |
+| ---------------- | ------------------------------------------------------------------------------ | -------------------------- | ---------- | ------------------------------------------------------------------------- |
+| `[ ] ST-4-04-01` | Publish history baseline/deltas, telemetry samples, gap and watermark updates. | `DS-4-01`, `ST-4-03-01`    | `B`        | SSE tests prove snapshot, outcome, watermark-only and recovery sequences. |
+| `[ ] ST-4-04-02` | Publish each multi-revision result as an atomic, non-interleaving batch.       | `ST-4-04-01`               | `B`        | Concurrent connection sees final revision-0, never a partial batch.       |
+| `[ ] ST-4-04-03` | Keep bounded live overlay from before first request through all pages.         | `ST-4-03-01`, `ST-4-04-01` | `B`        | Additions before, during and between pages survive merge by `recordId`.   |
+| `[ ] ST-4-04-04` | Rebuild open history after reconnect, expiry or generation change.             | `ST-4-03-02`, `ST-4-04-03` | `B`        | Tests cover same-generation recovery, expiry, `503` and replacement.      |
+| `[ ] ST-4-04-05` | Verify complete no-loss behavior across actual HTTP/SSE ordering.              | `ST-4-04-02`, `ST-4-04-04` | `B`        | Controlled transport integration proves the story guarantee.              |
 
 <!-- Legacy flat Stage 4 checklist retained for traceability; superseded by the
      Dev Story and Subtask identifiers above.
@@ -525,7 +525,7 @@ Each item has one difficulty rating only:
 
 -->
 
-### `DS-4-05` — Freshness derived from device cadence
+### [ ] `DS-4-05` — Freshness derived from device cadence
 
 - **Value / observable outcome:** desk and window sensors become stale according
   to their own reporting cadence, never by changing availability.
@@ -539,14 +539,14 @@ Each item has one difficulty rating only:
 - **Non-goals:** dynamic cadence configuration or LED freshness policy.
 - **Story verification:** deterministic two-sensor runtime scenario.
 
-| Subtask      | Purpose / primary boundary                                        | Depends on                 | Difficulty | Verification / done when                                                       |
-| ------------ | ----------------------------------------------------------------- | -------------------------- | ---------- | ------------------------------------------------------------------------------ |
-| `ST-4-05-01` | Add capability reporting intervals; desk is 10 s, window 20 s.    | none                       | `E`        | Device-definition test proves unrelated roles are unchanged.                   |
-| `ST-4-05-02` | Derive stale only after `3 × expectedIntervalMs`.                 | `ST-4-05-01`               | `C`        | Projector tests cover before, at and after both thresholds.                    |
-| `ST-4-05-03` | Keep `emit_next_reading` on the normal simulator-to-runtime path. | `ST-4-05-02`               | `E`        | Scenario test proves it restores freshness without direct projection mutation. |
-| `ST-4-05-04` | Verify both cadences in one runtime.                              | `ST-4-05-02`, `ST-4-05-03` | `C`        | Each sensor crosses its own threshold while availability remains stable.       |
+| Subtask          | Purpose / primary boundary                                        | Depends on                 | Difficulty | Verification / done when                                                       |
+| ---------------- | ----------------------------------------------------------------- | -------------------------- | ---------- | ------------------------------------------------------------------------------ |
+| `[ ] ST-4-05-01` | Add capability reporting intervals; desk is 10 s, window 20 s.    | none                       | `E`        | Device-definition test proves unrelated roles are unchanged.                   |
+| `[ ] ST-4-05-02` | Derive stale only after `3 × expectedIntervalMs`.                 | `ST-4-05-01`               | `C`        | Projector tests cover before, at and after both thresholds.                    |
+| `[ ] ST-4-05-03` | Keep `emit_next_reading` on the normal simulator-to-runtime path. | `ST-4-05-02`               | `E`        | Scenario test proves it restores freshness without direct projection mutation. |
+| `[ ] ST-4-05-04` | Verify both cadences in one runtime.                              | `ST-4-05-02`, `ST-4-05-03` | `C`        | Each sensor crosses its own threshold while availability remains stable.       |
 
-### `DS-4-06` — Explainable significant-fact feed
+### [ ] `DS-4-06` — Explainable significant-fact feed
 
 - **Value / observable outcome:** a user can understand availability, health,
   command and meaningful LED-report changes without raw payloads or logs.
@@ -560,13 +560,13 @@ Each item has one difficulty rating only:
 - **Non-goals:** quarantine diagnostics or a full audit-history screen.
 - **Story verification:** mocked-BFF browser scenario with included and excluded facts.
 
-| Subtask      | Purpose / primary boundary                                        | Depends on                 | Difficulty | Verification / done when                                              |
-| ------------ | ----------------------------------------------------------------- | -------------------------- | ---------- | --------------------------------------------------------------------- |
-| `ST-4-06-01` | Render all feed-worthy variants intelligibly in the Dashboard.    | `ST-4-01-01`               | `C`        | Component tests cover every supported record variant.                 |
-| `ST-4-06-02` | Exclude no-change, non-applying and individual telemetry records. | `ST-4-06-01`               | `E`        | Negative UI tests prove excluded input adds no feed item.             |
-| `ST-4-06-03` | Add browser coverage for explainable feed entries.                | `ST-4-06-01`, `ST-4-06-02` | `C`        | Playwright proves users identify representative facts and exclusions. |
+| Subtask          | Purpose / primary boundary                                        | Depends on                 | Difficulty | Verification / done when                                              |
+| ---------------- | ----------------------------------------------------------------- | -------------------------- | ---------- | --------------------------------------------------------------------- |
+| `[ ] ST-4-06-01` | Render all feed-worthy variants intelligibly in the Dashboard.    | `ST-4-01-01`               | `C`        | Component tests cover every supported record variant.                 |
+| `[ ] ST-4-06-02` | Exclude no-change, non-applying and individual telemetry records. | `ST-4-06-01`               | `E`        | Negative UI tests prove excluded input adds no feed item.             |
+| `[ ] ST-4-06-03` | Add browser coverage for explainable feed entries.                | `ST-4-06-01`, `ST-4-06-02` | `C`        | Playwright proves users identify representative facts and exclusions. |
 
-### `DS-4-07` — Storage-aware Dashboard controls and evidence
+### [ ] `DS-4-07` — Storage-aware Dashboard controls and evidence
 
 - **Value / observable outcome:** users see storage degradation and cannot mistake
   volatile state for restart-safe data.
@@ -581,13 +581,13 @@ Each item has one difficulty rating only:
 - **Non-goals:** automatic resubmission of user intent.
 - **Story verification:** mocked-BFF sequence available → degraded → recovering.
 
-| Subtask      | Purpose / primary boundary                                              | Depends on   | Difficulty | Verification / done when                                            |
-| ------------ | ----------------------------------------------------------------------- | ------------ | ---------- | ------------------------------------------------------------------- |
-| `ST-4-07-01` | Display current platform storage status prominently.                    | none         | `E`        | Component tests cover available, degraded and recovering.           |
-| `ST-4-07-02` | Label volatile observations, feed records and command evidence.         | `ST-4-07-01` | `C`        | Mixed intent/lifecycle/evidence durability remains distinguishable. |
-| `ST-4-07-03` | Apply degraded warning, recovering disablement and racing-503 handling. | `ST-4-07-01` | `C`        | Browser tests show no phantom state or automatic retry.             |
+| Subtask          | Purpose / primary boundary                                              | Depends on   | Difficulty | Verification / done when                                            |
+| ---------------- | ----------------------------------------------------------------------- | ------------ | ---------- | ------------------------------------------------------------------- |
+| `[ ] ST-4-07-01` | Display current platform storage status prominently.                    | none         | `E`        | Component tests cover available, degraded and recovering.           |
+| `[ ] ST-4-07-02` | Label volatile observations, feed records and command evidence.         | `ST-4-07-01` | `C`        | Mixed intent/lifecycle/evidence durability remains distinguishable. |
+| `[ ] ST-4-07-03` | Apply degraded warning, recovering disablement and racing-503 handling. | `ST-4-07-01` | `C`        | Browser tests show no phantom state or automatic retry.             |
 
-### `DS-4-08` — Accessible bounded telemetry details
+### [ ] `DS-4-08` — Accessible bounded telemetry details
 
 - **Value / observable outcome:** a user can inspect a selected device’s trend and
   accessible raw-value table without unbounded frontend history retention.
@@ -602,14 +602,14 @@ Each item has one difficulty rating only:
 - **Non-goals:** unbounded raw cache or editing telemetry.
 - **Story verification:** browser test with HTTP baseline, SSE sample and reconnect.
 
-| Subtask      | Purpose / primary boundary                                                 | Depends on                 | Difficulty | Verification / done when                                                 |
-| ------------ | -------------------------------------------------------------------------- | -------------------------- | ---------- | ------------------------------------------------------------------------ |
-| `ST-4-08-01` | Add selected-device entry point and accessible chart/table details view.   | none                       | `C`        | Component tests cover opening, focus/heading and table semantics.        |
-| `ST-4-08-02` | Load a bounded telemetry baseline from paged HTTP history.                 | `ST-4-03-01`, `ST-4-08-01` | `C`        | Frontend tests prove pages cannot become unbounded memory.               |
-| `ST-4-08-03` | Merge live SSE telemetry into chart and table with deterministic eviction. | `ST-4-04-03`, `ST-4-08-02` | `B`        | Tests cover additions before/after page response and duplicate identity. |
-| `ST-4-08-04` | Verify reconnect/refetch and stale/offline presentation end to end.        | `ST-4-04-04`, `ST-4-08-03` | `B`        | Browser test proves no lost point and honest reliability labels.         |
+| Subtask          | Purpose / primary boundary                                                 | Depends on                 | Difficulty | Verification / done when                                                 |
+| ---------------- | -------------------------------------------------------------------------- | -------------------------- | ---------- | ------------------------------------------------------------------------ |
+| `[ ] ST-4-08-01` | Add selected-device entry point and accessible chart/table details view.   | none                       | `C`        | Component tests cover opening, focus/heading and table semantics.        |
+| `[ ] ST-4-08-02` | Load a bounded telemetry baseline from paged HTTP history.                 | `ST-4-03-01`, `ST-4-08-01` | `C`        | Frontend tests prove pages cannot become unbounded memory.               |
+| `[ ] ST-4-08-03` | Merge live SSE telemetry into chart and table with deterministic eviction. | `ST-4-04-03`, `ST-4-08-02` | `B`        | Tests cover additions before/after page response and duplicate identity. |
+| `[ ] ST-4-08-04` | Verify reconnect/refetch and stale/offline presentation end to end.        | `ST-4-04-04`, `ST-4-08-03` | `B`        | Browser test proves no lost point and honest reliability labels.         |
 
-### `DS-4-09` — Durable non-applying-input diagnostics
+### [ ] `DS-4-09` — Durable non-applying-input diagnostics
 
 - **Value / observable outcome:** an operator can explain ignored inputs without
   letting them corrupt current state, accepted history or product feed.
@@ -624,13 +624,13 @@ Each item has one difficulty rating only:
 - **Non-goals:** product Dashboard quarantine feed.
 - **Story verification:** focused end-to-end ignored-input scenarios.
 
-| Subtask      | Purpose / primary boundary                                                 | Depends on                 | Difficulty | Verification / done when                                                                      |
-| ------------ | -------------------------------------------------------------------------- | -------------------------- | ---------- | --------------------------------------------------------------------------------------------- |
-| `ST-4-09-01` | Expose bounded persisted quarantine metadata at `GET /diagnostics`.        | `ST-4-01-01`, `ST-4-02-02` | `C`        | API tests cover schema, ordering, bounds and degraded storage.                                |
-| `ST-4-09-02` | Complete malformed and future-dated development scenarios on normal flow.  | none                       | `C`        | Scenario tests trace native input through adapter and processor.                              |
-| `ST-4-09-03` | Prove duplicate, malformed and future-dated diagnostics stay non-applying. | `ST-4-09-01`, `ST-4-09-02` | `B`        | Integration tests verify diagnostics/logs appear while projection/history/feed do not change. |
+| Subtask          | Purpose / primary boundary                                                 | Depends on                 | Difficulty | Verification / done when                                                                      |
+| ---------------- | -------------------------------------------------------------------------- | -------------------------- | ---------- | --------------------------------------------------------------------------------------------- |
+| `[ ] ST-4-09-01` | Expose bounded persisted quarantine metadata at `GET /diagnostics`.        | `ST-4-01-01`, `ST-4-02-02` | `C`        | API tests cover schema, ordering, bounds and degraded storage.                                |
+| `[ ] ST-4-09-02` | Complete malformed and future-dated development scenarios on normal flow.  | none                       | `C`        | Scenario tests trace native input through adapter and processor.                              |
+| `[ ] ST-4-09-03` | Prove duplicate, malformed and future-dated diagnostics stay non-applying. | `ST-4-09-01`, `ST-4-09-02` | `B`        | Integration tests verify diagnostics/logs appear while projection/history/feed do not change. |
 
-### `DS-4-10` — Reproducible Stage 4 acceptance evidence
+### [ ] `DS-4-10` — Reproducible Stage 4 acceptance evidence
 
 - **Value / observable outcome:** a reviewer can independently verify the
   simulator platform and reproduce its walkthrough.
@@ -645,12 +645,12 @@ Each item has one difficulty rating only:
 - **Non-goals:** fixing defects discovered by the audit within this story.
 - **Story verification:** an independent reviewer repeats the documented run.
 
-| Subtask      | Purpose / primary boundary                                                    | Depends on                         | Difficulty | Verification / done when                                                  |
-| ------------ | ----------------------------------------------------------------------------- | ---------------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence. | all Stage 4 implementation stories | `C`        | Each outcome links to evidence or a new narrow follow-up.                 |
-| `ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.       | `DS-4-06`, `DS-4-07`, `DS-4-08`    | `C`        | Fixture-validation suite and browser typecheck pass.                      |
-| `ST-4-10-03` | Write the local simulator-only checklist and walkthrough.                     | `ST-4-10-01`                       | `E`        | A clean local setup can follow the instructions without hidden knowledge. |
-| `ST-4-10-04` | Execute and record the dated local acceptance walkthrough.                    | `ST-4-10-02`, `ST-4-10-03`         | `C`        | A reviewer can reproduce commands and observed results from the record.   |
+| Subtask          | Purpose / primary boundary                                                    | Depends on                         | Difficulty | Verification / done when                                                  |
+| ---------------- | ----------------------------------------------------------------------------- | ---------------------------------- | ---------- | ------------------------------------------------------------------------- |
+| `[ ] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence. | all Stage 4 implementation stories | `C`        | Each outcome links to evidence or a new narrow follow-up.                 |
+| `[ ] ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.       | `DS-4-06`, `DS-4-07`, `DS-4-08`    | `C`        | Fixture-validation suite and browser typecheck pass.                      |
+| `[ ] ST-4-10-03` | Write the local simulator-only checklist and walkthrough.                     | `ST-4-10-01`                       | `E`        | A clean local setup can follow the instructions without hidden knowledge. |
+| `[ ] ST-4-10-04` | Execute and record the dated local acceptance walkthrough.                    | `ST-4-10-02`, `ST-4-10-03`         | `C`        | A reviewer can reproduce commands and observed results from the record.   |
 
 - **Recommended order:** `DS-4-01` → `DS-4-02` → `DS-4-03` → `DS-4-04` →
   `DS-4-08` → `DS-4-10`; complete `DS-4-05`, `DS-4-06`, `DS-4-07` and
