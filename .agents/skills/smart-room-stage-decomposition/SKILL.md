@@ -1,6 +1,6 @@
 ---
 name: smart-room-stage-decomposition
-description: Use when decomposing a Smart Room roadmap Stage or broad milestone into independently testable Dev Stories and classified subtasks with dependencies, capability profiles, and verification boundaries. Do not use for detailed planning or implementation of a selected work item.
+description: Use when decomposing a Smart Room roadmap Stage or broad milestone into independently testable Dev Stories and rated Subtasks with dependencies and verification boundaries. Do not use for detailed planning or implementation of a selected work item.
 ---
 
 # Smart Room Stage Decomposition
@@ -36,10 +36,10 @@ the developer, or delegate implementation.
    relevant current backlog state.
 2. Inspect binding sources and existing implementation evidence needed to
    distinguish established behavior from open decisions.
-3. Identify prerequisite gates and unresolved decisions before assigning
-   executable profiles. When a missing decision directly defines a work item's
-   scope, behavior or boundary, classify that item as `XL` and block its
-   implementation profile. Do not hide a material decision gap only in the
+3. Identify prerequisite gates and unresolved decisions before assigning a
+   difficulty rating. When a missing decision directly defines a work item's
+   scope, behavior or boundary, state that implementation is blocked pending
+   the human decision. Do not hide a material decision gap only in the
    Stage-level open decisions or decomposition warnings.
 4. Define Dev Stories around independently demonstrable and testable value, not
    around technical layers. Value may be user, operator, developer or
@@ -55,8 +55,8 @@ the developer, or delegate implementation.
 8. Record dependencies within and between stories using stable identifiers.
    Identify technical parallel candidates without approving or starting
    parallel work.
-9. Classify every Dev Story and every Subtask independently. Assign phase
-   profiles and explain any deviation from the default profile table.
+9. Rate every Dev Story and every Subtask independently. Give each one exactly
+   one difficulty rating and a concise rationale.
 10. Report unresolved decisions, decomposition warnings and work that must be
     split or decided before implementation.
 
@@ -64,11 +64,11 @@ A Dev Story is complete only when all of its Subtasks are complete and its
 story-level acceptance criteria have been verified. Completing one Subtask does
 not complete its parent story.
 
-## Complexity Classification
+## Difficulty Rating
 
-Classify each work item as `S`, `M`, `L` or `XL`. Use reasoning difficulty and
-engineering risk rather than file count, estimated lines or business
-importance. Evaluate:
+Rate each work item from `A` through `F`, where `A` is the most difficult and
+`F` is banal. Use reasoning difficulty and engineering risk rather than file
+count, estimated lines or business importance. Evaluate:
 
 1. architecture novelty;
 2. number and importance of system boundaries;
@@ -78,56 +78,42 @@ importance. Evaluate:
 6. verification breadth;
 7. blast radius.
 
-### S — Local And Procedural
+### A — Exceptional Or Decision-Blocked
 
-Use for established behavior with a local boundary, deterministic work, narrow
-verification and low blast radius.
+Use for exceptional architecture synthesis, highly coupled reliability work, or
+an item whose direct material decision is unresolved. State the blocking human
+decision; do not recommend implementation before it is resolved.
 
-### M — Standard Feature Work
+### B — High-Risk Or Cross-Boundary
 
-Use for normal work in established architecture with moderate implementation
-choices and focused verification. The item may cross a small number of clear
-boundaries but does not depend on critical contract, temporal or recovery
-reasoning.
+Use when correctness depends on shared contracts, important boundaries,
+reliability semantics, lifecycle, time, concurrency, recovery or several
+interacting verification layers.
 
-### L — High-Risk Or Cross-Boundary Work
+### C — Complex Standard Work
 
-Use when correctness depends on shared contracts, several important
-boundaries, reliability semantics, lifecycle, time, concurrency, recovery or
-multiple interacting verification layers.
+Use for a normal feature in established architecture with several clear
+implementation choices and focused verification.
 
-### XL — Decision Or Decomposition Required
+### D — Moderate Bounded Work
 
-Use when a material architecture decision is unresolved or the item is still
-too broad to complete credibly as one execution unit. Do not recommend direct
-implementation. State how to split the item or which human-owned architecture
-decision must happen first. A prerequisite makes an affected item `XL` when it
-directly defines that item's scope, behavior or boundary. A downstream item
-whose own behavior is already established may retain its independently assessed
-class, but it must depend on the blocked item. Never assign an executable
-Implementation profile to an item with a direct material decision gap.
+Use for established behavior across a small number of clear boundaries with
+limited semantic or verification risk.
 
-## Phase Profiles
+### E — Small Local Work
 
-Use capability profile names from `docs/architecture/ai-collaboration.md`; do
-not copy current model names into the decomposition.
+Use for a narrow, deterministic change with one primary boundary and a focused
+check.
 
-| Complexity | Planning             | Implementation                    | Review               |
-| ---------- | -------------------- | --------------------------------- | -------------------- |
-| `S`        | `economy / medium`   | `economy / medium`                | `economy / medium`   |
-| `M`        | `standard / medium`  | `standard / medium`               | `standard / medium`  |
-| `L`        | `frontier / high`    | `standard / high`                 | `frontier / high`    |
-| `XL`       | `exceptional / high` | `blocked until split or decision` | `exceptional / high` |
+### F — Banal
 
-Phase profiles are recommendations, not execution decisions. A phase may use a
-different profile from the default when concrete evidence justifies it. State
-that reason next to the affected profile. Do not escalate merely because a work
-item is important.
+Use for a mechanical, self-evident edit with negligible blast radius and a
+straightforward stopping condition.
 
-Classify a Dev Story separately from its Subtasks. Consider the hardest work on
-the critical path, integration risk, story-level acceptance verification and
-unresolved dependencies. Do not add or average Subtask classes mechanically;
-several `M` Subtasks may form an `L` story when their integration creates
+Rate a Dev Story separately from its Subtasks. Consider the hardest work on the
+critical path, integration risk, story-level acceptance verification and
+unresolved dependencies. Do not average Subtask ratings mechanically; several
+`C` Subtasks may form an `A` or `B` story when their integration creates
 system-level risk.
 
 ## Output Contract
@@ -156,13 +142,9 @@ For every Dev Story return:
 - **Sources:** supporting architecture, ADR, roadmap or human decision.
 - **Affected boundaries:** the ownership or runtime boundaries involved.
 - **Depends on:** work-item identifiers or `none`.
-- **Complexity:** `S | M | L | XL`.
-- **Complexity rationale:** concise evidence across the classification
+- **Difficulty:** `A | B | C | D | E | F`.
+- **Difficulty rationale:** concise evidence across the rating
   dimensions.
-- **Planning profile:** capability profile and reasoning effort.
-- **Implementation profile:** capability profile and reasoning effort, or the
-  `XL` block.
-- **Review profile:** capability profile and reasoning effort.
 - **Acceptance criteria:** observable story-level outcomes.
 - **Non-goals:** excluded behavior or `none`.
 - **Story verification:** the narrowest credible end-to-end or integration
@@ -176,12 +158,8 @@ Then list every Subtask under its parent story:
 - **Purpose:** the concrete technical outcome.
 - **Primary boundary:** the main ownership boundary.
 - **Depends on:** work-item identifiers or `none`.
-- **Complexity:** `S | M | L | XL`.
-- **Complexity rationale:** concise engineering-risk evidence.
-- **Planning profile:** capability profile and reasoning effort.
-- **Implementation profile:** capability profile and reasoning effort, or the
-  `XL` block.
-- **Review profile:** capability profile and reasoning effort.
+- **Difficulty:** `A | B | C | D | E | F`.
+- **Difficulty rationale:** concise engineering-risk evidence.
 - **Verification:** the narrowest credible check or test layer.
 - **Done when:** an observable stopping condition.
 
