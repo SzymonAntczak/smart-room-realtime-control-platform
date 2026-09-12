@@ -1,6 +1,11 @@
 import { Type } from '@sinclair/typebox';
 
+import type { IgnoredEventReason } from './diagnostics';
+import { ignoredEventReasonSchema } from './diagnostics';
 import { isoTimestampSchema, nonEmptyStringSchema } from './validation';
+
+export { ignoredEventReasons, isIgnoredEventReason } from './diagnostics';
+export type { IgnoredEventReason } from './diagnostics';
 
 export const deviceConnectionScenarioActions = ['disconnect_device', 'reconnect_device'] as const;
 export const deviceHealthScenarioActions = ['degrade_device', 'recover_device'] as const;
@@ -40,19 +45,6 @@ export interface DeviceScenarioList {
     readonly deviceId: string;
     readonly scenarios: readonly DeviceScenarioDescriptor[];
 }
-export const ignoredEventReasons = [
-    'duplicate_event',
-    'malformed_event',
-    'unsupported_event_type',
-    'unknown_device',
-    'invalid_payload',
-    'invalid_lifecycle_transition',
-    'device_metric_mismatch',
-    'future_dated_report',
-    'stale_device_transition',
-    'event_identity_conflict',
-] as const;
-export type IgnoredEventReason = (typeof ignoredEventReasons)[number];
 export interface IgnoredEventDiagnostic {
     diagnosticId: string;
     reason: IgnoredEventReason;
@@ -72,10 +64,6 @@ export interface DeduplicationEvictionDiagnostic {
 export interface EventProcessingDiagnosticsSnapshot {
     ignoredEvents: IgnoredEventDiagnostic[];
     deduplicationEvictions?: DeduplicationEvictionDiagnostic[];
-}
-
-export function isIgnoredEventReason(value: unknown): value is IgnoredEventReason {
-    return typeof value === 'string' && ignoredEventReasons.some((reason) => reason === value);
 }
 
 export const deviceScenarioActionSchema = Type.Union(
@@ -121,7 +109,7 @@ export const apiErrorResponseSchema = Type.Object(
 const ignoredEventDiagnosticSchema = Type.Object(
     {
         diagnosticId: nonEmptyStringSchema,
-        reason: Type.Union(ignoredEventReasons.map((reason) => Type.Literal(reason))),
+        reason: ignoredEventReasonSchema,
         observedAt: isoTimestampSchema,
         eventId: Type.Optional(Type.String()),
         eventType: Type.Optional(Type.String()),

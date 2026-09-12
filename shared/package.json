@@ -5,6 +5,7 @@
     "type": "module",
     "exports": {
         "./commands": "./src/commands.ts",
+        "./diagnostics": "./src/diagnostics.ts",
         "./development": "./src/development.ts",
         "./devices": "./src/devices.ts",
         "./events": "./src/events.ts",

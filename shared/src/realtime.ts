@@ -7,7 +7,7 @@ import {
     type TerminalCommandProjection,
 } from './commands';
 import type { RecentEventProjection } from './history';
-import { isRecentEventsOrdered, recentEventsDeltaSchema } from './history';
+import { isRecentEventsProjection, recentEventsDeltaSchema } from './history';
 import type { DeviceProjection, PlatformStorageProjection } from './projections';
 import {
     activeCommandProjectionSchema,
@@ -228,26 +228,7 @@ export function isRoomSnapshotProjection(value: unknown): value is RoomSnapshotP
 }
 
 function hasValidRecentEvents(events: readonly unknown[]): boolean {
-    if (!events.every(isRecentEventProjection)) {
-        return false;
-    }
-
-    return (
-        events.length <= 20 &&
-        new Set(events.map((event) => event.recordId)).size === events.length &&
-        isRecentEventsOrdered(events)
-    );
-}
-
-function isRecentEventProjection(value: unknown): value is RecentEventProjection {
-    return (
-        typeof value === 'object' &&
-        value !== null &&
-        'recordId' in value &&
-        typeof value.recordId === 'string' &&
-        'occurredAt' in value &&
-        typeof value.occurredAt === 'string'
-    );
+    return isRecentEventsProjection(events);
 }
 
 function hasConsistentCommandCollections(
