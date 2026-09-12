@@ -63,6 +63,33 @@ They should not duplicate domain behavior from architecture docs, ADRs or
 `AGENTS.md` files. When a skill needs behavior context, it should load or cite
 the relevant source document.
 
+## Delivery Work Hierarchy
+
+AI-assisted delivery uses three planning levels:
+
+- a **Stage** is a roadmap-level outcome and is too broad to implement as one
+  Goal;
+- a **Dev Story** is an independently demonstrable and testable increment of
+  user, operator, developer or reliability value;
+- a **Subtask** is one technical unit of work required to complete a Dev Story
+  and need not provide independent value.
+
+Stage decomposition is separate from detailed planning and implementation. It
+produces Dev Stories and Subtasks with their own complexity and phase profiles,
+but the developer chooses which work item enters the next workflow. The chosen
+unit may be a whole Dev Story or one Subtask.
+
+When a Dev Story is selected, its Subtasks become internal steps of that
+execution unit. When a Subtask is selected, the execution scope is limited to
+that Subtask and its parent Dev Story remains incomplete. A Dev Story is
+complete only when all of its Subtasks are complete and its story-level
+acceptance criteria have been verified.
+
+Separate Subtasks may become separate Goals or run in parallel only after the
+developer chooses that execution shape and confirms that their dependencies
+and checkouts are independent. A decomposition may identify parallel
+candidates, but it does not approve or start parallel work.
+
 ## Operational Delivery Workflow
 
 This workflow is a preferred operating heuristic for AI-assisted work in this
@@ -70,26 +97,36 @@ repository. It helps choose an appropriate model and reasoning effort for a
 delivery stage; it does not define Smart Room system behavior and does not
 override the documentation hierarchy above.
 
-The current model guidance is: use Sol for normal frontier reasoning, Terra
-when balancing capability and cost, Luna for efficient procedural work, and
-Astra only for exceptional architecture or cross-system synthesis. Start with
-`medium` reasoning when it is appropriate for the task and increase it only
-when the extra reasoning produces a meaningful quality gain. Revisit these
-presets as model availability and observed project outcomes change; see the
+Capability profiles keep decomposition results stable when the available model
+catalog changes. The current registry is:
+
+| Capability profile | Current model   | Intended use                                                     |
+| ------------------ | --------------- | ---------------------------------------------------------------- |
+| `economy`          | `gpt-5.6-luna`  | Bounded procedural work with low reasoning risk                  |
+| `standard`         | `gpt-5.6-terra` | Normal implementation and moderate repository reasoning          |
+| `frontier`         | `gpt-5.6-sol`   | Difficult planning, reliability analysis and cross-boundary work |
+| `exceptional`      | `gpt-6-astra`   | Exceptional architecture or cross-system synthesis               |
+
+Reasoning effort remains a separate part of a recommendation. Start with
+`medium` when appropriate and increase it only when extra reasoning produces a
+meaningful quality gain. Revisit the registry as model availability and
+observed project outcomes change; see the
 [official OpenAI model guidance](https://developers.openai.com/api/docs/guides/latest-model).
 
-| Delivery stage                               | Default selection       | Escalation or boundary                                                                                                                                                                               |
-| -------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Decompose a roadmap Stage into backlog tasks | Sol High                | Use Sol XHigh for an unusually difficult synthesis, or Astra High only when the Stage creates a fundamental system boundary.                                                                         |
-| Plan one accepted task                       | Sol High                | Use Sol XHigh for exceptional cross-cutting analysis, or Astra High only for exceptional architecture or cross-system synthesis. The human owner approves the plan and resolves material decisions.  |
-| Implement an approved plan                   | Terra Medium            | Use the verified implementation workflow and one writer. Escalate only as needed: Terra High, then Sol Medium, then Sol High. The implementer must not silently redesign system behavior.            |
-| Review a task                                | Sol High                | Use Sol XHigh for unusually complex review evidence, or Astra High only for exceptional cross-system review. General review remains read-only; the delivery reviewer provides an independent gate.   |
-| Prepare and create a commit                  | Luna Low or Luna Medium | Keep the existing scoped commit workflow; the human owner chooses when the reviewed change is accepted for commit.                                                                                   |
-| Audit completion of a whole Stage            | Astra Max               | Use only for a read-only audit with separable, independent areas of evidence. It is not the default for a task or normal Stage decomposition. The human owner decides whether the Stage is complete. |
+| Delivery stage                             | Default selection                     | Escalation or boundary                                                                                                                               |
+| ------------------------------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decompose a roadmap Stage                  | `frontier / high`                     | Use `exceptional / high` only when the Stage requires exceptional architecture or cross-system synthesis.                                            |
+| Plan a selected Dev Story or Subtask       | Work item's `Planning` profile        | The human owner selects the work item, approves the plan and resolves material decisions.                                                            |
+| Implement an approved Dev Story or Subtask | Work item's `Implementation` profile  | Use the verified implementation workflow and one writer for the selected execution unit. The implementer must not silently redesign system behavior. |
+| Review a Dev Story or Subtask              | Work item's `Review` profile          | General review remains read-only; the configured delivery reviewer provides the independent delivery gate when that workflow applies.                |
+| Prepare and create a commit                | `economy / low` or `economy / medium` | Keep the existing scoped commit workflow; the human owner chooses when the reviewed change is accepted for commit.                                   |
+| Audit completion of a whole Stage          | `exceptional / max`                   | Use only for a read-only audit with separable, independent areas of evidence. The human owner decides whether the Stage is complete.                 |
 
-The main agent's model is selected manually for the task. Project configuration
-provides compatible subagent defaults and focused research presets; it cannot
-automatically switch the main agent's model between delivery stages.
+Profiles are recommendations for the developer, not an automatic model router.
+The main agent's model is selected manually. Project configuration provides
+subagent defaults and focused role presets, and a configured specialist may use
+a stronger model than the work item's minimum recommended profile. Neither
+decomposition nor the profile registry automatically switches an agent's model.
 
 Human ownership remains explicit throughout this workflow: the human approves
 implementation plans, owns changes to system behavior and architecture,
@@ -97,11 +134,12 @@ accepts review outcomes, and decides when to commit or close a Stage.
 
 ## Goal-Oriented Task Delivery
 
-Use a Goal for a cohesive implementation task that has stable acceptance
-criteria, meaningful verification and a clear stopping condition. Small, local
-changes should use the same discipline with a minimal outline instead of Goal
-ceremony. A roadmap Stage or an open-ended architecture exploration is too
-broad to become one implementation Goal.
+Use a Goal for a cohesive selected work item that has stable acceptance
+criteria, meaningful verification and a clear stopping condition. The selected
+work item may be a Dev Story or a Subtask. Small, local changes should use the
+same discipline with a minimal outline instead of Goal ceremony. A roadmap
+Stage or an open-ended architecture exploration is too broad to become one
+implementation Goal.
 
 The preferred task flow is:
 
@@ -123,8 +161,10 @@ new behavior.
 
 One implementation Goal uses one checkout: Local or one worktree. It has one
 repository-writing agent. Do not split its acceptance criteria among concurrent
-writers. Separate, independently approved Goals may run in separate worktrees
-with separate writers when their scopes and verification are independent.
+writers. Separate, independently approved Goals, including developer-selected
+Subtasks, may run in separate worktrees with separate writers only when their
+dependencies, scopes and verification are independent. Completing one Subtask
+Goal does not complete its parent Dev Story.
 
 Worktrees isolate parallel chats and their working files; they do not replace
 the Goal Execution Contract, the one-writer rule or the delivery gate. Each

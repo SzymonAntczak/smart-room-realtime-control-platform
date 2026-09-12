@@ -1,0 +1,4 @@
+interface:
+    display_name: 'Smart Room Stage Decomposition'
+    short_description: 'Split stages into testable stories and subtasks'
+    default_prompt: 'Use $smart-room-stage-decomposition to decompose this Smart Room roadmap Stage into testable Dev Stories and classified subtasks.'
