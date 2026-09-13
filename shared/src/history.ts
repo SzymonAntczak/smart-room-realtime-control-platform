@@ -369,11 +369,107 @@ function compareTrendPointsAscending(
     return timestampOrder !== 0 ? timestampOrder : left.storageSequence - right.storageSequence;
 }
 
+export const historyPageOrders = ['occurred_at_desc'] as const;
+const historyPageOrderSchema = Type.Union(historyPageOrders.map((order) => Type.Literal(order)));
+const historyPageSizeSchema = Type.Integer({ minimum: 1 });
+
+export const significantFactCursorQueryScopeSchema = Type.Object(
+    {
+        dataset: Type.Literal('significant_facts'),
+        order: historyPageOrderSchema,
+        pageSize: historyPageSizeSchema,
+    },
+    { additionalProperties: false },
+);
+export const rawTelemetryCursorQueryScopeSchema = Type.Object(
+    {
+        dataset: Type.Literal('raw_telemetry'),
+        deviceId: nonEmptyStringSchema,
+        metric: Type.Literal('temperature'),
+        from: isoTimestampSchema,
+        to: isoTimestampSchema,
+        order: historyPageOrderSchema,
+        pageSize: historyPageSizeSchema,
+    },
+    { additionalProperties: false },
+);
+
+/** Canonical result-shaping inputs that a server-issued cursor must bind. */
+export const historyCursorQueryScopeSchema = Type.Union([
+    significantFactCursorQueryScopeSchema,
+    rawTelemetryCursorQueryScopeSchema,
+]);
+export type HistoryCursorQueryScope = Static<typeof historyCursorQueryScopeSchema>;
+
+export function normalizeHistoryCursorQueryScope(
+    value: unknown,
+): HistoryCursorQueryScope | undefined {
+    if (!isSchema(historyCursorQueryScopeSchema, value)) {
+        return undefined;
+    }
+
+    if (value.dataset === 'significant_facts') {
+        return {
+            dataset: value.dataset,
+            order: value.order,
+            pageSize: value.pageSize,
+        };
+    }
+
+    const from = normalizeIsoTimestamp(value.from);
+    const to = normalizeIsoTimestamp(value.to);
+
+    if (from === undefined || to === undefined || Date.parse(from) >= Date.parse(to)) {
+        return undefined;
+    }
+
+    return {
+        dataset: value.dataset,
+        deviceId: value.deviceId,
+        metric: value.metric,
+        from,
+        to,
+        order: value.order,
+        pageSize: value.pageSize,
+    };
+}
+
+/** Rejects any reinterpretation of a cursor under another canonical query scope. */
+export function isMatchingHistoryCursorQueryScope(
+    capturedScope: unknown,
+    candidateScope: unknown,
+): boolean {
+    const captured = normalizeHistoryCursorQueryScope(capturedScope);
+    const candidate = normalizeHistoryCursorQueryScope(candidateScope);
+
+    if (
+        captured === undefined ||
+        candidate === undefined ||
+        captured.dataset !== candidate.dataset
+    ) {
+        return false;
+    }
+
+    if (captured.dataset === 'significant_facts') {
+        return captured.order === candidate.order && captured.pageSize === candidate.pageSize;
+    }
+
+    return (
+        candidate.dataset === 'raw_telemetry' &&
+        captured.deviceId === candidate.deviceId &&
+        captured.metric === candidate.metric &&
+        captured.from === candidate.from &&
+        captured.to === candidate.to &&
+        captured.order === candidate.order &&
+        captured.pageSize === candidate.pageSize
+    );
+}
+
 const historyPageFields = {
     historyGenerationId: historyGenerationIdSchema,
     throughSequence: storedThroughSequenceSchema,
     retentionAsOf: canonicalUtcTimestampSchema,
-    pageSize: Type.Integer({ minimum: 1 }),
+    pageSize: historyPageSizeSchema,
     nextCursor: Type.Union([nonEmptyStringSchema, Type.Null()]),
 };
 

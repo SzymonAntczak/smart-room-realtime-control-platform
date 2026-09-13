@@ -325,7 +325,7 @@ Each item has one difficulty rating only:
 - **Open decisions:** none. Cursor encoding and exact endpoint paths are bounded
   implementation choices under the accepted semantics.
 
-### [ ] `DS-4-01` — Coherent durable-history contract
+### [x] `DS-4-01` — Coherent durable-history contract
 
 - **Value / observable outcome:** all consumers validate one consistent model for
   feed records, diagnostics, cursor pages, trends and typed cursor failures.

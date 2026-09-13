@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
     isHistoryCursorErrorResponse,
+    isMatchingHistoryCursorQueryScope,
     isRawTelemetryPage,
     isRecentEventsProjection,
     isSignificantFactPage,
     isTrendResponse,
     type NormalizedTrendQuery,
+    normalizeHistoryCursorQueryScope,
     normalizeTrendQuery,
     type RawTelemetrySampleProjection,
     type RecentEventProjection,
@@ -70,6 +72,154 @@ describe('durable history contracts', () => {
                 pageSize: 20,
             }),
         ).toBe(false);
+    });
+
+    it('canonicalizes equivalent cursor query scopes before matching them', () => {
+        const capturedScope = normalizeHistoryCursorQueryScope({
+            dataset: 'raw_telemetry',
+            deviceId: 'temp-desk',
+            metric: 'temperature',
+            from: '2026-09-10T12:00:00+02:00',
+            to: '2026-09-10T13:00:00+02:00',
+            order: 'occurred_at_desc',
+            pageSize: 20,
+        });
+
+        expect(capturedScope).toEqual({
+            dataset: 'raw_telemetry',
+            deviceId: 'temp-desk',
+            metric: 'temperature',
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-10T11:00:00Z',
+            order: 'occurred_at_desc',
+            pageSize: 20,
+        });
+        expect(
+            isMatchingHistoryCursorQueryScope(capturedScope, {
+                dataset: 'raw_telemetry',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-10T11:00:00Z',
+                order: 'occurred_at_desc',
+                pageSize: 20,
+            }),
+        ).toBe(true);
+    });
+
+    it.each([
+        [
+            'dataset',
+            {
+                dataset: 'significant_facts',
+                order: 'occurred_at_desc',
+                pageSize: 20,
+            },
+        ],
+        [
+            'device filter',
+            {
+                dataset: 'raw_telemetry',
+                deviceId: 'temp-window',
+                metric: 'temperature',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-10T11:00:00Z',
+                order: 'occurred_at_desc',
+                pageSize: 20,
+            },
+        ],
+        [
+            'metric filter',
+            {
+                dataset: 'raw_telemetry',
+                deviceId: 'temp-desk',
+                metric: 'humidity',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-10T11:00:00Z',
+                order: 'occurred_at_desc',
+                pageSize: 20,
+            },
+        ],
+        [
+            'from bound',
+            {
+                dataset: 'raw_telemetry',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T10:05:00Z',
+                to: '2026-09-10T11:00:00Z',
+                order: 'occurred_at_desc',
+                pageSize: 20,
+            },
+        ],
+        [
+            'to bound',
+            {
+                dataset: 'raw_telemetry',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-10T10:55:00Z',
+                order: 'occurred_at_desc',
+                pageSize: 20,
+            },
+        ],
+        [
+            'order',
+            {
+                dataset: 'raw_telemetry',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-10T11:00:00Z',
+                order: 'occurred_at_asc',
+                pageSize: 20,
+            },
+        ],
+        [
+            'page size',
+            {
+                dataset: 'raw_telemetry',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-10T11:00:00Z',
+                order: 'occurred_at_desc',
+                pageSize: 50,
+            },
+        ],
+    ])('rejects a changed cursor query %s', (_change, candidateScope) => {
+        const capturedScope = {
+            dataset: 'raw_telemetry',
+            deviceId: 'temp-desk',
+            metric: 'temperature',
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-10T11:00:00Z',
+            order: 'occurred_at_desc',
+            pageSize: 20,
+        };
+
+        expect(isMatchingHistoryCursorQueryScope(capturedScope, candidateScope)).toBe(false);
+    });
+
+    it('rejects an empty or reversed telemetry cursor range', () => {
+        const query = {
+            dataset: 'raw_telemetry',
+            deviceId: 'temp-desk',
+            metric: 'temperature',
+            from: '2026-09-10T11:00:00Z',
+            to: '2026-09-10T11:00:00Z',
+            order: 'occurred_at_desc',
+            pageSize: 20,
+        };
+
+        expect(normalizeHistoryCursorQueryScope(query)).toBeUndefined();
+        expect(
+            normalizeHistoryCursorQueryScope({
+                ...query,
+                from: '2026-09-10T11:01:00Z',
+            }),
+        ).toBeUndefined();
     });
 
     it('accepts an ordered, unique bounded recent-event feed', () => {
