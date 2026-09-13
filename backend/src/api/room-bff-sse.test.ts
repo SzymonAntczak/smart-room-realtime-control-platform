@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 
+import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type {
     RoomPublicationBatch,
@@ -104,7 +105,7 @@ describe('startRoomRealtimePublisher', () => {
 
         startRoomRealtimePublisher(stream, room.config);
         room.publish({
-            ...createSnapshot({ storedThroughSequence: 1 }),
+            ...createSnapshot({ storedThroughSequence: historyFixtureWatermark() }),
             recentEvents: [storageGap()],
         });
 
@@ -113,7 +114,7 @@ describe('startRoomRealtimePublisher', () => {
         expect(gapUpdate).toMatchObject({
             messageType: 'platform.updated',
             payload: {
-                storage: { storedThroughSequence: 1 },
+                storage: { storedThroughSequence: historyFixtureWatermark() },
                 recentEvents: [expect.objectContaining({ eventType: 'storage.gap.recorded' })],
             },
         });
@@ -124,7 +125,7 @@ describe('startRoomRealtimePublisher', () => {
         const room = createRoomHarness(createSnapshot());
         startRoomRealtimePublisher(stream, room.config);
         const recovered = {
-            ...createSnapshot({ storedThroughSequence: 1 }),
+            ...createSnapshot({ storedThroughSequence: historyFixtureWatermark() }),
             recentEvents: [storageGap()],
         };
 
@@ -166,7 +167,7 @@ describe('startRoomRealtimePublisher', () => {
         const room = createRoomHarness(createSnapshot());
         startRoomRealtimePublisher(firstStream, room.config);
         const recovered = {
-            ...createSnapshot({ storedThroughSequence: 1 }),
+            ...createSnapshot({ storedThroughSequence: historyFixtureWatermark() }),
             recentEvents: [storageGap()],
         };
 
@@ -413,21 +414,11 @@ function createRecentCommands(): RoomSnapshotProjection['recentCommands'] {
 }
 
 function storageGap(): RoomSnapshotProjection['recentEvents'][number] {
-    return {
-        recordId: `rec:v1:sha256:${'1'.repeat(64)}`,
-        eventType: 'storage.gap.recorded',
-        occurredAt: '2026-09-03T08:00:01Z',
-        durability: 'durable',
-        storageSequence: 1,
-        source: 'backend',
-        payload: {
-            outageStartedAt: '2026-09-03T08:00:00Z',
-            outageEndedAt: '2026-09-03T08:00:01Z',
-            failureReason: 'storage_write_failed',
-            boundaryBasis: 'same_process_first_degraded_at',
-            observationsBackfilled: false,
-        },
-    };
+    return createHistoryIdentityFixtures().recentEvent;
+}
+
+function historyFixtureWatermark(): number {
+    return createHistoryIdentityFixtures().telemetrySample.storageSequence;
 }
 
 function messages(stream: ControlledWritable): RoomRealtimeServerMessage[] {

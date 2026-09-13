@@ -12,8 +12,24 @@ import {
     type RecentEventProjection,
     selectTrendPoints,
 } from './history';
+import { createHistoryIdentityFixtures } from './history-fixtures';
 
 describe('durable history contracts', () => {
+    it('keeps shared fact and telemetry identities valid across feed, pages and trend views', () => {
+        const fixtures = createHistoryIdentityFixtures();
+
+        expect(isRecentEventsProjection(fixtures.recentEvents)).toBe(true);
+        expect(isSignificantFactPage(fixtures.significantFactPage)).toBe(true);
+        expect(isRawTelemetryPage(fixtures.rawTelemetryPage)).toBe(true);
+        expect(isTrendResponse(fixtures.trendQuery, fixtures.trendResponse)).toBe(true);
+        expect(fixtures.significantFactPage.items[0]?.recordId).toBe(fixtures.recentEvent.recordId);
+        expect(fixtures.trendResponse.points[0]?.recordId).toBe(fixtures.telemetrySample.recordId);
+        expect(fixtures.trendResponse.points[0]?.storageSequence).toBe(
+            fixtures.telemetrySample.storageSequence,
+        );
+        expect(fixtures.recentEvent.recordId).not.toBe(fixtures.telemetrySample.recordId);
+    });
+
     it('accepts each typed cursor failure response', () => {
         expect(
             isHistoryCursorErrorResponse({

@@ -344,7 +344,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-01-01` | Complete recent-event, durable-diagnostics and cursor-page schemas in `shared`. | none                                     | `B`        | Contract tests reject unordered, oversized, dangling and timestamp-inconsistent entries. |
 | `[x] ST-4-01-02` | Define half-open trend query/response and raw-sample identity in `shared`.      | none                                     | `C`        | Tests cover buckets, equal extrema, boundaries and point limit.                          |
 | `[x] ST-4-01-03` | Define expiry, generation-change, scope-mismatch and invalid-cursor responses.  | `ST-4-01-01`                             | `B`        | Changed dataset/filter/range/order/page size cannot validate.                            |
-| `[ ] ST-4-01-04` | Verify record identity is coherent across HTTP, SSE, feed and trend fixtures.   | `ST-4-01-01`, `ST-4-01-02`, `ST-4-01-03` | `C`        | Shared fixtures validate in every consumer without local schema copies.                  |
+| `[x] ST-4-01-04` | Verify record identity is coherent across HTTP, SSE, feed and trend fixtures.   | `ST-4-01-01`, `ST-4-01-02`, `ST-4-01-03` | `C`        | Shared fixtures validate in every consumer without local schema copies.                  |
 
 ### [ ] `DS-4-02` — Retention with a stable read snapshot
 

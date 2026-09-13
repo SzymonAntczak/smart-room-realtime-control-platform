@@ -9,6 +9,7 @@
         "./development": "./src/development.ts",
         "./devices": "./src/devices.ts",
         "./events": "./src/events.ts",
+        "./history-fixtures": "./src/history-fixtures.ts",
         "./history": "./src/history.ts",
         "./projections": "./src/projections.ts",
         "./realtime": "./src/realtime.ts",

@@ -1,3 +1,4 @@
+import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -48,6 +49,36 @@ describe('mock BFF shared-contract boundary', () => {
                 payload: roomSnapshot,
             }),
         ).toThrow('SSE message did not match the shared contract');
+    });
+
+    it('accepts the shared history fixture in both snapshot and SSE feed boundaries', () => {
+        const fixtures = createHistoryIdentityFixtures();
+        const baseRoomSnapshot = createOnlineLedRoomSnapshot();
+        const roomSnapshot = {
+            ...baseRoomSnapshot,
+            recentEvents: fixtures.recentEvents,
+            platform: {
+                storage: {
+                    ...baseRoomSnapshot.platform.storage,
+                    storedThroughSequence: fixtures.telemetrySample.storageSequence,
+                },
+            },
+        };
+        const message = {
+            messageType: 'platform.updated',
+            previousRevision: 0,
+            revision: 1,
+            sentAt: '2026-09-10T10:01:00.000Z',
+            payload: {
+                storage: roomSnapshot.platform.storage,
+                recentEvents: fixtures.recentEvents,
+            },
+        } as const;
+
+        expect(assertMockRoomSnapshot(roomSnapshot).recentEvents[0]?.recordId).toBe(
+            fixtures.recentEvent.recordId,
+        );
+        expect(serializeMockSseMessage(message)).toContain(fixtures.recentEvent.recordId);
     });
 
     it('creates revision-linked device and command updates', () => {

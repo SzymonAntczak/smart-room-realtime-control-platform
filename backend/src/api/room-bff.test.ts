@@ -1,6 +1,7 @@
 import type { AddressInfo } from 'node:net';
 
 import type { DeviceScenarioAction } from '@smart-room/contracts/development';
+import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type {
     RoomPublicationBatch,
@@ -35,6 +36,29 @@ describe('createRoomBffServer', () => {
         expect(response.headers.get('content-type')).toContain('application/json');
         expect(response.headers.get('access-control-allow-origin')).toBe('*');
         await expect(response.json()).resolves.toEqual(createRoomSnapshot());
+    });
+
+    it('serves the shared history fact unchanged in the HTTP room feed', async () => {
+        const fixtures = createHistoryIdentityFixtures();
+        const roomSnapshot = {
+            ...createRoomSnapshot(),
+            recentEvents: fixtures.recentEvents,
+            platform: {
+                storage: {
+                    ...availableStorage(),
+                    storedThroughSequence: fixtures.telemetrySample.storageSequence,
+                },
+            },
+        };
+        const server = await listen(createRoomBffServer(createRoomBffConfig({ roomSnapshot })));
+        openServers.push(server);
+
+        const response = await fetch(`${serverUrl(server)}/room`);
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            recentEvents: [{ recordId: fixtures.recentEvent.recordId }],
+        });
     });
 
     it('serves derived stale health from the current room snapshot', async () => {
