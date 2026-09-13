@@ -397,6 +397,43 @@ export const rawTelemetryPageSchema = Type.Object(
 );
 export type RawTelemetryPage = Static<typeof rawTelemetryPageSchema>;
 
+/** Typed failures for a server-issued history pagination cursor. */
+export const historyCursorErrorResponseSchema = Type.Union([
+    Type.Object(
+        {
+            error: Type.Literal('cursor_expired'),
+            message: nonEmptyStringSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            error: Type.Literal('history_generation_changed'),
+            message: nonEmptyStringSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            error: Type.Literal('cursor_query_mismatch'),
+            message: nonEmptyStringSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            error: Type.Literal('invalid_cursor'),
+            message: nonEmptyStringSchema,
+        },
+        { additionalProperties: false },
+    ),
+]);
+export type HistoryCursorErrorResponse = Static<typeof historyCursorErrorResponseSchema>;
+
+export function isHistoryCursorErrorResponse(value: unknown): value is HistoryCursorErrorResponse {
+    return isSchema(historyCursorErrorResponseSchema, value);
+}
+
 /** Deterministic cache/feed order: newest timestamp, then lexical record ID. */
 export function compareRecentEventsDescending(
     left: Pick<RecentEventProjection, 'occurredAt' | 'recordId'>,

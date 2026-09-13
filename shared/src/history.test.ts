@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    isHistoryCursorErrorResponse,
     isRawTelemetryPage,
     isRecentEventsProjection,
     isSignificantFactPage,
@@ -13,6 +14,48 @@ import {
 } from './history';
 
 describe('durable history contracts', () => {
+    it('accepts each typed cursor failure response', () => {
+        expect(
+            isHistoryCursorErrorResponse({
+                error: 'cursor_expired',
+                message: 'The pagination cursor has expired.',
+            }),
+        ).toBe(true);
+        expect(
+            isHistoryCursorErrorResponse({
+                error: 'history_generation_changed',
+                message: 'The history generation changed.',
+            }),
+        ).toBe(true);
+        expect(
+            isHistoryCursorErrorResponse({
+                error: 'cursor_query_mismatch',
+                message: 'The cursor does not match this query.',
+            }),
+        ).toBe(true);
+        expect(
+            isHistoryCursorErrorResponse({
+                error: 'invalid_cursor',
+                message: 'The cursor cannot be verified.',
+            }),
+        ).toBe(true);
+    });
+
+    it('rejects malformed, unknown and non-strict cursor failure responses', () => {
+        expect(
+            isHistoryCursorErrorResponse({ error: 'unknown_cursor_error', message: 'No.' }),
+        ).toBe(false);
+        expect(isHistoryCursorErrorResponse({ error: 'cursor_expired', message: '' })).toBe(false);
+        expect(isHistoryCursorErrorResponse({ error: 'cursor_expired' })).toBe(false);
+        expect(
+            isHistoryCursorErrorResponse({
+                error: 'cursor_query_mismatch',
+                message: 'The cursor does not match this query.',
+                pageSize: 20,
+            }),
+        ).toBe(false);
+    });
+
     it('accepts an ordered, unique bounded recent-event feed', () => {
         const later = storageGap('b', 2, '2026-09-10T10:00:00.000Z');
         const earlier = storageGap('a', 1, '2026-09-10T09:00:00.000Z');
