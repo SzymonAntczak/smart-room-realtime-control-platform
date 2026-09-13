@@ -4,13 +4,8 @@ This list records deliberately deferred implementation work. It does not define
 binding system behavior; promote a durable rule to architecture documentation or
 an ADR as part of the related change.
 
-## Task Sizing Rule
-
-Each unchecked item should normally produce one independently reviewable change:
-one primary responsibility, a narrow public boundary and focused verification.
-Do not combine a contract change, persistence/runtime change, BFF endpoint and
-Dashboard feature in one item. A later integration item may compose already
-completed pieces, but must not silently expand their behavior.
+Reusable rules for sizing and splitting backlog items live in the
+[stage decomposition skill](../../.agents/skills/smart-room-stage-decomposition/SKILL.md).
 
 ## Open Follow-ups
 

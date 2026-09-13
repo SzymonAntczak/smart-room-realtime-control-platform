@@ -93,40 +93,18 @@ candidates, but it does not approve or start parallel work.
 ## Operational Delivery Workflow
 
 This workflow is a preferred operating heuristic for AI-assisted work in this
-repository. It helps choose an appropriate model and reasoning effort for a
-delivery stage; it does not define Smart Room system behavior and does not
-override the documentation hierarchy above.
+repository. For each task, recommend choosing the model and reasoning effort
+that are optimal for that task and its verification needs. Model availability
+and capabilities change, so this document intentionally does not prescribe
+model names, fixed profiles or stage-specific defaults.
 
-Capability profiles keep decomposition results stable when the available model
-catalog changes. The current registry is:
-
-| Capability profile | Current model   | Intended use                                                     |
-| ------------------ | --------------- | ---------------------------------------------------------------- |
-| `economy`          | `gpt-5.6-luna`  | Bounded procedural work with low reasoning risk                  |
-| `standard`         | `gpt-5.6-terra` | Normal implementation and moderate repository reasoning          |
-| `frontier`         | `gpt-5.6-sol`   | Difficult planning, reliability analysis and cross-boundary work |
-| `exceptional`      | `gpt-6-astra`   | Exceptional architecture or cross-system synthesis               |
-
-Reasoning effort remains a separate part of a recommendation. Start with
-`medium` when appropriate and increase it only when extra reasoning produces a
-meaningful quality gain. Revisit the registry as model availability and
-observed project outcomes change; see the
-[official OpenAI model guidance](https://developers.openai.com/api/docs/guides/latest-model).
-
-| Delivery stage                             | Default selection                     | Escalation or boundary                                                                                                                               |
-| ------------------------------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Decompose a roadmap Stage                  | `frontier / high`                     | Use `exceptional / high` only when the Stage requires exceptional architecture or cross-system synthesis.                                            |
-| Plan a selected Dev Story or Subtask       | Work item's `Planning` profile        | The human owner selects the work item, approves the plan and resolves material decisions.                                                            |
-| Implement an approved Dev Story or Subtask | Work item's `Implementation` profile  | Use the verified implementation workflow and one writer for the selected execution unit. The implementer must not silently redesign system behavior. |
-| Review a Dev Story or Subtask              | Work item's `Review` profile          | General review remains read-only; the configured delivery reviewer provides the independent delivery gate when that workflow applies.                |
-| Prepare and create a commit                | `economy / low` or `economy / medium` | Keep the existing scoped commit workflow; the human owner chooses when the reviewed change is accepted for commit.                                   |
-| Audit completion of a whole Stage          | `exceptional / max`                   | Use only for a read-only audit with separable, independent areas of evidence. The human owner decides whether the Stage is complete.                 |
-
-Profiles are recommendations for the developer, not an automatic model router.
-The main agent's model is selected manually. Project configuration provides
-subagent defaults and focused role presets, and a configured specialist may use
-a stronger model than the work item's minimum recommended profile. Neither
-decomposition nor the profile registry automatically switches an agent's model.
+The `A`–`F` difficulty rating assigned during decomposition can help with that
+choice: `A` is the most difficult and `F` is banal. As the task becomes more
+difficult (closer to `A`), a stronger model and/or more reasoning effort is
+generally appropriate. This is a heuristic, not an automatic router or a
+guarantee; the developer decides based on the actual scope, boundaries,
+uncertainty, verification breadth, current model capabilities and practical
+cost or speed constraints.
 
 Human ownership remains explicit throughout this workflow: the human approves
 implementation plans, owns changes to system behavior and architecture,

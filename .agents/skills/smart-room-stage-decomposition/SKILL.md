@@ -60,6 +60,21 @@ the developer, or delegate implementation.
 10. Report unresolved decisions, decomposition warnings and work that must be
     split or decided before implementation.
 
+## Task Sizing
+
+Keep each Dev Story and Subtask small enough to be one independently reviewable
+unit. Each item should normally have:
+
+- one primary responsibility;
+- one narrow public or ownership boundary;
+- focused verification.
+
+Do not combine a contract change, persistence or runtime change, BFF endpoint
+and Dashboard feature in one item. An integration item may compose completed
+pieces, but it must not silently expand their behavior. Split an item when its
+acceptance criteria span multiple independently testable outcomes, ownership
+boundaries or verification approaches.
+
 A Dev Story is complete only when all of its Subtasks are complete and its
 story-level acceptance criteria have been verified. Completing one Subtask does
 not complete its parent story. Give every Dev Story and every Subtask its own
