@@ -4,8 +4,12 @@ import {
     isRawTelemetryPage,
     isRecentEventsProjection,
     isSignificantFactPage,
+    isTrendResponse,
+    type NormalizedTrendQuery,
+    normalizeTrendQuery,
     type RawTelemetrySampleProjection,
     type RecentEventProjection,
+    selectTrendPoints,
 } from './history';
 
 describe('durable history contracts', () => {
@@ -114,6 +118,106 @@ describe('durable history contracts', () => {
             }),
         ).toBe(false);
     });
+
+    it('normalizes a non-empty trend range and enforces the minimum point limit', () => {
+        expect(
+            normalizeTrendQuery({
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T12:00:00+02:00',
+                to: '2026-09-10T13:00:00+02:00',
+                pointLimit: 2,
+            }),
+        ).toMatchObject({
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-10T11:00:00Z',
+        });
+        expect(
+            normalizeTrendQuery({
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-10T10:00:00Z',
+                pointLimit: 2,
+            }),
+        ).toBeUndefined();
+        expect(
+            normalizeTrendQuery({
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-10T11:00:00Z',
+                pointLimit: 1,
+            }),
+        ).toBeUndefined();
+    });
+
+    it('selects half-open bucket extrema with deterministic boundary and tie handling', () => {
+        const query = normalizedTrendQuery({ pointLimit: 4, to: '2026-09-10T10:08:00Z' });
+        const samples = [
+            telemetry('a', 1, '2026-09-10T10:00:00Z', 10),
+            telemetry('b', 2, '2026-09-10T10:01:00Z', 10),
+            telemetry('c', 3, '2026-09-10T10:03:00Z', 20),
+            telemetry('d', 4, '2026-09-10T10:04:00Z', 15),
+            telemetry('e', 5, '2026-09-10T10:05:00Z', 15),
+            telemetry('f', 6, '2026-09-10T10:08:00Z', 0),
+        ];
+
+        expect(selectTrendPoints(query, samples).map((sample) => sample.storageSequence)).toEqual([
+            1, 3, 4, 5,
+        ]);
+    });
+
+    it('keeps the first and last raw sample for a flat bucket unless it has one sample', () => {
+        const query = normalizedTrendQuery({ pointLimit: 2 });
+        const first = telemetry('a', 1, '2026-09-10T10:00:00Z', 22.5);
+        const last = telemetry('b', 2, '2026-09-10T10:05:00Z', 22.5);
+        const only = telemetry('c', 3, '2026-09-10T10:06:00Z', 23);
+
+        expect(
+            selectTrendPoints(query, [first, last]).map((sample) => sample.storageSequence),
+        ).toEqual([1, 2]);
+        expect(selectTrendPoints(query, [only])).toEqual([only]);
+    });
+
+    it('validates a bounded ordered trend response against its normalized query', () => {
+        const query = normalizedTrendQuery({ pointLimit: 2 });
+        const first = telemetry('a', 1, '2026-09-10T10:00:00Z');
+        const last = telemetry('b', 2, '2026-09-10T10:05:00Z');
+        const response = {
+            historyGenerationId: 'generation-1',
+            throughSequence: 2,
+            retentionAsOf: '2026-09-10T10:10:00Z',
+            points: [first, last],
+        };
+
+        expect(isTrendResponse(query, response)).toBe(true);
+        expect(isTrendResponse(query, { ...response, points: [last, first] })).toBe(false);
+        expect(
+            isTrendResponse(query, {
+                ...response,
+                points: [{ ...last, occurredAt: '2026-09-10T10:10:00Z' }],
+            }),
+        ).toBe(false);
+        expect(
+            isTrendResponse(query, {
+                ...response,
+                points: [first, last, telemetry('c', 3, '2026-09-10T10:06:00Z')],
+            }),
+        ).toBe(false);
+        expect(
+            isTrendResponse(query, {
+                ...response,
+                points: [first, { ...last, recordId: first.recordId }],
+            }),
+        ).toBe(false);
+        expect(
+            isTrendResponse(query, {
+                ...response,
+                points: [{ ...first, storageSequence: 3 }],
+            }),
+        ).toBe(false);
+    });
 });
 
 function storageGap(
@@ -139,9 +243,10 @@ function storageGap(
 }
 
 function telemetry(
-    lastHexDigit: 'a' | 'b',
+    lastHexDigit: 'a' | 'b' | 'c' | 'd' | 'e' | 'f',
     storageSequence: number,
     occurredAt: string,
+    value = 22.5,
 ): RawTelemetrySampleProjection {
     return {
         recordId: `rec:v1:sha256:${'1'.repeat(63)}${lastHexDigit}`,
@@ -149,10 +254,27 @@ function telemetry(
         storageSequence,
         deviceId: 'temp-desk',
         metric: 'temperature',
-        value: 22.5,
+        value,
         unit: 'celsius',
         occurredAt,
     };
+}
+
+function normalizedTrendQuery(overrides: Partial<NormalizedTrendQuery> = {}): NormalizedTrendQuery {
+    const query = normalizeTrendQuery({
+        deviceId: 'temp-desk',
+        metric: 'temperature',
+        from: '2026-09-10T10:00:00Z',
+        to: '2026-09-10T10:10:00Z',
+        pointLimit: 2,
+        ...overrides,
+    });
+
+    if (query === undefined) {
+        throw new Error('Expected test trend query to normalize.');
+    }
+
+    return query;
 }
 
 function commandFailure(

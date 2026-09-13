@@ -17,7 +17,13 @@ import {
     storageSequenceSchema,
     storedThroughSequenceSchema,
 } from './storage';
-import { canonicalUtcTimestampSchema, isSchema, nonEmptyStringSchema } from './validation';
+import {
+    canonicalUtcTimestampSchema,
+    isoTimestampSchema,
+    isSchema,
+    nonEmptyStringSchema,
+    normalizeIsoTimestamp,
+} from './validation';
 
 export const storageGapBoundaryBases = [
     'same_process_first_degraded_at',
@@ -182,6 +188,186 @@ export const rawTelemetrySampleProjectionSchema = Type.Object(
     { additionalProperties: false },
 );
 export type RawTelemetrySampleProjection = Static<typeof rawTelemetrySampleProjectionSchema>;
+
+/** Request for a bounded, downsampled view of one device metric. */
+export const trendQuerySchema = Type.Object(
+    {
+        deviceId: nonEmptyStringSchema,
+        metric: Type.Literal('temperature'),
+        from: isoTimestampSchema,
+        to: isoTimestampSchema,
+        pointLimit: Type.Integer({ minimum: 2 }),
+    },
+    { additionalProperties: false },
+);
+export type TrendQuery = Static<typeof trendQuerySchema>;
+
+/** Query after its accepted RFC 3339 bounds have been canonicalized to UTC. */
+export interface NormalizedTrendQuery extends Omit<TrendQuery, 'from' | 'to'> {
+    from: string;
+    to: string;
+}
+
+/** A bounded trend keeps original telemetry identities rather than aggregate records. */
+export const trendResponseSchema = Type.Object(
+    {
+        historyGenerationId: historyGenerationIdSchema,
+        throughSequence: storedThroughSequenceSchema,
+        retentionAsOf: canonicalUtcTimestampSchema,
+        points: Type.Array(rawTelemetrySampleProjectionSchema),
+    },
+    { additionalProperties: false },
+);
+export type TrendResponse = Static<typeof trendResponseSchema>;
+
+export function normalizeTrendQuery(value: unknown): NormalizedTrendQuery | undefined {
+    if (!isSchema(trendQuerySchema, value)) {
+        return undefined;
+    }
+
+    const from = normalizeIsoTimestamp(value.from);
+    const to = normalizeIsoTimestamp(value.to);
+
+    if (from === undefined || to === undefined || Date.parse(from) >= Date.parse(to)) {
+        return undefined;
+    }
+
+    return { ...value, from, to };
+}
+
+/**
+ * Verifies response invariants that JSON Schema cannot express without the
+ * normalized request which set its range, device, metric and point limit.
+ */
+export function isTrendResponse(
+    query: NormalizedTrendQuery,
+    value: unknown,
+): value is TrendResponse {
+    if (!isSchema(trendResponseSchema, value)) {
+        return false;
+    }
+
+    const points = value.points;
+    const from = Date.parse(query.from);
+    const to = Date.parse(query.to);
+
+    return (
+        points.length <= query.pointLimit &&
+        new Set(points.map((point) => point.recordId)).size === points.length &&
+        new Set(points.map((point) => point.storageSequence)).size === points.length &&
+        points.every(
+            (point) =>
+                point.deviceId === query.deviceId &&
+                point.metric === query.metric &&
+                point.storageSequence <= value.throughSequence &&
+                Date.parse(point.occurredAt) >= from &&
+                Date.parse(point.occurredAt) < to,
+        ) &&
+        isTrendPointsOrdered(points)
+    );
+}
+
+/**
+ * Selects the contract-defined extrema from already-read raw samples. It owns
+ * no storage access and is intentionally reusable by a later storage adapter.
+ */
+export function selectTrendPoints(
+    query: NormalizedTrendQuery,
+    samples: readonly RawTelemetrySampleProjection[],
+): RawTelemetrySampleProjection[] {
+    const bucketCount = Math.floor(query.pointLimit / 2);
+    const from = Date.parse(query.from);
+    const to = Date.parse(query.to);
+    const bucketDuration = (to - from) / bucketCount;
+    const buckets = Array.from({ length: bucketCount }, () => ({
+        minimum: undefined as RawTelemetrySampleProjection | undefined,
+        maximum: undefined as RawTelemetrySampleProjection | undefined,
+    }));
+
+    for (const sample of samples) {
+        const occurredAt = Date.parse(sample.occurredAt);
+
+        if (
+            sample.deviceId !== query.deviceId ||
+            sample.metric !== query.metric ||
+            occurredAt < from ||
+            occurredAt >= to
+        ) {
+            continue;
+        }
+
+        const bucketIndex = Math.min(
+            bucketCount - 1,
+            Math.floor((occurredAt - from) / bucketDuration),
+        );
+        const bucket = buckets[bucketIndex];
+
+        if (bucket === undefined) {
+            continue;
+        }
+
+        if (bucket.minimum === undefined || compareTrendMinimum(sample, bucket.minimum) < 0) {
+            bucket.minimum = sample;
+        }
+
+        if (bucket.maximum === undefined || compareTrendMaximum(sample, bucket.maximum) > 0) {
+            bucket.maximum = sample;
+        }
+    }
+
+    const selected = new Map<string, RawTelemetrySampleProjection>();
+
+    for (const bucket of buckets) {
+        if (bucket.minimum !== undefined) {
+            selected.set(bucket.minimum.recordId, bucket.minimum);
+        }
+
+        if (bucket.maximum !== undefined) {
+            selected.set(bucket.maximum.recordId, bucket.maximum);
+        }
+    }
+
+    return [...selected.values()].sort(compareTrendPointsAscending);
+}
+
+function compareTrendMinimum(
+    left: RawTelemetrySampleProjection,
+    right: RawTelemetrySampleProjection,
+): number {
+    if (left.value !== right.value) {
+        return left.value - right.value;
+    }
+
+    return compareTrendPointsAscending(left, right);
+}
+
+function compareTrendMaximum(
+    left: RawTelemetrySampleProjection,
+    right: RawTelemetrySampleProjection,
+): number {
+    if (left.value !== right.value) {
+        return left.value - right.value;
+    }
+
+    return compareTrendPointsAscending(left, right);
+}
+
+function isTrendPointsOrdered(points: readonly RawTelemetrySampleProjection[]): boolean {
+    return points.every((point, index) => {
+        const next = points[index + 1];
+
+        return next === undefined || compareTrendPointsAscending(point, next) <= 0;
+    });
+}
+
+function compareTrendPointsAscending(
+    left: Pick<RawTelemetrySampleProjection, 'occurredAt' | 'storageSequence'>,
+    right: Pick<RawTelemetrySampleProjection, 'occurredAt' | 'storageSequence'>,
+): number {
+    const timestampOrder = Date.parse(left.occurredAt) - Date.parse(right.occurredAt);
+
+    return timestampOrder !== 0 ? timestampOrder : left.storageSequence - right.storageSequence;
+}
 
 const historyPageFields = {
     historyGenerationId: historyGenerationIdSchema,
