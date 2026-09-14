@@ -929,6 +929,83 @@ describe('SQLite room storage', () => {
         storage.close();
     });
 
+    it('keeps an accepted identity until count retention retires its final active fact', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const eventId = 'identity-count-retention-event';
+        const fingerprint = 'fp:v1:sha256:identity-count-retention';
+        const retentionAsOf = '2026-09-02T00:00:00.000Z';
+
+        const firstOutcome = storage.transact((transaction) => {
+            transaction.appendSignificantFact({
+                recordId: 'identity-count-oldest-fact',
+                eventId,
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-09-01T10:00:00.000Z',
+                payload: { availability: 'online' },
+            });
+
+            for (let index = 1; index <= 4_999; index += 1) {
+                transaction.appendSignificantFact({
+                    recordId: `identity-count-existing-fact-${index}`,
+                    eventId: `identity-count-existing-event-${index}`,
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-09-01T11:00:00.000Z',
+                    payload: { availability: 'online' },
+                });
+            }
+
+            transaction.appendSignificantFact({
+                recordId: 'identity-count-final-fact',
+                eventId,
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-09-01T12:00:00.000Z',
+                payload: { availability: 'online' },
+            });
+            transaction.upsertAcceptedInputIdentity({
+                eventId,
+                fingerprint,
+                durability: 'durable',
+                acceptedAt: '2026-09-01T12:00:00.000Z',
+            });
+
+            return transaction.retireExpiredRecords({ asOf: retentionAsOf });
+        });
+
+        expect(firstOutcome).toMatchObject({ status: 'committed', value: [] });
+        const activeFacts = storage.listSignificantFacts();
+
+        expect(activeFacts).toHaveLength(5_000);
+        expect(activeFacts).not.toContainEqual(
+            expect.objectContaining({ recordId: 'identity-count-oldest-fact' }),
+        );
+        expect(activeFacts).toContainEqual(
+            expect.objectContaining({ recordId: 'identity-count-final-fact' }),
+        );
+        expect(storage.listAcceptedInputIdentities()).toEqual([
+            expect.objectContaining({ eventId, fingerprint }),
+        ]);
+        expect(storage.isAcceptedInputIdentityActive(eventId, retentionAsOf)).toBe(true);
+
+        const secondOutcome = storage.transact((transaction) => {
+            for (let index = 1; index <= 5_000; index += 1) {
+                transaction.appendSignificantFact({
+                    recordId: `identity-count-replacement-fact-${index}`,
+                    eventId: `identity-count-replacement-event-${index}`,
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-09-01T13:00:00.000Z',
+                    payload: { availability: 'online' },
+                });
+            }
+
+            return transaction.retireExpiredRecords({ asOf: retentionAsOf });
+        });
+
+        expect(secondOutcome).toMatchObject({ status: 'committed', value: [eventId] });
+        expect(storage.listAcceptedInputIdentities()).toEqual([]);
+        expect(storage.isAcceptedInputIdentityActive(eventId, retentionAsOf)).toBe(false);
+        storage.close();
+    });
+
     it('uses active-retention indexes for the write-side ordering keys', () => {
         const databasePath = temporaryDatabasePath();
         const storage = createSqliteRoomStorage({ databasePath });

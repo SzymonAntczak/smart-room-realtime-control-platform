@@ -364,7 +364,7 @@ Each item has one difficulty rating only:
 | ---------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------- | ---------- | ---------------------------------------------------------------------- |
 | `[x] ST-4-02-01` | Complete/audit 30-day accepted and quarantine retirement at startup, write and first read. | none                                     | `C`        | Exact-boundary and immediately-retired late-fact tests pass.           |
 | `[x] ST-4-02-02` | Complete/audit independent telemetry, fact and quarantine count caps.                      | none                                     | `C`        | Count/tie-breaker tests prove one dataset cannot evict another.        |
-| `[ ] ST-4-02-03` | Keep one accepted identity until its final active derived record retires.                  | `ST-4-02-01`, `ST-4-02-02`               | `C`        | Multi-record input remains deduplicable until its last record retires. |
+| `[x] ST-4-02-03` | Keep one accepted identity until its final active derived record retires.                  | `ST-4-02-01`, `ST-4-02-02`               | `C`        | Multi-record input remains deduplicable until its last record retires. |
 | `[ ] ST-4-02-04` | Pin generation, watermark and retention time; retain tombstones for cursor lifetime.       | `ST-4-01-03`, `ST-4-02-01`, `ST-4-02-02` | `B`        | Cursor reads retired payload before expiry and cannot after purge.     |
 | `[ ] ST-4-02-05` | Verify retention, identities and pinned reads share one atomic storage view.               | `ST-4-02-03`, `ST-4-02-04`               | `B`        | Concurrent write/retire/read test exposes no intermediate state.       |
 
