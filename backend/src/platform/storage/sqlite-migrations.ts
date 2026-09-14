@@ -141,6 +141,18 @@ CREATE TABLE runtime_sessions (
 ) STRICT;
 `;
 
+const migrationSixSql = `
+CREATE INDEX significant_facts_retired_by_time
+    ON significant_facts (retired_at)
+    WHERE retired_at IS NOT NULL;
+CREATE INDEX telemetry_samples_retired_by_time
+    ON telemetry_samples (retired_at)
+    WHERE retired_at IS NOT NULL;
+CREATE INDEX quarantine_entries_retired_by_time
+    ON quarantine_entries (retired_at)
+    WHERE retired_at IS NOT NULL;
+`;
+
 function applyRecordIdentityMigration(database: DatabaseSync, historyGenerationId: string): void {
     database.exec(`
         CREATE TABLE significant_facts_v5 (
@@ -315,6 +327,14 @@ export const roomStorageMigrations: readonly Migration[] = [
             }
 
             applyRecordIdentityMigration(database, metadata.history_generation_id);
+        },
+    },
+    {
+        version: 6,
+        name: 'retired-history-purge-indexes',
+        checksum: checksum(migrationSixSql),
+        apply(database) {
+            database.exec(migrationSixSql);
         },
     },
 ];

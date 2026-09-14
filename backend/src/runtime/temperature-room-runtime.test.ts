@@ -5034,6 +5034,26 @@ function createScriptedStorage() {
 
                     return [];
                 },
+                capturePinnedHistoryBounds({ asOf }) {
+                    operations.push('capturePinnedHistoryBounds');
+
+                    return {
+                        historyGenerationId: 'scripted-generation',
+                        throughSequence: stagedStorageSequence,
+                        retentionAsOf: asOf,
+                        expiresAt: asOf,
+                    };
+                },
+                listPinnedSignificantFacts() {
+                    operations.push('listPinnedSignificantFacts');
+
+                    return [...stagedFacts];
+                },
+                listPinnedTelemetrySamples() {
+                    operations.push('listPinnedTelemetrySamples');
+
+                    return [...stagedTelemetry];
+                },
                 saveLatestRoomProjection(input: LatestRoomProjectionInput) {
                     operations.push('saveLatestRoomProjection');
                     stagedCheckpoint = input;
@@ -5183,6 +5203,12 @@ function createScriptedStorage() {
                     (from === undefined || Date.parse(sample.occurredAt) >= Date.parse(from)) &&
                     (to === undefined || Date.parse(sample.occurredAt) < Date.parse(to)),
             );
+        },
+        readPinnedSignificantFacts() {
+            return { status: 'available', value: [...significantFacts] };
+        },
+        readPinnedTelemetrySamples() {
+            return { status: 'available', value: [...telemetrySamples] };
         },
         listQuarantineEntries() {
             return [...quarantineEntries];

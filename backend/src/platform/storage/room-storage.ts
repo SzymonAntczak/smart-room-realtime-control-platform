@@ -1,7 +1,11 @@
 import type { PowerState } from '@smart-room/contracts/devices';
 import type { PlatformEventSource } from '@smart-room/contracts/events';
 import type { RecentEventProjection } from '@smart-room/contracts/history';
-import type { HistoryGenerationId, RecordDurability } from '@smart-room/contracts/storage';
+import type {
+    HistoryGenerationId,
+    RecordDurability,
+    StoredThroughSequence,
+} from '@smart-room/contracts/storage';
 
 import type { RoomProjectionEvidence } from '../read-model/room-projection';
 
@@ -12,6 +16,25 @@ export interface StorageMetadata {
     schemaVersion: number;
     lastStorageSequence: number;
 }
+
+/** Fixed lifetime of a durable-history snapshot from its first page. */
+export const historyCursorLifetimeMilliseconds = 5 * 60 * 1_000;
+
+/**
+ * Durable-history bounds captured for one cursor session. The later HTTP layer
+ * owns cursor encoding and query-scope validation; storage owns these bounds.
+ */
+export interface PinnedHistoryBounds {
+    historyGenerationId: HistoryGenerationId;
+    throughSequence: StoredThroughSequence;
+    retentionAsOf: string;
+    expiresAt: string;
+}
+
+export type PinnedHistoryReadOutcome<Value> =
+    | { status: 'available'; value: Value }
+    | { status: 'cursor_expired' }
+    | { status: 'history_generation_changed' };
 
 export interface AcceptedInputIdentity {
     eventId: string;
@@ -41,6 +64,18 @@ export interface RoomStorageTransaction {
     appendQuarantineEntry(input: QuarantineEntryInput): StoredQuarantineEntry;
     upsertAcceptedInputIdentity(input: AcceptedInputIdentity): void;
     retireExpiredRecords(input: { asOf: string }): string[];
+    /** Retires due rows and atomically captures one durable-history snapshot boundary. */
+    capturePinnedHistoryBounds(input: { asOf: string }): PinnedHistoryBounds;
+    listPinnedSignificantFacts(bounds: PinnedHistoryBounds): StoredSignificantFact[];
+    listPinnedTelemetrySamples(
+        query: {
+            deviceId: string;
+            metric: string;
+            from?: string;
+            to?: string;
+        },
+        bounds: PinnedHistoryBounds,
+    ): StoredTelemetrySample[];
     saveLatestRoomProjection(input: LatestRoomProjectionInput): void;
     upsertCommandDispatchOutboxIntent(input: CommandDispatchOutboxIntent): void;
     closeCommandDispatchOutboxIntent(input: { commandId: string; closedAt: string }): void;
@@ -155,6 +190,20 @@ export interface RoomStorage {
         },
         options?: { asOf?: string },
     ): StoredTelemetrySample[];
+    readPinnedSignificantFacts(input: {
+        bounds: PinnedHistoryBounds;
+        readAt: string;
+    }): PinnedHistoryReadOutcome<StoredSignificantFact[]>;
+    readPinnedTelemetrySamples(input: {
+        query: {
+            deviceId: string;
+            metric: string;
+            from?: string;
+            to?: string;
+        };
+        bounds: PinnedHistoryBounds;
+        readAt: string;
+    }): PinnedHistoryReadOutcome<StoredTelemetrySample[]>;
     /** Supply `asOf` when beginning a durable-history read after idle time. */
     listQuarantineEntries(options?: { asOf?: string }): StoredQuarantineEntry[];
     upsertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): void;

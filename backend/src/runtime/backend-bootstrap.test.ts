@@ -93,7 +93,7 @@ describe('backend bootstrap logging', () => {
                     expect.objectContaining({
                         event: 'storage_migration_check_completed',
                         source: 'sqlite-storage',
-                        schemaVersion: 5,
+                        schemaVersion: 6,
                     }),
                     expect.objectContaining({
                         event: 'backend_started',

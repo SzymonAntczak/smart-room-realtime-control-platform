@@ -12,22 +12,25 @@ import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 import { isSchema } from '@smart-room/contracts/validation';
 
 import { migrateLatestRoomProjectionCheckpoint } from './checkpoint-format-migrations';
-import type {
-    AcceptedInputIdentity,
-    CommandDispatchOutboxIntent,
-    LatestRoomProjectionInput,
-    QuarantineEntryInput,
-    RoomStorage,
-    RoomStorageTransaction,
-    RuntimeSession,
-    SignificantFactInput,
-    SimulatorCommandReceiptInput,
-    StorageMetadata,
-    StorageTransactionOutcome,
-    StoredQuarantineEntry,
-    StoredSignificantFact,
-    StoredTelemetrySample,
-    TelemetrySampleInput,
+import {
+    type AcceptedInputIdentity,
+    type CommandDispatchOutboxIntent,
+    historyCursorLifetimeMilliseconds,
+    type LatestRoomProjectionInput,
+    type PinnedHistoryBounds,
+    type PinnedHistoryReadOutcome,
+    type QuarantineEntryInput,
+    type RoomStorage,
+    type RoomStorageTransaction,
+    type RuntimeSession,
+    type SignificantFactInput,
+    type SimulatorCommandReceiptInput,
+    type StorageMetadata,
+    type StorageTransactionOutcome,
+    type StoredQuarantineEntry,
+    type StoredSignificantFact,
+    type StoredTelemetrySample,
+    type TelemetrySampleInput,
 } from './room-storage';
 import {
     migrateSqliteDatabase,
@@ -139,6 +142,20 @@ export function createSqliteRoomStorage({
                         .map(toStoredTelemetrySample),
                 );
             });
+        },
+        readPinnedSignificantFacts(input) {
+            return run(() =>
+                readPinnedHistory(database, input.bounds, input.readAt, () =>
+                    listPinnedSignificantFacts(database, input.bounds),
+                ),
+            );
+        },
+        readPinnedTelemetrySamples(input) {
+            return run(() =>
+                readPinnedHistory(database, input.bounds, input.readAt, () =>
+                    listPinnedTelemetrySamples(database, input.query, input.bounds),
+                ),
+            );
         },
         listQuarantineEntries(options) {
             return run(() =>
@@ -619,6 +636,26 @@ export function createSqliteRoomStorageTransaction(database: DatabaseSync): Room
         retireExpiredRecords(input) {
             return retireExpiredRecords(database, input.asOf);
         },
+        capturePinnedHistoryBounds(input) {
+            const retentionAsOf = canonicalStorageTimestamp(input.asOf);
+
+            retireExpiredRecords(database, retentionAsOf);
+
+            const metadata = readSqliteStorageMetadata(database);
+
+            return {
+                historyGenerationId: metadata.historyGenerationId,
+                throughSequence: metadata.lastStorageSequence,
+                retentionAsOf,
+                expiresAt: historyCursorExpiry(retentionAsOf),
+            };
+        },
+        listPinnedSignificantFacts(bounds) {
+            return listPinnedSignificantFacts(database, bounds);
+        },
+        listPinnedTelemetrySamples(query, bounds) {
+            return listPinnedTelemetrySamples(database, query, bounds);
+        },
         saveLatestRoomProjection(input) {
             database
                 .prepare(
@@ -756,8 +793,28 @@ export function createSqliteRoomStorageTransaction(database: DatabaseSync): Room
 }
 
 function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
-    const retiredAt = asOf;
-    const cutoff = retentionCutoff(asOf);
+    const retiredAt = canonicalStorageTimestamp(asOf);
+    const cutoff = retentionCutoff(retiredAt);
+    const purgeCutoff = historyCursorPurgeCutoff(retiredAt);
+
+    database
+        .prepare(
+            `DELETE FROM significant_facts
+             WHERE retired_at IS NOT NULL AND retired_at <= ?`,
+        )
+        .run(purgeCutoff);
+    database
+        .prepare(
+            `DELETE FROM telemetry_samples
+             WHERE retired_at IS NOT NULL AND retired_at <= ?`,
+        )
+        .run(purgeCutoff);
+    database
+        .prepare(
+            `DELETE FROM quarantine_entries
+             WHERE retired_at IS NOT NULL AND retired_at <= ?`,
+        )
+        .run(purgeCutoff);
 
     database
         .prepare(
@@ -882,6 +939,88 @@ function readActiveHistory<Value>(
     return read();
 }
 
+function readPinnedHistory<Value>(
+    database: DatabaseSync,
+    bounds: PinnedHistoryBounds,
+    readAt: string,
+    read: () => Value,
+): PinnedHistoryReadOutcome<Value> {
+    const metadata = readSqliteStorageMetadata(database);
+
+    if (metadata.historyGenerationId !== bounds.historyGenerationId) {
+        return { status: 'history_generation_changed' };
+    }
+
+    const canonicalReadAt = canonicalStorageTimestamp(readAt);
+    const expiresAt = canonicalStorageTimestamp(bounds.expiresAt);
+
+    if (Date.parse(canonicalReadAt) >= Date.parse(expiresAt)) {
+        return { status: 'cursor_expired' };
+    }
+
+    return { status: 'available', value: read() };
+}
+
+function listPinnedSignificantFacts(
+    database: DatabaseSync,
+    bounds: PinnedHistoryBounds,
+): StoredSignificantFact[] {
+    return database
+        .prepare(
+            `SELECT history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
+                    source, occurred_at, payload_json
+             FROM significant_facts
+             WHERE history_generation_id = ?
+               AND storage_sequence <= ?
+               AND (retired_at IS NULL OR retired_at > ?)
+             ORDER BY storage_sequence ASC`,
+        )
+        .all(bounds.historyGenerationId, bounds.throughSequence, bounds.retentionAsOf)
+        .map(toStoredSignificantFact);
+}
+
+function listPinnedTelemetrySamples(
+    database: DatabaseSync,
+    query: { deviceId: string; metric: string; from?: string; to?: string },
+    bounds: PinnedHistoryBounds,
+): StoredTelemetrySample[] {
+    const clauses = [
+        'history_generation_id = ?',
+        'storage_sequence <= ?',
+        '(retired_at IS NULL OR retired_at > ?)',
+        'device_id = ?',
+        'metric = ?',
+    ];
+    const parameters: (string | number)[] = [
+        bounds.historyGenerationId,
+        bounds.throughSequence,
+        bounds.retentionAsOf,
+        query.deviceId,
+        query.metric,
+    ];
+
+    if (query.from !== undefined) {
+        clauses.push('occurred_at >= ?');
+        parameters.push(canonicalStorageTimestamp(query.from));
+    }
+
+    if (query.to !== undefined) {
+        clauses.push('occurred_at < ?');
+        parameters.push(canonicalStorageTimestamp(query.to));
+    }
+
+    return database
+        .prepare(
+            `SELECT history_generation_id, storage_sequence, record_id, event_id, device_id, metric, value, unit,
+                    occurred_at, payload_json
+             FROM telemetry_samples
+             WHERE ${clauses.join(' AND ')}
+             ORDER BY occurred_at ASC, storage_sequence ASC`,
+        )
+        .all(...parameters)
+        .map(toStoredTelemetrySample);
+}
+
 function retentionCutoff(asOf: string): string {
     const asOfEpoch = Date.parse(asOf);
 
@@ -890,6 +1029,27 @@ function retentionCutoff(asOf: string): string {
     }
 
     return new Date(asOfEpoch - 30 * 24 * 60 * 60 * 1_000).toISOString();
+}
+
+function historyCursorExpiry(retentionAsOf: string): string {
+    return shiftTimestamp(retentionAsOf, historyCursorLifetimeMilliseconds);
+}
+
+function historyCursorPurgeCutoff(asOf: string): string {
+    return shiftTimestamp(asOf, -historyCursorLifetimeMilliseconds);
+}
+
+function shiftTimestamp(timestamp: string, offsetMilliseconds: number): string {
+    const epoch = Date.parse(timestamp);
+
+    if (!Number.isFinite(epoch)) {
+        throw new StorageInvariantError(
+            'History cursor time requires an ISO timestamp.',
+            timestamp,
+        );
+    }
+
+    return new Date(epoch + offsetMilliseconds).toISOString();
 }
 
 function isAcceptedInputIdentityActive(
@@ -1530,6 +1690,9 @@ const expectedIndexes = {
     accepted_input_identities_by_accepted_at: ['accepted_at', 'event_id'],
     command_dispatch_outbox_active_by_state: ['state', 'next_attempt_at', 'command_id'],
     simulator_command_receipts_terminal_by_source: ['source', 'terminal_at'],
+    significant_facts_retired_by_time: ['retired_at'],
+    telemetry_samples_retired_by_time: ['retired_at'],
+    quarantine_entries_retired_by_time: ['retired_at'],
 } as const satisfies Record<string, readonly string[]>;
 
 const expectedIndexSqlFragments = {
@@ -1562,6 +1725,15 @@ const expectedIndexSqlFragments = {
     ],
     simulator_command_receipts_terminal_by_source: [
         'on simulator_command_receipts (source, terminal_at) where terminal_at is not null',
+    ],
+    significant_facts_retired_by_time: [
+        'on significant_facts (retired_at) where retired_at is not null',
+    ],
+    telemetry_samples_retired_by_time: [
+        'on telemetry_samples (retired_at) where retired_at is not null',
+    ],
+    quarantine_entries_retired_by_time: [
+        'on quarantine_entries (retired_at) where retired_at is not null',
     ],
 } as const satisfies Record<keyof typeof expectedIndexes, readonly string[]>;
 

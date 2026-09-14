@@ -343,7 +343,7 @@ describe('SQLite room storage', () => {
         const storage = createSqliteRoomStorage({ databasePath });
         storage.close();
         const database = new DatabaseSync(databasePath);
-        database.prepare('DELETE FROM schema_migrations WHERE version = 5').run();
+        database.prepare('DELETE FROM schema_migrations WHERE version = 6').run();
         database.close();
         const lifecycle = createSqliteRoomStorageLifecycle({
             databasePath,
@@ -358,7 +358,7 @@ describe('SQLite room storage', () => {
         expect(
             after.prepare('SELECT MAX(version) AS version FROM schema_migrations').get(),
         ).toEqual({
-            version: 4,
+            version: 5,
         });
         after.close();
     });
@@ -375,7 +375,7 @@ describe('SQLite room storage', () => {
             historyGenerationId: expect.stringMatching(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             ),
-            schemaVersion: 5,
+            schemaVersion: 6,
             lastStorageSequence: 0,
         });
         expect(reopened.getMetadata()).toEqual(initialMetadata);
@@ -447,7 +447,7 @@ describe('SQLite room storage', () => {
 
         expect(storage.getMetadata()).toMatchObject({
             historyGenerationId: generation,
-            schemaVersion: 5,
+            schemaVersion: 6,
             lastStorageSequence: 2,
         });
         expect(storage.listSignificantFacts()).toEqual([
@@ -490,6 +490,68 @@ describe('SQLite room storage', () => {
             record_id: expect.stringMatching(expectedRecordId),
         });
         migrated.close();
+    });
+
+    it('migrates v5 tombstones to purge-indexed v6 storage without changing payload or metadata', () => {
+        const databasePath = temporaryDatabasePath();
+        const generation = 'v5-generation';
+        const database = new DatabaseSync(databasePath);
+
+        try {
+            migrateSqliteDatabase(database, generation, roomStorageMigrations.slice(0, 5));
+            database
+                .prepare(
+                    `INSERT INTO significant_facts (
+                        history_generation_id, storage_sequence, record_id, event_type, occurred_at,
+                        payload_json, retired_at
+                    ) VALUES (?, 1, 'v5-retired-fact', 'device.availability.changed', ?, ?, ?)`,
+                )
+                .run(
+                    generation,
+                    '2026-08-01T00:00:00.000Z',
+                    JSON.stringify({ availability: 'offline' }),
+                    '2026-09-01T00:00:00.000Z',
+                );
+            database
+                .prepare('UPDATE storage_metadata SET last_storage_sequence = 1 WHERE id = 1')
+                .run();
+
+            migrateSqliteDatabase(database, generation);
+
+            expect(
+                database
+                    .prepare(
+                        `SELECT history_generation_id, storage_sequence, record_id, payload_json, retired_at
+                         FROM significant_facts`,
+                    )
+                    .get(),
+            ).toEqual({
+                history_generation_id: generation,
+                storage_sequence: 1,
+                record_id: 'v5-retired-fact',
+                payload_json: JSON.stringify({ availability: 'offline' }),
+                retired_at: '2026-09-01T00:00:00.000Z',
+            });
+            expect(
+                database
+                    .prepare(
+                        `SELECT name FROM sqlite_schema
+                         WHERE type = 'index' AND name IN (
+                            'significant_facts_retired_by_time',
+                            'telemetry_samples_retired_by_time',
+                            'quarantine_entries_retired_by_time'
+                         )
+                         ORDER BY name ASC`,
+                    )
+                    .all(),
+            ).toEqual([
+                { name: 'quarantine_entries_retired_by_time' },
+                { name: 'significant_facts_retired_by_time' },
+                { name: 'telemetry_samples_retired_by_time' },
+            ]);
+        } finally {
+            database.close();
+        }
     });
 
     it('stores and reads every Stage 4 storage category through the port', () => {
@@ -1004,6 +1066,245 @@ describe('SQLite room storage', () => {
         expect(storage.listAcceptedInputIdentities()).toEqual([]);
         expect(storage.isAcceptedInputIdentityActive(eventId, retentionAsOf)).toBe(false);
         storage.close();
+    });
+
+    it('pins a history view through its watermark while retaining retired payloads for cursor lifetime', () => {
+        const databasePath = temporaryDatabasePath();
+        const storage = createSqliteRoomStorage({ databasePath });
+        const firstReadAt = '2026-09-01T00:00:00.000Z';
+        const retirementAt = '2026-09-01T00:00:00.002Z';
+        const originalRecordId = 'pinned-original-record';
+        const eventId = 'pinned-original-event';
+
+        try {
+            const initial = storage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: originalRecordId,
+                    eventId,
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-02T00:00:00.001Z',
+                    payload: { availability: 'online' },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'pinned-original-telemetry',
+                    eventId: 'pinned-original-telemetry-event',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 21,
+                    unit: 'celsius',
+                    occurredAt: '2026-08-02T00:00:00.001Z',
+                    payload: { metric: 'temperature', value: 21, unit: 'celsius' },
+                });
+
+                const bounds = transaction.capturePinnedHistoryBounds({ asOf: firstReadAt });
+
+                return {
+                    bounds,
+                    facts: transaction.listPinnedSignificantFacts(bounds),
+                    telemetry: transaction.listPinnedTelemetrySamples(
+                        { deviceId: 'temp-desk', metric: 'temperature' },
+                        bounds,
+                    ),
+                };
+            });
+
+            if (initial.status !== 'committed') {
+                throw initial.error;
+            }
+
+            expect(initial.value.bounds).toMatchObject({
+                historyGenerationId: storage.getMetadata().historyGenerationId,
+                throughSequence: 2,
+                retentionAsOf: firstReadAt,
+                expiresAt: '2026-09-01T00:05:00.000Z',
+            });
+            expect(initial.value.facts).toEqual([
+                expect.objectContaining({ recordId: originalRecordId, storageSequence: 1 }),
+            ]);
+            expect(initial.value.telemetry).toEqual([
+                expect.objectContaining({
+                    recordId: 'pinned-original-telemetry',
+                    storageSequence: 2,
+                }),
+            ]);
+
+            const retirement = storage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'pinned-later-record',
+                    eventId: 'pinned-later-event',
+                    eventType: 'device.availability.changed',
+                    occurredAt: retirementAt,
+                    payload: { availability: 'offline' },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'pinned-later-telemetry',
+                    eventId: 'pinned-later-telemetry-event',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 22,
+                    unit: 'celsius',
+                    occurredAt: retirementAt,
+                    payload: { metric: 'temperature', value: 22, unit: 'celsius' },
+                });
+                transaction.upsertAcceptedInputIdentity({
+                    eventId,
+                    fingerprint: 'fp:v1:sha256:pinned-original',
+                    durability: 'durable',
+                    acceptedAt: firstReadAt,
+                });
+
+                return transaction.retireExpiredRecords({ asOf: retirementAt });
+            });
+
+            expect(retirement).toMatchObject({ status: 'committed', value: [eventId] });
+            expect(storage.listAcceptedInputIdentities()).toEqual([]);
+
+            expect(
+                storage.readPinnedSignificantFacts({
+                    bounds: initial.value.bounds,
+                    readAt: '2026-09-01T00:04:59.999Z',
+                }),
+            ).toEqual({
+                status: 'available',
+                value: [
+                    expect.objectContaining({ recordId: originalRecordId, storageSequence: 1 }),
+                ],
+            });
+            expect(
+                storage.readPinnedTelemetrySamples({
+                    query: { deviceId: 'temp-desk', metric: 'temperature' },
+                    bounds: initial.value.bounds,
+                    readAt: '2026-09-01T00:04:59.999Z',
+                }),
+            ).toEqual({
+                status: 'available',
+                value: [
+                    expect.objectContaining({
+                        recordId: 'pinned-original-telemetry',
+                        storageSequence: 2,
+                    }),
+                ],
+            });
+
+            const replacement = storage.transact((transaction) => {
+                const replacementFact = transaction.appendSignificantFact({
+                    recordId: originalRecordId,
+                    eventId,
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-09-01T00:00:01.000Z',
+                    payload: { availability: 'online' },
+                });
+                transaction.upsertAcceptedInputIdentity({
+                    eventId,
+                    fingerprint: 'fp:v1:sha256:pinned-original',
+                    durability: 'durable',
+                    acceptedAt: '2026-09-01T00:00:01.000Z',
+                });
+                const bounds = transaction.capturePinnedHistoryBounds({
+                    asOf: '2026-09-01T00:00:01.000Z',
+                });
+
+                return {
+                    replacementFact,
+                    bounds,
+                    facts: transaction.listPinnedSignificantFacts(bounds),
+                };
+            });
+
+            if (replacement.status !== 'committed') {
+                throw replacement.error;
+            }
+
+            expect(replacement.value.replacementFact.storageSequence).toBe(5);
+            expect(replacement.value.facts).toEqual([
+                expect.objectContaining({ recordId: 'pinned-later-record', storageSequence: 3 }),
+                expect.objectContaining({ recordId: originalRecordId, storageSequence: 5 }),
+            ]);
+            expect(
+                storage.transact((transaction) =>
+                    transaction.retireExpiredRecords({ asOf: '2026-09-01T00:05:00.001Z' }),
+                ),
+            ).toMatchObject({ status: 'committed' });
+
+            const beforePurge = new DatabaseSync(databasePath, { readOnly: true });
+            expect(
+                beforePurge
+                    .prepare(
+                        'SELECT COUNT(*) AS count FROM significant_facts WHERE storage_sequence = 1',
+                    )
+                    .get(),
+            ).toEqual({ count: 1 });
+            beforePurge.close();
+            expect(
+                storage.readPinnedSignificantFacts({
+                    bounds: initial.value.bounds,
+                    readAt: '2026-09-01T00:05:00.000Z',
+                }),
+            ).toEqual({ status: 'cursor_expired' });
+
+            expect(
+                storage.transact((transaction) =>
+                    transaction.retireExpiredRecords({ asOf: '2026-09-01T00:05:00.002Z' }),
+                ),
+            ).toMatchObject({ status: 'committed' });
+
+            const database = new DatabaseSync(databasePath, { readOnly: true });
+            expect(
+                database
+                    .prepare(
+                        'SELECT COUNT(*) AS count FROM significant_facts WHERE storage_sequence = 1',
+                    )
+                    .get(),
+            ).toEqual({ count: 0 });
+            expect(
+                database
+                    .prepare(
+                        'SELECT COUNT(*) AS count FROM telemetry_samples WHERE storage_sequence = 2',
+                    )
+                    .get(),
+            ).toEqual({ count: 0 });
+            database.close();
+        } finally {
+            storage.close();
+        }
+    });
+
+    it('reports a changed generation before evaluating pinned-history expiry', () => {
+        const first = createSqliteRoomStorage({
+            databasePath: temporaryDatabasePath(),
+            generateHistoryGenerationId: () => '11111111-1111-4111-8111-111111111111',
+        });
+        const second = createSqliteRoomStorage({
+            databasePath: temporaryDatabasePath(),
+            generateHistoryGenerationId: () => '22222222-2222-4222-8222-222222222222',
+        });
+
+        try {
+            const captured = first.transact((transaction) =>
+                transaction.capturePinnedHistoryBounds({ asOf: '2026-09-01T00:00:00.000Z' }),
+            );
+
+            if (captured.status !== 'committed') {
+                throw captured.error;
+            }
+
+            expect(captured.value).toMatchObject({
+                historyGenerationId: '11111111-1111-4111-8111-111111111111',
+                throughSequence: 0,
+                retentionAsOf: '2026-09-01T00:00:00.000Z',
+                expiresAt: '2026-09-01T00:05:00.000Z',
+            });
+
+            expect(
+                second.readPinnedSignificantFacts({
+                    bounds: captured.value,
+                    readAt: '2026-09-01T00:05:00.000Z',
+                }),
+            ).toEqual({ status: 'history_generation_changed' });
+        } finally {
+            first.close();
+            second.close();
+        }
     });
 
     it('uses active-retention indexes for the write-side ordering keys', () => {
@@ -1675,7 +1976,7 @@ describe('SQLite room storage', () => {
         newerStorage.close();
         const newerDatabase = new DatabaseSync(newerDatabasePath);
         newerDatabase
-            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (6, ?, ?)')
+            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (7, ?, ?)')
             .run('future', 'future');
         newerDatabase.close();
 

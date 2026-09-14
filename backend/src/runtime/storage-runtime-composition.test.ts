@@ -86,7 +86,7 @@ describe('storage runtime composition', () => {
                 {
                     event: 'storage_migration_check_completed',
                     source: 'sqlite-storage',
-                    schemaVersion: 5,
+                    schemaVersion: 6,
                 },
             ]);
             expect(existsSync(databasePath)).toBe(true);
@@ -129,7 +129,7 @@ describe('storage runtime composition', () => {
                 {
                     event: 'storage_migration_check_completed',
                     source: 'sqlite-storage',
-                    schemaVersion: 5,
+                    schemaVersion: 6,
                 },
             ]);
 
