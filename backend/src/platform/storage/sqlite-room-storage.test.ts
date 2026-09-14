@@ -793,6 +793,89 @@ describe('SQLite room storage', () => {
         storage.close();
     });
 
+    it('enforces independent count caps with deterministic equal-timestamp tie breakers', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const timestamp = '2026-08-15T00:00:00.000Z';
+
+        try {
+            const outcome = storage.transact((transaction) => {
+                for (let index = 0; index <= 5_000; index += 1) {
+                    transaction.appendSignificantFact({
+                        recordId: `count-fact-${index}`,
+                        eventId: `count-fact-event-${index}`,
+                        eventType: 'device.availability.changed',
+                        occurredAt: timestamp,
+                        payload: { availability: 'online' },
+                    });
+                }
+
+                transaction.appendTelemetrySample({
+                    recordId: 'count-telemetry-device-b',
+                    eventId: 'count-telemetry-device-b-event',
+                    deviceId: 'temp-b',
+                    metric: 'temperature',
+                    value: 20,
+                    unit: 'celsius',
+                    occurredAt: timestamp,
+                    payload: { metric: 'temperature', value: 20, unit: 'celsius' },
+                });
+
+                for (let index = 0; index <= 10_000; index += 1) {
+                    transaction.appendTelemetrySample({
+                        recordId: `count-telemetry-device-a-${index}`,
+                        eventId: `count-telemetry-device-a-event-${index}`,
+                        deviceId: 'temp-a',
+                        metric: 'temperature',
+                        value: index,
+                        unit: 'celsius',
+                        occurredAt: timestamp,
+                        payload: { metric: 'temperature', value: index, unit: 'celsius' },
+                    });
+                }
+
+                for (let index = 0; index <= 1_000; index += 1) {
+                    transaction.appendQuarantineEntry({
+                        eventId: `count-quarantine-event-${index}`,
+                        reason: 'invalid_payload',
+                        recordedAt: timestamp,
+                        rawEvent: { index },
+                    });
+                }
+
+                transaction.retireExpiredRecords({ asOf: '2026-09-01T00:00:00.000Z' });
+            });
+
+            expect(outcome.status).toBe('committed');
+
+            const facts = storage.listSignificantFacts();
+            expect(facts).toHaveLength(5_000);
+            expect(facts.at(0)).toMatchObject({ recordId: 'count-fact-1' });
+            expect(facts.at(-1)).toMatchObject({ recordId: 'count-fact-5000' });
+
+            const telemetryForDeviceA = storage.listTelemetrySamples({
+                deviceId: 'temp-a',
+                metric: 'temperature',
+            });
+            expect(telemetryForDeviceA).toHaveLength(10_000);
+            expect(telemetryForDeviceA.at(0)).toMatchObject({
+                recordId: 'count-telemetry-device-a-1',
+            });
+            expect(telemetryForDeviceA.at(-1)).toMatchObject({
+                recordId: 'count-telemetry-device-a-10000',
+            });
+            expect(
+                storage.listTelemetrySamples({ deviceId: 'temp-b', metric: 'temperature' }),
+            ).toEqual([expect.objectContaining({ recordId: 'count-telemetry-device-b' })]);
+
+            const quarantine = storage.listQuarantineEntries();
+            expect(quarantine).toHaveLength(1_000);
+            expect(quarantine.at(0)).toMatchObject({ eventId: 'count-quarantine-event-1' });
+            expect(quarantine.at(-1)).toMatchObject({ eventId: 'count-quarantine-event-1000' });
+        } finally {
+            storage.close();
+        }
+    });
+
     it('removes an accepted identity only after its final active record is retired', () => {
         const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
         const eventId = 'identity-retention-event';
