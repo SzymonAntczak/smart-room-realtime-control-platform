@@ -1585,6 +1585,63 @@ describe('createTemperatureRoomRuntime', () => {
         expect(calls.indexOf('retention')).toBeLessThan(calls.indexOf('identities'));
     });
 
+    it('retires expired accepted and quarantine records during durable startup', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-startup-retention-'));
+        const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
+        let runtime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
+
+        try {
+            storage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'expired-startup-fact',
+                    eventId: 'expired-startup-fact-event',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-01T23:59:59.999Z',
+                    payload: { availability: 'offline' },
+                });
+                transaction.appendSignificantFact({
+                    recordId: 'boundary-startup-fact',
+                    eventId: 'boundary-startup-fact-event',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-02T00:00:00.000Z',
+                    payload: { availability: 'online' },
+                });
+                transaction.appendQuarantineEntry({
+                    eventId: 'expired-startup-quarantine-event',
+                    reason: 'invalid_payload',
+                    recordedAt: '2026-08-01T23:59:59.999Z',
+                    rawEvent: { invalid: true },
+                });
+                transaction.appendQuarantineEntry({
+                    eventId: 'boundary-startup-quarantine-event',
+                    reason: 'invalid_payload',
+                    recordedAt: '2026-08-02T00:00:00.000Z',
+                    rawEvent: { invalid: true },
+                });
+            });
+
+            runtime = createTemperatureRoomRuntime({
+                clock: createMutableClock('2026-09-01T00:00:00.000Z'),
+                storage,
+            });
+
+            expect(storage.listSignificantFacts()).toEqual([
+                expect.objectContaining({ recordId: 'boundary-startup-fact' }),
+            ]);
+            expect(storage.listQuarantineEntries()).toEqual([
+                expect.objectContaining({ eventId: 'boundary-startup-quarantine-event' }),
+            ]);
+        } finally {
+            runtime?.stop();
+
+            if (!runtime) {
+                storage.close();
+            }
+
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
     it('commits telemetry, identity, retention and checkpoint before publishing its effect', () => {
         const clock = createMutableClock('2026-08-31T09:00:00Z');
         const storage = createScriptedStorage();

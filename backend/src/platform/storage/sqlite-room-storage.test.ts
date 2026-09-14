@@ -685,6 +685,114 @@ describe('SQLite room storage', () => {
         storage.close();
     });
 
+    it('retires expired accepted and quarantine records before an injected-time history read', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const asOf = '2026-09-01T00:00:00.000Z';
+
+        try {
+            storage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'expired-fact',
+                    eventId: 'expired-fact-event',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-01T23:59:59.999Z',
+                    payload: { availability: 'offline' },
+                });
+                transaction.appendSignificantFact({
+                    recordId: 'boundary-fact',
+                    eventId: 'boundary-fact-event',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-02T00:00:00.000Z',
+                    payload: { availability: 'online' },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'expired-telemetry',
+                    eventId: 'expired-telemetry-event',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 21,
+                    unit: 'celsius',
+                    occurredAt: '2026-08-01T23:59:59.999Z',
+                    payload: { metric: 'temperature', value: 21, unit: 'celsius' },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'boundary-telemetry',
+                    eventId: 'boundary-telemetry-event',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 22,
+                    unit: 'celsius',
+                    occurredAt: '2026-08-02T00:00:00.000Z',
+                    payload: { metric: 'temperature', value: 22, unit: 'celsius' },
+                });
+                transaction.appendQuarantineEntry({
+                    eventId: 'expired-quarantine-event',
+                    reason: 'invalid_payload',
+                    recordedAt: '2026-08-01T23:59:59.999Z',
+                    rawEvent: { invalid: true },
+                });
+                transaction.appendQuarantineEntry({
+                    eventId: 'boundary-quarantine-event',
+                    reason: 'invalid_payload',
+                    recordedAt: '2026-08-02T00:00:00.000Z',
+                    rawEvent: { invalid: true },
+                });
+            });
+
+            expect(storage.listSignificantFacts({ asOf })).toEqual([
+                expect.objectContaining({ recordId: 'boundary-fact' }),
+            ]);
+            expect(
+                storage.listTelemetrySamples({ deviceId: 'temp-desk', metric: 'temperature' }),
+            ).toEqual([expect.objectContaining({ recordId: 'boundary-telemetry' })]);
+            expect(storage.listQuarantineEntries()).toEqual([
+                expect.objectContaining({ eventId: 'boundary-quarantine-event' }),
+            ]);
+        } finally {
+            storage.close();
+        }
+    });
+
+    it('immediately retires late accepted and quarantine records in their write transaction', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+
+        const outcome = storage.transact((transaction) => {
+            transaction.appendSignificantFact({
+                recordId: 'late-fact',
+                eventId: 'late-fact-event',
+                eventType: 'device.availability.changed',
+                occurredAt: '2026-08-01T23:59:59.999Z',
+                payload: { availability: 'online' },
+            });
+            transaction.appendTelemetrySample({
+                recordId: 'late-telemetry',
+                eventId: 'late-telemetry-event',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                value: 22,
+                unit: 'celsius',
+                occurredAt: '2026-08-01T23:59:59.999Z',
+                payload: { metric: 'temperature', value: 22, unit: 'celsius' },
+            });
+            transaction.appendQuarantineEntry({
+                eventId: 'late-quarantine-event',
+                reason: 'invalid_payload',
+                recordedAt: '2026-08-01T23:59:59.999Z',
+                rawEvent: { invalid: true },
+            });
+
+            transaction.retireExpiredRecords({ asOf: '2026-09-01T00:00:00.000Z' });
+        });
+
+        expect(outcome.status).toBe('committed');
+        expect(storage.listSignificantFacts()).toEqual([]);
+        expect(
+            storage.listTelemetrySamples({ deviceId: 'temp-desk', metric: 'temperature' }),
+        ).toEqual([]);
+        expect(storage.listQuarantineEntries()).toEqual([]);
+        storage.close();
+    });
+
     it('removes an accepted identity only after its final active record is retired', () => {
         const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
         const eventId = 'identity-retention-event';

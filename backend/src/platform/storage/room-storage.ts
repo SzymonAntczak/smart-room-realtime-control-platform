@@ -144,14 +144,19 @@ export interface RoomStorage {
     ): StorageTransactionOutcome<Value>;
     listAcceptedInputIdentities(): AcceptedInputIdentity[];
     isAcceptedInputIdentityActive(eventId: string, asOf: string): boolean;
-    listSignificantFacts(): StoredSignificantFact[];
-    listTelemetrySamples(query: {
-        deviceId: string;
-        metric: string;
-        from?: string;
-        to?: string;
-    }): StoredTelemetrySample[];
-    listQuarantineEntries(): StoredQuarantineEntry[];
+    /** Supply `asOf` when beginning a durable-history read after idle time. */
+    listSignificantFacts(options?: { asOf?: string }): StoredSignificantFact[];
+    listTelemetrySamples(
+        query: {
+            deviceId: string;
+            metric: string;
+            from?: string;
+            to?: string;
+        },
+        options?: { asOf?: string },
+    ): StoredTelemetrySample[];
+    /** Supply `asOf` when beginning a durable-history read after idle time. */
+    listQuarantineEntries(options?: { asOf?: string }): StoredQuarantineEntry[];
     upsertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): void;
     getSimulatorCommandReceipt(
         source: string,

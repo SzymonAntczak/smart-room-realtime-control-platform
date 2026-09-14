@@ -95,21 +95,23 @@ export function createSqliteRoomStorage({
         isAcceptedInputIdentityActive(eventId, asOf) {
             return run(() => isAcceptedInputIdentityActive(database, eventId, asOf));
         },
-        listSignificantFacts() {
+        listSignificantFacts(options) {
             return run(() =>
-                database
-                    .prepare(
-                        `SELECT history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
-                                source, occurred_at, payload_json
-                         FROM significant_facts
-                         WHERE retired_at IS NULL
-                         ORDER BY storage_sequence ASC`,
-                    )
-                    .all()
-                    .map(toStoredSignificantFact),
+                readActiveHistory(database, options?.asOf, () =>
+                    database
+                        .prepare(
+                            `SELECT history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
+                                    source, occurred_at, payload_json
+                             FROM significant_facts
+                             WHERE retired_at IS NULL
+                             ORDER BY storage_sequence ASC`,
+                        )
+                        .all()
+                        .map(toStoredSignificantFact),
+                ),
             );
         },
-        listTelemetrySamples(query) {
+        listTelemetrySamples(query, options) {
             return run(() => {
                 const clauses = ['device_id = ?', 'metric = ?'];
                 const parameters: string[] = [query.deviceId, query.metric];
@@ -124,29 +126,33 @@ export function createSqliteRoomStorage({
                     parameters.push(canonicalStorageTimestamp(query.to));
                 }
 
-                return database
-                    .prepare(
-                        `SELECT history_generation_id, storage_sequence, record_id, event_id, device_id, metric, value, unit,
-                                occurred_at, payload_json
-                         FROM telemetry_samples
-                         WHERE retired_at IS NULL AND ${clauses.join(' AND ')}
-                         ORDER BY occurred_at ASC, storage_sequence ASC`,
-                    )
-                    .all(...parameters)
-                    .map(toStoredTelemetrySample);
+                return readActiveHistory(database, options?.asOf, () =>
+                    database
+                        .prepare(
+                            `SELECT history_generation_id, storage_sequence, record_id, event_id, device_id, metric, value, unit,
+                                    occurred_at, payload_json
+                             FROM telemetry_samples
+                             WHERE retired_at IS NULL AND ${clauses.join(' AND ')}
+                             ORDER BY occurred_at ASC, storage_sequence ASC`,
+                        )
+                        .all(...parameters)
+                        .map(toStoredTelemetrySample),
+                );
             });
         },
-        listQuarantineEntries() {
+        listQuarantineEntries(options) {
             return run(() =>
-                database
-                    .prepare(
-                        `SELECT internal_sequence, event_id, reason, recorded_at, raw_event_json
-                         FROM quarantine_entries
-                         WHERE retired_at IS NULL
-                         ORDER BY internal_sequence ASC`,
-                    )
-                    .all()
-                    .map(toStoredQuarantineEntry),
+                readActiveHistory(database, options?.asOf, () =>
+                    database
+                        .prepare(
+                            `SELECT internal_sequence, event_id, reason, recorded_at, raw_event_json
+                             FROM quarantine_entries
+                             WHERE retired_at IS NULL
+                             ORDER BY internal_sequence ASC`,
+                        )
+                        .all()
+                        .map(toStoredQuarantineEntry),
+                ),
             );
         },
         upsertSimulatorCommandReceipt(input) {
@@ -854,6 +860,26 @@ function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
     );
 
     return retiredIdentityEventIds;
+}
+
+function readActiveHistory<Value>(
+    database: DatabaseSync,
+    asOf: string | undefined,
+    read: () => Value,
+): Value {
+    if (asOf === undefined) {
+        return read();
+    }
+
+    const outcome = executeStorageTransaction(database, (transaction) =>
+        transaction.retireExpiredRecords({ asOf }),
+    );
+
+    if (outcome.status !== 'committed') {
+        throw outcome.error;
+    }
+
+    return read();
 }
 
 function retentionCutoff(asOf: string): string {
