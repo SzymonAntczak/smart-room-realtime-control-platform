@@ -1068,6 +1068,178 @@ describe('SQLite room storage', () => {
         storage.close();
     });
 
+    it('keeps retention, accepted identities and pinned reads in one atomic storage view', () => {
+        const databasePath = temporaryDatabasePath();
+        const writer = createSqliteRoomStorage({ databasePath });
+        const reader = createSqliteRoomStorage({ databasePath });
+        const oldEventId = 'atomic-old-event';
+        const newEventId = 'atomic-new-event';
+        const firstReadAt = '2026-09-01T00:00:00.000Z';
+        const retirementAt = '2026-09-01T00:00:00.002Z';
+
+        try {
+            const initial = writer.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'atomic-old-fact',
+                    eventId: oldEventId,
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-02T00:00:00.001Z',
+                    payload: { availability: 'online' },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'atomic-old-telemetry',
+                    eventId: oldEventId,
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 21,
+                    unit: 'celsius',
+                    occurredAt: '2026-08-02T00:00:00.001Z',
+                    payload: { metric: 'temperature', value: 21, unit: 'celsius' },
+                });
+                transaction.upsertAcceptedInputIdentity({
+                    eventId: oldEventId,
+                    fingerprint: 'fp:v1:sha256:atomic-old',
+                    durability: 'durable',
+                    acceptedAt: firstReadAt,
+                });
+
+                return transaction.capturePinnedHistoryBounds({ asOf: firstReadAt });
+            });
+
+            if (initial.status !== 'committed') {
+                throw initial.error;
+            }
+
+            let inspectedBeforeCommit = false;
+            const committed = writer.transact(
+                (transaction) => {
+                    transaction.appendSignificantFact({
+                        recordId: 'atomic-new-fact',
+                        eventId: newEventId,
+                        eventType: 'device.availability.changed',
+                        occurredAt: retirementAt,
+                        payload: { availability: 'offline' },
+                    });
+                    transaction.upsertAcceptedInputIdentity({
+                        eventId: newEventId,
+                        fingerprint: 'fp:v1:sha256:atomic-new',
+                        durability: 'durable',
+                        acceptedAt: retirementAt,
+                    });
+
+                    return transaction.retireExpiredRecords({ asOf: retirementAt });
+                },
+                {
+                    beforeCommit: () => {
+                        inspectedBeforeCommit = true;
+
+                        expect(reader.listAcceptedInputIdentities()).toEqual([
+                            expect.objectContaining({ eventId: oldEventId }),
+                        ]);
+                        expect(reader.listSignificantFacts()).toEqual([
+                            expect.objectContaining({ recordId: 'atomic-old-fact' }),
+                        ]);
+                        expect(
+                            reader.listTelemetrySamples({
+                                deviceId: 'temp-desk',
+                                metric: 'temperature',
+                            }),
+                        ).toEqual([expect.objectContaining({ recordId: 'atomic-old-telemetry' })]);
+                        expect(
+                            reader.readPinnedSignificantFacts({
+                                bounds: initial.value,
+                                readAt: '2026-09-01T00:04:59.999Z',
+                            }),
+                        ).toEqual({
+                            status: 'available',
+                            value: [expect.objectContaining({ recordId: 'atomic-old-fact' })],
+                        });
+                        expect(
+                            reader.readPinnedTelemetrySamples({
+                                query: { deviceId: 'temp-desk', metric: 'temperature' },
+                                bounds: initial.value,
+                                readAt: '2026-09-01T00:04:59.999Z',
+                            }),
+                        ).toEqual({
+                            status: 'available',
+                            value: [expect.objectContaining({ recordId: 'atomic-old-telemetry' })],
+                        });
+
+                        return true;
+                    },
+                },
+            );
+
+            expect(inspectedBeforeCommit).toBe(true);
+            expect(committed).toEqual({ status: 'committed', value: [oldEventId] });
+            expect(reader.listAcceptedInputIdentities()).toEqual([
+                expect.objectContaining({ eventId: newEventId }),
+            ]);
+            expect(reader.listSignificantFacts()).toEqual([
+                expect.objectContaining({ recordId: 'atomic-new-fact', storageSequence: 3 }),
+            ]);
+            expect(
+                reader.listTelemetrySamples({ deviceId: 'temp-desk', metric: 'temperature' }),
+            ).toEqual([]);
+            expect(
+                reader.readPinnedSignificantFacts({
+                    bounds: initial.value,
+                    readAt: '2026-09-01T00:04:59.999Z',
+                }),
+            ).toEqual({
+                status: 'available',
+                value: [
+                    expect.objectContaining({ recordId: 'atomic-old-fact', storageSequence: 1 }),
+                ],
+            });
+            expect(
+                reader.readPinnedTelemetrySamples({
+                    query: { deviceId: 'temp-desk', metric: 'temperature' },
+                    bounds: initial.value,
+                    readAt: '2026-09-01T00:04:59.999Z',
+                }),
+            ).toEqual({
+                status: 'available',
+                value: [
+                    expect.objectContaining({
+                        recordId: 'atomic-old-telemetry',
+                        storageSequence: 2,
+                    }),
+                ],
+            });
+
+            const fresh = reader.transact((transaction) => {
+                const bounds = transaction.capturePinnedHistoryBounds({ asOf: retirementAt });
+
+                return {
+                    bounds,
+                    facts: transaction.listPinnedSignificantFacts(bounds),
+                    telemetry: transaction.listPinnedTelemetrySamples(
+                        { deviceId: 'temp-desk', metric: 'temperature' },
+                        bounds,
+                    ),
+                };
+            });
+
+            if (fresh.status !== 'committed') {
+                throw fresh.error;
+            }
+
+            expect(fresh.value.bounds).toMatchObject({
+                historyGenerationId: initial.value.historyGenerationId,
+                throughSequence: 3,
+                retentionAsOf: retirementAt,
+            });
+            expect(fresh.value.facts).toEqual([
+                expect.objectContaining({ recordId: 'atomic-new-fact', storageSequence: 3 }),
+            ]);
+            expect(fresh.value.telemetry).toEqual([]);
+        } finally {
+            reader.close();
+            writer.close();
+        }
+    });
+
     it('pins a history view through its watermark while retaining retired payloads for cursor lifetime', () => {
         const databasePath = temporaryDatabasePath();
         const storage = createSqliteRoomStorage({ databasePath });
