@@ -24,87 +24,97 @@ export function createSqliteLedCommandReceiptPort({
     return {
         accept(candidate) {
             let phase: 'inspect' | 'commit' = 'inspect';
-            const outcome = storage.transact((transaction) => {
-                const existing = transaction.getSimulatorCommandReceipt(
-                    candidate.source,
-                    candidate.commandId,
-                );
-
-                if (existing) {
-                    return { receipt: readReceipt(existing), inserted: false };
-                }
-
-                phase = 'commit';
-                const inserted = transaction.insertSimulatorCommandReceipt(
-                    toStorageInput(candidate),
-                );
-
-                if (!inserted) {
-                    const raced = transaction.getSimulatorCommandReceipt(
+            const outcome = storage.transact(
+                (transaction) => {
+                    const existing = transaction.getSimulatorCommandReceipt(
                         candidate.source,
                         candidate.commandId,
                     );
 
-                    if (!raced) {
-                        throw new StorageInvariantError(
-                            'Simulator receipt insert lost without an existing receipt.',
-                            candidate,
-                        );
+                    if (existing) {
+                        return { receipt: readReceipt(existing), inserted: false };
                     }
 
-                    return { receipt: readReceipt(raced), inserted: false };
-                }
+                    phase = 'commit';
+                    const inserted = transaction.insertSimulatorCommandReceipt(
+                        toStorageInput(candidate),
+                    );
 
-                transaction.retireTerminalSimulatorCommandReceipts({
-                    source: candidate.source,
-                    asOf: candidate.acceptedAt,
-                });
+                    if (!inserted) {
+                        const raced = transaction.getSimulatorCommandReceipt(
+                            candidate.source,
+                            candidate.commandId,
+                        );
 
-                return { receipt: candidate, inserted: true };
-            });
+                        if (!raced) {
+                            throw new StorageInvariantError(
+                                'Simulator receipt insert lost without an existing receipt.',
+                                candidate,
+                            );
+                        }
+
+                        return { receipt: readReceipt(raced), inserted: false };
+                    }
+
+                    transaction.retireTerminalSimulatorCommandReceipts({
+                        source: candidate.source,
+                        asOf: candidate.acceptedAt,
+                    });
+
+                    return { receipt: candidate, inserted: true };
+                },
+                { retentionAsOf: candidate.acceptedAt },
+            );
 
             return acceptTransactionOutcome(outcome, phase);
         },
         markTerminal(receipt) {
-            const outcome = storage.transact((transaction) => {
-                const existing = transaction.getSimulatorCommandReceipt(
-                    receipt.source,
-                    receipt.commandId,
-                );
-
-                if (!existing) {
-                    throw new StorageInvariantError(
-                        'Cannot mark a missing simulator receipt terminal.',
-                        receipt,
+            const outcome = storage.transact(
+                (transaction) => {
+                    const existing = transaction.getSimulatorCommandReceipt(
+                        receipt.source,
+                        receipt.commandId,
                     );
-                }
 
-                const stored = readReceipt(existing);
+                    if (!existing) {
+                        throw new StorageInvariantError(
+                            'Cannot mark a missing simulator receipt terminal.',
+                            receipt,
+                        );
+                    }
 
-                if (stored.fingerprint !== receipt.fingerprint) {
-                    throw new StorageInvariantError(
-                        'Simulator receipt fingerprint changed before terminal marker write.',
-                        { stored, receipt },
-                    );
-                }
+                    const stored = readReceipt(existing);
 
-                transaction.updateSimulatorCommandReceipt(toStorageInput(receipt));
-                transaction.retireTerminalSimulatorCommandReceipts({
-                    source: receipt.source,
-                    asOf: receipt.terminalAt ?? receipt.acceptedAt,
-                });
-            });
+                    if (stored.fingerprint !== receipt.fingerprint) {
+                        throw new StorageInvariantError(
+                            'Simulator receipt fingerprint changed before terminal marker write.',
+                            { stored, receipt },
+                        );
+                    }
+
+                    transaction.updateSimulatorCommandReceipt(toStorageInput(receipt));
+                    transaction.retireTerminalSimulatorCommandReceipts({
+                        source: receipt.source,
+                        asOf: receipt.terminalAt ?? receipt.acceptedAt,
+                    });
+                },
+                { retentionAsOf: receipt.terminalAt ?? receipt.acceptedAt },
+            );
 
             return transactionOutcome(outcome);
         },
         list() {
             try {
-                const retention = storage.transact((transaction) => {
-                    transaction.retireTerminalSimulatorCommandReceipts({
-                        source: 'simulator-led',
-                        asOf: clock.now(),
-                    });
-                });
+                const asOf = clock.now();
+                const retention = storage.transact(
+                    (transaction) => {
+                        transaction.retireTerminalSimulatorCommandReceipts({
+                            source: 'simulator-led',
+                            asOf,
+                        });
+                    },
+                    { retentionAsOf: asOf },
+                );
 
                 if (retention.status !== 'committed') {
                     return transactionOutcome(retention);

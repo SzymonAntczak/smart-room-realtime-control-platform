@@ -110,27 +110,30 @@ describe('createTemperatureRoomRuntime', () => {
         let runtime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
 
         try {
-            storage.transact((transaction) => {
-                transaction.appendSignificantFact({
-                    recordId: 'history-retired-but-cache-retained',
-                    eventId: 'history-retired-but-cache-retained-event',
-                    eventType: 'device.availability.changed',
-                    occurredAt: clock.now(),
-                    payload: { availability: 'online' },
-                });
-                transaction.saveLatestRoomProjection({
-                    updatedAt: baseline.updatedAt,
-                    projection: {
+            storage.transact(
+                (transaction) => {
+                    transaction.appendSignificantFact({
+                        recordId: 'history-retired-but-cache-retained',
+                        eventId: 'history-retired-but-cache-retained-event',
+                        eventType: 'device.availability.changed',
+                        occurredAt: clock.now(),
+                        payload: { availability: 'online' },
+                    });
+                    transaction.saveLatestRoomProjection({
                         updatedAt: baseline.updatedAt,
-                        devices: baseline.devices,
-                        activeCommands: baseline.activeCommands,
-                        recentCommands: cachedCommands,
-                    },
-                    projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
-                    volatileGuards: [],
-                    recentEvents: cachedEvents,
-                });
-            });
+                        projection: {
+                            updatedAt: baseline.updatedAt,
+                            devices: baseline.devices,
+                            activeCommands: baseline.activeCommands,
+                            recentCommands: cachedCommands,
+                        },
+                        projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                        volatileGuards: [],
+                        recentEvents: cachedEvents,
+                    });
+                },
+                { retentionAsOf: clock.now() },
+            );
 
             runtime = createTemperatureRoomRuntime({
                 clock,
@@ -265,8 +268,9 @@ describe('createTemperatureRoomRuntime', () => {
         let recoveryRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
 
         try {
-            initialStorage.transact((transaction) =>
-                transaction.saveLatestRoomProjection(checkpoint),
+            initialStorage.transact(
+                (transaction) => transaction.saveLatestRoomProjection(checkpoint),
+                { retentionAsOf: clock.now() },
             );
             expect(liveProjection.recentCommands.map((command) => command.commandId)).toEqual(
                 expectedCommandIds,
@@ -1130,7 +1134,9 @@ describe('createTemperatureRoomRuntime', () => {
                         };
                     }
 
-                    const transactionOutcome = storage.port.transact(input.operation);
+                    const transactionOutcome = storage.port.transact(input.operation, {
+                        retentionAsOf: input.retentionAsOf,
+                    });
 
                     if (transactionOutcome.status !== 'committed') {
                         throw new Error('Scripted recovery transaction did not commit.');
@@ -1139,6 +1145,7 @@ describe('createTemperatureRoomRuntime', () => {
                     return {
                         status: 'committed',
                         value: transactionOutcome.value,
+                        retention: transactionOutcome.retention,
                         storage: storage.port,
                         metadata: storage.port.getMetadata(),
                     };
@@ -1554,26 +1561,29 @@ describe('createTemperatureRoomRuntime', () => {
                     historyGenerationId: 'test-generation',
                     schemaVersion: 1,
                     lastStorageSequence: 0,
+                    lastRetentionRevision: 0,
                 };
             },
             transact(
-                operation: (transaction: {
-                    retireExpiredRecords(): string[];
-                    saveLatestRoomProjection(): void;
-                }) => unknown,
+                operation: (transaction: { saveLatestRoomProjection(): void }) => unknown,
+                options: { retentionAsOf: string },
             ) {
                 const value = operation({
-                    retireExpiredRecords() {
-                        calls.push('retention');
-
-                        return [];
-                    },
                     saveLatestRoomProjection() {
                         calls.push('checkpoint-save');
                     },
                 });
+                calls.push('retention');
 
-                return { status: 'committed' as const, value };
+                return {
+                    status: 'committed' as const,
+                    value,
+                    retention: {
+                        retentionAsOf: options.retentionAsOf,
+                        retentionRevision: 0,
+                        retiredIdentityEventIds: [],
+                    },
+                };
             },
         } as unknown as RoomStorage;
 
@@ -1591,34 +1601,37 @@ describe('createTemperatureRoomRuntime', () => {
         let runtime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
 
         try {
-            storage.transact((transaction) => {
-                transaction.appendSignificantFact({
-                    recordId: 'expired-startup-fact',
-                    eventId: 'expired-startup-fact-event',
-                    eventType: 'device.availability.changed',
-                    occurredAt: '2026-08-01T23:59:59.999Z',
-                    payload: { availability: 'offline' },
-                });
-                transaction.appendSignificantFact({
-                    recordId: 'boundary-startup-fact',
-                    eventId: 'boundary-startup-fact-event',
-                    eventType: 'device.availability.changed',
-                    occurredAt: '2026-08-02T00:00:00.000Z',
-                    payload: { availability: 'online' },
-                });
-                transaction.appendQuarantineEntry({
-                    eventId: 'expired-startup-quarantine-event',
-                    reason: 'invalid_payload',
-                    recordedAt: '2026-08-01T23:59:59.999Z',
-                    rawEvent: { invalid: true },
-                });
-                transaction.appendQuarantineEntry({
-                    eventId: 'boundary-startup-quarantine-event',
-                    reason: 'invalid_payload',
-                    recordedAt: '2026-08-02T00:00:00.000Z',
-                    rawEvent: { invalid: true },
-                });
-            });
+            storage.transact(
+                (transaction) => {
+                    transaction.appendSignificantFact({
+                        recordId: 'expired-startup-fact',
+                        eventId: 'expired-startup-fact-event',
+                        eventType: 'device.availability.changed',
+                        occurredAt: '2026-08-01T23:59:59.999Z',
+                        payload: { availability: 'offline' },
+                    });
+                    transaction.appendSignificantFact({
+                        recordId: 'boundary-startup-fact',
+                        eventId: 'boundary-startup-fact-event',
+                        eventType: 'device.availability.changed',
+                        occurredAt: '2026-08-02T00:00:00.000Z',
+                        payload: { availability: 'online' },
+                    });
+                    transaction.appendQuarantineEntry({
+                        eventId: 'expired-startup-quarantine-event',
+                        reason: 'invalid_payload',
+                        recordedAt: '2026-08-01T23:59:59.999Z',
+                        rawEvent: { invalid: true },
+                    });
+                    transaction.appendQuarantineEntry({
+                        eventId: 'boundary-startup-quarantine-event',
+                        reason: 'invalid_payload',
+                        recordedAt: '2026-08-02T00:00:00.000Z',
+                        rawEvent: { invalid: true },
+                    });
+                },
+                { retentionAsOf: '2026-09-01T00:00:00.000Z' },
+            );
 
             runtime = createTemperatureRoomRuntime({
                 clock: createMutableClock('2026-09-01T00:00:00.000Z'),
@@ -1671,9 +1684,9 @@ describe('createTemperatureRoomRuntime', () => {
                 expect(operations).toEqual([
                     'appendTelemetrySample',
                     'upsertAcceptedInputIdentity',
-                    'retireExpiredRecords',
                     'saveLatestRoomProjection',
                     'activateRuntimeSession',
+                    'retireExpiredRecords',
                 ]);
                 expect(snapshots).toEqual([]);
                 expect(device(runtime, 'temp-desk')?.reportedState).toEqual(previousState);
@@ -2318,9 +2331,12 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             expect(
-                initialStorage.transact((transaction) => {
-                    transaction.saveLatestRoomProjection(checkpoint);
-                }).status,
+                initialStorage.transact(
+                    (transaction) => {
+                        transaction.saveLatestRoomProjection(checkpoint);
+                    },
+                    { retentionAsOf: clock.now() },
+                ).status,
             ).toBe('committed');
             initialStorage.close();
 
@@ -2728,9 +2744,12 @@ describe('createTemperatureRoomRuntime', () => {
         let restoredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
 
         try {
-            const saved = initialStorage.transact((transaction) => {
-                transaction.saveLatestRoomProjection(checkpoint);
-            });
+            const saved = initialStorage.transact(
+                (transaction) => {
+                    transaction.saveLatestRoomProjection(checkpoint);
+                },
+                { retentionAsOf: clock.now() },
+            );
 
             expect(saved.status).toBe('committed');
             const historyBeforeRestart = initialStorage.listSignificantFacts();
@@ -2799,40 +2818,43 @@ describe('createTemperatureRoomRuntime', () => {
         let recoveredRuntime: ReturnType<typeof createTemperatureRoomRuntime> | undefined;
 
         try {
-            const persisted = initialStorage.transact((transaction) => {
-                transaction.appendSignificantFact({
-                    recordId: 'freshness-recovery-significant-fact',
-                    eventId: 'evt-freshness-recovery-significant-fact',
-                    eventType: 'device.availability.changed',
-                    deviceId: 'temp-desk',
-                    source: 'simulator-adapter',
-                    occurredAt: clock.now(),
-                    payload: { availability: 'online' },
-                });
-                transaction.appendTelemetrySample({
-                    recordId: 'freshness-recovery-telemetry',
-                    eventId: 'evt-freshness-recovery-telemetry',
-                    deviceId: 'temp-desk',
-                    metric: 'temperature',
-                    value: 22.4,
-                    unit: 'celsius',
-                    occurredAt: clock.now(),
-                    payload: { temperature: 22.4, temperatureUnit: 'celsius' },
-                });
-                transaction.upsertAcceptedInputIdentity({
-                    eventId: 'evt-freshness-recovery-significant-fact',
-                    fingerprint: `fp:v1:sha256:${'0'.repeat(64)}`,
-                    durability: 'durable',
-                    acceptedAt: clock.now(),
-                });
-                transaction.upsertAcceptedInputIdentity({
-                    eventId: 'evt-freshness-recovery-telemetry',
-                    fingerprint: `fp:v1:sha256:${'1'.repeat(64)}`,
-                    durability: 'durable',
-                    acceptedAt: clock.now(),
-                });
-                transaction.saveLatestRoomProjection(checkpoint);
-            });
+            const persisted = initialStorage.transact(
+                (transaction) => {
+                    transaction.appendSignificantFact({
+                        recordId: 'freshness-recovery-significant-fact',
+                        eventId: 'evt-freshness-recovery-significant-fact',
+                        eventType: 'device.availability.changed',
+                        deviceId: 'temp-desk',
+                        source: 'simulator-adapter',
+                        occurredAt: clock.now(),
+                        payload: { availability: 'online' },
+                    });
+                    transaction.appendTelemetrySample({
+                        recordId: 'freshness-recovery-telemetry',
+                        eventId: 'evt-freshness-recovery-telemetry',
+                        deviceId: 'temp-desk',
+                        metric: 'temperature',
+                        value: 22.4,
+                        unit: 'celsius',
+                        occurredAt: clock.now(),
+                        payload: { temperature: 22.4, temperatureUnit: 'celsius' },
+                    });
+                    transaction.upsertAcceptedInputIdentity({
+                        eventId: 'evt-freshness-recovery-significant-fact',
+                        fingerprint: `fp:v1:sha256:${'0'.repeat(64)}`,
+                        durability: 'durable',
+                        acceptedAt: clock.now(),
+                    });
+                    transaction.upsertAcceptedInputIdentity({
+                        eventId: 'evt-freshness-recovery-telemetry',
+                        fingerprint: `fp:v1:sha256:${'1'.repeat(64)}`,
+                        durability: 'durable',
+                        acceptedAt: clock.now(),
+                    });
+                    transaction.saveLatestRoomProjection(checkpoint);
+                },
+                { retentionAsOf: clock.now() },
+            );
 
             expect(persisted.status).toBe('committed');
             const historyBeforeRestart = initialStorage.listSignificantFacts();
@@ -2877,7 +2899,10 @@ describe('createTemperatureRoomRuntime', () => {
                 }),
             ).toEqual(telemetryBeforeRestart);
             expect(recoveredStorage.listAcceptedInputIdentities()).toEqual(identitiesBeforeRestart);
-            expect(recoveredStorage.getMetadata()).toEqual(metadataBeforeRestart);
+            expect(recoveredStorage.getMetadata()).toMatchObject({
+                ...metadataBeforeRestart,
+                lastRetentionAsOf: clock.now(),
+            });
         } finally {
             initialStorage.close();
             recoveredRuntime?.stop();
@@ -2901,7 +2926,7 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             expect(storage.transactionOperations).toEqual([
-                ['retireExpiredRecords', 'activateRuntimeSession'],
+                ['activateRuntimeSession', 'retireExpiredRecords'],
             ]);
             expect(runtime.getRoomSnapshot().devices).toEqual(checkpoint.projection.devices);
         } finally {
@@ -3476,9 +3501,9 @@ describe('createTemperatureRoomRuntime', () => {
             storage.setBeforeOutcome((operations) => {
                 inspectedBeforeCommit = true;
                 expect(operations).toEqual([
-                    'retireExpiredRecords',
                     'saveLatestRoomProjection',
                     'activateRuntimeSession',
+                    'retireExpiredRecords',
                 ]);
                 expect(snapshots).toEqual([]);
                 expect(storage.latestCheckpoint).toEqual(checkpoint);
@@ -3914,23 +3939,26 @@ describe('createTemperatureRoomRuntime', () => {
             requestedState: { power: 'on' },
         } as const;
         const acceptedAt = '2026-08-05T10:00:00.000Z';
-        storage.port.upsertSimulatorCommandReceipt({
-            source: 'simulator-led',
-            commandId: uncertainCommandId,
-            updatedAt: acceptedAt,
-            terminalAt: acceptedAt,
-            receipt: {
-                version: 1,
+        storage.port.upsertSimulatorCommandReceipt(
+            {
                 source: 'simulator-led',
                 commandId: uncertainCommandId,
-                fingerprint: fingerprintLedSetPowerCommand(nativeCommand),
-                command: nativeCommand,
-                scenario: 'omit_confirmation',
-                acceptedAt,
-                outcomes: [],
+                updatedAt: acceptedAt,
                 terminalAt: acceptedAt,
+                receipt: {
+                    version: 1,
+                    source: 'simulator-led',
+                    commandId: uncertainCommandId,
+                    fingerprint: fingerprintLedSetPowerCommand(nativeCommand),
+                    command: nativeCommand,
+                    scenario: 'omit_confirmation',
+                    acceptedAt,
+                    outcomes: [],
+                    terminalAt: acceptedAt,
+                },
             },
-        });
+            { retentionAsOf: acceptedAt },
+        );
         const uncertainRuntime = createTemperatureRoomRuntime({
             clock: createMutableClock(acceptedAt),
             storage: storage.port,
@@ -4975,9 +5003,13 @@ function createScriptedStorage() {
                 historyGenerationId: 'scripted-generation',
                 schemaVersion: 1,
                 lastStorageSequence: storageSequence,
+                lastRetentionRevision: 0,
             };
         },
-        transact<Value>(operation: (transaction: RoomStorageTransaction) => Value) {
+        transact<Value>(
+            operation: (transaction: RoomStorageTransaction) => Value,
+            options: { retentionAsOf: string; beforeCommit?: () => boolean },
+        ) {
             const operations: string[] = [];
             const stagedFacts: StoredSignificantFact[] = [];
             const stagedTelemetry: StoredTelemetrySample[] = [];
@@ -4994,6 +5026,7 @@ function createScriptedStorage() {
                         historyGenerationId: 'scripted-generation',
                         schemaVersion: 1,
                         lastStorageSequence: stagedStorageSequence,
+                        lastRetentionRevision: 0,
                     };
                 },
                 appendSignificantFact(input: SignificantFactInput) {
@@ -5029,19 +5062,15 @@ function createScriptedStorage() {
                     operations.push('upsertAcceptedInputIdentity');
                     stagedIdentities.push(input);
                 },
-                retireExpiredRecords() {
-                    operations.push('retireExpiredRecords');
-
-                    return [];
-                },
-                capturePinnedHistoryBounds({ asOf }) {
+                capturePinnedHistoryBounds() {
                     operations.push('capturePinnedHistoryBounds');
 
                     return {
                         historyGenerationId: 'scripted-generation',
                         throughSequence: stagedStorageSequence,
-                        retentionAsOf: asOf,
-                        expiresAt: asOf,
+                        retentionRevision: 0,
+                        retentionAsOf: options.retentionAsOf,
+                        expiresAt: options.retentionAsOf,
                     };
                 },
                 listPinnedSignificantFacts() {
@@ -5115,6 +5144,7 @@ function createScriptedStorage() {
                 },
             };
             const value = operation(transaction);
+            operations.push('retireExpiredRecords');
             transactionOperations.push([...operations]);
             const hook = beforeOutcome;
             const hookHandled = hook?.(operations);
@@ -5184,7 +5214,15 @@ function createScriptedStorage() {
                 runtimeSessions.set(sessionId, session);
             }
 
-            return { status: 'committed', value };
+            return {
+                status: 'committed',
+                value,
+                retention: {
+                    retentionAsOf: options.retentionAsOf,
+                    retentionRevision: 0,
+                    retiredIdentityEventIds: [],
+                },
+            };
         },
         listAcceptedInputIdentities() {
             return [...identities];
@@ -5213,7 +5251,8 @@ function createScriptedStorage() {
         listQuarantineEntries() {
             return [...quarantineEntries];
         },
-        upsertSimulatorCommandReceipt(input) {
+        upsertSimulatorCommandReceipt(input, options) {
+            void options;
             receipts.set(`${input.source}:${input.commandId}`, input);
         },
         getSimulatorCommandReceipt(source, commandId) {
@@ -5303,6 +5342,7 @@ function createCapturingStorage() {
                     historyGenerationId: 'test-generation',
                     schemaVersion: 1,
                     lastStorageSequence: storageSequence,
+                    lastRetentionRevision: 0,
                 };
             },
             getLatestRoomProjection() {
@@ -5322,7 +5362,6 @@ function createCapturingStorage() {
                     appendTelemetrySample(): { storageSequence: number };
                     appendQuarantineEntry(): { internalSequence: number };
                     upsertAcceptedInputIdentity(): void;
-                    retireExpiredRecords(): void;
                     saveLatestRoomProjection(): void;
                     upsertCommandDispatchOutboxIntent(): void;
                     closeCommandDispatchOutboxIntent(): void;
@@ -5334,6 +5373,7 @@ function createCapturingStorage() {
                     updateSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): void;
                     retireTerminalSimulatorCommandReceipts(): void;
                 }) => unknown,
+                options: { retentionAsOf: string },
             ) {
                 const value = operation({
                     appendSignificantFact(input) {
@@ -5348,7 +5388,6 @@ function createCapturingStorage() {
                         return { internalSequence: 1 };
                     },
                     upsertAcceptedInputIdentity() {},
-                    retireExpiredRecords() {},
                     saveLatestRoomProjection() {},
                     upsertCommandDispatchOutboxIntent() {},
                     closeCommandDispatchOutboxIntent() {},
@@ -5372,7 +5411,15 @@ function createCapturingStorage() {
                     retireTerminalSimulatorCommandReceipts() {},
                 });
 
-                return { status: 'committed' as const, value };
+                return {
+                    status: 'committed' as const,
+                    value,
+                    retention: {
+                        retentionAsOf: options.retentionAsOf,
+                        retentionRevision: 0,
+                        retiredIdentityEventIds: [],
+                    },
+                };
             },
             listSimulatorCommandReceipts(source: string) {
                 return [...receipts.values()].filter((receipt) => receipt.source === source);
@@ -5392,7 +5439,11 @@ function createCapturingStorage() {
             listQuarantineEntries() {
                 return [];
             },
-            upsertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput) {
+            upsertSimulatorCommandReceipt(
+                input: SimulatorCommandReceiptInput,
+                options: { retentionAsOf: string },
+            ) {
+                void options;
                 receipts.set(`${input.source}:${input.commandId}`, input);
             },
             getSimulatorCommandReceipt(source: string, commandId: string) {

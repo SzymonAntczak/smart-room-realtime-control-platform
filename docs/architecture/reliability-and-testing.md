@@ -230,8 +230,10 @@ Stage 4 focus areas:
   `eventId` until its last derived retained record is removed
 - volatile dedup guards retain input fingerprints through checkpoint, allow one
   identical durable reconciliation and quarantine conflicting identity reuse
-- retention during pagination preserves the pinned view through the fixed
-  cursor lifetime and rejects an expired cursor deterministically
+- retention during pagination preserves the revision-pinned view through the
+  fixed cursor lifetime, including same-millisecond count retirement; a
+  monotonic retention-time high-water prevents clock rollback from purging a
+  still-visible payload, and an expired cursor is rejected deterministically
 - cursor validation rejects changed dataset, device, metric, time range,
   ordering or page size instead of reinterpreting a pinned session
 - malformed or forged cursor bounds/expiry/position are rejected, and backend-

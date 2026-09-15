@@ -27,17 +27,20 @@ describe('SQLite LED command receipt port', () => {
         });
         const receipt = plannedReceipt();
 
-        expect(port.accept(receipt)).toEqual({
+        expect(port.accept(receipt)).toMatchObject({
             status: 'committed',
             value: { receipt, inserted: true },
         });
-        expect(port.accept({ ...receipt, fingerprint: 'fp:v1:sha256:other' })).toEqual({
+        expect(port.accept({ ...receipt, fingerprint: 'fp:v1:sha256:other' })).toMatchObject({
             status: 'committed',
             value: { receipt, inserted: false },
         });
 
         const terminal = { ...receipt, terminalAt: '2026-08-05T10:00:01.000Z' };
-        expect(port.markTerminal(terminal)).toEqual({ status: 'committed', value: undefined });
+        expect(port.markTerminal(terminal)).toMatchObject({
+            status: 'committed',
+            value: undefined,
+        });
         expect(port.list()).toEqual({ status: 'committed', value: [terminal] });
         storage.close();
     });
@@ -77,7 +80,8 @@ function failingStorage(
     status: 'confirmed_rolled_back' | 'indeterminate' = 'confirmed_rolled_back',
 ): RoomStorage {
     return {
-        transact(callback) {
+        transact(callback, options) {
+            void options;
             const transaction = {
                 getSimulatorCommandReceipt() {
                     if (failureAt === 'inspect') {
@@ -97,7 +101,15 @@ function failingStorage(
                 return { status, error };
             }
 
-            return { status: 'committed', value: undefined };
+            return {
+                status: 'committed',
+                value: undefined,
+                retention: {
+                    retentionAsOf: '2026-08-05T10:00:00.000Z',
+                    retentionRevision: 0,
+                    retiredIdentityEventIds: [],
+                },
+            };
         },
     } as RoomStorage;
 }

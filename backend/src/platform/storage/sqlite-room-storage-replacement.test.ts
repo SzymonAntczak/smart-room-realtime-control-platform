@@ -107,23 +107,29 @@ describe('explicit corrupt SQLite storage replacement', () => {
         const databasePath = join(directory, 'room.sqlite');
         const oldStorage = createSqliteRoomStorage({ databasePath });
         const oldMetadata = oldStorage.getMetadata();
-        oldStorage.transact((transaction) => {
-            transaction.upsertCommandDispatchOutboxIntent({
+        oldStorage.transact(
+            (transaction) => {
+                transaction.upsertCommandDispatchOutboxIntent({
+                    commandId: 'cmd-old',
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedPower: 'on',
+                    target: 'simulator-adapter',
+                    state: 'ready',
+                    createdAt: '2026-09-09T10:00:00.000Z',
+                });
+            },
+            { retentionAsOf: '2026-09-09T10:00:00.000Z' },
+        );
+        oldStorage.upsertSimulatorCommandReceipt(
+            {
+                source: 'simulator-led',
                 commandId: 'cmd-old',
-                deviceId: 'led-main',
-                commandType: 'set.power',
-                requestedPower: 'on',
-                target: 'simulator-adapter',
-                state: 'ready',
-                createdAt: '2026-09-09T10:00:00.000Z',
-            });
-        });
-        oldStorage.upsertSimulatorCommandReceipt({
-            source: 'simulator-led',
-            commandId: 'cmd-old',
-            updatedAt: '2026-09-09T10:00:00.000Z',
-            receipt: { version: 1, state: 'pending' },
-        });
+                updatedAt: '2026-09-09T10:00:00.000Z',
+                receipt: { version: 1, state: 'pending' },
+            },
+            { retentionAsOf: '2026-09-09T10:00:00.000Z' },
+        );
         oldStorage.close();
 
         const replacement = replaceCorruptSqliteStorageAtStartup({

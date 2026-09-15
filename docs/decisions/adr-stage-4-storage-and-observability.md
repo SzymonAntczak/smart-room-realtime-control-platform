@@ -216,16 +216,26 @@ normal accepted path, not automatic outage backfill.
 History exposes records whose canonical `occurredAt` is no more than 30 days
 old. Quarantine metadata, which may not have a valid event timestamp, uses its
 backend `recordedAt` instead. The storage adapter filters expired rows from
-new pagination sessions and runs retention maintenance at startup, in each write
-transaction and before capturing a first page. A restart or idle period
+new pagination sessions and runs retention maintenance at startup, at the boundary of
+every storage transaction (including checkpoint, outbox, receipt and session writes),
+and before capturing a first page. A restart or idle period
 therefore cannot make expired data enter a new session.
+
+Retention canonicalizes the requested time and persists a monotonic
+`retentionAsOf` high-water mark. A clock regression therefore cannot move the
+effective cutoff, cursor expiry or physical-purge eligibility backwards. Each
+maintenance run that newly retires one or more history or quarantine rows also
+assigns one increasing internal `retentionRevision`; a run that retires nothing
+does not advance it. Pinned reads compare cursor expiry to that same effective
+high-water rather than a regressed caller clock. The revision is backend state,
+never a public page field.
 
 Independent hard limits retain the 10,000 greatest
 `(occurredAt, storageSequence)` raw telemetry rows per device and the 5,000
 greatest pairs among significant facts globally. Quarantine retains the 1,000
 greatest `(recordedAt, internalSequence)` rows. Retention runs in the same
 transaction as insertion and marks an evicted row with an internal retirement
-timestamp instead of immediately deleting its payload. A late accepted record
+timestamp and revision instead of immediately deleting its payload. A late accepted record
 outside the retained time or count window may therefore affect the current
 projection according to normal domain ordering but is retired from new history
 sessions immediately. Durable reads use the same keys, newest first; equal
@@ -794,11 +804,15 @@ database assigns one global increasing `storageSequence` to durable history and
 telemetry records. In one storage transaction, the first page performs due
 retention, captures the current `historyGenerationId`, captures the current
 maximum as `throughSequence` and captures the same injected-clock instant as
-`retentionAsOf`. The response exposes all three session bounds. Every page includes rows whose
-`storageSequence <= throughSequence` and whose internal `retiredAt` is absent or
-later than `retentionAsOf`. It embeds all three session bounds with the last
-`(occurredAt, storageSequence)` position and `historyGenerationId` in the opaque
-cursor. An SSE revision is never a storage cursor.
+`retentionAsOf`. The response exposes those three public session bounds. The
+backend also captures the private `retentionRevision` in the same transaction.
+Every page includes rows whose `storageSequence <= throughSequence` and whose
+internal `retiredRevision` is absent or greater than that private revision.
+This makes membership stable even when a later count-retention run shares the
+same millisecond. A future opaque cursor carries the private revision together
+with the public bounds and last `(occurredAt, storageSequence)` position; it
+does not expose the revision in the shared page schema. An SSE revision is
+never a storage cursor.
 
 The first page also canonicalizes a query fingerprint containing the dataset
 kind and every result-shaping input: applicable device and metric identity,
@@ -819,8 +833,9 @@ its bounded live overlay until the new baseline merges.
 
 A pagination cursor expires five minutes after the first page; later pages do
 not extend it. Retired row payloads are physically deleted only after the same
-five-minute grace period, allowing every unexpired cursor to reproduce the
-retention view captured by its `throughSequence` and `retentionAsOf`. An expired cursor returns a
+five-minute grace period, using monotonic effective retention time, allowing
+every unexpired cursor to reproduce the retention view captured by its
+`throughSequence`, `retentionAsOf` and private revision. An expired cursor returns a
 typed cursor-expired response and the client starts a new first page. Exact
 cursor encoding and endpoint paths remain deferred, but fixed-session expiry
 and snapshot semantics are binding.

@@ -26,6 +26,7 @@ import {
     type SignificantFactInput,
     type SimulatorCommandReceiptInput,
     type StorageMetadata,
+    type StorageRetentionResult,
     type StorageTransactionOutcome,
     type StoredQuarantineEntry,
     type StoredSignificantFact,
@@ -172,26 +173,27 @@ export function createSqliteRoomStorage({
                 ),
             );
         },
-        upsertSimulatorCommandReceipt(input) {
-            run(() => {
-                database
-                    .prepare(
-                        `INSERT INTO simulator_command_receipts (
-                            source, command_id, updated_at, terminal_at, receipt_json
-                        ) VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(source, command_id) DO UPDATE SET
-                            updated_at = excluded.updated_at,
-                            terminal_at = excluded.terminal_at,
-                            receipt_json = excluded.receipt_json`,
-                    )
-                    .run(
+        upsertSimulatorCommandReceipt(input, options) {
+            const outcome = executeStorageTransaction(
+                database,
+                (transaction) => {
+                    const existing = transaction.getSimulatorCommandReceipt(
                         input.source,
                         input.commandId,
-                        input.updatedAt,
-                        input.terminalAt ?? null,
-                        stringifyJson(input.receipt),
                     );
-            });
+
+                    if (existing) {
+                        transaction.updateSimulatorCommandReceipt(input);
+                    } else {
+                        transaction.insertSimulatorCommandReceipt(input);
+                    }
+                },
+                options,
+            );
+
+            if (outcome.status !== 'committed') {
+                throw outcome.error;
+            }
         },
         getSimulatorCommandReceipt(source, commandId) {
             return run(() => {
@@ -441,6 +443,7 @@ export function validateExpectedSqliteSchema(database: DatabaseSync): void {
         }
     }
 
+    validateRetirementRevisionConsistency(database);
     validateAppliedMigrationManifest(database);
 
     const schemaVersion = readSchemaVersion(database);
@@ -452,6 +455,29 @@ export function validateExpectedSqliteSchema(database: DatabaseSync): void {
                 schemaVersion,
             },
         );
+    }
+}
+
+function validateRetirementRevisionConsistency(database: DatabaseSync): void {
+    for (const tableName of [
+        'significant_facts',
+        'telemetry_samples',
+        'quarantine_entries',
+    ] as const) {
+        const inconsistent = database
+            .prepare(
+                `SELECT 1 AS present FROM ${tableName}
+                 WHERE (retired_at IS NULL) <> (retired_revision IS NULL)
+                 LIMIT 1`,
+            )
+            .get();
+
+        if (inconsistent) {
+            throw new StorageSchemaError(
+                `Database table ${tableName} has inconsistent retirement metadata.`,
+                inconsistent,
+            );
+        }
     }
 }
 
@@ -473,7 +499,8 @@ function normalizeSchemaSql(sql: string): string {
 export function readSqliteStorageMetadata(database: DatabaseSync): StorageMetadata {
     const row = database
         .prepare(
-            `SELECT history_generation_id, last_storage_sequence
+            `SELECT history_generation_id, last_storage_sequence, last_retention_as_of,
+                    last_retention_revision
              FROM storage_metadata
              WHERE id = 1`,
         )
@@ -486,13 +513,21 @@ export function readSqliteStorageMetadata(database: DatabaseSync): StorageMetada
     const metadata = row as Record<string, unknown>;
     const historyGenerationId = metadata.history_generation_id;
     const lastStorageSequence = metadata.last_storage_sequence;
+    const lastRetentionAsOf = metadata.last_retention_as_of;
+    const lastRetentionRevision = metadata.last_retention_revision;
 
     if (
         typeof historyGenerationId !== 'string' ||
         historyGenerationId.length === 0 ||
         typeof lastStorageSequence !== 'number' ||
         !Number.isSafeInteger(lastStorageSequence) ||
-        lastStorageSequence < 0
+        lastStorageSequence < 0 ||
+        (lastRetentionAsOf !== null && typeof lastRetentionAsOf !== 'string') ||
+        (typeof lastRetentionAsOf === 'string' &&
+            !Number.isFinite(Date.parse(lastRetentionAsOf))) ||
+        typeof lastRetentionRevision !== 'number' ||
+        !Number.isSafeInteger(lastRetentionRevision) ||
+        lastRetentionRevision < 0
     ) {
         throw new StorageSchemaError('Database storage metadata is invalid.', row);
     }
@@ -501,6 +536,8 @@ export function readSqliteStorageMetadata(database: DatabaseSync): StorageMetada
         historyGenerationId,
         schemaVersion: readSchemaVersion(database),
         lastStorageSequence,
+        ...(typeof lastRetentionAsOf === 'string' ? { lastRetentionAsOf } : {}),
+        lastRetentionRevision,
     };
 }
 
@@ -523,7 +560,7 @@ function readSchemaVersion(database: DatabaseSync): number {
 export function executeStorageTransaction<Value>(
     database: DatabaseSync,
     operation: (transaction: RoomStorageTransaction) => Value,
-    options: { beforeCommit?: () => boolean } = {},
+    options: { retentionAsOf: string; beforeCommit?: () => boolean },
 ): StorageTransactionOutcome<Value> {
     try {
         database.exec('BEGIN IMMEDIATE');
@@ -550,9 +587,12 @@ export function executeStorageTransaction<Value>(
     }
 
     let value: Value;
+    let retention: RetentionContext;
 
     try {
-        value = operation(createSqliteRoomStorageTransaction(database));
+        retention = createRetentionContext(database, options.retentionAsOf);
+        value = operation(createSqliteRoomStorageTransaction(database, retention));
+        retireExpiredRecords(database, retention);
     } catch (error) {
         if (!database.isTransaction) {
             return { status: 'indeterminate', error: classifySqliteError(error) };
@@ -592,7 +632,7 @@ export function executeStorageTransaction<Value>(
 
         database.exec('COMMIT');
 
-        return { status: 'committed', value };
+        return { status: 'committed', value, retention: toStorageRetentionResult(retention) };
     } catch (error) {
         try {
             if (database.isTransaction) {
@@ -606,8 +646,50 @@ export function executeStorageTransaction<Value>(
     }
 }
 
+export interface RetentionContext {
+    retentionAsOf: string;
+    retentionRevision: number;
+    retiredIdentityEventIds: Set<string>;
+}
+
+export function createRetentionContext(
+    database: DatabaseSync,
+    requestedAsOf: string,
+): RetentionContext {
+    const canonicalRequestedAsOf = canonicalStorageTimestamp(requestedAsOf);
+    const metadata = readSqliteStorageMetadata(database);
+    const retentionAsOf =
+        metadata.lastRetentionAsOf &&
+        Date.parse(metadata.lastRetentionAsOf) > Date.parse(canonicalRequestedAsOf)
+            ? metadata.lastRetentionAsOf
+            : canonicalRequestedAsOf;
+
+    if (metadata.lastRetentionAsOf !== retentionAsOf) {
+        database
+            .prepare('UPDATE storage_metadata SET last_retention_as_of = ? WHERE id = 1')
+            .run(retentionAsOf);
+    }
+
+    return {
+        retentionAsOf,
+        retentionRevision: metadata.lastRetentionRevision,
+        retiredIdentityEventIds: new Set(),
+    };
+}
+
+export function toStorageRetentionResult(context: RetentionContext): StorageRetentionResult {
+    return {
+        retentionAsOf: context.retentionAsOf,
+        retentionRevision: context.retentionRevision,
+        retiredIdentityEventIds: [...context.retiredIdentityEventIds],
+    };
+}
+
 /** Builds the port used inside an already-open caller-owned SQLite transaction. */
-export function createSqliteRoomStorageTransaction(database: DatabaseSync): RoomStorageTransaction {
+export function createSqliteRoomStorageTransaction(
+    database: DatabaseSync,
+    retention: RetentionContext,
+): RoomStorageTransaction {
     return {
         getMetadata() {
             return readSqliteStorageMetadata(database);
@@ -633,21 +715,17 @@ export function createSqliteRoomStorageTransaction(database: DatabaseSync): Room
                 )
                 .run(input.eventId, input.fingerprint, input.durability, input.acceptedAt);
         },
-        retireExpiredRecords(input) {
-            return retireExpiredRecords(database, input.asOf);
-        },
-        capturePinnedHistoryBounds(input) {
-            const retentionAsOf = canonicalStorageTimestamp(input.asOf);
-
-            retireExpiredRecords(database, retentionAsOf);
+        capturePinnedHistoryBounds() {
+            retireExpiredRecords(database, retention);
 
             const metadata = readSqliteStorageMetadata(database);
 
             return {
                 historyGenerationId: metadata.historyGenerationId,
                 throughSequence: metadata.lastStorageSequence,
-                retentionAsOf,
-                expiresAt: historyCursorExpiry(retentionAsOf),
+                retentionAsOf: retention.retentionAsOf,
+                retentionRevision: retention.retentionRevision,
+                expiresAt: historyCursorExpiry(retention.retentionAsOf),
             };
         },
         listPinnedSignificantFacts(bounds) {
@@ -792,10 +870,11 @@ export function createSqliteRoomStorageTransaction(database: DatabaseSync): Room
     };
 }
 
-function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
-    const retiredAt = canonicalStorageTimestamp(asOf);
+export function retireExpiredRecords(database: DatabaseSync, context: RetentionContext): void {
+    const retiredAt = context.retentionAsOf;
     const cutoff = retentionCutoff(retiredAt);
     const purgeCutoff = historyCursorPurgeCutoff(retiredAt);
+    const nextRetentionRevision = context.retentionRevision + 1;
 
     database
         .prepare(
@@ -816,41 +895,42 @@ function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
         )
         .run(purgeCutoff);
 
-    database
-        .prepare(
-            `UPDATE significant_facts SET retired_at = ?
-             WHERE retired_at IS NULL AND occurred_at < ?`,
-        )
-        .run(retiredAt, cutoff);
-    database
-        .prepare(
-            `UPDATE telemetry_samples SET retired_at = ?
-             WHERE retired_at IS NULL AND occurred_at < ?`,
-        )
-        .run(retiredAt, cutoff);
-    database
-        .prepare(
-            `UPDATE quarantine_entries SET retired_at = ?
-             WHERE retired_at IS NULL AND recorded_at < ?`,
-        )
-        .run(retiredAt, cutoff);
+    const retirementChanges = [
+        database
+            .prepare(
+                `UPDATE significant_facts SET retired_at = ?, retired_revision = ?
+              WHERE retired_at IS NULL AND occurred_at < ?`,
+            )
+            .run(retiredAt, nextRetentionRevision, cutoff).changes,
+        database
+            .prepare(
+                `UPDATE telemetry_samples SET retired_at = ?, retired_revision = ?
+              WHERE retired_at IS NULL AND occurred_at < ?`,
+            )
+            .run(retiredAt, nextRetentionRevision, cutoff).changes,
+        database
+            .prepare(
+                `UPDATE quarantine_entries SET retired_at = ?, retired_revision = ?
+              WHERE retired_at IS NULL AND recorded_at < ?`,
+            )
+            .run(retiredAt, nextRetentionRevision, cutoff).changes,
 
-    database
-        .prepare(
-            `UPDATE significant_facts SET retired_at = ?
-             WHERE retired_at IS NULL AND storage_sequence IN (
-                 SELECT storage_sequence FROM significant_facts
-                 WHERE retired_at IS NULL
+        database
+            .prepare(
+                `UPDATE significant_facts SET retired_at = ?, retired_revision = ?
+              WHERE retired_at IS NULL AND storage_sequence IN (
+                  SELECT storage_sequence FROM significant_facts
+                  WHERE retired_at IS NULL
                  ORDER BY occurred_at DESC, storage_sequence DESC
                  LIMIT -1 OFFSET 5000
-             )`,
-        )
-        .run(retiredAt);
-    database
-        .prepare(
-            `UPDATE telemetry_samples SET retired_at = ?
-             WHERE retired_at IS NULL AND storage_sequence IN (
-                 SELECT storage_sequence FROM (
+              )`,
+            )
+            .run(retiredAt, nextRetentionRevision).changes,
+        database
+            .prepare(
+                `UPDATE telemetry_samples SET retired_at = ?, retired_revision = ?
+              WHERE retired_at IS NULL AND storage_sequence IN (
+                  SELECT storage_sequence FROM (
                      SELECT storage_sequence,
                             ROW_NUMBER() OVER (
                                 PARTITION BY device_id
@@ -859,20 +939,28 @@ function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
                      FROM telemetry_samples
                      WHERE retired_at IS NULL
                  ) WHERE row_number > 10000
-             )`,
-        )
-        .run(retiredAt);
-    database
-        .prepare(
-            `UPDATE quarantine_entries SET retired_at = ?
-             WHERE retired_at IS NULL AND internal_sequence IN (
+              )`,
+            )
+            .run(retiredAt, nextRetentionRevision).changes,
+        database
+            .prepare(
+                `UPDATE quarantine_entries SET retired_at = ?, retired_revision = ?
+              WHERE retired_at IS NULL AND internal_sequence IN (
                  SELECT internal_sequence FROM quarantine_entries
                  WHERE retired_at IS NULL
                  ORDER BY recorded_at DESC, internal_sequence DESC
                  LIMIT -1 OFFSET 1000
-             )`,
-        )
-        .run(retiredAt);
+              )`,
+            )
+            .run(retiredAt, nextRetentionRevision).changes,
+    ];
+
+    if (retirementChanges.some((changes) => changes > 0)) {
+        database
+            .prepare('UPDATE storage_metadata SET last_retention_revision = ? WHERE id = 1')
+            .run(nextRetentionRevision);
+        context.retentionRevision = nextRetentionRevision;
+    }
 
     database
         .prepare(
@@ -916,7 +1004,9 @@ function retireExpiredRecords(database: DatabaseSync, asOf: string): string[] {
            )`,
     );
 
-    return retiredIdentityEventIds;
+    for (const eventId of retiredIdentityEventIds) {
+        context.retiredIdentityEventIds.add(eventId);
+    }
 }
 
 function readActiveHistory<Value>(
@@ -928,9 +1018,7 @@ function readActiveHistory<Value>(
         return read();
     }
 
-    const outcome = executeStorageTransaction(database, (transaction) =>
-        transaction.retireExpiredRecords({ asOf }),
-    );
+    const outcome = executeStorageTransaction(database, () => undefined, { retentionAsOf: asOf });
 
     if (outcome.status !== 'committed') {
         throw outcome.error;
@@ -953,8 +1041,13 @@ function readPinnedHistory<Value>(
 
     const canonicalReadAt = canonicalStorageTimestamp(readAt);
     const expiresAt = canonicalStorageTimestamp(bounds.expiresAt);
+    const effectiveReadAt =
+        metadata.lastRetentionAsOf &&
+        Date.parse(metadata.lastRetentionAsOf) > Date.parse(canonicalReadAt)
+            ? metadata.lastRetentionAsOf
+            : canonicalReadAt;
 
-    if (Date.parse(canonicalReadAt) >= Date.parse(expiresAt)) {
+    if (Date.parse(effectiveReadAt) >= Date.parse(expiresAt)) {
         return { status: 'cursor_expired' };
     }
 
@@ -971,11 +1064,11 @@ function listPinnedSignificantFacts(
                     source, occurred_at, payload_json
              FROM significant_facts
              WHERE history_generation_id = ?
-               AND storage_sequence <= ?
-               AND (retired_at IS NULL OR retired_at > ?)
-             ORDER BY storage_sequence ASC`,
+                AND storage_sequence <= ?
+                AND (retired_revision IS NULL OR retired_revision > ?)
+              ORDER BY occurred_at DESC, storage_sequence DESC`,
         )
-        .all(bounds.historyGenerationId, bounds.throughSequence, bounds.retentionAsOf)
+        .all(bounds.historyGenerationId, bounds.throughSequence, bounds.retentionRevision)
         .map(toStoredSignificantFact);
 }
 
@@ -987,14 +1080,14 @@ function listPinnedTelemetrySamples(
     const clauses = [
         'history_generation_id = ?',
         'storage_sequence <= ?',
-        '(retired_at IS NULL OR retired_at > ?)',
+        '(retired_revision IS NULL OR retired_revision > ?)',
         'device_id = ?',
         'metric = ?',
     ];
     const parameters: (string | number)[] = [
         bounds.historyGenerationId,
         bounds.throughSequence,
-        bounds.retentionAsOf,
+        bounds.retentionRevision,
         query.deviceId,
         query.metric,
     ];
@@ -1015,7 +1108,7 @@ function listPinnedTelemetrySamples(
                     occurred_at, payload_json
              FROM telemetry_samples
              WHERE ${clauses.join(' AND ')}
-             ORDER BY occurred_at ASC, storage_sequence ASC`,
+              ORDER BY occurred_at DESC, storage_sequence DESC`,
         )
         .all(...parameters)
         .map(toStoredTelemetrySample);
@@ -1529,7 +1622,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const expectedTableColumns = {
     schema_migrations: ['version', 'name', 'checksum'],
-    storage_metadata: ['id', 'history_generation_id', 'last_storage_sequence'],
+    storage_metadata: [
+        'id',
+        'history_generation_id',
+        'last_storage_sequence',
+        'last_retention_revision',
+        'last_retention_as_of',
+    ],
     significant_facts: [
         'history_generation_id',
         'storage_sequence',
@@ -1542,6 +1641,7 @@ const expectedTableColumns = {
         'occurred_at',
         'payload_json',
         'retired_at',
+        'retired_revision',
     ],
     telemetry_samples: [
         'history_generation_id',
@@ -1555,6 +1655,7 @@ const expectedTableColumns = {
         'occurred_at',
         'payload_json',
         'retired_at',
+        'retired_revision',
     ],
     quarantine_entries: [
         'internal_sequence',
@@ -1563,6 +1664,7 @@ const expectedTableColumns = {
         'recorded_at',
         'raw_event_json',
         'retired_at',
+        'retired_revision',
     ],
     accepted_input_identities: ['event_id', 'fingerprint', 'durability', 'accepted_at'],
     simulator_command_receipts: [
@@ -1601,6 +1703,8 @@ const expectedTableSqlFragments = {
         'id integer primary key check (id = 1)',
         'history_generation_id text not null',
         'last_storage_sequence integer not null default 0 check (last_storage_sequence >= 0)',
+        'last_retention_revision integer not null default 0 check (last_retention_revision >= 0)',
+        'last_retention_as_of text',
     ],
     significant_facts: [
         'history_generation_id text not null',
@@ -1614,6 +1718,7 @@ const expectedTableSqlFragments = {
         'occurred_at text not null',
         'payload_json text not null',
         'retired_at text',
+        'retired_revision integer',
         'primary key (history_generation_id, storage_sequence)',
     ],
     telemetry_samples: [
@@ -1628,6 +1733,7 @@ const expectedTableSqlFragments = {
         'occurred_at text not null',
         'payload_json text not null',
         'retired_at text',
+        'retired_revision integer',
         'primary key (history_generation_id, storage_sequence)',
     ],
     quarantine_entries: [
@@ -1637,6 +1743,7 @@ const expectedTableSqlFragments = {
         'recorded_at text not null',
         'raw_event_json text not null',
         'retired_at text',
+        'retired_revision integer',
     ],
     accepted_input_identities: [
         'event_id text primary key',

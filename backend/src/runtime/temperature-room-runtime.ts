@@ -900,20 +900,19 @@ export function createTemperatureRoomRuntime({
         let platformBeforeOutcome = false;
 
         if (activeStorage && storageState.status === 'available') {
-            const outcome = activeStorage.transact((transaction) => {
-                const retiredIdentityEventIds =
-                    transaction.retireExpiredRecords({ asOf: evaluatedAt }) ?? [];
-                transaction.saveLatestRoomProjection({
-                    updatedAt: prepared.candidateState.updatedAt,
-                    projection: prepared.candidateState,
-                    projectionEvidence: prepared.candidateEvidence,
-                    volatileGuards: processor.listVolatileIdentities(),
-                    recentEvents,
-                });
-                touchRuntimeSession(transaction, evaluatedAt);
-
-                return { retiredIdentityEventIds };
-            });
+            const outcome = activeStorage.transact(
+                (transaction) => {
+                    transaction.saveLatestRoomProjection({
+                        updatedAt: prepared.candidateState.updatedAt,
+                        projection: prepared.candidateState,
+                        projectionEvidence: prepared.candidateEvidence,
+                        volatileGuards: processor.listVolatileIdentities(),
+                        recentEvents,
+                    });
+                    touchRuntimeSession(transaction, evaluatedAt);
+                },
+                { retentionAsOf: evaluatedAt },
+            );
 
             if (outcome.status === 'indeterminate') {
                 return terminateForStorageOutcome(outcome.error, 'unknown');
@@ -927,7 +926,7 @@ export function createTemperatureRoomRuntime({
                 enterStorageDegraded(outcome.error, evaluatedAt, false);
                 platformBeforeOutcome = true;
             } else {
-                processor.forgetDurableIdentities(outcome.value.retiredIdentityEventIds);
+                processor.forgetDurableIdentities(outcome.retention.retiredIdentityEventIds);
             }
         }
 
@@ -960,71 +959,71 @@ export function createTemperatureRoomRuntime({
         let platformBeforeOutcome = false;
 
         if (activeStorage && storageState.status === 'available') {
-            const outcome = activeStorage.transact((transaction) => {
-                let storedThroughSequence: number | undefined;
-                const storedRecentEvents: RecentEventProjection[] = [];
+            const outcome = activeStorage.transact(
+                (transaction) => {
+                    let storedThroughSequence: number | undefined;
+                    const storedRecentEvents: RecentEventProjection[] = [];
 
-                if (prepared.kind === 'quarantined') {
-                    transaction.appendQuarantineEntry({
-                        eventId: event.eventId,
-                        reason:
-                            prepared.result.status === 'ignored'
-                                ? prepared.result.reason
-                                : 'rejected',
-                        recordedAt: receivedAt,
-                        rawEvent: event,
-                    });
-                } else if (prepared.eventId) {
-                    for (const record of prepared.records) {
-                        storedThroughSequence = appendPreparedRecord(transaction, record);
-                        const recentEvent = recentEventForRecord(
-                            record,
-                            'durable',
-                            storedThroughSequence,
-                        );
+                    if (prepared.kind === 'quarantined') {
+                        transaction.appendQuarantineEntry({
+                            eventId: event.eventId,
+                            reason:
+                                prepared.result.status === 'ignored'
+                                    ? prepared.result.reason
+                                    : 'rejected',
+                            recordedAt: receivedAt,
+                            rawEvent: event,
+                        });
+                    } else if (prepared.eventId) {
+                        for (const record of prepared.records) {
+                            storedThroughSequence = appendPreparedRecord(transaction, record);
+                            const recentEvent = recentEventForRecord(
+                                record,
+                                'durable',
+                                storedThroughSequence,
+                            );
 
-                        if (recentEvent) {
-                            storedRecentEvents.push(recentEvent);
+                            if (recentEvent) {
+                                storedRecentEvents.push(recentEvent);
+                            }
                         }
+
+                        transaction.upsertAcceptedInputIdentity({
+                            eventId: prepared.eventId,
+                            fingerprint: prepared.fingerprint ?? inputFingerprint(event),
+                            durability: 'durable',
+                            acceptedAt: receivedAt,
+                        });
                     }
 
-                    transaction.upsertAcceptedInputIdentity({
-                        eventId: prepared.eventId,
-                        fingerprint: prepared.fingerprint ?? inputFingerprint(event),
-                        durability: 'durable',
-                        acceptedAt: receivedAt,
-                    });
-                }
+                    if (prepared.kind !== 'quarantined') {
+                        if (outboxMutation?.kind === 'upsert') {
+                            transaction.upsertCommandDispatchOutboxIntent(outboxMutation.intent);
+                        } else if (outboxMutation?.kind === 'close') {
+                            transaction.closeCommandDispatchOutboxIntent(outboxMutation);
+                        } else {
+                            const terminalClosure = terminalOutboxClosure(event, prepared.records);
 
-                const retiredIdentityEventIds =
-                    transaction.retireExpiredRecords({ asOf: receivedAt }) ?? [];
-
-                if (prepared.kind !== 'quarantined') {
-                    if (outboxMutation?.kind === 'upsert') {
-                        transaction.upsertCommandDispatchOutboxIntent(outboxMutation.intent);
-                    } else if (outboxMutation?.kind === 'close') {
-                        transaction.closeCommandDispatchOutboxIntent(outboxMutation);
-                    } else {
-                        const terminalClosure = terminalOutboxClosure(event, prepared.records);
-
-                        if (terminalClosure) {
-                            transaction.closeCommandDispatchOutboxIntent(terminalClosure);
+                            if (terminalClosure) {
+                                transaction.closeCommandDispatchOutboxIntent(terminalClosure);
+                            }
                         }
+
+                        transaction.saveLatestRoomProjection({
+                            updatedAt: durablePreparedState.updatedAt,
+                            projection: durablePreparedState,
+                            projectionEvidence:
+                                prepared.candidateEvidence ?? roomProjector.getEvidence(),
+                            volatileGuards: volatileGuardsForCheckpoint(prepared),
+                            recentEvents: mergeRecentEvents(recentEvents, storedRecentEvents),
+                        });
+                        touchRuntimeSession(transaction, receivedAt);
                     }
 
-                    transaction.saveLatestRoomProjection({
-                        updatedAt: durablePreparedState.updatedAt,
-                        projection: durablePreparedState,
-                        projectionEvidence:
-                            prepared.candidateEvidence ?? roomProjector.getEvidence(),
-                        volatileGuards: volatileGuardsForCheckpoint(prepared),
-                        recentEvents: mergeRecentEvents(recentEvents, storedRecentEvents),
-                    });
-                    touchRuntimeSession(transaction, receivedAt);
-                }
-
-                return { storedThroughSequence, retiredIdentityEventIds, storedRecentEvents };
-            });
+                    return { storedThroughSequence, storedRecentEvents };
+                },
+                { retentionAsOf: receivedAt },
+            );
 
             if (outcome.status === 'indeterminate') {
                 return terminateForStorageOutcome(
@@ -1054,12 +1053,12 @@ export function createTemperatureRoomRuntime({
             } else {
                 result = processor.commitPrepared(prepared);
                 recentEvents = mergeRecentEvents(recentEvents, outcome.value.storedRecentEvents);
-                processor.forgetDurableIdentities(outcome.value.retiredIdentityEventIds);
+                processor.forgetDurableIdentities(outcome.retention.retiredIdentityEventIds);
 
                 if (
                     prepared.eventId &&
                     prepared.fingerprint &&
-                    !outcome.value.retiredIdentityEventIds.includes(prepared.eventId)
+                    !outcome.retention.retiredIdentityEventIds.includes(prepared.eventId)
                 ) {
                     processor.rememberDurableIdentity(
                         prepared.eventId,
@@ -1180,22 +1179,25 @@ export function createTemperatureRoomRuntime({
         }
 
         const projection = roomProjector.getProjection({ evaluatedAt: ingress.receivedAt });
-        const outcome = activeStorage.transact((transaction) => {
-            if (mutation.kind === 'upsert') {
-                transaction.upsertCommandDispatchOutboxIntent(mutation.intent);
-            } else {
-                transaction.closeCommandDispatchOutboxIntent(mutation);
-            }
+        const outcome = activeStorage.transact(
+            (transaction) => {
+                if (mutation.kind === 'upsert') {
+                    transaction.upsertCommandDispatchOutboxIntent(mutation.intent);
+                } else {
+                    transaction.closeCommandDispatchOutboxIntent(mutation);
+                }
 
-            transaction.saveLatestRoomProjection({
-                updatedAt: projection.updatedAt,
-                projection,
-                projectionEvidence: roomProjector.getEvidence(),
-                volatileGuards: processor.listVolatileIdentities(),
-                recentEvents,
-            });
-            touchRuntimeSession(transaction, ingress.receivedAt);
-        });
+                transaction.saveLatestRoomProjection({
+                    updatedAt: projection.updatedAt,
+                    projection,
+                    projectionEvidence: roomProjector.getEvidence(),
+                    volatileGuards: processor.listVolatileIdentities(),
+                    recentEvents,
+                });
+                touchRuntimeSession(transaction, ingress.receivedAt);
+            },
+            { retentionAsOf: ingress.receivedAt },
+        );
 
         if (outcome.status === 'indeterminate') {
             terminateForStorageOutcome(
@@ -1487,8 +1489,6 @@ export function createTemperatureRoomRuntime({
                     occurredAt: ingress.receivedAt,
                     payload: gapPayload,
                 });
-                const retiredIdentityEventIds =
-                    transaction.retireExpiredRecords({ asOf: ingress.receivedAt }) ?? [];
                 transaction.saveLatestRoomProjection({
                     updatedAt: projection.updatedAt,
                     projection,
@@ -1514,7 +1514,6 @@ export function createTemperatureRoomRuntime({
 
                 return {
                     storageSequence: storedGap.storageSequence,
-                    retiredIdentityEventIds,
                     storedStartupFailureRecentEvents,
                 };
             };
@@ -1528,10 +1527,13 @@ export function createTemperatureRoomRuntime({
                           return storageLifecycle.cutover({
                               probe: lifecycleProbe,
                               shouldAbort: () => cutover?.shouldAbort() ?? false,
+                              retentionAsOf: ingress.receivedAt,
                               operation: recoveryOperation,
                           });
                       })()
-                    : candidate?.transact(recoveryOperation);
+                    : candidate?.transact(recoveryOperation, {
+                          retentionAsOf: ingress.receivedAt,
+                      });
 
             if (!outcome) {
                 throw new StorageError(
@@ -1639,7 +1641,7 @@ export function createTemperatureRoomRuntime({
                 );
             }
 
-            processor.forgetDurableIdentities(outcome.value.retiredIdentityEventIds);
+            processor.forgetDurableIdentities(outcome.retention.retiredIdentityEventIds);
 
             storageState = {
                 status: 'available',
@@ -1793,14 +1795,18 @@ export function createTemperatureRoomRuntime({
             return;
         }
 
-        const outcome = activeStorage.transact((transaction) => {
-            if (typeof transaction.closeRuntimeSession === 'function') {
-                transaction.closeRuntimeSession({
-                    sessionId: runtimeSessionId,
-                    closedAt: clock.now(),
-                });
-            }
-        });
+        const closedAt = clock.now();
+        const outcome = activeStorage.transact(
+            (transaction) => {
+                if (typeof transaction.closeRuntimeSession === 'function') {
+                    transaction.closeRuntimeSession({
+                        sessionId: runtimeSessionId,
+                        closedAt,
+                    });
+                }
+            },
+            { retentionAsOf: closedAt },
+        );
 
         if (outcome.status === 'indeterminate') {
             terminateForStorageOutcome(outcome.error, 'unknown');
@@ -2089,17 +2095,18 @@ function initializeProjectionCheckpoint(
         return undefined;
     }
 
-    const startupMarkerOutcome = storage.transact((transaction) => {
-        transaction.retireExpiredRecords({ asOf: evaluatedAt });
-
-        if (typeof transaction.activateRuntimeSession === 'function') {
-            transaction.activateRuntimeSession({
-                sessionId: runtimeSessionId,
-                sessionStartedAt,
-                lastDurableCommitAt: evaluatedAt,
-            });
-        }
-    });
+    const startupMarkerOutcome = storage.transact(
+        (transaction) => {
+            if (typeof transaction.activateRuntimeSession === 'function') {
+                transaction.activateRuntimeSession({
+                    sessionId: runtimeSessionId,
+                    sessionStartedAt,
+                    lastDurableCommitAt: evaluatedAt,
+                });
+            }
+        },
+        { retentionAsOf: evaluatedAt },
+    );
 
     if (startupMarkerOutcome.status !== 'committed') {
         return {
@@ -2159,60 +2166,63 @@ function initializeProjectionCheckpoint(
         };
     }
 
-    const outcome = storage.transact((transaction) => {
-        let gapRecentEvent: RecentEventProjection | undefined;
+    const outcome = storage.transact(
+        (transaction) => {
+            let gapRecentEvent: RecentEventProjection | undefined;
 
-        if (gapRecordId && gapPayload) {
-            const storedGap = transaction.appendSignificantFact({
-                recordId: gapRecordId,
-                eventType: 'storage.gap.recorded',
-                source: 'backend',
-                occurredAt: evaluatedAt,
-                payload: gapPayload,
-            });
-            gapRecentEvent = {
-                recordId: gapRecordId,
-                eventType: 'storage.gap.recorded',
-                occurredAt: evaluatedAt,
-                durability: 'durable',
-                storageSequence: storedGap.storageSequence,
-                source: 'backend',
-                payload: gapPayload,
-            };
-        }
+            if (gapRecordId && gapPayload) {
+                const storedGap = transaction.appendSignificantFact({
+                    recordId: gapRecordId,
+                    eventType: 'storage.gap.recorded',
+                    source: 'backend',
+                    occurredAt: evaluatedAt,
+                    payload: gapPayload,
+                });
+                gapRecentEvent = {
+                    recordId: gapRecordId,
+                    eventType: 'storage.gap.recorded',
+                    occurredAt: evaluatedAt,
+                    durability: 'durable',
+                    storageSequence: storedGap.storageSequence,
+                    source: 'backend',
+                    payload: gapPayload,
+                };
+            }
 
-        if (projectionChanged || gapRecentEvent) {
-            transaction.saveLatestRoomProjection({
-                updatedAt: projection.updatedAt,
-                projection,
-                projectionEvidence,
-                volatileGuards: checkpoint?.volatileGuards ?? [],
-                recentEvents: mergeRecentEvents(
-                    checkpoint?.recentEvents ?? [],
-                    gapRecentEvent ? [gapRecentEvent] : [],
-                ),
-            });
-        }
-
-        if (typeof transaction.activateRuntimeSession === 'function') {
-            transaction.activateRuntimeSession({
-                sessionId: runtimeSessionId,
-                sessionStartedAt,
-                lastDurableCommitAt: evaluatedAt,
-            });
-        }
-
-        for (const priorSession of priorUnclosedRuntimeSessions) {
-            if (typeof transaction.closeRuntimeSession === 'function') {
-                transaction.closeRuntimeSession({
-                    sessionId: priorSession.sessionId,
-                    closedAt: evaluatedAt,
+            if (projectionChanged || gapRecentEvent) {
+                transaction.saveLatestRoomProjection({
+                    updatedAt: projection.updatedAt,
+                    projection,
+                    projectionEvidence,
+                    volatileGuards: checkpoint?.volatileGuards ?? [],
+                    recentEvents: mergeRecentEvents(
+                        checkpoint?.recentEvents ?? [],
+                        gapRecentEvent ? [gapRecentEvent] : [],
+                    ),
                 });
             }
-        }
 
-        return gapRecentEvent;
-    });
+            if (typeof transaction.activateRuntimeSession === 'function') {
+                transaction.activateRuntimeSession({
+                    sessionId: runtimeSessionId,
+                    sessionStartedAt,
+                    lastDurableCommitAt: evaluatedAt,
+                });
+            }
+
+            for (const priorSession of priorUnclosedRuntimeSessions) {
+                if (typeof transaction.closeRuntimeSession === 'function') {
+                    transaction.closeRuntimeSession({
+                        sessionId: priorSession.sessionId,
+                        closedAt: evaluatedAt,
+                    });
+                }
+            }
+
+            return gapRecentEvent;
+        },
+        { retentionAsOf: evaluatedAt },
+    );
 
     if (outcome.status !== 'indeterminate') {
         projector.installProjection(projection, evaluatedAt, projectionEvidence);

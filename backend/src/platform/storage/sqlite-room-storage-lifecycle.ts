@@ -12,12 +12,15 @@ import type {
 } from './room-storage';
 import { migrateSqliteDatabase } from './sqlite-migrations';
 import {
+    createRetentionContext,
     createSqliteRoomStorage,
     createSqliteRoomStorageTransaction,
     openExistingSqliteRoomStorage,
     openSqliteDatabase,
     probeExistingSqliteRoomStorage,
     readSqliteStorageMetadata,
+    retireExpiredRecords,
+    toStorageRetentionResult,
     validateExpectedSqliteSchema,
 } from './sqlite-room-storage';
 import {
@@ -174,6 +177,7 @@ function cutoverExistingGeneration<Value>(
                 return input.operation(transaction);
             },
             {
+                retentionAsOf: input.retentionAsOf,
                 beforeCommit: () => {
                     abortedBeforeCommit = input.shouldAbort();
 
@@ -187,6 +191,7 @@ function cutoverExistingGeneration<Value>(
                 return {
                     status: 'committed',
                     value: outcome.value,
+                    retention: outcome.retention,
                     storage,
                     metadata: storage.getMetadata(),
                 };
@@ -240,7 +245,9 @@ function cutoverFirstInitialization<Value>(
             transaction: 'caller',
         });
         validateExpectedSqliteSchema(database);
-        const value = input.operation(createSqliteRoomStorageTransaction(database));
+        const retention = createRetentionContext(database, input.retentionAsOf);
+        const value = input.operation(createSqliteRoomStorageTransaction(database, retention));
+        retireExpiredRecords(database, retention);
 
         if (input.shouldAbort()) {
             database.exec('ROLLBACK');
@@ -255,7 +262,13 @@ function cutoverFirstInitialization<Value>(
         database.close();
         const storage = openExistingSqliteRoomStorage(databasePath);
 
-        return { status: 'committed', value, storage, metadata: storage.getMetadata() };
+        return {
+            status: 'committed',
+            value,
+            retention: toStorageRetentionResult(retention),
+            storage,
+            metadata: storage.getMetadata(),
+        };
     } catch (error) {
         if (committed) {
             return {

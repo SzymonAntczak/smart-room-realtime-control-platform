@@ -153,6 +153,22 @@ CREATE INDEX quarantine_entries_retired_by_time
     WHERE retired_at IS NOT NULL;
 `;
 
+const migrationSevenSql = `
+ALTER TABLE storage_metadata
+    ADD COLUMN last_retention_revision INTEGER NOT NULL DEFAULT 0
+    CHECK (last_retention_revision >= 0);
+ALTER TABLE storage_metadata
+    ADD COLUMN last_retention_as_of TEXT;
+
+ALTER TABLE significant_facts ADD COLUMN retired_revision INTEGER;
+ALTER TABLE telemetry_samples ADD COLUMN retired_revision INTEGER;
+ALTER TABLE quarantine_entries ADD COLUMN retired_revision INTEGER;
+
+UPDATE significant_facts SET retired_revision = 0 WHERE retired_at IS NOT NULL;
+UPDATE telemetry_samples SET retired_revision = 0 WHERE retired_at IS NOT NULL;
+UPDATE quarantine_entries SET retired_revision = 0 WHERE retired_at IS NOT NULL;
+`;
+
 function applyRecordIdentityMigration(database: DatabaseSync, historyGenerationId: string): void {
     database.exec(`
         CREATE TABLE significant_facts_v5 (
@@ -335,6 +351,14 @@ export const roomStorageMigrations: readonly Migration[] = [
         checksum: checksum(migrationSixSql),
         apply(database) {
             database.exec(migrationSixSql);
+        },
+    },
+    {
+        version: 7,
+        name: 'retention-revision-and-monotonic-as-of',
+        checksum: checksum(migrationSevenSql),
+        apply(database) {
+            database.exec(migrationSevenSql);
         },
     },
 ];

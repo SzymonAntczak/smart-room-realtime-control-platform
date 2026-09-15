@@ -15,6 +15,8 @@ export interface StorageMetadata {
     historyGenerationId: string;
     schemaVersion: number;
     lastStorageSequence: number;
+    lastRetentionAsOf?: string;
+    lastRetentionRevision: number;
 }
 
 /** Fixed lifetime of a durable-history snapshot from its first page. */
@@ -28,6 +30,8 @@ export interface PinnedHistoryBounds {
     historyGenerationId: HistoryGenerationId;
     throughSequence: StoredThroughSequence;
     retentionAsOf: string;
+    /** Internal ordering boundary for retired rows; future opaque cursors retain it. */
+    retentionRevision: number;
     expiresAt: string;
 }
 
@@ -51,8 +55,14 @@ export interface RoomStorageCheckpoint {
     recentEvents: RecentEventProjection[];
 }
 
+export interface StorageRetentionResult {
+    retentionAsOf: string;
+    retentionRevision: number;
+    retiredIdentityEventIds: string[];
+}
+
 export type StorageTransactionOutcome<Value> =
-    | { status: 'committed'; value: Value }
+    | { status: 'committed'; value: Value; retention: StorageRetentionResult }
     | { status: 'confirmed_rolled_back'; error: unknown }
     | { status: 'indeterminate'; error: unknown };
 
@@ -63,9 +73,8 @@ export interface RoomStorageTransaction {
     appendTelemetrySample(input: TelemetrySampleInput): StoredTelemetrySample;
     appendQuarantineEntry(input: QuarantineEntryInput): StoredQuarantineEntry;
     upsertAcceptedInputIdentity(input: AcceptedInputIdentity): void;
-    retireExpiredRecords(input: { asOf: string }): string[];
-    /** Retires due rows and atomically captures one durable-history snapshot boundary. */
-    capturePinnedHistoryBounds(input: { asOf: string }): PinnedHistoryBounds;
+    /** Captures one durable-history boundary after due maintenance in this transaction. */
+    capturePinnedHistoryBounds(): PinnedHistoryBounds;
     listPinnedSignificantFacts(bounds: PinnedHistoryBounds): StoredSignificantFact[];
     listPinnedTelemetrySamples(
         query: {
@@ -175,7 +184,7 @@ export interface RoomStorage {
     getMetadata(): StorageMetadata;
     transact<Value>(
         operation: (transaction: RoomStorageTransaction) => Value,
-        options?: { beforeCommit?: () => boolean },
+        options: { retentionAsOf: string; beforeCommit?: () => boolean },
     ): StorageTransactionOutcome<Value>;
     listAcceptedInputIdentities(): AcceptedInputIdentity[];
     isAcceptedInputIdentityActive(eventId: string, asOf: string): boolean;
@@ -206,7 +215,10 @@ export interface RoomStorage {
     }): PinnedHistoryReadOutcome<StoredTelemetrySample[]>;
     /** Supply `asOf` when beginning a durable-history read after idle time. */
     listQuarantineEntries(options?: { asOf?: string }): StoredQuarantineEntry[];
-    upsertSimulatorCommandReceipt(input: SimulatorCommandReceiptInput): void;
+    upsertSimulatorCommandReceipt(
+        input: SimulatorCommandReceiptInput,
+        options: { retentionAsOf: string },
+    ): void;
     getSimulatorCommandReceipt(
         source: string,
         commandId: string,
@@ -247,13 +259,20 @@ export type StorageProbeResult =
 
 export interface StorageCutoverInput<Value> {
     probe: StorageProbeResult;
+    retentionAsOf: string;
     /** This latch is read immediately before the SQLite commit. */
     shouldAbort(): boolean;
     operation(transaction: RoomStorageTransaction): Value;
 }
 
 export type StorageCutoverOutcome<Value> =
-    | { status: 'committed'; value: Value; storage: RoomStorage; metadata: StorageMetadata }
+    | {
+          status: 'committed';
+          value: Value;
+          retention: StorageRetentionResult;
+          storage: RoomStorage;
+          metadata: StorageMetadata;
+      }
     | { status: 'confirmed_rolled_back'; error: unknown }
     | { status: 'aborted' }
     | { status: 'indeterminate'; error: unknown };

@@ -18,6 +18,7 @@ import {
 } from './storage-errors';
 
 const temporaryDirectories: string[] = [];
+const retention = (retentionAsOf = '2026-09-01T00:00:00.000Z') => ({ retentionAsOf });
 
 afterEach(() => {
     for (const directory of temporaryDirectories.splice(0)) {
@@ -46,7 +47,7 @@ describe('SQLite room storage', () => {
                     sessionStartedAt: '2026-09-09T10:01:00.000Z',
                     lastDurableCommitAt: '2026-09-09T10:02:30.000Z',
                 });
-            });
+            }, retention('2026-09-09T10:03:00.000Z'));
 
             expect(storage.listUnclosedRuntimeSessions()).toEqual([
                 {
@@ -66,7 +67,7 @@ describe('SQLite room storage', () => {
                     sessionId: 'earlier-session',
                     closedAt: '2026-09-09T10:04:00.000Z',
                 });
-            });
+            }, retention('2026-09-09T10:04:00.000Z'));
 
             expect(storage.listUnclosedRuntimeSessions()).toEqual([
                 expect.objectContaining({ sessionId: 'later-session' }),
@@ -164,6 +165,7 @@ describe('SQLite room storage', () => {
 
         const outcome = lifecycle.cutover({
             probe,
+            retentionAsOf: '2026-09-03T08:00:00.000Z',
             shouldAbort: () => true,
             operation() {
                 throw new StorageInvariantError('recovery invariant failed', undefined);
@@ -186,6 +188,7 @@ describe('SQLite room storage', () => {
         const probe = lifecycle.probe({ verifiedHistoryGenerationId: undefined });
         const outcome = lifecycle.cutover({
             probe,
+            retentionAsOf: '2026-09-03T08:00:00.000Z',
             shouldAbort: () => false,
             operation(transaction) {
                 return transaction.appendSignificantFact({
@@ -219,6 +222,7 @@ describe('SQLite room storage', () => {
         const probe = lifecycle.probe({ verifiedHistoryGenerationId: undefined });
         const outcome = lifecycle.cutover({
             probe,
+            retentionAsOf: '2026-09-03T08:00:00.000Z',
             shouldAbort: () => true,
             operation(transaction) {
                 transaction.appendSignificantFact({
@@ -263,6 +267,7 @@ describe('SQLite room storage', () => {
 
         const outcome = lifecycle.cutover({
             probe,
+            retentionAsOf: '2026-09-03T08:00:00.000Z',
             shouldAbort: () => false,
             operation() {
                 return undefined;
@@ -293,6 +298,7 @@ describe('SQLite room storage', () => {
 
         const outcome = lifecycle.cutover({
             probe,
+            retentionAsOf: '2026-09-03T08:00:00.000Z',
             shouldAbort: () => false,
             operation() {
                 return undefined;
@@ -358,7 +364,7 @@ describe('SQLite room storage', () => {
         expect(
             after.prepare('SELECT MAX(version) AS version FROM schema_migrations').get(),
         ).toEqual({
-            version: 5,
+            version: 7,
         });
         after.close();
     });
@@ -375,8 +381,9 @@ describe('SQLite room storage', () => {
             historyGenerationId: expect.stringMatching(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             ),
-            schemaVersion: 6,
+            schemaVersion: 7,
             lastStorageSequence: 0,
+            lastRetentionRevision: 0,
         });
         expect(reopened.getMetadata()).toEqual(initialMetadata);
         reopened.close();
@@ -447,7 +454,7 @@ describe('SQLite room storage', () => {
 
         expect(storage.getMetadata()).toMatchObject({
             historyGenerationId: generation,
-            schemaVersion: 6,
+            schemaVersion: 7,
             lastStorageSequence: 2,
         });
         expect(storage.listSignificantFacts()).toEqual([
@@ -492,19 +499,19 @@ describe('SQLite room storage', () => {
         migrated.close();
     });
 
-    it('migrates v5 tombstones to purge-indexed v6 storage without changing payload or metadata', () => {
+    it('migrates v6 tombstones to retention revision zero without changing payload, generation or sequence', () => {
         const databasePath = temporaryDatabasePath();
         const generation = 'v5-generation';
         const database = new DatabaseSync(databasePath);
 
         try {
-            migrateSqliteDatabase(database, generation, roomStorageMigrations.slice(0, 5));
+            migrateSqliteDatabase(database, generation, roomStorageMigrations.slice(0, 6));
             database
                 .prepare(
                     `INSERT INTO significant_facts (
                         history_generation_id, storage_sequence, record_id, event_type, occurred_at,
                         payload_json, retired_at
-                    ) VALUES (?, 1, 'v5-retired-fact', 'device.availability.changed', ?, ?, ?)`,
+                    ) VALUES (?, 1, 'v6-retired-fact', 'device.availability.changed', ?, ?, ?)`,
                 )
                 .run(
                     generation,
@@ -521,16 +528,30 @@ describe('SQLite room storage', () => {
             expect(
                 database
                     .prepare(
-                        `SELECT history_generation_id, storage_sequence, record_id, payload_json, retired_at
+                        `SELECT history_generation_id, storage_sequence, record_id, payload_json, retired_at,
+                                retired_revision
                          FROM significant_facts`,
                     )
                     .get(),
             ).toEqual({
                 history_generation_id: generation,
                 storage_sequence: 1,
-                record_id: 'v5-retired-fact',
+                record_id: 'v6-retired-fact',
                 payload_json: JSON.stringify({ availability: 'offline' }),
                 retired_at: '2026-09-01T00:00:00.000Z',
+                retired_revision: 0,
+            });
+            expect(
+                database
+                    .prepare(
+                        `SELECT last_storage_sequence, last_retention_revision, last_retention_as_of
+                         FROM storage_metadata`,
+                    )
+                    .get(),
+            ).toEqual({
+                last_storage_sequence: 1,
+                last_retention_revision: 0,
+                last_retention_as_of: null,
             });
             expect(
                 database
@@ -603,14 +624,16 @@ describe('SQLite room storage', () => {
             transaction.saveLatestRoomProjection(projection);
 
             return { fact, telemetry, quarantine };
-        });
+        }, retention('2026-08-14T10:00:04.000Z'));
 
         if (outcome.status !== 'committed') {
             throw outcome.error;
         }
 
         const { fact, telemetry, quarantine } = outcome.value;
-        storage.upsertSimulatorCommandReceipt(receipt);
+        storage.upsertSimulatorCommandReceipt(receipt, {
+            retentionAsOf: receipt.updatedAt,
+        });
 
         expect(fact.storageSequence).toBe(1);
         expect(telemetry.storageSequence).toBe(2);
@@ -654,7 +677,7 @@ describe('SQLite room storage', () => {
                 source: 'simulator-led',
                 asOf: '2026-08-01T00:00:00.000Z',
             });
-        });
+        }, retention('2026-08-01T00:00:00.000Z'));
 
         expect(outcome.status).toBe('committed');
         expect(
@@ -681,7 +704,7 @@ describe('SQLite room storage', () => {
             transaction.upsertCommandDispatchOutboxIntent(readyIntent);
 
             throw new Error('force rollback');
-        });
+        }, retention('2026-09-02T10:00:01.000Z'));
         expect(rolledBack.status).toBe('confirmed_rolled_back');
         expect(storage.listCommandDispatchOutboxIntents()).toEqual([]);
 
@@ -709,8 +732,7 @@ describe('SQLite room storage', () => {
                     state: 'closed',
                     closedAt: '2026-08-01T10:00:01.000Z',
                 });
-                transaction.retireExpiredRecords({ asOf: '2026-09-02T10:00:01.000Z' });
-            }).status,
+            }, retention('2026-09-02T10:00:01.000Z')).status,
         ).toBe('committed');
 
         expect(storage.listCommandDispatchOutboxIntents()).toEqual([
@@ -738,8 +760,7 @@ describe('SQLite room storage', () => {
                 occurredAt: '2026-08-14T00:00:00.500Z',
                 payload: { availability: 'offline' },
             });
-            transaction.retireExpiredRecords({ asOf: '2026-09-13T00:00:00.500Z' });
-        });
+        }, retention('2026-09-13T00:00:00.500Z'));
 
         expect(storage.listSignificantFacts()).toEqual([
             expect.objectContaining({ recordId: 'fractional-second' }),
@@ -799,7 +820,7 @@ describe('SQLite room storage', () => {
                     recordedAt: '2026-08-02T00:00:00.000Z',
                     rawEvent: { invalid: true },
                 });
-            });
+            }, retention(asOf));
 
             expect(storage.listSignificantFacts({ asOf })).toEqual([
                 expect.objectContaining({ recordId: 'boundary-fact' }),
@@ -842,9 +863,7 @@ describe('SQLite room storage', () => {
                 recordedAt: '2026-08-01T23:59:59.999Z',
                 rawEvent: { invalid: true },
             });
-
-            transaction.retireExpiredRecords({ asOf: '2026-09-01T00:00:00.000Z' });
-        });
+        }, retention('2026-09-01T00:00:00.000Z'));
 
         expect(outcome.status).toBe('committed');
         expect(storage.listSignificantFacts()).toEqual([]);
@@ -903,9 +922,7 @@ describe('SQLite room storage', () => {
                         rawEvent: { index },
                     });
                 }
-
-                transaction.retireExpiredRecords({ asOf: '2026-09-01T00:00:00.000Z' });
-            });
+            }, retention('2026-09-01T00:00:00.000Z'));
 
             expect(outcome.status).toBe('committed');
 
@@ -936,7 +953,7 @@ describe('SQLite room storage', () => {
         } finally {
             storage.close();
         }
-    });
+    }, 15_000);
 
     it('removes an accepted identity only after its final active record is retired', () => {
         const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
@@ -967,11 +984,12 @@ describe('SQLite room storage', () => {
                 durability: 'durable',
                 acceptedAt: '2026-08-15T00:00:00.000Z',
             });
+        }, retention('2026-09-01T00:00:00.000Z'));
 
-            return transaction.retireExpiredRecords({ asOf: '2026-09-01T00:00:00.000Z' });
+        expect(firstOutcome).toMatchObject({
+            status: 'committed',
+            retention: { retiredIdentityEventIds: [] },
         });
-
-        expect(firstOutcome).toMatchObject({ status: 'committed', value: [] });
         expect(storage.listAcceptedInputIdentities()).toEqual([
             expect.objectContaining({ eventId, fingerprint }),
         ]);
@@ -979,11 +997,15 @@ describe('SQLite room storage', () => {
             true,
         );
 
-        const secondOutcome = storage.transact((transaction) =>
-            transaction.retireExpiredRecords({ asOf: '2026-09-15T00:00:00.000Z' }),
+        const secondOutcome = storage.transact(
+            () => undefined,
+            retention('2026-09-15T00:00:00.000Z'),
         );
 
-        expect(secondOutcome).toMatchObject({ status: 'committed', value: [eventId] });
+        expect(secondOutcome).toMatchObject({
+            status: 'committed',
+            retention: { retiredIdentityEventIds: [eventId] },
+        });
         expect(storage.listAcceptedInputIdentities()).toEqual([]);
         expect(storage.isAcceptedInputIdentityActive(eventId, '2026-09-15T00:00:00.000Z')).toBe(
             false,
@@ -1029,11 +1051,12 @@ describe('SQLite room storage', () => {
                 durability: 'durable',
                 acceptedAt: '2026-09-01T12:00:00.000Z',
             });
+        }, retention(retentionAsOf));
 
-            return transaction.retireExpiredRecords({ asOf: retentionAsOf });
+        expect(firstOutcome).toMatchObject({
+            status: 'committed',
+            retention: { retiredIdentityEventIds: [] },
         });
-
-        expect(firstOutcome).toMatchObject({ status: 'committed', value: [] });
         const activeFacts = storage.listSignificantFacts();
 
         expect(activeFacts).toHaveLength(5_000);
@@ -1058,15 +1081,16 @@ describe('SQLite room storage', () => {
                     payload: { availability: 'online' },
                 });
             }
+        }, retention(retentionAsOf));
 
-            return transaction.retireExpiredRecords({ asOf: retentionAsOf });
+        expect(secondOutcome).toMatchObject({
+            status: 'committed',
+            retention: { retiredIdentityEventIds: [eventId] },
         });
-
-        expect(secondOutcome).toMatchObject({ status: 'committed', value: [eventId] });
         expect(storage.listAcceptedInputIdentities()).toEqual([]);
         expect(storage.isAcceptedInputIdentityActive(eventId, retentionAsOf)).toBe(false);
         storage.close();
-    });
+    }, 15_000);
 
     it('keeps retention, accepted identities and pinned reads in one atomic storage view', () => {
         const databasePath = temporaryDatabasePath();
@@ -1103,8 +1127,8 @@ describe('SQLite room storage', () => {
                     acceptedAt: firstReadAt,
                 });
 
-                return transaction.capturePinnedHistoryBounds({ asOf: firstReadAt });
-            });
+                return transaction.capturePinnedHistoryBounds();
+            }, retention(firstReadAt));
 
             if (initial.status !== 'committed') {
                 throw initial.error;
@@ -1127,9 +1151,10 @@ describe('SQLite room storage', () => {
                         acceptedAt: retirementAt,
                     });
 
-                    return transaction.retireExpiredRecords({ asOf: retirementAt });
+                    return undefined;
                 },
                 {
+                    retentionAsOf: retirementAt,
                     beforeCommit: () => {
                         inspectedBeforeCommit = true;
 
@@ -1171,7 +1196,10 @@ describe('SQLite room storage', () => {
             );
 
             expect(inspectedBeforeCommit).toBe(true);
-            expect(committed).toEqual({ status: 'committed', value: [oldEventId] });
+            expect(committed).toMatchObject({
+                status: 'committed',
+                retention: { retiredIdentityEventIds: [oldEventId] },
+            });
             expect(reader.listAcceptedInputIdentities()).toEqual([
                 expect.objectContaining({ eventId: newEventId }),
             ]);
@@ -1209,7 +1237,7 @@ describe('SQLite room storage', () => {
             });
 
             const fresh = reader.transact((transaction) => {
-                const bounds = transaction.capturePinnedHistoryBounds({ asOf: retirementAt });
+                const bounds = transaction.capturePinnedHistoryBounds();
 
                 return {
                     bounds,
@@ -1219,7 +1247,7 @@ describe('SQLite room storage', () => {
                         bounds,
                     ),
                 };
-            });
+            }, retention(retirementAt));
 
             if (fresh.status !== 'committed') {
                 throw fresh.error;
@@ -1268,7 +1296,7 @@ describe('SQLite room storage', () => {
                     payload: { metric: 'temperature', value: 21, unit: 'celsius' },
                 });
 
-                const bounds = transaction.capturePinnedHistoryBounds({ asOf: firstReadAt });
+                const bounds = transaction.capturePinnedHistoryBounds();
 
                 return {
                     bounds,
@@ -1278,7 +1306,7 @@ describe('SQLite room storage', () => {
                         bounds,
                     ),
                 };
-            });
+            }, retention(firstReadAt));
 
             if (initial.status !== 'committed') {
                 throw initial.error;
@@ -1325,10 +1353,13 @@ describe('SQLite room storage', () => {
                     acceptedAt: firstReadAt,
                 });
 
-                return transaction.retireExpiredRecords({ asOf: retirementAt });
-            });
+                return undefined;
+            }, retention(retirementAt));
 
-            expect(retirement).toMatchObject({ status: 'committed', value: [eventId] });
+            expect(retirement).toMatchObject({
+                status: 'committed',
+                retention: { retiredIdentityEventIds: [eventId] },
+            });
             expect(storage.listAcceptedInputIdentities()).toEqual([]);
 
             expect(
@@ -1372,16 +1403,14 @@ describe('SQLite room storage', () => {
                     durability: 'durable',
                     acceptedAt: '2026-09-01T00:00:01.000Z',
                 });
-                const bounds = transaction.capturePinnedHistoryBounds({
-                    asOf: '2026-09-01T00:00:01.000Z',
-                });
+                const bounds = transaction.capturePinnedHistoryBounds();
 
                 return {
                     replacementFact,
                     bounds,
                     facts: transaction.listPinnedSignificantFacts(bounds),
                 };
-            });
+            }, retention('2026-09-01T00:00:01.000Z'));
 
             if (replacement.status !== 'committed') {
                 throw replacement.error;
@@ -1389,13 +1418,11 @@ describe('SQLite room storage', () => {
 
             expect(replacement.value.replacementFact.storageSequence).toBe(5);
             expect(replacement.value.facts).toEqual([
-                expect.objectContaining({ recordId: 'pinned-later-record', storageSequence: 3 }),
                 expect.objectContaining({ recordId: originalRecordId, storageSequence: 5 }),
+                expect.objectContaining({ recordId: 'pinned-later-record', storageSequence: 3 }),
             ]);
             expect(
-                storage.transact((transaction) =>
-                    transaction.retireExpiredRecords({ asOf: '2026-09-01T00:05:00.001Z' }),
-                ),
+                storage.transact(() => undefined, retention('2026-09-01T00:05:00.001Z')),
             ).toMatchObject({ status: 'committed' });
 
             const beforePurge = new DatabaseSync(databasePath, { readOnly: true });
@@ -1415,9 +1442,7 @@ describe('SQLite room storage', () => {
             ).toEqual({ status: 'cursor_expired' });
 
             expect(
-                storage.transact((transaction) =>
-                    transaction.retireExpiredRecords({ asOf: '2026-09-01T00:05:00.002Z' }),
-                ),
+                storage.transact(() => undefined, retention('2026-09-01T00:05:00.002Z')),
             ).toMatchObject({ status: 'committed' });
 
             const database = new DatabaseSync(databasePath, { readOnly: true });
@@ -1441,6 +1466,222 @@ describe('SQLite room storage', () => {
         }
     });
 
+    it('keeps a same-millisecond count-retired record in its earlier revision-pinned snapshot', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const asOf = '2026-09-01T00:00:00.000Z';
+
+        try {
+            const initial = storage.transact((transaction) => {
+                for (let index = 0; index < 5_000; index += 1) {
+                    transaction.appendSignificantFact({
+                        recordId: `same-ms-${index}`,
+                        eventId: `same-ms-event-${index}`,
+                        eventType: 'device.availability.changed',
+                        occurredAt: '2026-08-31T00:00:00.000Z',
+                        payload: { availability: 'online' },
+                    });
+                }
+
+                return transaction.capturePinnedHistoryBounds();
+            }, retention(asOf));
+
+            if (initial.status !== 'committed') {
+                throw initial.error;
+            }
+
+            const retirement = storage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'same-ms-newest',
+                    eventId: 'same-ms-newest-event',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-31T00:00:00.000Z',
+                    payload: { availability: 'offline' },
+                });
+            }, retention(asOf));
+
+            expect(retirement).toMatchObject({
+                status: 'committed',
+                retention: { retentionRevision: 1 },
+            });
+            expect(
+                storage.readPinnedSignificantFacts({
+                    bounds: initial.value,
+                    readAt: '2026-09-01T00:04:59.999Z',
+                }),
+            ).toMatchObject({
+                status: 'available',
+                value: expect.arrayContaining([expect.objectContaining({ recordId: 'same-ms-0' })]),
+            });
+
+            const fresh = storage.transact(
+                (transaction) => transaction.capturePinnedHistoryBounds(),
+                retention(asOf),
+            );
+
+            if (fresh.status !== 'committed') {
+                throw fresh.error;
+            }
+
+            expect(fresh.value.retentionRevision).toBe(1);
+            expect(
+                storage.readPinnedSignificantFacts({
+                    bounds: fresh.value,
+                    readAt: '2026-09-01T00:04:59.999Z',
+                }),
+            ).toMatchObject({
+                status: 'available',
+                value: expect.not.arrayContaining([
+                    expect.objectContaining({ recordId: 'same-ms-0' }),
+                ]),
+            });
+        } finally {
+            storage.close();
+        }
+    }, 15_000);
+
+    it('does not move effective retention time backwards when the requested clock regresses', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+
+        try {
+            expect(
+                storage.transact(() => undefined, retention('2026-09-02T00:00:00.000Z')),
+            ).toMatchObject({
+                status: 'committed',
+                retention: { retentionAsOf: '2026-09-02T00:00:00.000Z' },
+            });
+            expect(
+                storage.transact(() => undefined, retention('2026-09-01T00:00:00.000Z')),
+            ).toMatchObject({
+                status: 'committed',
+                retention: { retentionAsOf: '2026-09-02T00:00:00.000Z' },
+            });
+            expect(storage.getMetadata()).toMatchObject({
+                lastRetentionAsOf: '2026-09-02T00:00:00.000Z',
+                lastRetentionRevision: 0,
+            });
+        } finally {
+            storage.close();
+        }
+    });
+
+    it('expires a regressed pinned read when retention high-water has already passed its expiry', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+        const capturedAt = '2026-08-31T00:00:00.000Z';
+
+        try {
+            const captured = storage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'high-water-purge-fact',
+                    eventId: 'high-water-purge-event',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-01T00:00:00.000Z',
+                    payload: { availability: 'online' },
+                });
+
+                return transaction.capturePinnedHistoryBounds();
+            }, retention(capturedAt));
+
+            if (captured.status !== 'committed') {
+                throw captured.error;
+            }
+
+            expect(
+                storage.transact(() => undefined, retention('2026-09-01T00:10:00.000Z')),
+            ).toMatchObject({ status: 'committed' });
+            expect(
+                storage.transact(() => undefined, retention('2026-09-01T00:15:00.000Z')),
+            ).toMatchObject({ status: 'committed' });
+            expect(
+                storage.readPinnedSignificantFacts({
+                    bounds: captured.value,
+                    readAt: '2026-08-31T00:00:01.000Z',
+                }),
+            ).toEqual({ status: 'cursor_expired' });
+        } finally {
+            storage.close();
+        }
+    });
+
+    it('returns pinned facts and telemetry newest-first by timestamp and storage sequence', () => {
+        const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
+
+        try {
+            const captured = storage.transact((transaction) => {
+                transaction.appendSignificantFact({
+                    recordId: 'fact-old',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-31T09:00:00.000Z',
+                    payload: { availability: 'offline' },
+                });
+                transaction.appendSignificantFact({
+                    recordId: 'fact-tied-earlier',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-31T10:00:00.000Z',
+                    payload: { availability: 'online' },
+                });
+                transaction.appendSignificantFact({
+                    recordId: 'fact-tied-later',
+                    eventType: 'device.availability.changed',
+                    occurredAt: '2026-08-31T10:00:00.000Z',
+                    payload: { availability: 'offline' },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'telemetry-old',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 20,
+                    unit: 'celsius',
+                    occurredAt: '2026-08-31T09:00:00.000Z',
+                    payload: { value: 20 },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'telemetry-tied-earlier',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 21,
+                    unit: 'celsius',
+                    occurredAt: '2026-08-31T10:00:00.000Z',
+                    payload: { value: 21 },
+                });
+                transaction.appendTelemetrySample({
+                    recordId: 'telemetry-tied-later',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 22,
+                    unit: 'celsius',
+                    occurredAt: '2026-08-31T10:00:00.000Z',
+                    payload: { value: 22 },
+                });
+                const bounds = transaction.capturePinnedHistoryBounds();
+
+                return {
+                    facts: transaction.listPinnedSignificantFacts(bounds),
+                    telemetry: transaction.listPinnedTelemetrySamples(
+                        { deviceId: 'temp-desk', metric: 'temperature' },
+                        bounds,
+                    ),
+                };
+            }, retention('2026-09-01T00:00:00.000Z'));
+
+            if (captured.status !== 'committed') {
+                throw captured.error;
+            }
+
+            expect(captured.value.facts.map((fact) => fact.recordId)).toEqual([
+                'fact-tied-later',
+                'fact-tied-earlier',
+                'fact-old',
+            ]);
+            expect(captured.value.telemetry.map((sample) => sample.recordId)).toEqual([
+                'telemetry-tied-later',
+                'telemetry-tied-earlier',
+                'telemetry-old',
+            ]);
+        } finally {
+            storage.close();
+        }
+    });
+
     it('reports a changed generation before evaluating pinned-history expiry', () => {
         const first = createSqliteRoomStorage({
             databasePath: temporaryDatabasePath(),
@@ -1452,8 +1693,9 @@ describe('SQLite room storage', () => {
         });
 
         try {
-            const captured = first.transact((transaction) =>
-                transaction.capturePinnedHistoryBounds({ asOf: '2026-09-01T00:00:00.000Z' }),
+            const captured = first.transact(
+                (transaction) => transaction.capturePinnedHistoryBounds(),
+                retention('2026-09-01T00:00:00.000Z'),
             );
 
             if (captured.status !== 'committed') {
@@ -1541,7 +1783,7 @@ describe('SQLite room storage', () => {
                 volatileGuards: [guard],
                 recentEvents: [],
             });
-        });
+        }, retention('2026-08-14T10:00:01.000Z'));
 
         expect(outcome.status).toBe('committed');
 
@@ -1747,7 +1989,7 @@ describe('SQLite room storage', () => {
                 volatileGuards: [],
                 recentEvents: [],
             });
-        });
+        }, retention('2026-08-14T10:00:01.000Z'));
 
         expect(storage.getLatestRoomProjection()?.projection).toMatchObject({
             recentCommands: [{ commandId: 'cmd-z' }, { commandId: 'cmd-a' }],
@@ -1805,12 +2047,10 @@ describe('SQLite room storage', () => {
                 volatileGuards: [],
                 recentEvents,
             });
-        });
+        }, retention('2026-09-01T00:00:00.000Z'));
 
         const checkpointBeforeRetirement = storage.getLatestRoomProjection();
-        storage.transact((transaction) =>
-            transaction.retireExpiredRecords({ asOf: '2026-09-01T00:00:00.000Z' }),
-        );
+        storage.transact(() => undefined, retention('2026-09-01T00:00:00.000Z'));
 
         expect(storage.listSignificantFacts()).toEqual([]);
         expect(storage.getLatestRoomProjection()).toEqual(checkpointBeforeRetirement);
@@ -1866,7 +2106,7 @@ describe('SQLite room storage', () => {
                 volatileGuards: [],
                 recentEvents: [],
             });
-        });
+        }, retention('2026-09-03T08:00:00.000Z'));
         expect(seed.status).toBe('committed');
         storage.close();
         const database = new DatabaseSync(databasePath);
@@ -1913,7 +2153,7 @@ describe('SQLite room storage', () => {
                 volatileGuards: [],
                 recentEvents: [],
             });
-        });
+        }, retention('2026-09-03T08:00:00.000Z'));
         expect(seed.status).toBe('committed');
         storage.close();
 
@@ -1996,7 +2236,7 @@ describe('SQLite room storage', () => {
         expect(storedValue).toBe(invalidCheckpoint);
     });
 
-    it('classifies a COMMIT error as indeterminate even after cleanup succeeds', () => {
+    it('reports a retention-maintenance setup failure as a confirmed rollback before commit', () => {
         let transactionOpen = false;
         const executed: string[] = [];
         const database = {
@@ -2020,12 +2260,29 @@ describe('SQLite room storage', () => {
                     transactionOpen = false;
                 }
             },
+            prepare(statement: string) {
+                return {
+                    get() {
+                        return statement.includes('last_retention_revision')
+                            ? { last_retention_as_of: null, last_retention_revision: 0 }
+                            : { count: 0 };
+                    },
+                    all() {
+                        return [];
+                    },
+                    run() {
+                        return { changes: 0 };
+                    },
+                };
+            },
         };
 
-        expect(executeStorageTransaction(database as never, () => 'value')).toMatchObject({
-            status: 'indeterminate',
+        expect(
+            executeStorageTransaction(database as never, () => 'value', retention()),
+        ).toMatchObject({
+            status: 'confirmed_rolled_back',
         });
-        expect(executed).toEqual(['BEGIN IMMEDIATE', 'COMMIT', 'ROLLBACK']);
+        expect(executed).toEqual(['BEGIN IMMEDIATE', 'ROLLBACK']);
     });
 
     it('rolls back a BEGIN error that leaves a transaction active before allowing fallback', () => {
@@ -2050,7 +2307,9 @@ describe('SQLite room storage', () => {
             },
         };
 
-        expect(executeStorageTransaction(database as never, () => 'value')).toMatchObject({
+        expect(
+            executeStorageTransaction(database as never, () => 'value', retention()),
+        ).toMatchObject({
             status: 'confirmed_rolled_back',
         });
         expect(executed).toEqual(['BEGIN IMMEDIATE', 'ROLLBACK']);
@@ -2076,9 +2335,13 @@ describe('SQLite room storage', () => {
         };
 
         expect(
-            executeStorageTransaction(database as never, () => {
-                throw new Error('operation failed');
-            }),
+            executeStorageTransaction(
+                database as never,
+                () => {
+                    throw new Error('operation failed');
+                },
+                retention(),
+            ),
         ).toMatchObject({ status: 'indeterminate' });
     });
 
@@ -2106,7 +2369,7 @@ describe('SQLite room storage', () => {
                 occurredAt: '2026-08-14T10:00:01.000Z',
                 payload: { value: 20 },
             });
-        });
+        }, retention('2026-08-14T10:00:01.000Z'));
 
         expect(outcome.status).toBe('committed');
 
@@ -2148,7 +2411,7 @@ describe('SQLite room storage', () => {
         newerStorage.close();
         const newerDatabase = new DatabaseSync(newerDatabasePath);
         newerDatabase
-            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (7, ?, ?)')
+            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (8, ?, ?)')
             .run('future', 'future');
         newerDatabase.close();
 
@@ -2226,16 +2489,18 @@ describe('SQLite room storage', () => {
 
         try {
             expect(
-                storage.transact((transaction) =>
-                    transaction.appendTelemetrySample({
-                        recordId: 'blocked-sample',
-                        deviceId: 'temp-desk',
-                        metric: 'temperature',
-                        value: 20,
-                        unit: 'celsius',
-                        occurredAt: '2026-08-14T10:00:00.000Z',
-                        payload: { value: 20 },
-                    }),
+                storage.transact(
+                    (transaction) =>
+                        transaction.appendTelemetrySample({
+                            recordId: 'blocked-sample',
+                            deviceId: 'temp-desk',
+                            metric: 'temperature',
+                            value: 20,
+                            unit: 'celsius',
+                            occurredAt: '2026-08-14T10:00:00.000Z',
+                            payload: { value: 20 },
+                        }),
+                    retention('2026-08-14T10:00:00.000Z'),
                 ),
             ).toMatchObject({
                 status: 'confirmed_rolled_back',
