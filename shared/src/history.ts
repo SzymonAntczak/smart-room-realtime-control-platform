@@ -83,6 +83,10 @@ function withDurability<Shape extends TProperties>(shape: Shape) {
     ]);
 }
 
+function withDurableStorage<Shape extends TProperties>(shape: Shape) {
+    return Type.Object({ ...shape, ...durableFields }, { additionalProperties: false });
+}
+
 export const recentEventProjectionSchema = Type.Union([
     withDurability({
         ...commonFields,
@@ -161,11 +165,68 @@ export type RecentEventProjection = Static<typeof recentEventProjectionSchema>;
 export type RecentEventProjectionSchema = RecentEventProjection;
 
 /** Durable history representation of the same significant-fact variants as the feed. */
-export const durableSignificantFactProjectionSchema = Type.Intersect([
-    recentEventProjectionSchema,
-    Type.Object({
-        durability: Type.Literal('durable'),
-        storageSequence: storageSequenceSchema,
+export const durableSignificantFactProjectionSchema = Type.Union([
+    withDurableStorage({
+        ...commonFields,
+        ...deviceEventFields,
+        eventType: Type.Literal('device.state.reported'),
+        payload: deviceStateReportedPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        ...deviceEventFields,
+        eventType: Type.Literal('device.availability.changed'),
+        payload: deviceAvailabilityChangedPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        ...deviceEventFields,
+        eventType: Type.Literal('device.health.changed'),
+        payload: deviceHealthChangedPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        ...commandEventFields,
+        eventType: Type.Literal('command.requested'),
+        payload: commandRequestedPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        ...commandEventFields,
+        eventType: Type.Literal('command.dispatched'),
+        payload: commandDispatchedPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        ...commandEventFields,
+        eventType: Type.Literal('command.delivery_uncertain'),
+        payload: commandDeliveryUncertainPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        ...commandEventFields,
+        eventType: Type.Literal('command.failed'),
+        payload: commandFailedPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        ...commandEventFields,
+        eventType: Type.Literal('command.timed_out'),
+        payload: commandTimedOutPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        deviceId: nonEmptyStringSchema,
+        commandId: nonEmptyStringSchema,
+        source: Type.Literal('backend'),
+        eventType: Type.Literal('command.confirmed'),
+        payload: confirmedPayloadSchema,
+    }),
+    withDurableStorage({
+        ...commonFields,
+        source: Type.Literal('backend'),
+        eventType: Type.Literal('storage.gap.recorded'),
+        payload: storageGapRecordedPayloadSchema,
     }),
 ]);
 export type DurableSignificantFactProjection = Extract<
@@ -188,6 +249,56 @@ export const rawTelemetrySampleProjectionSchema = Type.Object(
     { additionalProperties: false },
 );
 export type RawTelemetrySampleProjection = Static<typeof rawTelemetrySampleProjectionSchema>;
+
+const historyPageSizeSchema = Type.Integer({ minimum: 1 });
+
+/** Query parameters for the first page of durable significant facts. */
+export const significantFactFirstPageQuerySchema = Type.Object(
+    {
+        pageSize: historyPageSizeSchema,
+    },
+    { additionalProperties: false },
+);
+export type SignificantFactFirstPageQuery = Static<typeof significantFactFirstPageQuerySchema>;
+
+/** Query parameters for the first page of one device's raw telemetry. */
+export const rawTelemetryFirstPageQuerySchema = Type.Object(
+    {
+        deviceId: nonEmptyStringSchema,
+        metric: Type.Literal('temperature'),
+        from: isoTimestampSchema,
+        to: isoTimestampSchema,
+        pageSize: historyPageSizeSchema,
+    },
+    { additionalProperties: false },
+);
+export type RawTelemetryFirstPageQuery = Static<typeof rawTelemetryFirstPageQuerySchema>;
+
+/** Query after its accepted telemetry range has been canonicalized to UTC. */
+export interface NormalizedRawTelemetryFirstPageQuery extends Omit<
+    RawTelemetryFirstPageQuery,
+    'from' | 'to'
+> {
+    from: string;
+    to: string;
+}
+
+export function normalizeRawTelemetryFirstPageQuery(
+    value: unknown,
+): NormalizedRawTelemetryFirstPageQuery | undefined {
+    if (!isSchema(rawTelemetryFirstPageQuerySchema, value)) {
+        return undefined;
+    }
+
+    const from = normalizeIsoTimestamp(value.from);
+    const to = normalizeIsoTimestamp(value.to);
+
+    if (from === undefined || to === undefined || Date.parse(from) >= Date.parse(to)) {
+        return undefined;
+    }
+
+    return { ...value, from, to };
+}
 
 /** Request for a bounded, downsampled view of one device metric. */
 export const trendQuerySchema = Type.Object(
@@ -371,7 +482,6 @@ function compareTrendPointsAscending(
 
 export const historyPageOrders = ['occurred_at_desc'] as const;
 const historyPageOrderSchema = Type.Union(historyPageOrders.map((order) => Type.Literal(order)));
-const historyPageSizeSchema = Type.Integer({ minimum: 1 });
 
 export const significantFactCursorQueryScopeSchema = Type.Object(
     {

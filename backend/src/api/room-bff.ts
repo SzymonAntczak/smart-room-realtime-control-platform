@@ -20,6 +20,22 @@ import {
     eventProcessingDiagnosticsSnapshotSchema,
 } from '@smart-room/contracts/development';
 import {
+    type NormalizedRawTelemetryFirstPageQuery,
+    type NormalizedTrendQuery,
+    normalizeRawTelemetryFirstPageQuery,
+    normalizeTrendQuery,
+    rawTelemetryFirstPageQuerySchema,
+    type RawTelemetryPage,
+    rawTelemetryPageSchema,
+    type SignificantFactFirstPageQuery,
+    significantFactFirstPageQuerySchema,
+    type SignificantFactPage,
+    significantFactPageSchema,
+    trendQuerySchema,
+    type TrendResponse,
+    trendResponseSchema,
+} from '@smart-room/contracts/history';
+import {
     type RoomSnapshotProjection,
     roomSnapshotProjectionSchema,
 } from '@smart-room/contracts/projections';
@@ -36,6 +52,7 @@ import Fastify, {
 } from 'fastify';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
+import type { RoomHistoryReadResult } from '../platform/history/room-history-reader';
 
 import {
     isJsonMediaType,
@@ -48,6 +65,13 @@ import { startRoomRealtimeStream } from './room-bff-sse';
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readSignificantFactFirstPage?: (
+        query: SignificantFactFirstPageQuery,
+    ) => RoomHistoryReadResult<SignificantFactPage>;
+    readRawTelemetryFirstPage?: (
+        query: NormalizedRawTelemetryFirstPageQuery,
+    ) => RoomHistoryReadResult<RawTelemetryPage>;
+    readTrend?: (query: NormalizedTrendQuery) => RoomHistoryReadResult<TrendResponse>;
     subscribeRoomPublicationBatch(listener: (batch: RoomPublicationBatch) => void): () => void;
     requestCommand?: (request: SetPowerCommandRequest) => CommandRequestResult;
     runDeviceScenario?: (deviceId: string, action: DeviceScenarioAction) => DeviceScenarioResult;
@@ -59,6 +83,9 @@ export interface RoomBffConfig {
 export function createRoomBffServer({
     getRoomSnapshot,
     getDiagnosticsSnapshot,
+    readSignificantFactFirstPage,
+    readRawTelemetryFirstPage,
+    readTrend,
     subscribeRoomPublicationBatch,
     requestCommand,
     runDeviceScenario,
@@ -70,6 +97,9 @@ export function createRoomBffServer({
     const handlers: RoomBffHandlers = {
         getRoomSnapshot,
         getDiagnosticsSnapshot,
+        readSignificantFactFirstPage,
+        readRawTelemetryFirstPage,
+        readTrend,
         requestCommand,
         runDeviceScenario,
         getDeviceScenarios,
@@ -114,6 +144,15 @@ export function createRoomBffServer({
             return;
         }
 
+        if (isHistoryRequest(request) && isInvalidScenarioRequestError(error)) {
+            writeJson(response, 400, {
+                error: 'invalid_request',
+                message: 'History query parameters do not match the transport contract.',
+            });
+
+            return;
+        }
+
         void response.send(error);
     });
 
@@ -124,6 +163,123 @@ export function createRoomBffServer({
             now,
         });
     });
+
+    server.get(
+        '/room/history/significant-facts',
+        {
+            schema: {
+                querystring: significantFactFirstPageQuerySchema,
+                response: {
+                    200: significantFactPageSchema,
+                    400: apiErrorResponseSchema,
+                    503: apiErrorResponseSchema,
+                    500: apiErrorResponseSchema,
+                },
+            },
+            onRequest(request, response, done) {
+                if (rejectUnsupportedHistoryCursor(request, response)) {
+                    return;
+                }
+
+                done();
+            },
+        },
+        (request, response) => {
+            const read = handlers.readSignificantFactFirstPage;
+
+            if (!read) {
+                writeInvalidServerResponse(response);
+
+                return;
+            }
+
+            writeHistoryReadResponse(
+                response,
+                read(request.query as SignificantFactFirstPageQuery),
+            );
+        },
+    );
+
+    server.get(
+        '/room/history/telemetry',
+        {
+            schema: {
+                querystring: rawTelemetryFirstPageQuerySchema,
+                response: {
+                    200: rawTelemetryPageSchema,
+                    400: apiErrorResponseSchema,
+                    503: apiErrorResponseSchema,
+                    500: apiErrorResponseSchema,
+                },
+            },
+            onRequest(request, response, done) {
+                if (rejectUnsupportedHistoryCursor(request, response)) {
+                    return;
+                }
+
+                done();
+            },
+        },
+        (request, response) => {
+            const query = normalizeRawTelemetryFirstPageQuery(request.query);
+
+            if (!query) {
+                writeJson(response, 400, {
+                    error: 'invalid_request',
+                    message: 'Telemetry history requires a non-empty time range.',
+                });
+
+                return;
+            }
+
+            const read = handlers.readRawTelemetryFirstPage;
+
+            if (!read) {
+                writeInvalidServerResponse(response);
+
+                return;
+            }
+
+            writeHistoryReadResponse(response, read(query));
+        },
+    );
+
+    server.get(
+        '/room/history/trends',
+        {
+            schema: {
+                querystring: trendQuerySchema,
+                response: {
+                    200: trendResponseSchema,
+                    400: apiErrorResponseSchema,
+                    503: apiErrorResponseSchema,
+                    500: apiErrorResponseSchema,
+                },
+            },
+        },
+        (request, response) => {
+            const query = normalizeTrendQuery(request.query);
+
+            if (!query) {
+                writeJson(response, 400, {
+                    error: 'invalid_request',
+                    message: 'Telemetry trend requires a non-empty time range.',
+                });
+
+                return;
+            }
+
+            const read = handlers.readTrend;
+
+            if (!read) {
+                writeInvalidServerResponse(response);
+
+                return;
+            }
+
+            writeHistoryReadResponse(response, read(query));
+        },
+    );
 
     server.get(
         '/dev/devices/:deviceId/scenarios',
@@ -305,6 +461,9 @@ export function createRoomBffServer({
 interface RoomBffHandlers {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readSignificantFactFirstPage?: RoomBffConfig['readSignificantFactFirstPage'];
+    readRawTelemetryFirstPage?: RoomBffConfig['readRawTelemetryFirstPage'];
+    readTrend?: RoomBffConfig['readTrend'];
     requestCommand?: (request: SetPowerCommandRequest) => CommandRequestResult;
     runDeviceScenario?: (deviceId: string, action: DeviceScenarioAction) => DeviceScenarioResult;
     getDeviceScenarios?: (deviceId: string) => DeviceScenarioList | undefined;
@@ -314,6 +473,43 @@ export type CommandRequestResult =
     | AcceptedCommandResponse
     | RejectedCommandResponse
     | PreAdmissionCommandErrorResponse;
+
+function writeHistoryReadResponse<Value>(
+    response: FastifyReply,
+    result: RoomHistoryReadResult<Value>,
+): void {
+    if (result.status === 'available') {
+        writeJson(response, 200, result.value);
+
+        return;
+    }
+
+    if (result.status === 'invalid_internal_data') {
+        writeInvalidServerResponse(response);
+
+        return;
+    }
+
+    writeJson(response, 503, {
+        error: 'durable_history_unavailable',
+        message: 'Durable history is currently unavailable.',
+    });
+}
+
+function rejectUnsupportedHistoryCursor(request: FastifyRequest, response: FastifyReply): boolean {
+    const requestUrl = request.raw.url;
+
+    if (!requestUrl || !new URL(requestUrl, 'http://localhost').searchParams.has('cursor')) {
+        return false;
+    }
+
+    writeJson(response, 400, {
+        error: 'invalid_request',
+        message: 'History cursors are not available until the next history subtask.',
+    });
+
+    return true;
+}
 
 function handleRoomBffRequest(
     request: FastifyRequest,
@@ -417,6 +613,10 @@ function isDeviceScenarioRequest(request: FastifyRequest): boolean {
 
 function isCommandRequest(request: FastifyRequest): boolean {
     return request.routeOptions.url === '/room/commands';
+}
+
+function isHistoryRequest(request: FastifyRequest): boolean {
+    return request.routeOptions.url?.startsWith('/room/history/') ?? false;
 }
 
 function isCommandRequestResult(value: unknown): value is CommandRequestResult {

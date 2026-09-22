@@ -1,4 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
@@ -11,6 +14,8 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
+import { createRoomHistoryReader } from '../platform/history/room-history-reader';
+import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
 import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
 
 import { createRoomBffServer } from './room-bff';
@@ -59,6 +64,153 @@ describe('createRoomBffServer', () => {
         await expect(response.json()).resolves.toMatchObject({
             recentEvents: [{ recordId: fixtures.recentEvent.recordId }],
         });
+    });
+
+    it('serves the first pinned significant-facts page from isolated SQLite storage', async () => {
+        const history = createHistoryBffHarness();
+
+        try {
+            const response = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1',
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toMatchObject({
+                historyGenerationId: history.generationId,
+                throughSequence: 6,
+                retentionAsOf: '2026-09-10T10:10:00.000Z',
+                pageSize: 1,
+                items: [{ recordId: history.factRecordIds[1], durability: 'durable' }],
+                nextCursor: null,
+            });
+        } finally {
+            await history.close();
+        }
+    });
+
+    it('filters and bounds first-page telemetry while treating an unknown device as empty', async () => {
+        const history = createHistoryBffHarness();
+
+        try {
+            const response = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=10',
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toMatchObject({
+                historyGenerationId: history.generationId,
+                throughSequence: 6,
+                items: [
+                    { recordId: history.telemetryRecordIds[1], value: 22 },
+                    { recordId: history.telemetryRecordIds[0], value: 20 },
+                ],
+                nextCursor: null,
+            });
+
+            const unknownDevice = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-unknown&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=10',
+            });
+
+            expect(unknownDevice.statusCode).toBe(200);
+            expect(unknownDevice.json()).toMatchObject({
+                historyGenerationId: history.generationId,
+                items: [],
+            });
+        } finally {
+            await history.close();
+        }
+    });
+
+    it('serves raw telemetry identities selected for a bounded trend', async () => {
+        const history = createHistoryBffHarness();
+
+        try {
+            const response = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/trends?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pointLimit=4',
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toMatchObject({
+                historyGenerationId: history.generationId,
+                throughSequence: 6,
+                points: [
+                    { recordId: history.telemetryRecordIds[0], storageSequence: 3 },
+                    { recordId: history.telemetryRecordIds[1], storageSequence: 4 },
+                ],
+            });
+        } finally {
+            await history.close();
+        }
+    });
+
+    it('rejects invalid history ranges and keeps unavailable history distinct from empty results', async () => {
+        const history = createHistoryBffHarness();
+
+        try {
+            const invalidRange = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:05:00Z&to=2026-09-10T10:05:00Z&pageSize=10',
+            });
+            expect(invalidRange.statusCode).toBe(400);
+
+            const cursor = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1&cursor=not-supported-yet',
+            });
+            expect(cursor.statusCode).toBe(400);
+
+            const malformed = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts',
+            });
+            expect(malformed.statusCode).toBe(400);
+            expect(malformed.json()).toEqual({
+                error: 'invalid_request',
+                message: 'History query parameters do not match the transport contract.',
+            });
+
+            const unavailable = createRoomBffServer({
+                ...createRoomBffConfig(),
+                readSignificantFactFirstPage() {
+                    return { status: 'unavailable' };
+                },
+            });
+            const unavailableResponse = await unavailable.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1',
+            });
+
+            expect(unavailableResponse.statusCode).toBe(503);
+            expect(unavailableResponse.json()).toEqual({
+                error: 'durable_history_unavailable',
+                message: 'Durable history is currently unavailable.',
+            });
+            await unavailable.close();
+
+            const invalidInternalData = createRoomBffServer({
+                ...createRoomBffConfig(),
+                readSignificantFactFirstPage() {
+                    return { status: 'invalid_internal_data' };
+                },
+            });
+            const invalidInternalDataResponse = await invalidInternalData.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1',
+            });
+
+            expect(invalidInternalDataResponse.statusCode).toBe(500);
+            expect(invalidInternalDataResponse.json()).toEqual({
+                error: 'invalid_server_response',
+                message: 'Server produced a response that does not match the transport contract.',
+            });
+            await invalidInternalData.close();
+        } finally {
+            await history.close();
+        }
     });
 
     it('serves derived stale health from the current room snapshot', async () => {
@@ -1025,6 +1177,110 @@ function createDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot {
             },
         ],
     };
+}
+
+function createHistoryBffHarness() {
+    const directory = mkdtempSync(join(tmpdir(), 'smart-room-bff-history-'));
+    const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
+    const factRecordIds = [recordId('a'), recordId('b')];
+    const telemetryRecordIds = [recordId('c'), recordId('d')];
+    const retentionAsOf = '2026-09-10T10:10:00.000Z';
+    const outcome = storage.transact(
+        (transaction) => {
+            transaction.appendSignificantFact({
+                recordId: factRecordIds[0],
+                eventType: 'storage.gap.recorded',
+                source: 'backend',
+                occurredAt: '2026-09-10T10:01:00.000Z',
+                payload: storageGapPayload('2026-09-10T10:01:00.000Z'),
+            });
+            transaction.appendSignificantFact({
+                recordId: factRecordIds[1],
+                eventType: 'storage.gap.recorded',
+                source: 'backend',
+                occurredAt: '2026-09-10T10:04:00.000Z',
+                payload: storageGapPayload('2026-09-10T10:04:00.000Z'),
+            });
+            transaction.appendTelemetrySample({
+                recordId: telemetryRecordIds[0],
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                value: 20,
+                unit: 'celsius',
+                occurredAt: '2026-09-10T10:00:00.000Z',
+                payload: { metric: 'temperature', value: 20, unit: 'celsius' },
+            });
+            transaction.appendTelemetrySample({
+                recordId: telemetryRecordIds[1],
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                value: 22,
+                unit: 'celsius',
+                occurredAt: '2026-09-10T10:03:00.000Z',
+                payload: { metric: 'temperature', value: 22, unit: 'celsius' },
+            });
+            transaction.appendTelemetrySample({
+                recordId: recordId('e'),
+                deviceId: 'temp-window',
+                metric: 'temperature',
+                value: 18,
+                unit: 'celsius',
+                occurredAt: '2026-09-10T10:04:00.000Z',
+                payload: { metric: 'temperature', value: 18, unit: 'celsius' },
+            });
+            transaction.appendTelemetrySample({
+                recordId: recordId('f'),
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                value: 24,
+                unit: 'celsius',
+                occurredAt: '2026-09-10T10:05:00.000Z',
+                payload: { metric: 'temperature', value: 24, unit: 'celsius' },
+            });
+        },
+        { retentionAsOf },
+    );
+
+    if (outcome.status !== 'committed') {
+        storage.close();
+        rmSync(directory, { recursive: true, force: true });
+
+        throw outcome.error;
+    }
+
+    const reader = createRoomHistoryReader({ storage, now: () => retentionAsOf });
+    const server = createRoomBffServer({
+        ...createRoomBffConfig(),
+        readSignificantFactFirstPage: reader.readSignificantFactFirstPage,
+        readRawTelemetryFirstPage: reader.readRawTelemetryFirstPage,
+        readTrend: reader.readTrend,
+    });
+
+    return {
+        server,
+        factRecordIds,
+        telemetryRecordIds,
+        generationId: storage.getMetadata().historyGenerationId,
+        async close() {
+            await server.close();
+            storage.close();
+            rmSync(directory, { recursive: true, force: true });
+        },
+    };
+}
+
+function storageGapPayload(outageEndedAt: string) {
+    return {
+        outageStartedAt: '2026-09-10T09:59:00.000Z',
+        outageEndedAt,
+        failureReason: 'storage_unavailable',
+        boundaryBasis: 'same_process_first_degraded_at' as const,
+        observationsBackfilled: false as const,
+    };
+}
+
+function recordId(character: string): string {
+    return `rec:v1:sha256:${character.repeat(64)}`;
 }
 
 async function listen(server: FastifyInstance): Promise<FastifyInstance> {

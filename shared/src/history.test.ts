@@ -9,6 +9,7 @@ import {
     isTrendResponse,
     type NormalizedTrendQuery,
     normalizeHistoryCursorQueryScope,
+    normalizeRawTelemetryFirstPageQuery,
     normalizeTrendQuery,
     type RawTelemetrySampleProjection,
     type RecentEventProjection,
@@ -17,6 +18,33 @@ import {
 import { createHistoryIdentityFixtures } from './history-fixtures';
 
 describe('durable history contracts', () => {
+    it('normalizes first-page telemetry ranges and rejects invalid bounds', () => {
+        expect(
+            normalizeRawTelemetryFirstPageQuery({
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T11:00:00+01:00',
+                to: '2026-09-10T11:05:00+01:00',
+                pageSize: 20,
+            }),
+        ).toEqual({
+            deviceId: 'temp-desk',
+            metric: 'temperature',
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-10T10:05:00Z',
+            pageSize: 20,
+        });
+        expect(
+            normalizeRawTelemetryFirstPageQuery({
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T10:05:00Z',
+                to: '2026-09-10T10:05:00Z',
+                pageSize: 20,
+            }),
+        ).toBeUndefined();
+    });
+
     it('keeps shared fact and telemetry identities valid across feed, pages and trend views', () => {
         const fixtures = createHistoryIdentityFixtures();
 

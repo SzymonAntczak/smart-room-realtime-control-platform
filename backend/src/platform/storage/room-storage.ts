@@ -75,7 +75,10 @@ export interface RoomStorageTransaction {
     upsertAcceptedInputIdentity(input: AcceptedInputIdentity): void;
     /** Captures one durable-history boundary after due maintenance in this transaction. */
     capturePinnedHistoryBounds(): PinnedHistoryBounds;
-    listPinnedSignificantFacts(bounds: PinnedHistoryBounds): StoredSignificantFact[];
+    listPinnedSignificantFacts(
+        bounds: PinnedHistoryBounds,
+        options?: { limit?: number },
+    ): StoredSignificantFact[];
     listPinnedTelemetrySamples(
         query: {
             deviceId: string;
@@ -84,6 +87,7 @@ export interface RoomStorageTransaction {
             to?: string;
         },
         bounds: PinnedHistoryBounds,
+        options?: { limit?: number },
     ): StoredTelemetrySample[];
     saveLatestRoomProjection(input: LatestRoomProjectionInput): void;
     upsertCommandDispatchOutboxIntent(input: CommandDispatchOutboxIntent): void;

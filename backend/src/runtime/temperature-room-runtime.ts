@@ -20,7 +20,13 @@ import {
 import type { CommandFailedEvent, PlatformEvent } from '@smart-room/contracts/events';
 import {
     compareRecentEventsDescending,
+    type NormalizedRawTelemetryFirstPageQuery,
+    type NormalizedTrendQuery,
+    type RawTelemetryPage,
     type RecentEventProjection,
+    type SignificantFactFirstPageQuery,
+    type SignificantFactPage,
+    type TrendResponse,
 } from '@smart-room/contracts/history';
 import type {
     PlatformStorageProjection,
@@ -79,6 +85,10 @@ import {
     type EventProcessingResult,
     type PreparedRecord,
 } from '../platform/event-processing/event-processor';
+import {
+    createRoomHistoryReader,
+    type RoomHistoryReadResult,
+} from '../platform/history/room-history-reader';
 import { commandAvailabilityFor } from '../platform/read-model/command-availability';
 import {
     createRoomProjector,
@@ -135,6 +145,13 @@ export interface TemperatureRoomRuntime {
     stop(): void;
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readSignificantFactFirstPage(
+        query: SignificantFactFirstPageQuery,
+    ): RoomHistoryReadResult<SignificantFactPage>;
+    readRawTelemetryFirstPage(
+        query: NormalizedRawTelemetryFirstPageQuery,
+    ): RoomHistoryReadResult<RawTelemetryPage>;
+    readTrend(query: NormalizedTrendQuery): RoomHistoryReadResult<TrendResponse>;
     subscribeRoomSnapshot(listener: RoomSnapshotListener): () => void;
     subscribeRoomPublicationBatch(listener: RoomPublicationBatchListener): () => void;
     getDeviceScenarios(deviceId: string): DeviceScenarioList | undefined;
@@ -612,6 +629,25 @@ export function createTemperatureRoomRuntime({
         },
         getDiagnosticsSnapshot() {
             return diagnostics.getSnapshot();
+        },
+        readSignificantFactFirstPage(query) {
+            const reader = availableHistoryReader();
+
+            return reader
+                ? handleHistoryRead(reader.readSignificantFactFirstPage(query))
+                : { status: 'unavailable' };
+        },
+        readRawTelemetryFirstPage(query) {
+            const reader = availableHistoryReader();
+
+            return reader
+                ? handleHistoryRead(reader.readRawTelemetryFirstPage(query))
+                : { status: 'unavailable' };
+        },
+        readTrend(query) {
+            const reader = availableHistoryReader();
+
+            return reader ? handleHistoryRead(reader.readTrend(query)) : { status: 'unavailable' };
         },
         subscribeRoomSnapshot(listener) {
             snapshotListeners.add(listener);
@@ -1949,6 +1985,34 @@ export function createTemperatureRoomRuntime({
 
     function getCurrentRoomSnapshot(): RoomSnapshotProjection {
         return snapshotAt(clock.now());
+    }
+
+    function availableHistoryReader() {
+        if (!activeStorage || storageState.status !== 'available') {
+            return undefined;
+        }
+
+        return createRoomHistoryReader({ storage: activeStorage, now: clock.now });
+    }
+
+    function handleHistoryRead<Value>(
+        result: RoomHistoryReadResult<Value>,
+    ): RoomHistoryReadResult<Value> {
+        if (result.status !== 'unavailable' || result.error === undefined) {
+            return result;
+        }
+
+        if (result.failure === 'indeterminate') {
+            return terminateForStorageOutcome(result.error, 'unknown');
+        }
+
+        if (!isDegradableStorageError(result.error)) {
+            return terminateForStorageOutcome(result.error, 'fatal');
+        }
+
+        enterStorageDegraded(result.error, clock.now());
+
+        return { status: 'unavailable' };
     }
 
     function closeRestoredVolatileCommands(): void {

@@ -68,6 +68,20 @@ frontend runtime reads room state from `http://localhost:4310/room/realtime` usi
 endpoint. Runtime event processing diagnostics are available at
 `GET http://localhost:4310/diagnostics`. The port can be overridden with `PORT`.
 
+When storage is available, durable history is exposed through these HTTP reads:
+
+- `GET /room/history/significant-facts?pageSize=N`
+- `GET /room/history/telemetry?deviceId=...&metric=temperature&from=...&to=...&pageSize=N`
+- `GET /room/history/trends?deviceId=...&metric=temperature&from=...&to=...&pointLimit=N`
+
+Each successful response carries its pinned history generation, storage watermark
+and retention time. Telemetry ranges are half-open (`[from,to)`). This first
+history slice returns only the first page and always sets `nextCursor` to
+`null`; server-issued cursors and later pages belong to the following history
+subtask. The history endpoints return `400` for invalid query parameters, `503`
+when durable storage is unavailable, and `500` when an internal stored record
+cannot satisfy the shared transport contract.
+
 Backend logs are structured JSON records written to stdout by the direct backend
 process. Set `LOG_LEVEL` to one of `trace`, `debug`, `info`, `warn`, `error`,
 `fatal` or `silent`; it defaults to `info` when unset or blank. An unsupported

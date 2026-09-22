@@ -728,11 +728,11 @@ export function createSqliteRoomStorageTransaction(
                 expiresAt: historyCursorExpiry(retention.retentionAsOf),
             };
         },
-        listPinnedSignificantFacts(bounds) {
-            return listPinnedSignificantFacts(database, bounds);
+        listPinnedSignificantFacts(bounds, options) {
+            return listPinnedSignificantFacts(database, bounds, options);
         },
-        listPinnedTelemetrySamples(query, bounds) {
-            return listPinnedTelemetrySamples(database, query, bounds);
+        listPinnedTelemetrySamples(query, bounds, options) {
+            return listPinnedTelemetrySamples(database, query, bounds, options);
         },
         saveLatestRoomProjection(input) {
             database
@@ -1057,7 +1057,10 @@ function readPinnedHistory<Value>(
 function listPinnedSignificantFacts(
     database: DatabaseSync,
     bounds: PinnedHistoryBounds,
+    options?: { limit?: number },
 ): StoredSignificantFact[] {
+    const limit = options?.limit;
+
     return database
         .prepare(
             `SELECT history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
@@ -1066,9 +1069,14 @@ function listPinnedSignificantFacts(
              WHERE history_generation_id = ?
                 AND storage_sequence <= ?
                 AND (retired_revision IS NULL OR retired_revision > ?)
-              ORDER BY occurred_at DESC, storage_sequence DESC`,
+              ORDER BY occurred_at DESC, storage_sequence DESC${limit === undefined ? '' : '\n              LIMIT ?'}`,
         )
-        .all(bounds.historyGenerationId, bounds.throughSequence, bounds.retentionRevision)
+        .all(
+            bounds.historyGenerationId,
+            bounds.throughSequence,
+            bounds.retentionRevision,
+            ...(limit === undefined ? [] : [limit]),
+        )
         .map(toStoredSignificantFact);
 }
 
@@ -1076,6 +1084,7 @@ function listPinnedTelemetrySamples(
     database: DatabaseSync,
     query: { deviceId: string; metric: string; from?: string; to?: string },
     bounds: PinnedHistoryBounds,
+    options?: { limit?: number },
 ): StoredTelemetrySample[] {
     const clauses = [
         'history_generation_id = ?',
@@ -1102,13 +1111,19 @@ function listPinnedTelemetrySamples(
         parameters.push(canonicalStorageTimestamp(query.to));
     }
 
+    const limit = options?.limit;
+
+    if (limit !== undefined) {
+        parameters.push(limit);
+    }
+
     return database
         .prepare(
             `SELECT history_generation_id, storage_sequence, record_id, event_id, device_id, metric, value, unit,
                     occurred_at, payload_json
              FROM telemetry_samples
              WHERE ${clauses.join(' AND ')}
-              ORDER BY occurred_at DESC, storage_sequence DESC`,
+              ORDER BY occurred_at DESC, storage_sequence DESC${limit === undefined ? '' : '\n              LIMIT ?'}`,
         )
         .all(...parameters)
         .map(toStoredTelemetrySample);

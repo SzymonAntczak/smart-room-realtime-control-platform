@@ -88,6 +88,17 @@ describe('backend bootstrap logging', () => {
             });
 
             expect(response.statusCode).toBe(200);
+            const historyResponse = await backend.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=1970-01-01T00:00:00Z&to=2100-01-01T00:00:00Z&pageSize=1',
+            });
+
+            expect(historyResponse.statusCode).toBe(200);
+            expect(historyResponse.json()).toMatchObject({
+                pageSize: 1,
+                items: [expect.objectContaining({ deviceId: 'temp-desk' })],
+                nextCursor: null,
+            });
             expect(capture.records()).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({
