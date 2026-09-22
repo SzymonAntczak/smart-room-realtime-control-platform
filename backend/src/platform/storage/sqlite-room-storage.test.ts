@@ -389,6 +389,32 @@ describe('SQLite room storage', () => {
         reopened.close();
     });
 
+    it('migrates a managed older schema during startup before reading current metadata', () => {
+        const databasePath = temporaryDatabasePath();
+        const database = new DatabaseSync(databasePath);
+
+        migrateSqliteDatabase(
+            database,
+            '11111111-1111-4111-8111-111111111111',
+            roomStorageMigrations.slice(0, 6),
+        );
+        database.close();
+
+        const lifecycle = createSqliteRoomStorageLifecycle({ databasePath, ensureDirectory() {} });
+        const startup = lifecycle.openAtStartup();
+
+        expect(startup.kind).toBe('available');
+
+        if (startup.kind === 'available') {
+            expect(startup.metadata).toMatchObject({
+                historyGenerationId: '11111111-1111-4111-8111-111111111111',
+                schemaVersion: 7,
+                lastRetentionRevision: 0,
+            });
+            startup.storage.close();
+        }
+    });
+
     it('migrates legacy storage-gap IDs and keys retained history rows by generation and sequence', () => {
         const databasePath = temporaryDatabasePath();
         const generation = 'legacy-generation';

@@ -77,6 +77,13 @@ export function createSqliteRoomStorageLifecycle({
                 const target = inspectSqliteRoomStorageTarget(databasePath);
 
                 if (target.kind === 'existing') {
+                    if (!target.metadata) {
+                        throw new StorageInvariantError(
+                            'Validated SQLite target has no storage metadata.',
+                            target,
+                        );
+                    }
+
                     if (
                         context.verifiedHistoryGenerationId !== undefined &&
                         context.verifiedHistoryGenerationId !== target.metadata.historyGenerationId
@@ -149,10 +156,11 @@ function cutoverExistingGeneration<Value>(
 
     try {
         const target = inspectSqliteRoomStorageTarget(databasePath);
+        const targetMetadata = target.kind === 'existing' ? target.metadata : undefined;
 
         if (
-            target.kind !== 'existing' ||
-            target.metadata.historyGenerationId !== probe.metadata.historyGenerationId
+            !targetMetadata ||
+            targetMetadata.historyGenerationId !== probe.metadata.historyGenerationId
         ) {
             return { status: 'aborted' };
         }
@@ -364,7 +372,7 @@ function probeFirstInitialization(
     }
 }
 
-type TargetClassification = { kind: 'pristine' } | { kind: 'existing'; metadata: StorageMetadata };
+type TargetClassification = { kind: 'pristine' } | { kind: 'existing'; metadata?: StorageMetadata };
 
 export function inspectSqliteRoomStorageTarget(
     databasePath: string,
@@ -425,9 +433,14 @@ function classifyTargetInOpenDatabase(
     if (history) {
         if (validateExpectedSchema) {
             validateExpectedSqliteSchema(database);
+
+            return { kind: 'existing', metadata: readSqliteStorageMetadata(database) };
         }
 
-        return { kind: 'existing', metadata: readSqliteStorageMetadata(database) };
+        // Startup first verifies that this is a managed target, then runs the
+        // migration chain. An older managed schema cannot yet be queried with
+        // the current metadata shape.
+        return { kind: 'existing' };
     }
 
     const userTables = database
