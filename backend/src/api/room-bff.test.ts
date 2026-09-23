@@ -90,6 +90,129 @@ describe('createRoomBffServer', () => {
         }
     });
 
+    it('keeps HTTP history pages complete only through their original watermark', async () => {
+        const history = createHistoryBffHarness();
+
+        try {
+            const firstFacts = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1',
+            });
+            const firstTelemetry = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=1',
+            });
+
+            expect(firstFacts.statusCode).toBe(200);
+            expect(firstTelemetry.statusCode).toBe(200);
+
+            const factPage = firstFacts.json<{
+                historyGenerationId: string;
+                throughSequence: number;
+                retentionAsOf: string;
+                items: { recordId: string }[];
+                nextCursor: string;
+            }>();
+            const telemetryPage = firstTelemetry.json<{
+                historyGenerationId: string;
+                throughSequence: number;
+                retentionAsOf: string;
+                items: { recordId: string }[];
+                nextCursor: string;
+            }>();
+
+            expect(factPage.throughSequence).toBe(6);
+            expect(telemetryPage.throughSequence).toBe(6);
+            expect(factPage.items.map(({ recordId: id }) => id)).toEqual([
+                history.factRecordIds[1],
+            ]);
+            expect(telemetryPage.items.map(({ recordId: id }) => id)).toEqual([
+                history.telemetryRecordIds[1],
+            ]);
+
+            const later = history.appendRecordsBetweenPages();
+
+            expect(later.factStorageSequence).toBeGreaterThan(factPage.throughSequence);
+            expect(later.telemetryStorageSequence).toBeGreaterThan(telemetryPage.throughSequence);
+
+            const nextFacts = await history.server.inject({
+                method: 'GET',
+                url: `/room/history/significant-facts?pageSize=1&cursor=${encodeURIComponent(factPage.nextCursor)}`,
+            });
+            const nextTelemetry = await history.server.inject({
+                method: 'GET',
+                url: `/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=1&cursor=${encodeURIComponent(telemetryPage.nextCursor)}`,
+            });
+
+            expect(nextFacts.statusCode).toBe(200);
+            expect(nextFacts.json()).toMatchObject({
+                historyGenerationId: factPage.historyGenerationId,
+                throughSequence: factPage.throughSequence,
+                retentionAsOf: factPage.retentionAsOf,
+                items: [{ recordId: history.factRecordIds[0] }],
+                nextCursor: null,
+            });
+            expect(nextTelemetry.statusCode).toBe(200);
+            expect(nextTelemetry.json()).toMatchObject({
+                historyGenerationId: telemetryPage.historyGenerationId,
+                throughSequence: telemetryPage.throughSequence,
+                retentionAsOf: telemetryPage.retentionAsOf,
+                items: [{ recordId: history.telemetryRecordIds[0] }],
+                nextCursor: null,
+            });
+
+            const newFactsSession = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=10',
+            });
+            const newTelemetrySession = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=10',
+            });
+
+            expect(newFactsSession.statusCode).toBe(200);
+            const newFactPage = newFactsSession.json<{
+                historyGenerationId: string;
+                throughSequence: number;
+                retentionAsOf: string;
+                items: { recordId: string }[];
+                nextCursor: string | null;
+            }>();
+            expect(newFactPage).toMatchObject({
+                historyGenerationId: factPage.historyGenerationId,
+                throughSequence: later.telemetryStorageSequence,
+                retentionAsOf: factPage.retentionAsOf,
+                nextCursor: null,
+            });
+            expect(newFactPage.items.map(({ recordId: id }) => id)).toEqual([
+                history.factRecordIds[1],
+                later.factRecordId,
+                history.factRecordIds[0],
+            ]);
+            expect(newTelemetrySession.statusCode).toBe(200);
+            const newTelemetryPage = newTelemetrySession.json<{
+                historyGenerationId: string;
+                throughSequence: number;
+                retentionAsOf: string;
+                items: { recordId: string }[];
+                nextCursor: string | null;
+            }>();
+            expect(newTelemetryPage).toMatchObject({
+                historyGenerationId: telemetryPage.historyGenerationId,
+                throughSequence: later.telemetryStorageSequence,
+                retentionAsOf: telemetryPage.retentionAsOf,
+                nextCursor: null,
+            });
+            expect(newTelemetryPage.items.map(({ recordId: id }) => id)).toEqual([
+                history.telemetryRecordIds[1],
+                later.telemetryRecordId,
+                history.telemetryRecordIds[0],
+            ]);
+        } finally {
+            await history.close();
+        }
+    });
+
     it('continues a pinned fact and telemetry page only with its original canonical scope', async () => {
         const history = createHistoryBffHarness();
 
@@ -1383,6 +1506,42 @@ function createHistoryBffHarness() {
         factRecordIds,
         telemetryRecordIds,
         generationId: storage.getMetadata().historyGenerationId,
+        appendRecordsBetweenPages() {
+            const laterOutcome = storage.transact(
+                (transaction) => {
+                    const fact = transaction.appendSignificantFact({
+                        recordId: recordId('7'),
+                        eventType: 'storage.gap.recorded',
+                        source: 'backend',
+                        occurredAt: '2026-09-10T10:02:00.000Z',
+                        payload: storageGapPayload('2026-09-10T10:02:00.000Z'),
+                    });
+                    const telemetry = transaction.appendTelemetrySample({
+                        recordId: recordId('8'),
+                        deviceId: 'temp-desk',
+                        metric: 'temperature',
+                        value: 21,
+                        unit: 'celsius',
+                        occurredAt: '2026-09-10T10:02:00.000Z',
+                        payload: { metric: 'temperature', value: 21, unit: 'celsius' },
+                    });
+
+                    return {
+                        factRecordId: fact.recordId,
+                        factStorageSequence: fact.storageSequence,
+                        telemetryRecordId: telemetry.recordId,
+                        telemetryStorageSequence: telemetry.storageSequence,
+                    };
+                },
+                { retentionAsOf },
+            );
+
+            if (laterOutcome.status !== 'committed') {
+                throw laterOutcome.error;
+            }
+
+            return laterOutcome.value;
+        },
         async close() {
             await server.close();
             storage.close();
