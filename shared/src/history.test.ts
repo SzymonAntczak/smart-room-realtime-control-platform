@@ -46,6 +46,26 @@ describe('durable history contracts', () => {
         ).toBeUndefined();
     });
 
+    it('bounds public history page and trend query limits', () => {
+        const telemetryQuery = {
+            deviceId: 'temp-desk',
+            metric: 'temperature',
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-10T10:05:00Z',
+        };
+
+        expect(
+            normalizeRawTelemetryFirstPageQuery({ ...telemetryQuery, pageSize: 100 }),
+        ).toMatchObject({ pageSize: 100 });
+        expect(
+            normalizeRawTelemetryFirstPageQuery({ ...telemetryQuery, pageSize: 101 }),
+        ).toBeUndefined();
+        expect(normalizeTrendQuery({ ...telemetryQuery, pointLimit: 200 })).toMatchObject({
+            pointLimit: 200,
+        });
+        expect(normalizeTrendQuery({ ...telemetryQuery, pointLimit: 201 })).toBeUndefined();
+    });
+
     it('keeps an opaque cursor while normalizing a telemetry page range', () => {
         expect(
             normalizeRawTelemetryPageQuery({

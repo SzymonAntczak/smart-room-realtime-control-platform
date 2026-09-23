@@ -368,7 +368,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-02-04` | Pin generation, watermark and retention time; retain tombstones for cursor lifetime.       | `ST-4-01-03`, `ST-4-02-01`, `ST-4-02-02` | `B`        | Cursor reads retired payload before expiry and cannot after purge.     |
 | `[x] ST-4-02-05` | Verify retention, identities and pinned reads share one atomic storage view.               | `ST-4-02-03`, `ST-4-02-04`               | `B`        | Concurrent write/retire/read test exposes no intermediate state.       |
 
-### [ ] `DS-4-03` — Safe HTTP access to durable history
+### [x] `DS-4-03` — Safe HTTP access to durable history
 
 - **Value / observable outcome:** frontend and operators receive pinned facts,
   telemetry and trends or an explicit unavailable/error result.

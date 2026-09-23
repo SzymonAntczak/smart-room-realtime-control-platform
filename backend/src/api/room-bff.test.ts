@@ -17,6 +17,7 @@ import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-proce
 import { createHistoryCursorCodec } from '../platform/history/room-history-cursor';
 import { createRoomHistoryReader } from '../platform/history/room-history-reader';
 import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
+import { StorageAvailabilityError } from '../platform/storage/storage-errors';
 import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
 
 import { createRoomBffServer } from './room-bff';
@@ -85,6 +86,56 @@ describe('createRoomBffServer', () => {
                 items: [{ recordId: history.factRecordIds[1], durability: 'durable' }],
                 nextCursor: expect.any(String),
             });
+        } finally {
+            await history.close();
+        }
+    });
+
+    it('accepts maximum history limits and rejects larger values at the HTTP boundary', async () => {
+        const history = createHistoryBffHarness();
+
+        try {
+            const maxFactPage = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=100',
+            });
+            expect(maxFactPage.statusCode).toBe(200);
+            expect(maxFactPage.json()).toMatchObject({ pageSize: 100 });
+
+            const oversizedFactPage = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=101',
+            });
+            expect(oversizedFactPage.statusCode).toBe(400);
+            expect(oversizedFactPage.json()).toMatchObject({ error: 'invalid_request' });
+
+            const maxTelemetryPage = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=100',
+            });
+            expect(maxTelemetryPage.statusCode).toBe(200);
+            expect(maxTelemetryPage.json()).toMatchObject({ pageSize: 100 });
+
+            const oversizedTelemetryPage = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=101',
+            });
+            expect(oversizedTelemetryPage.statusCode).toBe(400);
+            expect(oversizedTelemetryPage.json()).toMatchObject({ error: 'invalid_request' });
+
+            const maxTrend = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/trends?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pointLimit=200',
+            });
+            expect(maxTrend.statusCode).toBe(200);
+            expect(maxTrend.json<{ points: unknown[] }>().points.length).toBeLessThanOrEqual(200);
+
+            const oversizedTrend = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/trends?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pointLimit=201',
+            });
+            expect(oversizedTrend.statusCode).toBe(400);
+            expect(oversizedTrend.json()).toMatchObject({ error: 'invalid_request' });
         } finally {
             await history.close();
         }
@@ -317,6 +368,120 @@ describe('createRoomBffServer', () => {
             message: 'The history generation changed.',
         });
         await changedGeneration.close();
+    });
+
+    it('rejects a real cursor when presented to a different SQLite history generation', async () => {
+        const originalHistory = createHistoryBffHarness();
+        const replacementHistory = createHistoryBffHarness();
+
+        try {
+            expect(replacementHistory.generationId).not.toBe(originalHistory.generationId);
+
+            const firstPage = await originalHistory.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1',
+            });
+            const cursor = firstPage.json<{ nextCursor: string }>().nextCursor;
+
+            const continuation = await replacementHistory.server.inject({
+                method: 'GET',
+                url: `/room/history/significant-facts?pageSize=1&cursor=${encodeURIComponent(cursor)}`,
+            });
+
+            expect(continuation.statusCode).toBe(400);
+            expect(continuation.json()).toEqual({
+                error: 'history_generation_changed',
+                message: 'The history generation changed.',
+            });
+        } finally {
+            await Promise.all([originalHistory.close(), replacementHistory.close()]);
+        }
+    });
+
+    it('returns 503 and degrades runtime storage after a continuation read availability failure', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-bff-history-failure-'));
+        const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
+        const runtime = createTemperatureRoomRuntime({ storage, intervalMs: 60_000 });
+        const server = createRoomBffServer({
+            getRoomSnapshot: runtime.getRoomSnapshot,
+            getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
+            readSignificantFactPage: runtime.readSignificantFactPage,
+            readRawTelemetryPage: runtime.readRawTelemetryPage,
+            readTrend: runtime.readTrend,
+            subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
+        });
+
+        try {
+            const retentionAsOf = new Date().toISOString();
+            const firstOccurredAt = new Date(Date.parse(retentionAsOf) - 60_000).toISOString();
+            const secondOccurredAt = new Date(Date.parse(retentionAsOf) - 30_000).toISOString();
+            const outageStartedAt = new Date(Date.parse(retentionAsOf) - 120_000).toISOString();
+            const seeded = storage.transact(
+                (transaction) => {
+                    transaction.appendSignificantFact({
+                        recordId: recordId('a'),
+                        eventType: 'storage.gap.recorded',
+                        source: 'backend',
+                        occurredAt: firstOccurredAt,
+                        payload: {
+                            ...storageGapPayload(firstOccurredAt),
+                            outageStartedAt,
+                        },
+                    });
+                    transaction.appendSignificantFact({
+                        recordId: recordId('b'),
+                        eventType: 'storage.gap.recorded',
+                        source: 'backend',
+                        occurredAt: secondOccurredAt,
+                        payload: {
+                            ...storageGapPayload(secondOccurredAt),
+                            outageStartedAt,
+                        },
+                    });
+                },
+                { retentionAsOf },
+            );
+
+            if (seeded.status !== 'committed') {
+                throw seeded.error;
+            }
+
+            runtime.start();
+
+            const firstPage = await server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1',
+            });
+            expect(firstPage.statusCode).toBe(200);
+            const cursor = firstPage.json<{ nextCursor: string }>().nextCursor;
+
+            storage.readPinnedSignificantFacts = () => {
+                throw new StorageAvailabilityError('Injected durable history read failure.', null);
+            };
+
+            const failedContinuation = await server.inject({
+                method: 'GET',
+                url: `/room/history/significant-facts?pageSize=1&cursor=${encodeURIComponent(cursor)}`,
+            });
+
+            expect(failedContinuation.statusCode).toBe(503);
+            expect(failedContinuation.json()).toEqual({
+                error: 'durable_history_unavailable',
+                message: 'Durable history is currently unavailable.',
+            });
+            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('degraded');
+
+            const laterRead = await server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1',
+            });
+            expect(laterRead.statusCode).toBe(503);
+        } finally {
+            await server.close();
+            runtime.stop();
+            storage.close();
+            rmSync(directory, { recursive: true, force: true });
+        }
     });
 
     it('filters and bounds first-page telemetry while treating an unknown device as empty', async () => {

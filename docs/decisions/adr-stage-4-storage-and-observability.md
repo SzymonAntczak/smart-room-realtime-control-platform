@@ -896,7 +896,14 @@ the durable view unavailable. The transition back to `available` triggers a
 refetch of each open range before the durable view is considered complete. SSE
 ignores `Last-Event-ID`.
 
-Trend reads require `from < to` and `pointLimit >= 2`. They treat the requested
+History page requests require `1 <= pageSize <= 100`; trend requests require
+`from < to` and `2 <= pointLimit <= 200`. The shared TypeBox query contracts
+reject values outside these ranges with `400 invalid_request`; the BFF does not
+clamp caller-supplied values. The same page-size bound applies to response
+schemas and cursor query scopes. These limits bound one synchronous HTTP read
+while callers can request additional pages within the fixed cursor lifetime.
+
+Trend reads treat the requested
 interval as half-open `[from, to)`, divide it into equal-duration half-open
 buckets and emit the minimum and maximum from each non-empty bucket,
 deduplicating them when they are the same sample. A sample exactly on an

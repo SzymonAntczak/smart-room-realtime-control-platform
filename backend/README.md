@@ -74,6 +74,9 @@ When storage is available, durable history is exposed through these HTTP reads:
 - `GET /room/history/telemetry?deviceId=...&metric=temperature&from=...&to=...&pageSize=N`
 - `GET /room/history/trends?deviceId=...&metric=temperature&from=...&to=...&pointLimit=N`
 
+Page sizes must be from 1 to 100, and trend point limits must be from 2 to 200.
+Out-of-range values return `400 invalid_request`.
+
 Each successful response carries its pinned history generation, storage watermark
 and retention time. Telemetry ranges are half-open (`[from,to)`). When another
 page exists, `nextCursor` is an opaque server-issued token. Repeat the original

@@ -250,7 +250,9 @@ export const rawTelemetrySampleProjectionSchema = Type.Object(
 );
 export type RawTelemetrySampleProjection = Static<typeof rawTelemetrySampleProjectionSchema>;
 
-const historyPageSizeSchema = Type.Integer({ minimum: 1 });
+export const historyPageSizeLimit = 100;
+export const trendPointLimit = 200;
+const historyPageSizeSchema = Type.Integer({ minimum: 1, maximum: historyPageSizeLimit });
 
 /** Query parameters for the first page of durable significant facts. */
 export const significantFactFirstPageQuerySchema = Type.Object(
@@ -357,7 +359,7 @@ export const trendQuerySchema = Type.Object(
         metric: Type.Literal('temperature'),
         from: isoTimestampSchema,
         to: isoTimestampSchema,
-        pointLimit: Type.Integer({ minimum: 2 }),
+        pointLimit: Type.Integer({ minimum: 2, maximum: trendPointLimit }),
     },
     { additionalProperties: false },
 );
