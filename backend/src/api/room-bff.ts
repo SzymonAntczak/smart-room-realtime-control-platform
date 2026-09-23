@@ -20,16 +20,16 @@ import {
     eventProcessingDiagnosticsSnapshotSchema,
 } from '@smart-room/contracts/development';
 import {
-    type NormalizedRawTelemetryFirstPageQuery,
+    type NormalizedRawTelemetryPageQuery,
     type NormalizedTrendQuery,
-    normalizeRawTelemetryFirstPageQuery,
+    normalizeRawTelemetryPageQuery,
     normalizeTrendQuery,
-    rawTelemetryFirstPageQuerySchema,
     type RawTelemetryPage,
+    rawTelemetryPageQuerySchema,
     rawTelemetryPageSchema,
-    type SignificantFactFirstPageQuery,
-    significantFactFirstPageQuerySchema,
     type SignificantFactPage,
+    type SignificantFactPageQuery,
+    significantFactPageQuerySchema,
     significantFactPageSchema,
     trendQuerySchema,
     type TrendResponse,
@@ -65,11 +65,11 @@ import { startRoomRealtimeStream } from './room-bff-sse';
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
-    readSignificantFactFirstPage?: (
-        query: SignificantFactFirstPageQuery,
+    readSignificantFactPage?: (
+        query: SignificantFactPageQuery,
     ) => RoomHistoryReadResult<SignificantFactPage>;
-    readRawTelemetryFirstPage?: (
-        query: NormalizedRawTelemetryFirstPageQuery,
+    readRawTelemetryPage?: (
+        query: NormalizedRawTelemetryPageQuery,
     ) => RoomHistoryReadResult<RawTelemetryPage>;
     readTrend?: (query: NormalizedTrendQuery) => RoomHistoryReadResult<TrendResponse>;
     subscribeRoomPublicationBatch(listener: (batch: RoomPublicationBatch) => void): () => void;
@@ -83,8 +83,8 @@ export interface RoomBffConfig {
 export function createRoomBffServer({
     getRoomSnapshot,
     getDiagnosticsSnapshot,
-    readSignificantFactFirstPage,
-    readRawTelemetryFirstPage,
+    readSignificantFactPage,
+    readRawTelemetryPage,
     readTrend,
     subscribeRoomPublicationBatch,
     requestCommand,
@@ -97,8 +97,8 @@ export function createRoomBffServer({
     const handlers: RoomBffHandlers = {
         getRoomSnapshot,
         getDiagnosticsSnapshot,
-        readSignificantFactFirstPage,
-        readRawTelemetryFirstPage,
+        readSignificantFactPage,
+        readRawTelemetryPage,
         readTrend,
         requestCommand,
         runDeviceScenario,
@@ -168,7 +168,7 @@ export function createRoomBffServer({
         '/room/history/significant-facts',
         {
             schema: {
-                querystring: significantFactFirstPageQuerySchema,
+                querystring: significantFactPageQuerySchema,
                 response: {
                     200: significantFactPageSchema,
                     400: apiErrorResponseSchema,
@@ -176,16 +176,9 @@ export function createRoomBffServer({
                     500: apiErrorResponseSchema,
                 },
             },
-            onRequest(request, response, done) {
-                if (rejectUnsupportedHistoryCursor(request, response)) {
-                    return;
-                }
-
-                done();
-            },
         },
         (request, response) => {
-            const read = handlers.readSignificantFactFirstPage;
+            const read = handlers.readSignificantFactPage;
 
             if (!read) {
                 writeInvalidServerResponse(response);
@@ -193,10 +186,7 @@ export function createRoomBffServer({
                 return;
             }
 
-            writeHistoryReadResponse(
-                response,
-                read(request.query as SignificantFactFirstPageQuery),
-            );
+            writeHistoryReadResponse(response, read(request.query as SignificantFactPageQuery));
         },
     );
 
@@ -204,7 +194,7 @@ export function createRoomBffServer({
         '/room/history/telemetry',
         {
             schema: {
-                querystring: rawTelemetryFirstPageQuerySchema,
+                querystring: rawTelemetryPageQuerySchema,
                 response: {
                     200: rawTelemetryPageSchema,
                     400: apiErrorResponseSchema,
@@ -212,16 +202,9 @@ export function createRoomBffServer({
                     500: apiErrorResponseSchema,
                 },
             },
-            onRequest(request, response, done) {
-                if (rejectUnsupportedHistoryCursor(request, response)) {
-                    return;
-                }
-
-                done();
-            },
         },
         (request, response) => {
-            const query = normalizeRawTelemetryFirstPageQuery(request.query);
+            const query = normalizeRawTelemetryPageQuery(request.query);
 
             if (!query) {
                 writeJson(response, 400, {
@@ -232,7 +215,7 @@ export function createRoomBffServer({
                 return;
             }
 
-            const read = handlers.readRawTelemetryFirstPage;
+            const read = handlers.readRawTelemetryPage;
 
             if (!read) {
                 writeInvalidServerResponse(response);
@@ -461,8 +444,8 @@ export function createRoomBffServer({
 interface RoomBffHandlers {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
-    readSignificantFactFirstPage?: RoomBffConfig['readSignificantFactFirstPage'];
-    readRawTelemetryFirstPage?: RoomBffConfig['readRawTelemetryFirstPage'];
+    readSignificantFactPage?: RoomBffConfig['readSignificantFactPage'];
+    readRawTelemetryPage?: RoomBffConfig['readRawTelemetryPage'];
     readTrend?: RoomBffConfig['readTrend'];
     requestCommand?: (request: SetPowerCommandRequest) => CommandRequestResult;
     runDeviceScenario?: (deviceId: string, action: DeviceScenarioAction) => DeviceScenarioResult;
@@ -490,25 +473,16 @@ function writeHistoryReadResponse<Value>(
         return;
     }
 
+    if (result.status === 'cursor_error') {
+        writeJson(response, 400, result.error);
+
+        return;
+    }
+
     writeJson(response, 503, {
         error: 'durable_history_unavailable',
         message: 'Durable history is currently unavailable.',
     });
-}
-
-function rejectUnsupportedHistoryCursor(request: FastifyRequest, response: FastifyReply): boolean {
-    const requestUrl = request.raw.url;
-
-    if (!requestUrl || !new URL(requestUrl, 'http://localhost').searchParams.has('cursor')) {
-        return false;
-    }
-
-    writeJson(response, 400, {
-        error: 'invalid_request',
-        message: 'History cursors are not available until the next history subtask.',
-    });
-
-    return true;
 }
 
 function handleRoomBffRequest(

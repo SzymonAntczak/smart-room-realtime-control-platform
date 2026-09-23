@@ -384,8 +384,8 @@ Each item has one difficulty rating only:
 | Subtask          | Purpose / primary boundary                                                    | Depends on                               | Difficulty | Verification / done when                                             |
 | ---------------- | ----------------------------------------------------------------------------- | ---------------------------------------- | ---------- | -------------------------------------------------------------------- |
 | `[x] ST-4-03-01` | Expose paged significant facts, selected-device telemetry and bounded trends. | `ST-4-01-01`, `ST-4-01-02`, `ST-4-02-04` | `B`        | Each endpoint returns its owning shared schema with pinned bounds.   |
-| `[ ] ST-4-03-02` | Validate generation and canonical query scope before reading cursor position. | `ST-4-01-03`, `ST-4-03-01`               | `B`        | Forged, stale-generation and changed-scope cursors are rejected.     |
-| `[ ] ST-4-03-03` | Return explicit durable-history unavailability while storage is degraded.     | `ST-4-03-01`                             | `E`        | BFF distinguishes `503` from an ordinary empty result.               |
+| `[x] ST-4-03-02` | Validate generation and canonical query scope before reading cursor position. | `ST-4-01-03`, `ST-4-03-01`               | `B`        | Forged, stale-generation and changed-scope cursors are rejected.     |
+| `[x] ST-4-03-03` | Return explicit durable-history unavailability while storage is degraded.     | `ST-4-03-01`                             | `E`        | BFF distinguishes `503` from an ordinary empty result.               |
 | `[ ] ST-4-03-04` | Verify one HTTP session stays complete only through its pinned watermark.     | `ST-4-03-01`, `ST-4-03-02`, `ST-4-03-03` | `C`        | A concurrent write never appears on a later page of the old session. |
 
 ### [ ] `DS-4-04` — Lossless HTTP/SSE history synchronization

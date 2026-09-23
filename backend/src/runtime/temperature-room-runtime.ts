@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { clearInterval, setInterval, setTimeout } from 'node:timers';
 
 import {
@@ -20,12 +20,12 @@ import {
 import type { CommandFailedEvent, PlatformEvent } from '@smart-room/contracts/events';
 import {
     compareRecentEventsDescending,
-    type NormalizedRawTelemetryFirstPageQuery,
+    type NormalizedRawTelemetryPageQuery,
     type NormalizedTrendQuery,
     type RawTelemetryPage,
     type RecentEventProjection,
-    type SignificantFactFirstPageQuery,
     type SignificantFactPage,
+    type SignificantFactPageQuery,
     type TrendResponse,
 } from '@smart-room/contracts/history';
 import type {
@@ -85,6 +85,7 @@ import {
     type EventProcessingResult,
     type PreparedRecord,
 } from '../platform/event-processing/event-processor';
+import { createHistoryCursorCodec } from '../platform/history/room-history-cursor';
 import {
     createRoomHistoryReader,
     type RoomHistoryReadResult,
@@ -130,6 +131,7 @@ export interface TemperatureRoomRuntimeConfig {
     recoveryTimer?: TimerScheduler;
     storageRecoveryProbeIntervalMs?: number;
     storageRecoveryQueueLimit?: number;
+    historyCursorSecret?: Uint8Array;
     operationalLog?: (entry: Record<string, unknown>) => void;
     onFatalStorageError?: (error: unknown) => never;
 }
@@ -145,11 +147,11 @@ export interface TemperatureRoomRuntime {
     stop(): void;
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
-    readSignificantFactFirstPage(
-        query: SignificantFactFirstPageQuery,
+    readSignificantFactPage(
+        query: SignificantFactPageQuery,
     ): RoomHistoryReadResult<SignificantFactPage>;
-    readRawTelemetryFirstPage(
-        query: NormalizedRawTelemetryFirstPageQuery,
+    readRawTelemetryPage(
+        query: NormalizedRawTelemetryPageQuery,
     ): RoomHistoryReadResult<RawTelemetryPage>;
     readTrend(query: NormalizedTrendQuery): RoomHistoryReadResult<TrendResponse>;
     subscribeRoomSnapshot(listener: RoomSnapshotListener): () => void;
@@ -245,11 +247,13 @@ export function createTemperatureRoomRuntime({
     recoveryTimer = timer,
     storageRecoveryProbeIntervalMs = 5_000,
     storageRecoveryQueueLimit = 1_000,
+    historyCursorSecret = randomBytes(32),
     operationalLog = () => {},
     onFatalStorageError = (error): never => {
         throw error;
     },
 }: TemperatureRoomRuntimeConfig = {}): TemperatureRoomRuntime {
+    const historyCursorCodec = createHistoryCursorCodec({ secret: historyCursorSecret });
     const sensors = defaultSensors.map((definition) => ({
         definition,
         sensor: createTemperatureSensorScenario({
@@ -630,18 +634,18 @@ export function createTemperatureRoomRuntime({
         getDiagnosticsSnapshot() {
             return diagnostics.getSnapshot();
         },
-        readSignificantFactFirstPage(query) {
+        readSignificantFactPage(query) {
             const reader = availableHistoryReader();
 
             return reader
-                ? handleHistoryRead(reader.readSignificantFactFirstPage(query))
+                ? handleHistoryRead(reader.readSignificantFactPage(query))
                 : { status: 'unavailable' };
         },
-        readRawTelemetryFirstPage(query) {
+        readRawTelemetryPage(query) {
             const reader = availableHistoryReader();
 
             return reader
-                ? handleHistoryRead(reader.readRawTelemetryFirstPage(query))
+                ? handleHistoryRead(reader.readRawTelemetryPage(query))
                 : { status: 'unavailable' };
         },
         readTrend(query) {
@@ -1992,7 +1996,11 @@ export function createTemperatureRoomRuntime({
             return undefined;
         }
 
-        return createRoomHistoryReader({ storage: activeStorage, now: clock.now });
+        return createRoomHistoryReader({
+            storage: activeStorage,
+            cursorCodec: historyCursorCodec,
+            now: clock.now,
+        });
     }
 
     function handleHistoryRead<Value>(

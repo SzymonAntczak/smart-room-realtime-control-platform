@@ -14,6 +14,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
+import { createHistoryCursorCodec } from '../platform/history/room-history-cursor';
 import { createRoomHistoryReader } from '../platform/history/room-history-reader';
 import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
 import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
@@ -82,11 +83,117 @@ describe('createRoomBffServer', () => {
                 retentionAsOf: '2026-09-10T10:10:00.000Z',
                 pageSize: 1,
                 items: [{ recordId: history.factRecordIds[1], durability: 'durable' }],
-                nextCursor: null,
+                nextCursor: expect.any(String),
             });
         } finally {
             await history.close();
         }
+    });
+
+    it('continues a pinned fact and telemetry page only with its original canonical scope', async () => {
+        const history = createHistoryBffHarness();
+
+        try {
+            const firstFacts = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1',
+            });
+            const factCursor = firstFacts.json<{ nextCursor: string }>().nextCursor;
+
+            const secondFacts = await history.server.inject({
+                method: 'GET',
+                url: `/room/history/significant-facts?pageSize=1&cursor=${encodeURIComponent(factCursor)}`,
+            });
+
+            expect(secondFacts.statusCode).toBe(200);
+            expect(secondFacts.json()).toMatchObject({
+                historyGenerationId: history.generationId,
+                throughSequence: 6,
+                items: [{ recordId: history.factRecordIds[0] }],
+                nextCursor: null,
+            });
+
+            const changedFactScope = await history.server.inject({
+                method: 'GET',
+                url: `/room/history/significant-facts?pageSize=2&cursor=${encodeURIComponent(factCursor)}`,
+            });
+            expect(changedFactScope.statusCode).toBe(400);
+            expect(changedFactScope.json()).toEqual({
+                error: 'cursor_query_mismatch',
+                message: 'The cursor does not match this query.',
+            });
+
+            const firstTelemetry = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=1',
+            });
+            const telemetryCursor = firstTelemetry.json<{ nextCursor: string }>().nextCursor;
+
+            const secondTelemetry = await history.server.inject({
+                method: 'GET',
+                url: `/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T11%3A00%3A00%2B01%3A00&to=2026-09-10T11%3A05%3A00%2B01%3A00&pageSize=1&cursor=${encodeURIComponent(telemetryCursor)}`,
+            });
+            expect(secondTelemetry.statusCode).toBe(200);
+            expect(secondTelemetry.json()).toMatchObject({
+                items: [{ recordId: history.telemetryRecordIds[0], value: 20 }],
+                nextCursor: null,
+            });
+
+            const changedTelemetryScope = await history.server.inject({
+                method: 'GET',
+                url: `/room/history/telemetry?deviceId=temp-window&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=1&cursor=${encodeURIComponent(telemetryCursor)}`,
+            });
+            expect(changedTelemetryScope.statusCode).toBe(400);
+            expect(changedTelemetryScope.json()).toEqual({
+                error: 'cursor_query_mismatch',
+                message: 'The cursor does not match this query.',
+            });
+        } finally {
+            await history.close();
+        }
+    });
+
+    it('returns typed cursor failures from history reads', async () => {
+        const history = createHistoryBffHarness();
+
+        try {
+            const forged = await history.server.inject({
+                method: 'GET',
+                url: '/room/history/significant-facts?pageSize=1&cursor=forged-cursor',
+            });
+
+            expect(forged.statusCode).toBe(400);
+            expect(forged.json()).toEqual({
+                error: 'invalid_cursor',
+                message: 'The cursor cannot be verified.',
+            });
+        } finally {
+            await history.close();
+        }
+
+        const changedGeneration = createRoomBffServer({
+            ...createRoomBffConfig(),
+            readSignificantFactPage() {
+                return {
+                    status: 'cursor_error',
+                    error: {
+                        error: 'history_generation_changed',
+                        message: 'The history generation changed.',
+                    },
+                };
+            },
+        });
+        const changedGenerationResponse = await changedGeneration.inject({
+            method: 'GET',
+            url: '/room/history/significant-facts?pageSize=1&cursor=server-issued',
+        });
+
+        expect(changedGenerationResponse.statusCode).toBe(400);
+        expect(changedGenerationResponse.json()).toEqual({
+            error: 'history_generation_changed',
+            message: 'The history generation changed.',
+        });
+        await changedGeneration.close();
     });
 
     it('filters and bounds first-page telemetry while treating an unknown device as empty', async () => {
@@ -175,25 +282,36 @@ describe('createRoomBffServer', () => {
 
             const unavailable = createRoomBffServer({
                 ...createRoomBffConfig(),
-                readSignificantFactFirstPage() {
+                readSignificantFactPage() {
+                    return { status: 'unavailable' };
+                },
+                readRawTelemetryPage() {
+                    return { status: 'unavailable' };
+                },
+                readTrend() {
                     return { status: 'unavailable' };
                 },
             });
-            const unavailableResponse = await unavailable.inject({
-                method: 'GET',
-                url: '/room/history/significant-facts?pageSize=1',
-            });
 
-            expect(unavailableResponse.statusCode).toBe(503);
-            expect(unavailableResponse.json()).toEqual({
-                error: 'durable_history_unavailable',
-                message: 'Durable history is currently unavailable.',
-            });
+            for (const url of [
+                '/room/history/significant-facts?pageSize=1',
+                '/room/history/telemetry?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pageSize=1',
+                '/room/history/trends?deviceId=temp-desk&metric=temperature&from=2026-09-10T10:00:00Z&to=2026-09-10T10:05:00Z&pointLimit=2',
+            ]) {
+                const unavailableResponse = await unavailable.inject({ method: 'GET', url });
+
+                expect(unavailableResponse.statusCode).toBe(503);
+                expect(unavailableResponse.json()).toEqual({
+                    error: 'durable_history_unavailable',
+                    message: 'Durable history is currently unavailable.',
+                });
+            }
+
             await unavailable.close();
 
             const invalidInternalData = createRoomBffServer({
                 ...createRoomBffConfig(),
-                readSignificantFactFirstPage() {
+                readSignificantFactPage() {
                     return { status: 'invalid_internal_data' };
                 },
             });
@@ -1248,11 +1366,15 @@ function createHistoryBffHarness() {
         throw outcome.error;
     }
 
-    const reader = createRoomHistoryReader({ storage, now: () => retentionAsOf });
+    const reader = createRoomHistoryReader({
+        storage,
+        cursorCodec: createHistoryCursorCodec({ secret: Buffer.alloc(32, 1) }),
+        now: () => retentionAsOf,
+    });
     const server = createRoomBffServer({
         ...createRoomBffConfig(),
-        readSignificantFactFirstPage: reader.readSignificantFactFirstPage,
-        readRawTelemetryFirstPage: reader.readRawTelemetryFirstPage,
+        readSignificantFactPage: reader.readSignificantFactPage,
+        readRawTelemetryPage: reader.readRawTelemetryPage,
         readTrend: reader.readTrend,
     });
 

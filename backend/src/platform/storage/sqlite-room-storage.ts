@@ -16,6 +16,7 @@ import {
     type AcceptedInputIdentity,
     type CommandDispatchOutboxIntent,
     historyCursorLifetimeMilliseconds,
+    type HistoryPagePosition,
     type LatestRoomProjectionInput,
     type PinnedHistoryBounds,
     type PinnedHistoryReadOutcome,
@@ -147,14 +148,14 @@ export function createSqliteRoomStorage({
         readPinnedSignificantFacts(input) {
             return run(() =>
                 readPinnedHistory(database, input.bounds, input.readAt, () =>
-                    listPinnedSignificantFacts(database, input.bounds),
+                    listPinnedSignificantFacts(database, input.bounds, input.options),
                 ),
             );
         },
         readPinnedTelemetrySamples(input) {
             return run(() =>
                 readPinnedHistory(database, input.bounds, input.readAt, () =>
-                    listPinnedTelemetrySamples(database, input.query, input.bounds),
+                    listPinnedTelemetrySamples(database, input.query, input.bounds, input.options),
                 ),
             );
         },
@@ -1057,24 +1058,32 @@ function readPinnedHistory<Value>(
 function listPinnedSignificantFacts(
     database: DatabaseSync,
     bounds: PinnedHistoryBounds,
-    options?: { limit?: number },
+    options?: { limit?: number; after?: HistoryPagePosition },
 ): StoredSignificantFact[] {
     const limit = options?.limit;
+    const after = options?.after;
+    const positionClause =
+        after === undefined
+            ? ''
+            : '\n                 AND (occurred_at < ? OR (occurred_at = ? AND storage_sequence < ?))';
+    const positionParameters =
+        after === undefined ? [] : [after.occurredAt, after.occurredAt, after.storageSequence];
 
     return database
         .prepare(
             `SELECT history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
                     source, occurred_at, payload_json
              FROM significant_facts
-             WHERE history_generation_id = ?
-                AND storage_sequence <= ?
-                AND (retired_revision IS NULL OR retired_revision > ?)
-              ORDER BY occurred_at DESC, storage_sequence DESC${limit === undefined ? '' : '\n              LIMIT ?'}`,
+              WHERE history_generation_id = ?
+                 AND storage_sequence <= ?
+                 AND (retired_revision IS NULL OR retired_revision > ?)${positionClause}
+               ORDER BY occurred_at DESC, storage_sequence DESC${limit === undefined ? '' : '\n              LIMIT ?'}`,
         )
         .all(
             bounds.historyGenerationId,
             bounds.throughSequence,
             bounds.retentionRevision,
+            ...positionParameters,
             ...(limit === undefined ? [] : [limit]),
         )
         .map(toStoredSignificantFact);
@@ -1084,7 +1093,7 @@ function listPinnedTelemetrySamples(
     database: DatabaseSync,
     query: { deviceId: string; metric: string; from?: string; to?: string },
     bounds: PinnedHistoryBounds,
-    options?: { limit?: number },
+    options?: { limit?: number; after?: HistoryPagePosition },
 ): StoredTelemetrySample[] {
     const clauses = [
         'history_generation_id = ?',
@@ -1109,6 +1118,15 @@ function listPinnedTelemetrySamples(
     if (query.to !== undefined) {
         clauses.push('occurred_at < ?');
         parameters.push(canonicalStorageTimestamp(query.to));
+    }
+
+    if (options?.after !== undefined) {
+        clauses.push('(occurred_at < ? OR (occurred_at = ? AND storage_sequence < ?))');
+        parameters.push(
+            options.after.occurredAt,
+            options.after.occurredAt,
+            options.after.storageSequence,
+        );
     }
 
     const limit = options?.limit;

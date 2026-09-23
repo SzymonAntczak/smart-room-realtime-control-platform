@@ -75,12 +75,14 @@ When storage is available, durable history is exposed through these HTTP reads:
 - `GET /room/history/trends?deviceId=...&metric=temperature&from=...&to=...&pointLimit=N`
 
 Each successful response carries its pinned history generation, storage watermark
-and retention time. Telemetry ranges are half-open (`[from,to)`). This first
-history slice returns only the first page and always sets `nextCursor` to
-`null`; server-issued cursors and later pages belong to the following history
-subtask. The history endpoints return `400` for invalid query parameters, `503`
-when durable storage is unavailable, and `500` when an internal stored record
-cannot satisfy the shared transport contract.
+and retention time. Telemetry ranges are half-open (`[from,to)`). When another
+page exists, `nextCursor` is an opaque server-issued token. Repeat the original
+query parameters together with `cursor` to request that next page; the cursor
+binds the dataset, filters, range, descending order and page size. It expires
+five minutes after the first page and may be invalidated by a backend restart.
+The history endpoints return `400` for invalid query parameters or typed cursor
+errors, `503` when durable storage is unavailable, and `500` when an internal
+stored record cannot satisfy the shared transport contract.
 
 Backend logs are structured JSON records written to stdout by the direct backend
 process. Set `LOG_LEVEL` to one of `trace`, `debug`, `info`, `warn`, `error`,

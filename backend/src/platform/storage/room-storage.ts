@@ -35,6 +35,12 @@ export interface PinnedHistoryBounds {
     expiresAt: string;
 }
 
+/** Private keyset position for a descending durable-history page. */
+export interface HistoryPagePosition {
+    occurredAt: string;
+    storageSequence: number;
+}
+
 export type PinnedHistoryReadOutcome<Value> =
     | { status: 'available'; value: Value }
     | { status: 'cursor_expired' }
@@ -77,7 +83,7 @@ export interface RoomStorageTransaction {
     capturePinnedHistoryBounds(): PinnedHistoryBounds;
     listPinnedSignificantFacts(
         bounds: PinnedHistoryBounds,
-        options?: { limit?: number },
+        options?: { limit?: number; after?: HistoryPagePosition },
     ): StoredSignificantFact[];
     listPinnedTelemetrySamples(
         query: {
@@ -87,7 +93,7 @@ export interface RoomStorageTransaction {
             to?: string;
         },
         bounds: PinnedHistoryBounds,
-        options?: { limit?: number },
+        options?: { limit?: number; after?: HistoryPagePosition },
     ): StoredTelemetrySample[];
     saveLatestRoomProjection(input: LatestRoomProjectionInput): void;
     upsertCommandDispatchOutboxIntent(input: CommandDispatchOutboxIntent): void;
@@ -206,6 +212,7 @@ export interface RoomStorage {
     readPinnedSignificantFacts(input: {
         bounds: PinnedHistoryBounds;
         readAt: string;
+        options?: { limit?: number; after?: HistoryPagePosition };
     }): PinnedHistoryReadOutcome<StoredSignificantFact[]>;
     readPinnedTelemetrySamples(input: {
         query: {
@@ -216,6 +223,7 @@ export interface RoomStorage {
         };
         bounds: PinnedHistoryBounds;
         readAt: string;
+        options?: { limit?: number; after?: HistoryPagePosition };
     }): PinnedHistoryReadOutcome<StoredTelemetrySample[]>;
     /** Supply `asOf` when beginning a durable-history read after idle time. */
     listQuarantineEntries(options?: { asOf?: string }): StoredQuarantineEntry[];

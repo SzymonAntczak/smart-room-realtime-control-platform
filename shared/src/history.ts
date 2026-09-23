@@ -261,6 +261,16 @@ export const significantFactFirstPageQuerySchema = Type.Object(
 );
 export type SignificantFactFirstPageQuery = Static<typeof significantFactFirstPageQuerySchema>;
 
+/** Query parameters for one durable significant-fact page. */
+export const significantFactPageQuerySchema = Type.Object(
+    {
+        pageSize: historyPageSizeSchema,
+        cursor: Type.Optional(nonEmptyStringSchema),
+    },
+    { additionalProperties: false },
+);
+export type SignificantFactPageQuery = Static<typeof significantFactPageQuerySchema>;
+
 /** Query parameters for the first page of one device's raw telemetry. */
 export const rawTelemetryFirstPageQuerySchema = Type.Object(
     {
@@ -274,9 +284,32 @@ export const rawTelemetryFirstPageQuerySchema = Type.Object(
 );
 export type RawTelemetryFirstPageQuery = Static<typeof rawTelemetryFirstPageQuerySchema>;
 
+/** Query parameters for one page of one device's raw telemetry. */
+export const rawTelemetryPageQuerySchema = Type.Object(
+    {
+        deviceId: nonEmptyStringSchema,
+        metric: Type.Literal('temperature'),
+        from: isoTimestampSchema,
+        to: isoTimestampSchema,
+        pageSize: historyPageSizeSchema,
+        cursor: Type.Optional(nonEmptyStringSchema),
+    },
+    { additionalProperties: false },
+);
+export type RawTelemetryPageQuery = Static<typeof rawTelemetryPageQuerySchema>;
+
 /** Query after its accepted telemetry range has been canonicalized to UTC. */
 export interface NormalizedRawTelemetryFirstPageQuery extends Omit<
     RawTelemetryFirstPageQuery,
+    'from' | 'to'
+> {
+    from: string;
+    to: string;
+}
+
+/** A telemetry page query after its accepted range has been canonicalized to UTC. */
+export interface NormalizedRawTelemetryPageQuery extends Omit<
+    RawTelemetryPageQuery,
     'from' | 'to'
 > {
     from: string;
@@ -287,6 +320,23 @@ export function normalizeRawTelemetryFirstPageQuery(
     value: unknown,
 ): NormalizedRawTelemetryFirstPageQuery | undefined {
     if (!isSchema(rawTelemetryFirstPageQuerySchema, value)) {
+        return undefined;
+    }
+
+    const from = normalizeIsoTimestamp(value.from);
+    const to = normalizeIsoTimestamp(value.to);
+
+    if (from === undefined || to === undefined || Date.parse(from) >= Date.parse(to)) {
+        return undefined;
+    }
+
+    return { ...value, from, to };
+}
+
+export function normalizeRawTelemetryPageQuery(
+    value: unknown,
+): NormalizedRawTelemetryPageQuery | undefined {
+    if (!isSchema(rawTelemetryPageQuerySchema, value)) {
         return undefined;
     }
 

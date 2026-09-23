@@ -10,6 +10,7 @@ import {
     type NormalizedTrendQuery,
     normalizeHistoryCursorQueryScope,
     normalizeRawTelemetryFirstPageQuery,
+    normalizeRawTelemetryPageQuery,
     normalizeTrendQuery,
     type RawTelemetrySampleProjection,
     type RecentEventProjection,
@@ -43,6 +44,26 @@ describe('durable history contracts', () => {
                 pageSize: 20,
             }),
         ).toBeUndefined();
+    });
+
+    it('keeps an opaque cursor while normalizing a telemetry page range', () => {
+        expect(
+            normalizeRawTelemetryPageQuery({
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T11:00:00+01:00',
+                to: '2026-09-10T11:05:00+01:00',
+                pageSize: 20,
+                cursor: 'server-issued-cursor',
+            }),
+        ).toEqual({
+            deviceId: 'temp-desk',
+            metric: 'temperature',
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-10T10:05:00Z',
+            pageSize: 20,
+            cursor: 'server-issued-cursor',
+        });
     });
 
     it('keeps shared fact and telemetry identities valid across feed, pages and trend views', () => {
