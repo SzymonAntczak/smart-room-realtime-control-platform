@@ -20,6 +20,7 @@ import {
 import type { CommandFailedEvent, PlatformEvent } from '@smart-room/contracts/events';
 import {
     compareRecentEventsDescending,
+    type LiveTelemetrySampleProjection,
     type NormalizedRawTelemetryPageQuery,
     type NormalizedTrendQuery,
     type RawTelemetryPage,
@@ -888,11 +889,19 @@ export function createTemperatureRoomRuntime({
         evaluatedAt: string,
         installedProjectionOnly = false,
         platformBeforeOutcome = false,
+        relatedRecentEvents: readonly RecentEventProjection[] = [],
+        telemetrySample?: LiveTelemetrySampleProjection,
     ): void {
         const snapshot = installedProjectionOnly ? installedSnapshot() : snapshotAt(evaluatedAt);
         publishSnapshot(
             snapshot,
-            buildPublicationDeltas(lastPublishedSnapshot, snapshot, platformBeforeOutcome),
+            buildPublicationDeltas(
+                lastPublishedSnapshot,
+                snapshot,
+                platformBeforeOutcome,
+                relatedRecentEvents,
+                telemetrySample,
+            ),
         );
     }
 
@@ -997,12 +1006,16 @@ export function createTemperatureRoomRuntime({
         const durablePreparedState = processor.materializePreparedState(prepared, 'durable');
         let result: EventProcessingResult;
         let platformBeforeOutcome = false;
+        let publicationRecentEvents: RecentEventProjection[];
+        let publicationTelemetrySample: LiveTelemetrySampleProjection | undefined;
 
         if (activeStorage && storageState.status === 'available') {
             const outcome = activeStorage.transact(
                 (transaction) => {
                     let storedThroughSequence: number | undefined;
                     const storedRecentEvents: RecentEventProjection[] = [];
+                    let storedTelemetrySample: LiveTelemetrySampleProjection | undefined;
+                    const feedRecords = new Set(prepared.feedRecords);
 
                     if (prepared.kind === 'quarantined') {
                         transaction.appendQuarantineEntry({
@@ -1023,8 +1036,25 @@ export function createTemperatureRoomRuntime({
                                 storedThroughSequence,
                             );
 
-                            if (recentEvent) {
+                            const isDurabilityPromotion =
+                                prepared.identityDisposition === 'volatile_reconciliation' &&
+                                recentEvent !== undefined &&
+                                recentEvents.some(
+                                    (existing) =>
+                                        existing.recordId === recentEvent.recordId &&
+                                        existing.durability === 'volatile',
+                                );
+
+                            if (recentEvent && (feedRecords.has(record) || isDurabilityPromotion)) {
                                 storedRecentEvents.push(recentEvent);
+                            }
+
+                            if (record.kind === 'telemetry') {
+                                storedTelemetrySample = liveTelemetrySampleForRecord(
+                                    record,
+                                    'durable',
+                                    storedThroughSequence,
+                                );
                             }
                         }
 
@@ -1060,7 +1090,11 @@ export function createTemperatureRoomRuntime({
                         touchRuntimeSession(transaction, receivedAt);
                     }
 
-                    return { storedThroughSequence, storedRecentEvents };
+                    return {
+                        storedThroughSequence,
+                        storedRecentEvents: storedRecentEvents.sort(compareRecentEventsDescending),
+                        storedTelemetrySample,
+                    };
                 },
                 { retentionAsOf: receivedAt },
             );
@@ -1088,11 +1122,17 @@ export function createTemperatureRoomRuntime({
                 rememberVolatileIdentity(prepared, receivedAt);
                 recentEvents = mergeRecentEvents(
                     recentEvents,
-                    recentEventsForRecords(prepared.records, 'volatile'),
+                    recentEventsForRecords(prepared.feedRecords, 'volatile'),
                 );
+                publicationRecentEvents = recentEventsForRecords(prepared.feedRecords, 'volatile');
+                publicationTelemetrySample = prepared.records
+                    .map((record) => liveTelemetrySampleForRecord(record, 'volatile'))
+                    .find((sample) => sample !== undefined);
             } else {
                 result = processor.commitPrepared(prepared);
                 recentEvents = mergeRecentEvents(recentEvents, outcome.value.storedRecentEvents);
+                publicationRecentEvents = outcome.value.storedRecentEvents;
+                publicationTelemetrySample = outcome.value.storedTelemetrySample;
                 processor.forgetDurableIdentities(outcome.retention.retiredIdentityEventIds);
 
                 if (
@@ -1120,8 +1160,12 @@ export function createTemperatureRoomRuntime({
             rememberVolatileIdentity(prepared, receivedAt);
             recentEvents = mergeRecentEvents(
                 recentEvents,
-                recentEventsForRecords(prepared.records, 'volatile'),
+                recentEventsForRecords(prepared.feedRecords, 'volatile'),
             );
+            publicationRecentEvents = recentEventsForRecords(prepared.feedRecords, 'volatile');
+            publicationTelemetrySample = prepared.records
+                .map((record) => liveTelemetrySampleForRecord(record, 'volatile'))
+                .find((sample) => sample !== undefined);
         }
 
         diagnostics.recordProcessingResult(event, result);
@@ -1133,6 +1177,8 @@ export function createTemperatureRoomRuntime({
                 result.status === 'accepted' ? result.evaluatedAt : receivedAt,
                 false,
                 platformBeforeOutcome,
+                publicationRecentEvents,
+                publicationTelemetrySample,
             );
         }
 
@@ -2674,6 +2720,8 @@ function buildPublicationDeltas(
     previous: RoomSnapshotProjection | undefined,
     next: RoomSnapshotProjection,
     platformBeforeOutcome: boolean,
+    relatedRecentEvents: readonly RecentEventProjection[],
+    telemetrySample?: LiveTelemetrySampleProjection,
 ): readonly RoomPublicationDelta[] {
     if (!previous) {
         return [];
@@ -2684,19 +2732,10 @@ function buildPublicationDeltas(
     const commandDeviceIds = changedCommandDeviceIds(previous, next);
 
     const platformDelta = !sameJson(previous.platform, next.platform)
-        ? (() => {
-              const gapEvents = next.recentEvents.filter(
-                  (event) => event.eventType === 'storage.gap.recorded',
-              );
-
-              return {
-                  messageType: 'platform.updated' as const,
-                  payload: {
-                      storage: next.platform.storage,
-                      ...(gapEvents.length > 0 ? { recentEvents: gapEvents } : {}),
-                  },
-              };
-          })()
+        ? {
+              messageType: 'platform.updated' as const,
+              payload: { storage: next.platform.storage },
+          }
         : undefined;
 
     if (platformBeforeOutcome && platformDelta) {
@@ -2704,32 +2743,36 @@ function buildPublicationDeltas(
     }
 
     for (const device of next.devices) {
-        if (
-            !commandDeviceIds.has(device.deviceId) &&
-            !sameJson(previousDevices.get(device.deviceId), device)
-        ) {
-            deltas.push({ messageType: 'device.updated', payload: device });
+        if (commandDeviceIds.has(device.deviceId)) {
+            continue;
+        }
+
+        const deviceEvents = relatedRecentEvents.filter(
+            (event) => 'deviceId' in event && event.deviceId === device.deviceId,
+        );
+        const deviceTelemetry =
+            telemetrySample?.deviceId === device.deviceId ? telemetrySample : undefined;
+        const deviceChanged = !sameJson(previousDevices.get(device.deviceId), device);
+
+        if (deviceChanged || deviceEvents.length > 0 || deviceTelemetry) {
+            deltas.push({
+                messageType: 'device.updated',
+                payload: device,
+                ...(deviceEvents.length > 0 ? { recentEvents: deviceEvents } : {}),
+                ...(deviceTelemetry ? { telemetrySample: deviceTelemetry } : {}),
+            });
         }
     }
 
-    const nonGapEventsChanged = !sameJson(
-        previous.recentEvents.filter((event) => event.eventType !== 'storage.gap.recorded'),
-        next.recentEvents.filter((event) => event.eventType !== 'storage.gap.recorded'),
-    );
-
-    if (commandDeviceIds.size > 0 || nonGapEventsChanged) {
+    if (commandDeviceIds.size > 0) {
         deltas.push({
             messageType: 'commands.updated',
             payload: {
                 devices: next.devices,
                 activeCommands: next.activeCommands,
                 recentCommands: next.recentCommands,
-                ...(nonGapEventsChanged
-                    ? {
-                          recentEvents: next.recentEvents.filter(
-                              (event) => event.eventType !== 'storage.gap.recorded',
-                          ),
-                      }
+                ...(relatedRecentEvents.length > 0
+                    ? { recentEvents: [...relatedRecentEvents] }
                     : {}),
             },
         });
@@ -2921,11 +2964,38 @@ function recentEventsForRecords(
     records: readonly PreparedRecord[],
     durability: 'durable' | 'volatile',
 ): RecentEventProjection[] {
-    return records.flatMap((record) => {
-        const recentEvent = recentEventForRecord(record, durability);
+    return records
+        .flatMap((record) => {
+            const recentEvent = recentEventForRecord(record, durability);
 
-        return recentEvent ? [recentEvent] : [];
-    });
+            return recentEvent ? [recentEvent] : [];
+        })
+        .sort(compareRecentEventsDescending);
+}
+
+function liveTelemetrySampleForRecord(
+    record: PreparedRecord,
+    durability: 'durable' | 'volatile',
+    storageSequence?: number,
+): LiveTelemetrySampleProjection | undefined {
+    if (record.kind !== 'telemetry') {
+        return undefined;
+    }
+
+    if (durability === 'durable' && storageSequence === undefined) {
+        throw new Error('Durable telemetry samples require a storage sequence.');
+    }
+
+    return {
+        recordId: logicalRecordId(record.event, 'telemetry'),
+        durability,
+        ...(durability === 'durable' ? { storageSequence } : {}),
+        deviceId: record.event.deviceId,
+        metric: record.event.payload.metric,
+        value: record.event.payload.value,
+        unit: record.event.payload.unit,
+        occurredAt: record.event.occurredAt,
+    } as LiveTelemetrySampleProjection;
 }
 
 function recentEventForRecord(

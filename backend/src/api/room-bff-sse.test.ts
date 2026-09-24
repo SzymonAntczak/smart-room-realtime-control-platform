@@ -120,6 +120,59 @@ describe('startRoomRealtimePublisher', () => {
         });
     });
 
+    it('serializes a live telemetry sample beside the unchanged device payload', () => {
+        const stream = new ControlledWritable([true, true]);
+        const snapshot = createSnapshot();
+        const ledDevice = snapshot.devices.find((device) => device.deviceId === 'led-main');
+
+        if (!ledDevice) {
+            throw new Error('Expected the room fixture to include its LED.');
+        }
+
+        const temperatureDevice = {
+            ...ledDevice,
+            deviceId: 'temp-desk',
+            name: 'Desk Temperature',
+            role: 'temperature-sensor' as const,
+            reportedState: { temperature: 22.5, temperatureUnit: 'celsius' },
+            observationStatus: {
+                temperature: {
+                    freshness: 'fresh' as const,
+                    lastObservedAt: '2026-09-03T08:00:00Z',
+                    durability: 'durable' as const,
+                },
+            },
+            commandAvailability: {
+                policy: 'block' as const,
+                reason: 'read_only_device' as const,
+            },
+        };
+        snapshot.devices.push(temperatureDevice);
+        const room = createRoomHarness(snapshot);
+        startRoomRealtimePublisher(stream, room.config);
+
+        room.publishBatch({
+            snapshot,
+            deltas: [
+                {
+                    messageType: 'device.updated',
+                    payload: temperatureDevice,
+                    telemetrySample: createHistoryIdentityFixtures().telemetrySample,
+                },
+            ],
+        });
+
+        expect(messages(stream).at(-1)).toMatchObject({
+            messageType: 'device.updated',
+            payload: { deviceId: 'temp-desk' },
+            telemetrySample: {
+                recordId: createHistoryIdentityFixtures().telemetrySample.recordId,
+                deviceId: 'temp-desk',
+                durability: 'durable',
+            },
+        });
+    });
+
     it('assigns contiguous revisions to an explicit recovery reconciliation batch', () => {
         const stream = new ControlledWritable([true, true, true]);
         const room = createRoomHarness(createSnapshot());

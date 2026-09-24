@@ -64,6 +64,151 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('publishes a newly accepted older feed fact even when it falls outside the bounded cache', () => {
+        const storage = createScriptedStorage();
+        const source = createTemperatureRoomRuntime({
+            storage: storage.port,
+            clock: createMutableClock('2026-09-03T09:00:00Z'),
+            generateEventId: createEventIdGenerator(),
+        });
+        source.start();
+        source.stop();
+        const checkpoint = storage.latestCheckpoint;
+
+        if (!checkpoint) {
+            throw new Error('Expected startup to persist a checkpoint.');
+        }
+
+        const futureCache: RecentEventProjection[] = Array.from({ length: 20 }, (_, index) => ({
+            recordId: recordIdForTest(100 - index),
+            eventType: 'device.availability.changed' as const,
+            occurredAt: '2026-09-03T09:02:00.000Z',
+            durability: 'durable' as const,
+            storageSequence: 100 - index,
+            deviceId: 'temp-desk',
+            source: 'simulator-adapter' as const,
+            payload: {
+                previousAvailability: 'unknown' as const,
+                availability: 'online' as const,
+                reason: 'future_skew_fixture',
+            },
+        }));
+        storage.seedCheckpoint({ ...checkpoint, recentEvents: futureCache });
+        const runtime = createTemperatureRoomRuntime({
+            storage: storage.port,
+            clock: createMutableClock('2026-09-03T09:01:00Z'),
+            generateEventId: createEventIdGenerator(),
+        });
+        const batches: RoomPublicationBatch[] = [];
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
+
+        try {
+            runtime.start();
+            batches.length = 0;
+            const response = runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+
+            if (response.status !== 'accepted') {
+                throw new Error('Expected command admission.');
+            }
+
+            const fact = storage.significantFacts.find(
+                (candidate) =>
+                    candidate.eventType === 'command.requested' &&
+                    candidate.commandId === response.commandId,
+            );
+            const publishedRecord = batches
+                .flatMap((batch) => batch.deltas)
+                .flatMap((delta) =>
+                    delta.messageType === 'commands.updated'
+                        ? (delta.payload.recentEvents ?? [])
+                        : [],
+                )
+                .find((event) => event.recordId === fact?.recordId);
+
+            expect(fact).toBeDefined();
+            expect(publishedRecord).toMatchObject({
+                recordId: fact?.recordId,
+                eventType: 'command.requested',
+                occurredAt: '2026-09-03T09:01:00Z',
+                durability: 'durable',
+            });
+            expect(runtime.getRoomSnapshot().recentEvents).not.toContainEqual(
+                expect.objectContaining({ recordId: fact?.recordId }),
+            );
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it('publishes a durable non-applying fact as a watermark-only platform delta', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const source = createTemperatureRoomRuntime({ clock });
+        const sourceSnapshot = source.getRoomSnapshot();
+        const storage = createScriptedStorage();
+        storage.seedCheckpoint({
+            updatedAt: sourceSnapshot.updatedAt,
+            projection: {
+                updatedAt: sourceSnapshot.updatedAt,
+                devices: sourceSnapshot.devices.map((candidate) =>
+                    candidate.deviceId === 'temp-desk'
+                        ? {
+                              ...candidate,
+                              availability: 'online',
+                              availabilityChangedAt: '2026-09-03T09:01:00.000Z',
+                              availabilityDurability: 'durable',
+                          }
+                        : candidate,
+                ),
+                activeCommands: sourceSnapshot.activeCommands,
+                recentCommands: sourceSnapshot.recentCommands,
+            },
+            projectionEvidence: {
+                availabilityDeviceIds: ['led-main', 'temp-desk', 'temp-window'],
+                healthDeviceIds: [],
+            },
+            volatileGuards: [],
+            recentEvents: [],
+        });
+        const runtime = createTemperatureRoomRuntime({ clock, storage: storage.port });
+        const batches: RoomPublicationBatch[] = [];
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
+
+        try {
+            runtime.start();
+            batches.length = 0;
+            const beforeWatermark =
+                runtime.getRoomSnapshot().platform.storage.storedThroughSequence;
+
+            runtime.runDeviceScenario('temp-desk', 'disconnect_device');
+
+            const fact = storage.significantFacts.at(-1);
+            const delta = batches.flatMap((batch) => batch.deltas);
+
+            expect(fact).toMatchObject({ eventType: 'device.availability.changed' });
+            const afterWatermark = runtime.getRoomSnapshot().platform.storage.storedThroughSequence;
+            expect(afterWatermark).toBeGreaterThan(
+                typeof beforeWatermark === 'number' ? beforeWatermark : 0,
+            );
+            expect(delta).toHaveLength(1);
+            expect(delta[0]).toMatchObject({
+                messageType: 'platform.updated',
+                payload: {
+                    storage: {
+                        status: 'available',
+                        storedThroughSequence: afterWatermark,
+                    },
+                },
+            });
+            expect(delta[0]?.payload).not.toHaveProperty('recentEvents');
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('retains recent caches through history retirement without publishing a cache removal', async () => {
         const directory = mkdtempSync(join(tmpdir(), 'smart-room-runtime-retention-'));
         const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
@@ -720,10 +865,13 @@ describe('createTemperatureRoomRuntime', () => {
             generateEventId: createEventIdGenerator(),
         });
         const snapshots: Array<ReturnType<typeof runtime.getRoomSnapshot>> = [];
+        const batches: RoomPublicationBatch[] = [];
         runtime.subscribeRoomSnapshot((snapshot) => snapshots.push(snapshot));
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
 
         try {
             runtime.start();
+            batches.length = 0;
             expect(runtime.getRoomSnapshot().platform.storage.status).toBe('degraded');
             expect(recoveryTimer.intervals).toEqual([5_000]);
 
@@ -757,6 +905,26 @@ describe('createTemperatureRoomRuntime', () => {
                     }),
                 ]),
             );
+            const recoveryPlatformDelta = batches
+                .at(-1)
+                ?.deltas.find((delta) => delta.messageType === 'platform.updated');
+            expect(
+                recoveryPlatformDelta?.messageType === 'platform.updated'
+                    ? recoveryPlatformDelta.payload.recentEvents
+                    : undefined,
+            ).toEqual([expect.objectContaining({ eventType: 'storage.gap.recorded' })]);
+
+            batches.length = 0;
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+            const laterPlatformDelta = batches[0]?.deltas.find(
+                (delta) => delta.messageType === 'platform.updated',
+            );
+            expect(
+                laterPlatformDelta?.messageType === 'platform.updated'
+                    ? laterPlatformDelta.payload.recentEvents
+                    : undefined,
+            ).toBeUndefined();
         } finally {
             runtime.stop();
         }
@@ -1709,6 +1877,23 @@ describe('createTemperatureRoomRuntime', () => {
                 'device.updated',
                 'platform.updated',
             ]);
+            const liveTelemetryDelta = batches[0]?.deltas.find(
+                (delta) => delta.messageType === 'device.updated',
+            );
+            const storedSample = storage.telemetrySamples.at(-1);
+            expect(liveTelemetryDelta).toMatchObject({
+                messageType: 'device.updated',
+                telemetrySample: {
+                    recordId: storedSample?.recordId,
+                    durability: 'durable',
+                    storageSequence: storedSample?.storageSequence,
+                    deviceId: storedSample?.deviceId,
+                    metric: storedSample?.metric,
+                    value: storedSample?.value,
+                    unit: storedSample?.unit,
+                    occurredAt: storedSample?.occurredAt,
+                },
+            });
             expect(runtime.getRoomSnapshot().platform.storage).toMatchObject({
                 status: 'available',
                 changedAt: initialStorageChangedAt,
@@ -1768,6 +1953,23 @@ describe('createTemperatureRoomRuntime', () => {
                 'platform.updated',
                 'device.updated',
             ]);
+            const volatileTelemetryDelta = batches[0]?.deltas.find(
+                (delta) => delta.messageType === 'device.updated',
+            );
+            expect(volatileTelemetryDelta).toMatchObject({
+                telemetrySample: {
+                    durability: 'volatile',
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    value: 22.2,
+                    unit: 'celsius',
+                },
+            });
+            expect(
+                volatileTelemetryDelta?.messageType === 'device.updated'
+                    ? volatileTelemetryDelta.telemetrySample
+                    : undefined,
+            ).not.toHaveProperty('storageSequence');
             expect(snapshots[0]?.platform.storage).toMatchObject({
                 status: 'degraded',
                 historyGenerationId: storageBeforeFailure.historyGenerationId,
@@ -4094,9 +4296,12 @@ describe('createTemperatureRoomRuntime', () => {
             commandTimer,
             generateEventId: createEventIdGenerator(),
         });
+        const batches: RoomPublicationBatch[] = [];
+        runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
 
         try {
             runtime.start();
+            batches.length = 0;
             clock.advanceBy(1);
 
             const result = runtime.requestCommand({
@@ -4114,6 +4319,35 @@ describe('createTemperatureRoomRuntime', () => {
             expect(runtime.getRoomSnapshot().recentCommands).toEqual([
                 expect.objectContaining({ commandId: result.commandId, status: 'confirmed' }),
             ]);
+            const confirmationBatch = batches.find((batch) =>
+                batch.deltas.some(
+                    (delta) =>
+                        delta.messageType === 'commands.updated' &&
+                        delta.payload.recentEvents?.some(
+                            (event) => event.eventType === 'command.confirmed',
+                        ),
+                ),
+            );
+            const commandDelta = confirmationBatch?.deltas.find(
+                (delta) => delta.messageType === 'commands.updated',
+            );
+            expect(
+                commandDelta?.messageType === 'commands.updated'
+                    ? commandDelta.payload.recentEvents?.map((event) => event.eventType)
+                    : undefined,
+            ).toEqual(expect.arrayContaining(['device.state.reported', 'command.confirmed']));
+            expect(
+                commandDelta?.messageType === 'commands.updated'
+                    ? commandDelta.payload.recentEvents
+                    : undefined,
+            ).toHaveLength(2);
+            expect(
+                commandDelta?.messageType === 'commands.updated'
+                    ? commandDelta.payload.recentEvents?.every(
+                          (event) => event.durability === 'volatile',
+                      )
+                    : false,
+            ).toBe(true);
             expect(commandTimer.size()).toBe(0);
             expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toEqual([]);
         } finally {

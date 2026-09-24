@@ -160,7 +160,14 @@ export function connectRoomRealtime(
 
                 const devices = [...roomSnapshot.devices];
                 devices[deviceIndex] = message.payload;
-                const nextSnapshot = { ...roomSnapshot, devices };
+                const nextSnapshot = {
+                    ...roomSnapshot,
+                    devices,
+                    recentEvents: mergeRecentEvents(
+                        roomSnapshot.recentEvents,
+                        message.recentEvents,
+                    ),
+                };
 
                 if (!isRoomSnapshotProjection(nextSnapshot)) {
                     throw new Error(

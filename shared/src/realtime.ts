@@ -6,8 +6,12 @@ import {
     isRecentCommandsOrdered,
     type TerminalCommandProjection,
 } from './commands';
-import type { RecentEventProjection } from './history';
-import { isRecentEventsProjection, recentEventsDeltaSchema } from './history';
+import type { LiveTelemetrySampleProjection, RecentEventProjection } from './history';
+import {
+    isRecentEventsProjection,
+    liveTelemetrySampleProjectionSchema,
+    recentEventsDeltaSchema,
+} from './history';
 import type { DeviceProjection, PlatformStorageProjection } from './projections';
 import {
     activeCommandProjectionSchema,
@@ -36,16 +40,24 @@ export const roomRealtimeServerMessageSchema = Type.Object(
     },
     { additionalProperties: false },
 );
-export const deviceUpdatedMessageSchema = Type.Object(
-    {
-        messageType: Type.Literal('device.updated'),
-        previousRevision: Type.Integer({ minimum: 0 }),
-        revision: Type.Integer({ minimum: 1 }),
-        sentAt: isoTimestampSchema,
-        payload: deviceProjectionSchema,
-    },
-    { additionalProperties: false },
-);
+const deviceUpdatedBase = {
+    messageType: Type.Literal('device.updated'),
+    previousRevision: Type.Integer({ minimum: 0 }),
+    revision: Type.Integer({ minimum: 1 }),
+    sentAt: isoTimestampSchema,
+    payload: deviceProjectionSchema,
+};
+export const deviceUpdatedMessageSchema = Type.Union([
+    Type.Object(deviceUpdatedBase, { additionalProperties: false }),
+    Type.Object(
+        { ...deviceUpdatedBase, recentEvents: recentEventsDeltaSchema },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        { ...deviceUpdatedBase, telemetrySample: liveTelemetrySampleProjectionSchema },
+        { additionalProperties: false },
+    ),
+]);
 export const commandsUpdatedMessageSchema = Type.Object(
     {
         messageType: Type.Literal('commands.updated'),
@@ -93,13 +105,15 @@ export interface RoomSnapshotMessage {
     sentAt: string;
     payload: RoomSnapshotProjection;
 }
-export interface DeviceUpdatedMessage {
+export type DeviceUpdatedMessage = {
     messageType: 'device.updated';
     previousRevision: number;
     revision: number;
     sentAt: string;
     payload: DeviceProjection;
-}
+    recentEvents?: RecentEventProjection[];
+    telemetrySample?: LiveTelemetrySampleProjection;
+};
 export interface CommandsUpdatedMessage {
     messageType: 'commands.updated';
     previousRevision: number;
@@ -125,7 +139,12 @@ export interface PlatformUpdatedMessage {
  * BFF assigns both once to an entire, non-interleavable batch.
  */
 export type RoomPublicationDelta =
-    | { messageType: 'device.updated'; payload: DeviceProjection }
+    | {
+          messageType: 'device.updated';
+          payload: DeviceProjection;
+          recentEvents?: RecentEventProjection[];
+          telemetrySample?: LiveTelemetrySampleProjection;
+      }
     | {
           messageType: 'commands.updated';
           payload: CommandsUpdatedMessage['payload'];
@@ -186,10 +205,23 @@ export function isRoomRealtimeServerMessage(value: unknown): value is RoomRealti
         );
     }
 
+    return hasValidDeviceUpdatedMessage(value);
+}
+
+function hasValidDeviceUpdatedMessage(value: unknown): boolean {
+    const message = value as DeviceUpdatedMessage;
+
     return (
-        value.revision === value.previousRevision + 1 &&
-        hasCanonicalDeviceTimestamps(value.payload) &&
-        hasValidDeviceSemantics(value.payload)
+        message.revision === message.previousRevision + 1 &&
+        (message.recentEvents === undefined ||
+            (hasValidRecentEvents(message.recentEvents) &&
+                message.recentEvents.every(
+                    (event) => 'deviceId' in event && event.deviceId === message.payload.deviceId,
+                ))) &&
+        (message.telemetrySample === undefined ||
+            message.telemetrySample.deviceId === message.payload.deviceId) &&
+        hasCanonicalDeviceTimestamps(message.payload) &&
+        hasValidDeviceSemantics(message.payload)
     );
 }
 

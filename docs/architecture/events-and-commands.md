@@ -80,8 +80,8 @@ once evidence exists, equal or older transitions remain non-applying.
 The implemented Stage 4 processor preserves accepted non-applying transitions
 as auditable significant facts with diagnostics metadata. It also keeps raw
 telemetry separate from significant history. The projection carries a bounded
-recent-event cache, including the durable recovery gap, while HTTP history and
-trend APIs remain later work. The classification is defined in
+recent-event cache, including the durable recovery gap; paged history and trend
+reads use the durable HTTP API. The classification is defined in
 [ADR: Stage 4 Storage and Observability](../decisions/adr-stage-4-storage-and-observability.md)
 and governs the current storage-backed runtime.
 
@@ -132,10 +132,21 @@ storage internals to the simulator package. A volatile command uses
 process-local source idempotency only, is never automatically retried and does
 not require a durable receipt.
 
-In the proposed feed classification, a report after timeout is treated like any
-other state report: it enters the feed only when it changes `reportedState`.
+The Stage 4 feed classification treats a report after timeout like any other
+state report: it enters the feed only when it changes `reportedState`.
 Lateness alone is not significant, and no late report can reopen or reconfirm a
-terminal command.
+terminal command. Accepted non-applying availability/health facts and LED
+reports that change neither reported state nor command lifecycle remain
+auditable history without entering the feed. Accepted telemetry is published as
+a separate live sample and never as a significant feed fact.
+
+On the existing SSE connection, `device.updated` keeps the device projection in
+`payload` and may add either `recentEvents` or one `telemetrySample` beside it.
+The sample uses the same `recordId` and durable storage sequence as HTTP history;
+volatile samples have no storage sequence. The client merges feed records by
+`recordId`. When a durable result has a device or command delta, that result is
+published first and `platform.updated` with the current watermark follows at
+the next revision. A durable non-applying fact needs only the watermark update.
 
 ## Initial Event Types
 

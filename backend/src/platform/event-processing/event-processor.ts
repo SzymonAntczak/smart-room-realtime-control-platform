@@ -86,6 +86,7 @@ export type PreparedEventProcessingResult = {
     candidateEvidence?: RoomProjectionEvidence;
     reconciledCommandIds?: readonly string[];
     records: readonly PreparedRecord[];
+    feedRecords: readonly PreparedRecord[];
     ingress: EventIngress;
 };
 
@@ -537,6 +538,16 @@ export function createEventProcessor({
                           reconciledCommandIds,
                       )
                     : [];
+            const feedRecords =
+                eventId && preparedEvent
+                    ? prepareFeedRecords(
+                          records,
+                          preparedEvent,
+                          result,
+                          originalProjector.getProjection(),
+                          reconciledCommandIds,
+                      )
+                    : [];
 
             return {
                 kind,
@@ -548,6 +559,7 @@ export function createEventProcessor({
                 ...(eventId ? { identityDisposition } : {}),
                 ...(reconciledCommandIds.length > 0 ? { reconciledCommandIds } : {}),
                 records,
+                feedRecords,
                 ingress,
             };
         },
@@ -747,6 +759,51 @@ function prepareRecords(
     );
 
     return [inputRecord, ...derivedConfirmations];
+}
+
+function prepareFeedRecords(
+    records: readonly PreparedRecord[],
+    event: PlatformEvent,
+    result: EventProcessingResult,
+    previousState: EventProcessorState,
+    reconciledCommandIds: readonly string[],
+): readonly PreparedRecord[] {
+    if (result.status !== 'accepted') {
+        return [];
+    }
+
+    switch (event.eventType) {
+        case 'telemetry.reading.recorded':
+            return [];
+        case 'device.availability.changed':
+        case 'device.health.changed':
+        case 'command.requested':
+        case 'command.dispatched':
+        case 'command.delivery_uncertain':
+        case 'command.failed':
+        case 'command.timed_out':
+            return records;
+
+        case 'device.state.reported': {
+            const previousReportedState = previousState.devices.find(
+                (device) => device.deviceId === event.deviceId,
+            )?.reportedState;
+            const currentReportedState = result.state.devices.find(
+                (device) => device.deviceId === event.deviceId,
+            )?.reportedState;
+            const stateChanged =
+                JSON.stringify(previousReportedState) !== JSON.stringify(currentReportedState);
+            const commandConfirmed =
+                reconciledCommandIds.length > 0 ||
+                records.some((record) => record.kind === 'derived_command_confirmed');
+
+            if (!stateChanged && !commandConfirmed) {
+                return [];
+            }
+
+            return records;
+        }
+    }
 }
 
 function reconciledCommandIdsFor(

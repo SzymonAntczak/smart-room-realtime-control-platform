@@ -234,6 +234,36 @@ export type DurableSignificantFactProjection = Extract<
     { durability: 'durable' }
 >;
 
+/** A live telemetry addition has the same identity as durable HTTP history. */
+export const liveTelemetrySampleProjectionSchema = Type.Union([
+    Type.Object(
+        {
+            recordId: recordIdSchema,
+            durability: Type.Literal('durable'),
+            storageSequence: storageSequenceSchema,
+            deviceId: nonEmptyStringSchema,
+            metric: Type.Literal('temperature'),
+            value: Type.Number(),
+            unit: Type.Literal('celsius'),
+            occurredAt: canonicalUtcTimestampSchema,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            recordId: recordIdSchema,
+            durability: Type.Literal('volatile'),
+            deviceId: nonEmptyStringSchema,
+            metric: Type.Literal('temperature'),
+            value: Type.Number(),
+            unit: Type.Literal('celsius'),
+            occurredAt: canonicalUtcTimestampSchema,
+        },
+        { additionalProperties: false },
+    ),
+]);
+export type LiveTelemetrySampleProjection = Static<typeof liveTelemetrySampleProjectionSchema>;
+
 /** Original durable telemetry sample; it is never replaced by an aggregate identity. */
 export const rawTelemetrySampleProjectionSchema = Type.Object(
     {

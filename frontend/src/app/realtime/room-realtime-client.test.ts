@@ -379,6 +379,31 @@ describe('connectTemperatureRealtime', () => {
         );
     });
 
+    it('merges feed facts carried by a device update', () => {
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        const recentEvent = {
+            recordId: `rec:v1:sha256:${'d'.repeat(64)}`,
+            eventType: 'device.state.reported' as const,
+            occurredAt: '2026-06-08T09:30:02.000Z',
+            durability: 'durable' as const,
+            storageSequence: 9,
+            deviceId: 'temp-desk',
+            source: 'simulator-adapter' as const,
+            payload: { reportedState: { temperature: 22.8, temperatureUnit: 'celsius' } },
+        };
+
+        MockWebSocket.latest().emitMessage({
+            ...createDeviceUpdatedMessage(),
+            recentEvents: [recentEvent],
+        });
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({ recentEvents: [recentEvent] }),
+        );
+    });
+
     it('applies a contiguous command delta without replacing the reported LED state', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);

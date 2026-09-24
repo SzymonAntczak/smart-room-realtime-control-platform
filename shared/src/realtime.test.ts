@@ -2,9 +2,71 @@ import { describe, expect, it } from 'vitest';
 
 import type { RecentEventProjection } from './history';
 import { isRecentEventsOrdered } from './history';
+import { createHistoryIdentityFixtures } from './history-fixtures';
 import { isRoomRealtimeServerMessage, isRoomSnapshotProjection } from './realtime';
 
 describe('realtime schemas', () => {
+    it('accepts durable and volatile live telemetry and feed additions on device updates', () => {
+        const { telemetrySample } = createHistoryIdentityFixtures();
+        const base = createDeviceUpdatedMessage();
+        const recentEvent: RecentEventProjection = {
+            recordId: `rec:v1:sha256:${'c'.repeat(64)}`,
+            eventType: 'device.state.reported',
+            occurredAt: '2026-06-08T09:30:00.000Z',
+            durability: 'durable',
+            storageSequence: 9,
+            deviceId: 'temp-desk',
+            source: 'simulator-adapter',
+            payload: { reportedState: { temperature: 22.4, temperatureUnit: 'celsius' } },
+        };
+
+        expect(
+            isRoomRealtimeServerMessage({
+                ...base,
+                telemetrySample,
+            }),
+        ).toBe(true);
+        const volatileSample = {
+            recordId: telemetrySample.recordId,
+            deviceId: telemetrySample.deviceId,
+            metric: telemetrySample.metric,
+            value: telemetrySample.value,
+            unit: telemetrySample.unit,
+            occurredAt: telemetrySample.occurredAt,
+        };
+        expect(
+            isRoomRealtimeServerMessage({
+                ...base,
+                telemetrySample: { ...volatileSample, durability: 'volatile' },
+            }),
+        ).toBe(true);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...base,
+                recentEvents: [recentEvent],
+            }),
+        ).toBe(true);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...base,
+                recentEvents: [recentEvent],
+                telemetrySample,
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...base,
+                telemetrySample: { ...telemetrySample, deviceId: 'temp-window' },
+            }),
+        ).toBe(false);
+        expect(
+            isRoomRealtimeServerMessage({
+                ...base,
+                telemetrySample: { ...volatileSample, durability: 'volatile', storageSequence: 9 },
+            }),
+        ).toBe(false);
+    });
+
     it('accepts valid storage watermark pairs in snapshots and platform updates', () => {
         const validStorageStates = [
             availableStorage(),

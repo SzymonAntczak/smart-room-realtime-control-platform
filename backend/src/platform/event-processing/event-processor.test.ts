@@ -205,6 +205,7 @@ describe('createEventProcessor', () => {
         expect(telemetry).toMatchObject({
             kind: 'accepted_applied',
             records: [{ kind: 'telemetry' }],
+            feedRecords: [],
         });
         room.commitPrepared(telemetry);
 
@@ -243,11 +244,40 @@ describe('createEventProcessor', () => {
         expect(nonApplying).toMatchObject({
             kind: 'accepted_non_applying',
             records: [{ kind: 'input_significant_fact' }],
+            feedRecords: [],
         });
         expect(room.prepareFreshnessProjection({ ...ingress, ingestSequence: 4 })).toMatchObject({
             kind: 'derived_projection',
             records: [],
         });
+    });
+
+    it('keeps no-change LED reports in history without classifying them for the feed', () => {
+        const room = ledProcessor();
+        const firstReport = {
+            eventId: 'led-initial-report',
+            eventType: 'device.state.reported',
+            occurredAt: '2026-06-08T09:30:00Z',
+            source: 'simulator-adapter',
+            deviceId: 'led-main',
+            payload: { reportedState: { power: 'off' } },
+        } as const;
+        const initial = room.prepareEvent(firstReport, {
+            receivedAt: firstReport.occurredAt,
+            ingestSequence: 1,
+        });
+        room.commitPrepared(initial);
+
+        const noChange = room.prepareEvent(
+            { ...firstReport, eventId: 'led-no-change-report', occurredAt: '2026-06-08T09:30:01Z' },
+            { receivedAt: '2026-06-08T09:30:01Z', ingestSequence: 2 },
+        );
+
+        expect(noChange.kind).toBe('accepted_applied');
+        expect(noChange.records).toEqual([
+            expect.objectContaining({ kind: 'input_significant_fact' }),
+        ]);
+        expect(noChange.feedRecords).toEqual([]);
     });
 
     it('routes explicit availability evidence independently of telemetry', () => {

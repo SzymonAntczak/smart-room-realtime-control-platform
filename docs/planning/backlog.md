@@ -404,7 +404,7 @@ Each item has one difficulty rating only:
 
 | Subtask          | Purpose / primary boundary                                                     | Depends on                 | Difficulty | Verification / done when                                                  |
 | ---------------- | ------------------------------------------------------------------------------ | -------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `[ ] ST-4-04-01` | Publish history baseline/deltas, telemetry samples, gap and watermark updates. | `DS-4-01`, `ST-4-03-01`    | `B`        | SSE tests prove snapshot, outcome, watermark-only and recovery sequences. |
+| `[x] ST-4-04-01` | Publish history baseline/deltas, telemetry samples, gap and watermark updates. | `DS-4-01`, `ST-4-03-01`    | `B`        | SSE tests prove snapshot, outcome, watermark-only and recovery sequences. |
 | `[ ] ST-4-04-02` | Publish each multi-revision result as an atomic, non-interleaving batch.       | `ST-4-04-01`               | `B`        | Concurrent connection sees final revision-0, never a partial batch.       |
 | `[ ] ST-4-04-03` | Keep bounded live overlay from before first request through all pages.         | `ST-4-03-01`, `ST-4-04-01` | `B`        | Additions before, during and between pages survive merge by `recordId`.   |
 | `[ ] ST-4-04-04` | Rebuild open history after reconnect, expiry or generation change.             | `ST-4-03-02`, `ST-4-04-03` | `B`        | Tests cover same-generation recovery, expiry, `503` and replacement.      |
