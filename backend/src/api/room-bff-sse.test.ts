@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
@@ -8,9 +11,110 @@ import type {
 } from '@smart-room/contracts/realtime';
 import { describe, expect, it } from 'vitest';
 
+import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
+import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
+
 import { type RoomRealtimeWritable, startRoomRealtimePublisher } from './room-bff-sse';
 
 describe('startRoomRealtimePublisher', () => {
+    it('gives an in-batch connection the final baseline and keeps later revisions contiguous', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'smart-room-sse-batch-'));
+        const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
+        const runtime = createTemperatureRoomRuntime({ storage, intervalMs: 60_000 });
+        const publishedBatches: RoomPublicationBatch[] = [];
+        const unsubscribe = runtime.subscribeRoomPublicationBatch((batch) => {
+            publishedBatches.push(batch);
+        });
+        const secondStream = new ControlledWritable([true, true, true]);
+        let secondStreamOpened = false;
+        let firstBatchSnapshot: RoomSnapshotProjection | undefined;
+        const firstStream = new ControlledWritable([true, true, true, true, true], (chunk) => {
+            const message = messageFromFrame(chunk);
+
+            if (message?.messageType !== 'device.updated' || secondStreamOpened) {
+                return;
+            }
+
+            secondStreamOpened = true;
+            firstBatchSnapshot = publishedBatches[0]?.snapshot;
+            startRoomRealtimePublisher(secondStream, {
+                getRoomSnapshot: runtime.getRoomSnapshot,
+                subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
+                now: () => '2026-09-03T09:00:01Z',
+            });
+            runtime.runDeviceScenario('temp-window', 'emit_next_reading');
+        });
+
+        try {
+            runtime.start();
+            publishedBatches.length = 0;
+            startRoomRealtimePublisher(firstStream, {
+                getRoomSnapshot: runtime.getRoomSnapshot,
+                subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
+                now: () => '2026-09-03T09:00:00Z',
+            });
+
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+            const firstMessages = messages(firstStream);
+            const secondMessages = messages(secondStream);
+            expect(firstMessages.map((message) => message.messageType)).toEqual([
+                'room.snapshot',
+                'device.updated',
+                'platform.updated',
+                'device.updated',
+                'platform.updated',
+            ]);
+            expect(secondMessages.map((message) => message.messageType)).toEqual([
+                'room.snapshot',
+                'device.updated',
+                'platform.updated',
+            ]);
+            expect(revisions(firstMessages)).toEqual([
+                [undefined, 0],
+                [0, 1],
+                [1, 2],
+                [2, 3],
+                [3, 4],
+            ]);
+            expect(revisions(secondMessages)).toEqual([
+                [undefined, 0],
+                [0, 1],
+                [1, 2],
+            ]);
+            expect(firstMessages[1]).toMatchObject({
+                messageType: 'device.updated',
+                payload: { deviceId: 'temp-desk' },
+            });
+            expect(firstMessages[2]).toMatchObject({ messageType: 'platform.updated' });
+            expect(firstMessages[3]).toMatchObject({
+                messageType: 'device.updated',
+                payload: { deviceId: 'temp-window' },
+            });
+            expect(secondMessages[0]).toMatchObject({
+                messageType: 'room.snapshot',
+                revision: 0,
+                payload: {
+                    devices: expect.arrayContaining([
+                        expect.objectContaining({ deviceId: 'temp-desk' }),
+                        expect.objectContaining({ deviceId: 'temp-window' }),
+                    ]),
+                },
+            });
+            expect(secondMessages[0]?.payload).toEqual(firstBatchSnapshot);
+            expect(secondMessages[1]).toMatchObject({
+                messageType: 'device.updated',
+                previousRevision: 0,
+                revision: 1,
+                payload: { deviceId: 'temp-window' },
+            });
+        } finally {
+            unsubscribe();
+            runtime.stop();
+            rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
     it('waits for drain and preserves a full 20-command lifecycle burst', () => {
         const stream = new ControlledWritable([true, true, true, false, true, true, true]);
         const room = createRoomHarness(createSnapshot());
@@ -259,10 +363,12 @@ class ControlledWritable extends EventEmitter implements RoomRealtimeWritable {
     readonly writes: string[] = [];
     endCount = 0;
     readonly #writeResults: boolean[];
+    readonly #onWrite: ((chunk: string) => void) | undefined;
 
-    constructor(writeResults: boolean[]) {
+    constructor(writeResults: boolean[], onWrite?: (chunk: string) => void) {
         super();
         this.#writeResults = [...writeResults];
+        this.#onWrite = onWrite;
     }
 
     get destroyed(): boolean {
@@ -279,6 +385,7 @@ class ControlledWritable extends EventEmitter implements RoomRealtimeWritable {
 
     write(chunk: string): boolean {
         this.writes.push(chunk);
+        this.#onWrite?.(chunk);
 
         return this.#writeResults.shift() ?? true;
     }
@@ -476,17 +583,23 @@ function historyFixtureWatermark(): number {
 
 function messages(stream: ControlledWritable): RoomRealtimeServerMessage[] {
     return stream.writes.map((frame) => {
-        const data = frame
-            .split('\n')
-            .find((line) => line.startsWith('data: '))
-            ?.slice('data: '.length);
+        const message = messageFromFrame(frame);
 
-        if (!data) {
+        if (!message) {
             throw new Error('SSE frame did not contain data.');
         }
 
-        return JSON.parse(data) as RoomRealtimeServerMessage;
+        return message;
     });
+}
+
+function messageFromFrame(frame: string): RoomRealtimeServerMessage | undefined {
+    const data = frame
+        .split('\n')
+        .find((line) => line.startsWith('data: '))
+        ?.slice('data: '.length);
+
+    return data ? (JSON.parse(data) as RoomRealtimeServerMessage) : undefined;
 }
 
 function revisions(

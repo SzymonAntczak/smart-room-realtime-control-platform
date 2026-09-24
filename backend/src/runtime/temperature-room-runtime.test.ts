@@ -64,6 +64,51 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('finishes a durable multi-revision batch before dispatching reentrant input', () => {
+        const clock = createMutableClock('2026-09-03T09:00:00Z');
+        const storage = createScriptedStorage();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer: createManualTimer(),
+            storage: storage.port,
+            generateNativeMessageId: createEventIdGenerator(),
+        });
+        const batches: RoomPublicationBatch[] = [];
+        let queuedSecondInput = false;
+        let observeBatches = false;
+        runtime.subscribeRoomPublicationBatch((batch) => {
+            batches.push(batch);
+
+            if (observeBatches && !queuedSecondInput) {
+                queuedSecondInput = true;
+                runtime.runDeviceScenario('temp-window', 'emit_next_reading');
+            }
+        });
+
+        try {
+            runtime.start();
+            batches.length = 0;
+            observeBatches = true;
+            clock.advanceBy(1_000);
+            runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
+
+            expect(batches).toHaveLength(2);
+            expect(batches.map((batch) => batch.deltas.map((delta) => delta.messageType))).toEqual([
+                ['device.updated', 'platform.updated'],
+                ['device.updated', 'platform.updated'],
+            ]);
+            expect(
+                batches.flatMap((batch) =>
+                    batch.deltas.map((delta) =>
+                        delta.messageType === 'device.updated' ? delta.payload.deviceId : undefined,
+                    ),
+                ),
+            ).toEqual(['temp-desk', undefined, 'temp-window', undefined]);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('publishes a newly accepted older feed fact even when it falls outside the bounded cache', () => {
         const storage = createScriptedStorage();
         const source = createTemperatureRoomRuntime({
