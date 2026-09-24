@@ -1,5 +1,6 @@
 import {
     compareRecentEventsDescending,
+    type LiveTelemetrySampleProjection,
     type RecentEventProjection,
 } from '@smart-room/contracts/history';
 import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
@@ -25,7 +26,21 @@ export interface RoomRealtimeClientHandlers {
     onConnectionStatus(status: RoomRealtimeConnectionStatus): void;
     onSnapshot(snapshot: RenderableRoomSnapshot): void;
     onInvalidMessage(): void;
+    onHistoryUpdate?(update: RoomHistoryRealtimeUpdate): void;
 }
+
+export type RoomHistoryRealtimeUpdate =
+    | {
+          kind: 'baseline';
+          storage: RoomSnapshotProjection['platform']['storage'];
+          recentEvents: RecentEventProjection[];
+      }
+    | {
+          kind: 'addition';
+          storage: RoomSnapshotProjection['platform']['storage'];
+          recentEvents?: RecentEventProjection[];
+          telemetrySample?: LiveTelemetrySampleProjection;
+      };
 
 export interface RoomRealtimeConnection {
     close(): void;
@@ -101,7 +116,30 @@ export function connectRoomRealtime(
                 }
 
                 const snapshot = applyRealtimeMessage(message);
-                handlers.onSnapshot(toRenderableRoomSnapshot(snapshot));
+                const renderableSnapshot = toRenderableRoomSnapshot(snapshot);
+
+                if (message.messageType === 'room.snapshot') {
+                    handlers.onHistoryUpdate?.({
+                        kind: 'baseline',
+                        storage: snapshot.platform.storage,
+                        recentEvents: snapshot.recentEvents,
+                    });
+                } else {
+                    handlers.onHistoryUpdate?.({
+                        kind: 'addition',
+                        storage: snapshot.platform.storage,
+                        recentEvents:
+                            message.messageType === 'device.updated'
+                                ? message.recentEvents
+                                : message.payload.recentEvents,
+                        telemetrySample:
+                            message.messageType === 'device.updated'
+                                ? message.telemetrySample
+                                : undefined,
+                    });
+                }
+
+                handlers.onSnapshot(renderableSnapshot);
             } catch {
                 handlers.onInvalidMessage();
                 scheduleReconnect(source);

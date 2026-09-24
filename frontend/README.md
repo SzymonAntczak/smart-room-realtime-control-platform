@@ -27,6 +27,7 @@ localhost default for the local BFF.
 - `src/main.tsx`: Vite/React bootstrap.
 - `src/globals.css`: global reset and shared design tokens.
 - `src/app/App.tsx`: application composition root.
+- `src/app/history`: bounded HTTP/SSE history sessions.
 - `src/app/realtime`: validated realtime projection client and hook.
 - `src/app/dev/dev-panel`: development-only sidebar that discovers and renders
   device scenarios.

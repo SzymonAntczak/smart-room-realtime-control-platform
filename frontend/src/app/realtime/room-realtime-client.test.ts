@@ -1,3 +1,4 @@
+import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +37,70 @@ describe('connectTemperatureRealtime', () => {
         MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
 
         expect(handlers.onSnapshot).toHaveBeenCalledWith(createRoomSnapshotMessage().payload);
+    });
+
+    it('forwards validated history before the snapshot handler can start HTTP', () => {
+        const fixtures = createHistoryIdentityFixtures();
+        const onHistoryUpdate = vi.fn();
+        const handlers = {
+            ...createHandlers(),
+            onHistoryUpdate,
+            onSnapshot: vi.fn(() => {
+                expect(onHistoryUpdate).toHaveBeenCalled();
+            }),
+        };
+        connectTemperatureRealtime(handlers, MockWebSocket);
+
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({ recentEvents: fixtures.recentEvents }),
+        );
+        const deviceUpdate = createDeviceUpdatedMessage();
+
+        if (deviceUpdate.messageType !== 'device.updated') {
+            throw new Error('Fixture must contain a device update.');
+        }
+
+        MockWebSocket.latest().emitMessage({
+            ...deviceUpdate,
+            telemetrySample: fixtures.telemetrySample,
+        } satisfies RoomRealtimeServerMessage);
+        const feedUpdate = createDeviceUpdatedMessage({ previousRevision: 1, revision: 2 });
+
+        if (feedUpdate.messageType !== 'device.updated') {
+            throw new Error('Fixture must contain a device update.');
+        }
+
+        const addedFact = {
+            recordId: `rec:v1:sha256:${'c'.repeat(64)}`,
+            eventType: 'device.state.reported' as const,
+            occurredAt: '2026-06-08T09:30:02.000Z',
+            durability: 'durable' as const,
+            storageSequence: 9,
+            deviceId: 'temp-desk',
+            source: 'simulator-adapter' as const,
+            payload: { reportedState: { temperature: 22.8, temperatureUnit: 'celsius' } },
+        };
+        MockWebSocket.latest().emitMessage({
+            ...feedUpdate,
+            recentEvents: [addedFact],
+        } satisfies RoomRealtimeServerMessage);
+
+        expect(onHistoryUpdate).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ kind: 'baseline', recentEvents: fixtures.recentEvents }),
+        );
+        expect(onHistoryUpdate).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                kind: 'addition',
+                telemetrySample: fixtures.telemetrySample,
+            }),
+        );
+        expect(onHistoryUpdate).toHaveBeenNthCalledWith(
+            3,
+            expect.objectContaining({ kind: 'addition', recentEvents: [addedFact] }),
+        );
+        expect(handlers.onInvalidMessage).not.toHaveBeenCalled();
     });
 
     it('rejects an SSE event whose name does not match its message contract', () => {
