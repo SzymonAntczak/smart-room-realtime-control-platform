@@ -222,7 +222,7 @@ describe('room history session', () => {
         await session.loadFirstPage();
 
         expect(session.getState()).toMatchObject({
-            status: 'error',
+            status: 'waiting_for_baseline',
             error: 'generation_changed',
             complete: false,
         });
@@ -239,7 +239,17 @@ describe('room history session', () => {
         session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [fact('b')] });
 
         await session.loadFirstPage();
-        session.acceptRealtime({ kind: 'addition', storage, recentEvents: [fact('c')] });
+        session.acceptRealtime({
+            kind: 'addition',
+            storage: {
+                status: 'degraded',
+                changedAt: '2026-09-10T10:01:00.000Z',
+                reason: 'storage_write_failed',
+                historyGenerationId: null,
+                storedThroughSequence: null,
+            },
+            recentEvents: [fact('c')],
+        });
 
         expect(session.getState()).toMatchObject({
             status: 'error',
@@ -250,5 +260,236 @@ describe('room history session', () => {
             fact('c').recordId,
             fact('b').recordId,
         ]);
+    });
+
+    it('rebuilds an open range from the reconnect baseline and ignores its stale request', async () => {
+        const stale = deferredResponse();
+        const refreshed = deferredResponse();
+        const read = vi
+            .fn()
+            .mockResolvedValueOnce(response(page([fact('a')], 'old-cursor')))
+            .mockReturnValueOnce(stale.promise)
+            .mockReturnValueOnce(refreshed.promise);
+        const session = createRoomHistorySession(
+            { kind: 'significant-facts', pageSize: 1 },
+            read as typeof fetch,
+        );
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [] });
+        await session.loadFirstPage();
+        const staleLoad = session.loadNextPage();
+        session.connectionInterrupted();
+
+        expect(session.getState()).toMatchObject({
+            status: 'waiting_for_baseline',
+            complete: false,
+        });
+        expect(session.getState().items).toEqual([fact('a')]);
+
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [fact('b')] });
+        session.acceptRealtime({ kind: 'addition', storage, recentEvents: [fact('c')] });
+        refreshed.resolve(response(page([fact('d')], null)));
+
+        await vi.waitFor(() => expect(session.getState().status).toBe('ready'));
+        stale.resolve(response(page([fact('9')], null)));
+        await staleLoad;
+
+        expect(session.getState().items.map((item) => item.recordId)).toEqual(
+            ['d', 'c', 'b'].map((digit) => fact(digit).recordId),
+        );
+        expect(read.mock.calls[2]?.[0]).not.toContain('cursor=');
+    });
+
+    it.each(['cursor_expired', 'invalid_cursor'] as const)(
+        'restarts pagination without losing live additions after %s',
+        async (error) => {
+            const read = vi
+                .fn()
+                .mockResolvedValueOnce(response(page([fact('a')], 'old-cursor')))
+                .mockResolvedValueOnce(
+                    response({ error, message: 'Cursor is no longer usable.' }, 400),
+                )
+                .mockResolvedValueOnce(response(page([fact('b')], null)));
+            const session = createRoomHistorySession(
+                { kind: 'significant-facts', pageSize: 1 },
+                read as typeof fetch,
+            );
+            session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [] });
+            await session.loadFirstPage();
+            session.acceptRealtime({ kind: 'addition', storage, recentEvents: [fact('c')] });
+            await session.loadNextPage();
+
+            expect(session.getState()).toMatchObject({ status: 'ready', complete: true });
+            expect(session.getState().items.map((item) => item.recordId)).toEqual(
+                ['c', 'b'].map((digit) => fact(digit).recordId),
+            );
+            expect(read.mock.calls[2]?.[0]).not.toContain('cursor=');
+        },
+    );
+
+    it('refetches the same telemetry range after reconnect', async () => {
+        const read = vi
+            .fn()
+            .mockResolvedValueOnce(response(fixtures.rawTelemetryPage))
+            .mockResolvedValueOnce(response(fixtures.rawTelemetryPage));
+        const session = createRoomHistorySession(
+            {
+                kind: 'telemetry',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T09:55:00.000Z',
+                to: '2026-09-10T10:05:00.000Z',
+                pageSize: 1,
+            },
+            read as typeof fetch,
+        );
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [] });
+        await session.loadFirstPage();
+        session.connectionInterrupted();
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [] });
+
+        await vi.waitFor(() => expect(session.getState().status).toBe('ready'));
+
+        expect(read).toHaveBeenCalledTimes(2);
+        expect(read.mock.calls[1]?.[0]).toContain('deviceId=temp-desk');
+        expect(read.mock.calls[1]?.[0]).toContain('metric=temperature');
+        expect(read.mock.calls[1]?.[0]).toContain('from=2026-09-10T09%3A55%3A00Z');
+        expect(read.mock.calls[1]?.[0]).toContain('to=2026-09-10T10%3A05%3A00Z');
+        expect(session.getState().items).toEqual([fixtures.telemetrySample]);
+    });
+
+    it('preserves the previous telemetry view and new samples when reconnect refetch returns 503', async () => {
+        const unavailable = deferredResponse();
+        const read = vi
+            .fn()
+            .mockResolvedValueOnce(response(fixtures.rawTelemetryPage))
+            .mockReturnValueOnce(unavailable.promise);
+        const session = createRoomHistorySession(
+            {
+                kind: 'telemetry',
+                deviceId: 'temp-desk',
+                metric: 'temperature',
+                from: '2026-09-10T09:55:00.000Z',
+                to: '2026-09-10T10:05:00.000Z',
+                pageSize: 1,
+            },
+            read as typeof fetch,
+        );
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [] });
+        await session.loadFirstPage();
+        session.connectionInterrupted();
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [] });
+
+        const liveSample = {
+            ...fixtures.telemetrySample,
+            recordId: `rec:v1:sha256:${'f'.repeat(64)}`,
+            storageSequence: fixtures.telemetrySample.storageSequence + 1,
+            value: 23,
+        };
+        session.acceptRealtime({ kind: 'addition', storage, telemetrySample: liveSample });
+        unavailable.resolve(response({ error: 'durable_history_unavailable' }, 503));
+        await vi.waitFor(() => expect(session.getState().status).toBe('error'));
+
+        expect(session.getState()).toMatchObject({ error: 'history_unavailable', complete: false });
+        expect(session.getState().items.map((item) => item.recordId)).toEqual([
+            liveSample.recordId,
+            fixtures.telemetrySample.recordId,
+        ]);
+    });
+
+    it('does not restart a cursor rejected for query mismatch', async () => {
+        const read = vi
+            .fn()
+            .mockResolvedValueOnce(response(page([fact('a')], 'scoped-cursor')))
+            .mockResolvedValueOnce(
+                response(
+                    {
+                        error: 'cursor_query_mismatch',
+                        message: 'The cursor belongs to another query.',
+                    },
+                    400,
+                ),
+            );
+        const session = createRoomHistorySession(
+            { kind: 'significant-facts', pageSize: 1 },
+            read as typeof fetch,
+        );
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [] });
+        await session.loadFirstPage();
+        await session.loadNextPage();
+
+        expect(read).toHaveBeenCalledTimes(2);
+        expect(session.getState()).toMatchObject({ status: 'error', error: 'invalid_response' });
+    });
+
+    it('refetches after storage recovers from 503 and merges additions received while loading', async () => {
+        const refreshed = deferredResponse();
+        const read = vi
+            .fn()
+            .mockResolvedValueOnce(response({ error: 'durable_history_unavailable' }, 503))
+            .mockReturnValueOnce(refreshed.promise);
+        const session = createRoomHistorySession(
+            { kind: 'significant-facts', pageSize: 1 },
+            read as typeof fetch,
+        );
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [fact('a')] });
+        await session.loadFirstPage();
+        session.acceptRealtime({ kind: 'addition', storage, recentEvents: [fact('b')] });
+
+        const availableStorage = {
+            ...storage,
+            storedThroughSequence: storage.storedThroughSequence + 1,
+        };
+        session.acceptRealtime({
+            kind: 'addition',
+            storage: { ...availableStorage, status: 'available' },
+            recentEvents: [fact('c')],
+        });
+        refreshed.resolve(response(page([fact('d')], null)));
+
+        await vi.waitFor(() => expect(session.getState().status).toBe('ready'));
+        expect(session.getState().items.map((item) => item.recordId)).toEqual(
+            ['d', 'c', 'b', 'a'].map((digit) => fact(digit).recordId),
+        );
+    });
+
+    it('waits for the replacement generation baseline before rebuilding', async () => {
+        const replacementPage = {
+            ...page([fact('b')], null),
+            historyGenerationId: 'replacement-generation',
+        };
+        const read = vi
+            .fn()
+            .mockResolvedValueOnce(response(page([fact('a')], 'old-cursor')))
+            .mockResolvedValueOnce(
+                response(
+                    { error: 'history_generation_changed', message: 'Generation changed.' },
+                    400,
+                ),
+            )
+            .mockResolvedValueOnce(response(replacementPage));
+        const session = createRoomHistorySession(
+            { kind: 'significant-facts', pageSize: 1 },
+            read as typeof fetch,
+        );
+        session.acceptRealtime({ kind: 'baseline', storage, recentEvents: [] });
+        await session.loadFirstPage();
+        await session.loadNextPage().catch(() => undefined);
+
+        expect(session.getState()).toMatchObject({
+            status: 'waiting_for_baseline',
+            error: 'generation_changed',
+            complete: false,
+        });
+        expect(session.getState().items).toEqual([fact('a')]);
+
+        session.acceptRealtime({
+            kind: 'baseline',
+            storage: { ...storage, historyGenerationId: 'replacement-generation' },
+            recentEvents: [fact('b')],
+        });
+        await vi.waitFor(() => expect(session.getState().status).toBe('ready'));
+
+        expect(session.getState().historyGenerationId).toBe('replacement-generation');
+        expect(session.getState().items.map((item) => item.recordId)).toEqual([fact('b').recordId]);
     });
 });

@@ -103,6 +103,62 @@ describe('connectTemperatureRealtime', () => {
         expect(handlers.onInvalidMessage).not.toHaveBeenCalled();
     });
 
+    it('signals an interrupted history stream before reconnecting', () => {
+        const onHistoryUpdate = vi.fn();
+        connectTemperatureRealtime({ ...createHandlers(), onHistoryUpdate }, MockWebSocket);
+        MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
+        MockWebSocket.latest().emitError();
+
+        expect(onHistoryUpdate).toHaveBeenLastCalledWith({ kind: 'interrupted' });
+    });
+
+    it('replaces the event cache and publishes a history baseline on generation change', () => {
+        const fixtures = createHistoryIdentityFixtures();
+        const onHistoryUpdate = vi.fn();
+        const handlers = { ...createHandlers(), onHistoryUpdate };
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({ recentEvents: fixtures.recentEvents }),
+        );
+        const replacementGap = {
+            recordId: `rec:v1:sha256:${'d'.repeat(64)}`,
+            eventType: 'storage.gap.recorded' as const,
+            occurredAt: '2026-06-08T09:31:00.000Z',
+            durability: 'durable' as const,
+            storageSequence: 1,
+            source: 'backend' as const,
+            payload: {
+                outageStartedAt: '2026-06-08T09:30:00.000Z',
+                outageEndedAt: '2026-06-08T09:31:00.000Z',
+                failureReason: 'storage_replaced',
+                boundaryBasis: 'same_process_first_degraded_at' as const,
+                observationsBackfilled: false as const,
+            },
+        };
+        MockWebSocket.latest().emitMessage({
+            messageType: 'platform.updated',
+            previousRevision: 0,
+            revision: 1,
+            sentAt: '2026-06-08T09:31:00Z',
+            payload: {
+                storage: {
+                    status: 'available',
+                    changedAt: '2026-06-08T09:31:00Z',
+                    historyGenerationId: 'replacement-generation',
+                    storedThroughSequence: 1,
+                },
+                recentEvents: [replacementGap],
+            },
+        } satisfies RoomRealtimeServerMessage);
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({ recentEvents: [replacementGap] }),
+        );
+        expect(onHistoryUpdate).toHaveBeenLastCalledWith(
+            expect.objectContaining({ kind: 'baseline', recentEvents: [replacementGap] }),
+        );
+    });
+
     it('rejects an SSE event whose name does not match its message contract', () => {
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket, { reconnectDelayMs: 1000 });
@@ -340,6 +396,49 @@ describe('connectTemperatureRealtime', () => {
                 }),
                 devices: [expect.objectContaining({ deviceId: 'temp-desk' })],
             }),
+        );
+    });
+
+    it('retains the event cache across repeated null-generation platform updates', () => {
+        const fixtures = createHistoryIdentityFixtures();
+        const handlers = createHandlers();
+        connectTemperatureRealtime(handlers, MockWebSocket);
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({ recentEvents: fixtures.recentEvents }),
+        );
+        MockWebSocket.latest().emitMessage({
+            messageType: 'platform.updated',
+            previousRevision: 0,
+            revision: 1,
+            sentAt: '2026-06-08T09:30:02Z',
+            payload: {
+                storage: {
+                    status: 'degraded',
+                    changedAt: '2026-06-08T09:30:02Z',
+                    reason: 'storage_write_failed',
+                    historyGenerationId: null,
+                    storedThroughSequence: null,
+                },
+            },
+        } satisfies RoomRealtimeServerMessage);
+        MockWebSocket.latest().emitMessage({
+            messageType: 'platform.updated',
+            previousRevision: 1,
+            revision: 2,
+            sentAt: '2026-06-08T09:30:03Z',
+            payload: {
+                storage: {
+                    status: 'recovering',
+                    changedAt: '2026-06-08T09:30:03Z',
+                    reason: 'storage_recovery_in_progress',
+                    historyGenerationId: null,
+                    storedThroughSequence: null,
+                },
+            },
+        } satisfies RoomRealtimeServerMessage);
+
+        expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
+            expect.objectContaining({ recentEvents: fixtures.recentEvents }),
         );
     });
 

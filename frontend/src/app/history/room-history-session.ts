@@ -1,5 +1,6 @@
 import {
     compareRecentEventsDescending,
+    isHistoryCursorErrorResponse,
     isRawTelemetryPage,
     isSignificantFactPage,
     type LiveTelemetrySampleProjection,
@@ -46,6 +47,7 @@ export interface RoomHistorySession {
     loadFirstPage(): Promise<void>;
     loadNextPage(): Promise<void>;
     getState(): RoomHistorySessionState;
+    connectionInterrupted(): void;
     close(): void;
 }
 
@@ -83,18 +85,95 @@ export function createRoomHistorySession(
     let retentionAsOf: string | null = null;
     let nextCursor: string | null = null;
     let hasPage = false;
+    let hasBaseline = false;
+    let hasOpened = false;
+    let awaitingBaseline = false;
     let requestInFlight = false;
     let requestEpoch = 0;
     let pageItems: HistoryItem[] = [];
     let overlay: HistoryItem[] = [];
+    let retainedItems: HistoryItem[] | undefined;
+    let retainedGeneration: string | null = null;
 
     return {
         acceptRealtime(update) {
+            if (update.kind === 'interrupted') {
+                interruptConnection();
+
+                return;
+            }
+
             if (status === 'closed' || (status === 'error' && error !== 'history_unavailable')) {
                 return;
             }
 
             const incomingGeneration = update.storage.historyGenerationId;
+
+            if (update.kind === 'baseline') {
+                const generationChanged =
+                    incomingGeneration !== null &&
+                    generation !== null &&
+                    incomingGeneration !== generation;
+
+                if (
+                    hasBaseline &&
+                    !awaitingBaseline &&
+                    !generationChanged &&
+                    !(status === 'error' && error === 'history_unavailable')
+                ) {
+                    fail('invalid_response');
+
+                    return;
+                }
+
+                if (generationChanged && !awaitingBaseline) {
+                    retainCurrentView();
+                }
+
+                if (incomingGeneration !== null) {
+                    generation = incomingGeneration;
+                }
+
+                pageItems = [];
+                overlay = [];
+                hasPage = false;
+                throughSequence = null;
+                retentionAsOf = null;
+                nextCursor = null;
+                error = generationChanged ? 'generation_changed' : undefined;
+                hasBaseline = true;
+                awaitingBaseline = false;
+
+                if (options.kind === 'significant-facts') {
+                    overlay = mergeBounded([], update.recentEvents, limit);
+                }
+
+                if (hasOpened) {
+                    status = 'loading';
+                    void loadPage(null);
+                } else {
+                    status = 'idle';
+                    retainedItems = undefined;
+                }
+
+                return;
+            }
+
+            if (!hasBaseline || awaitingBaseline || status === 'waiting_for_baseline') {
+                return;
+            }
+
+            const recovered =
+                status === 'error' &&
+                error === 'history_unavailable' &&
+                update.storage.status === 'available';
+
+            if (recovered) {
+                retainCurrentView();
+                resetPinnedSession();
+                error = undefined;
+                status = 'loading';
+            }
 
             if (
                 incomingGeneration !== null &&
@@ -110,26 +189,6 @@ export function createRoomHistorySession(
                 generation = incomingGeneration;
             }
 
-            if (update.kind === 'baseline') {
-                if (status !== 'waiting_for_baseline') {
-                    fail('invalid_response');
-
-                    return;
-                }
-
-                status = 'idle';
-
-                if (options.kind === 'significant-facts') {
-                    overlay = mergeBounded(overlay, update.recentEvents, limit);
-                }
-
-                return;
-            }
-
-            if (status === 'waiting_for_baseline') {
-                return;
-            }
-
             if (options.kind === 'significant-facts') {
                 overlay = mergeBounded(overlay, update.recentEvents ?? [], limit);
             } else if (
@@ -142,12 +201,17 @@ export function createRoomHistorySession(
             ) {
                 overlay = mergeBounded(overlay, [update.telemetrySample], limit);
             }
+
+            if (recovered) {
+                void loadPage(null);
+            }
         },
         async loadFirstPage() {
             if (status !== 'idle' || hasPage || requestInFlight) {
                 throw new Error('History first page requires a live baseline and an idle session.');
             }
 
+            hasOpened = true;
             await loadPage(null);
         },
         async loadNextPage() {
@@ -163,7 +227,7 @@ export function createRoomHistorySession(
             return {
                 kind: options.kind,
                 status,
-                items: mergeBounded(pageItems, overlay, limit),
+                items: retainedItems ?? mergeBounded(pageItems, overlay, limit),
                 historyGenerationId: generation,
                 throughSequence,
                 nextCursor,
@@ -176,8 +240,10 @@ export function createRoomHistorySession(
             status = 'closed';
             pageItems = [];
             overlay = [];
+            retainedItems = undefined;
             nextCursor = null;
         },
+        connectionInterrupted: interruptConnection,
     };
 
     async function loadPage(cursor: string | null): Promise<void> {
@@ -212,7 +278,54 @@ export function createRoomHistorySession(
             }
 
             if (response.status === 503) {
+                if (retainedItems !== undefined && retainedGeneration === generation) {
+                    retainedItems = mergeBounded(
+                        retainedItems,
+                        mergeBounded(pageItems, overlay, limit),
+                        limit,
+                    );
+                }
+
                 fail('history_unavailable');
+
+                return;
+            }
+
+            if (response.status === 400 && cursor !== null) {
+                const errorBody: unknown = await response.json();
+
+                if (isInactive(epoch)) {
+                    return;
+                }
+
+                if (
+                    isHistoryCursorErrorResponse(errorBody) &&
+                    (errorBody.error === 'cursor_expired' || errorBody.error === 'invalid_cursor')
+                ) {
+                    retainCurrentView();
+                    resetPinnedSession();
+                    status = 'loading';
+                    await loadPage(null);
+
+                    return;
+                }
+
+                if (
+                    isHistoryCursorErrorResponse(errorBody) &&
+                    errorBody.error === 'history_generation_changed'
+                ) {
+                    retainCurrentView();
+                    resetPinnedSession();
+                    requestEpoch += 1;
+                    requestInFlight = false;
+                    error = 'generation_changed';
+                    status = 'waiting_for_baseline';
+                    awaitingBaseline = true;
+
+                    return;
+                }
+
+                fail('invalid_response');
 
                 return;
             }
@@ -243,7 +356,13 @@ export function createRoomHistorySession(
             const page = body as HistoryPage;
 
             if (generation !== null && page.historyGenerationId !== generation) {
-                fail('generation_changed');
+                retainCurrentView();
+                resetPinnedSession();
+                requestEpoch += 1;
+                requestInFlight = false;
+                awaitingBaseline = true;
+                error = 'generation_changed';
+                status = 'waiting_for_baseline';
 
                 return;
             }
@@ -258,8 +377,12 @@ export function createRoomHistorySession(
             throughSequence = page.throughSequence;
             retentionAsOf = page.retentionAsOf;
             nextCursor = page.nextCursor;
-            pageItems = mergeBounded(pageItems, page.items, limit);
+            pageItems = hasPage
+                ? mergeBounded(pageItems, page.items, limit)
+                : mergeBounded([], page.items, limit);
             hasPage = true;
+            retainedItems = undefined;
+            error = undefined;
             status = 'ready';
         } catch {
             if (!isInactive(epoch)) {
@@ -298,6 +421,33 @@ export function createRoomHistorySession(
         requestInFlight = false;
         status = 'error';
         error = reason;
+    }
+
+    function interruptConnection(): void {
+        if (status === 'closed' || !hasBaseline || awaitingBaseline) {
+            return;
+        }
+
+        retainCurrentView();
+        resetPinnedSession();
+        requestEpoch += 1;
+        requestInFlight = false;
+        error = undefined;
+        status = 'waiting_for_baseline';
+        awaitingBaseline = true;
+    }
+
+    function retainCurrentView(): void {
+        retainedItems = mergeBounded(pageItems, overlay, limit);
+        retainedGeneration = generation;
+    }
+
+    function resetPinnedSession(): void {
+        pageItems = [];
+        hasPage = false;
+        throughSequence = null;
+        retentionAsOf = null;
+        nextCursor = null;
     }
 
     function isInactive(epoch: number): boolean {

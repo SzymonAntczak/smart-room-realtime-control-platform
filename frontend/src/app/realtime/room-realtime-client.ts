@@ -30,6 +30,7 @@ export interface RoomRealtimeClientHandlers {
 }
 
 export type RoomHistoryRealtimeUpdate =
+    | { kind: 'interrupted' }
     | {
           kind: 'baseline';
           storage: RoomSnapshotProjection['platform']['storage'];
@@ -67,6 +68,7 @@ export function connectRoomRealtime(
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let roomSnapshot: RoomSnapshotProjection | undefined;
     let revision: number | undefined;
+    let lastKnownHistoryGenerationId: string | null = null;
 
     connectSocket('connecting');
 
@@ -115,10 +117,27 @@ export function connectRoomRealtime(
                     throw new Error('Realtime SSE event name did not match its message contract.');
                 }
 
+                const previousGenerationId = lastKnownHistoryGenerationId;
                 const snapshot = applyRealtimeMessage(message);
+                const incomingGenerationId = snapshot.platform.storage.historyGenerationId;
+                const generationChanged =
+                    incomingGenerationId !== null &&
+                    previousGenerationId !== null &&
+                    incomingGenerationId !== previousGenerationId;
+
+                if (incomingGenerationId !== null) {
+                    lastKnownHistoryGenerationId = incomingGenerationId;
+                }
+
                 const renderableSnapshot = toRenderableRoomSnapshot(snapshot);
 
                 if (message.messageType === 'room.snapshot') {
+                    handlers.onHistoryUpdate?.({
+                        kind: 'baseline',
+                        storage: snapshot.platform.storage,
+                        recentEvents: snapshot.recentEvents,
+                    });
+                } else if (generationChanged) {
                     handlers.onHistoryUpdate?.({
                         kind: 'baseline',
                         storage: snapshot.platform.storage,
@@ -159,6 +178,7 @@ export function connectRoomRealtime(
 
         activeSource = undefined;
         handlers.onConnectionStatus('reconnecting');
+        handlers.onHistoryUpdate?.({ kind: 'interrupted' });
 
         if (reconnectTimer !== undefined) {
             return;
@@ -243,13 +263,21 @@ export function connectRoomRealtime(
             }
 
             case 'platform.updated': {
+                const incomingGenerationId = message.payload.storage.historyGenerationId;
+                const generationChanged =
+                    incomingGenerationId !== null &&
+                    lastKnownHistoryGenerationId !== null &&
+                    incomingGenerationId !== lastKnownHistoryGenerationId;
+
                 roomSnapshot = {
                     ...roomSnapshot,
                     platform: { storage: message.payload.storage },
-                    recentEvents: mergeRecentEvents(
-                        roomSnapshot.recentEvents,
-                        message.payload.recentEvents,
-                    ),
+                    recentEvents: generationChanged
+                        ? (message.payload.recentEvents ?? [])
+                        : mergeRecentEvents(
+                              roomSnapshot.recentEvents,
+                              message.payload.recentEvents,
+                          ),
                 };
 
                 if (!isRoomSnapshotProjection(roomSnapshot)) {
