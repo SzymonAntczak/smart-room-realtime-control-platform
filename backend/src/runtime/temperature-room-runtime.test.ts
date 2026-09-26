@@ -40,6 +40,41 @@ import {
 import { createTemperatureRoomRuntime } from './temperature-room-runtime';
 
 describe('createTemperatureRoomRuntime', () => {
+    it('uses the configured default reporting cadence for temperature sensors only', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+
+            expect(timer.intervals).toEqual([1000, 10_000, 20_000]);
+            expect(device(runtime, 'led-main')).toMatchObject({
+                role: 'led-output',
+                reportedState: { power: 'off' },
+                observationStatus: { power: { freshness: 'unknown' } },
+            });
+
+            clock.advanceBy(10_000);
+            timer.run(2);
+
+            expect(device(runtime, 'temp-desk')?.reportedState).toEqual({
+                temperature: 22.2,
+                temperatureUnit: 'celsius',
+            });
+            expect(device(runtime, 'temp-window')?.reportedState).toEqual({
+                temperature: 20,
+                temperatureUnit: 'celsius',
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('publishes ordinary runtime transitions as semantic batches', () => {
         const clock = createMutableClock('2026-09-03T09:00:00Z');
         const runtime = createTemperatureRoomRuntime({

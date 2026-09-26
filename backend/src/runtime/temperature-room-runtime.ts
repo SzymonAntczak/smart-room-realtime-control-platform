@@ -229,7 +229,7 @@ function isLedDeviceStateScenarioAction(
 
 export function createTemperatureRoomRuntime({
     roomName = 'Smart Room',
-    intervalMs = 1000,
+    intervalMs = 10_000,
     snapshotBroadcastIntervalMs = 1000,
     clock = realClock,
     timer,
