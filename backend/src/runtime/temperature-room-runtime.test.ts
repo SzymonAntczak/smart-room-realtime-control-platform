@@ -3720,6 +3720,59 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('uses each sensor cadence for freshness in the same runtime', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            clock,
+            timer,
+            generateEventId: createEventIdGenerator(),
+        });
+        const initialObservedAt = '2026-06-08T09:30:00Z';
+
+        function expectSensorState(
+            deviceId: string,
+            freshness: 'fresh' | 'stale',
+            temperature: number,
+        ) {
+            expect(device(runtime, deviceId)).toMatchObject({
+                availability: 'online',
+                reportedState: { temperature, temperatureUnit: 'celsius' },
+                observationStatus: {
+                    temperature: { freshness, lastObservedAt: initialObservedAt },
+                },
+            });
+        }
+
+        try {
+            runtime.start();
+            runtime.runDeviceScenario('temp-desk', 'pause_telemetry');
+            runtime.runDeviceScenario('temp-window', 'pause_telemetry');
+
+            clock.advanceBy(30_000);
+            timer.run(1);
+            expectSensorState('temp-desk', 'fresh', 22);
+            expectSensorState('temp-window', 'fresh', 20);
+
+            clock.advanceBy(1);
+            timer.run(1);
+            expectSensorState('temp-desk', 'stale', 22);
+            expectSensorState('temp-window', 'fresh', 20);
+
+            clock.advanceBy(29_999);
+            timer.run(1);
+            expectSensorState('temp-desk', 'stale', 22);
+            expectSensorState('temp-window', 'fresh', 20);
+
+            clock.advanceBy(1);
+            timer.run(1);
+            expectSensorState('temp-desk', 'stale', 22);
+            expectSensorState('temp-window', 'stale', 20);
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('does not publish unchanged freshness and publishes one snapshot for a freshness transition', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
