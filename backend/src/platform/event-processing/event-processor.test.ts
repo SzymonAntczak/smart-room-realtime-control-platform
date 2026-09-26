@@ -15,7 +15,7 @@ function processor(
                 deviceId: 'temp-desk',
                 name: 'Desk Temperature',
                 role: 'temperature-sensor',
-                expectedIntervalMs: 1_000,
+                expectedIntervalMsByCapability: { temperature: 1_000 },
             },
         ],
         roomProjector: createRoomProjector({
@@ -24,7 +24,7 @@ function processor(
                     deviceId: 'temp-desk',
                     name: 'Desk Temperature',
                     role: 'temperature-sensor',
-                    expectedIntervalMs: 1_000,
+                    expectedIntervalMsByCapability: { temperature: 1_000 },
                 },
             ],
             initialUpdatedAt: '2026-06-08T09:29:59Z',

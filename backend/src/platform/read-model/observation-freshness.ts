@@ -1,24 +1,25 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 
+export type ExpectedIntervalsMsByCapability = Partial<Record<'temperature' | 'power', number>>;
+
 export function withFreshness(
     device: DeviceProjection,
     evaluatedAt: string,
-    expectedIntervalMs: number | undefined,
+    expectedIntervalMsByCapability: ExpectedIntervalsMsByCapability | undefined,
 ): DeviceProjection {
-    if (expectedIntervalMs === undefined) {
-        return device;
-    }
-
-    const staleAfterMs = expectedIntervalMs * 3;
-
     const observationStatus = Object.fromEntries(
         Object.entries(device.observationStatus).map(([capability, status]) => {
-            if (!status.lastObservedAt) {
-                return [capability, status];
+            const expectedIntervalMs =
+                expectedIntervalMsByCapability?.[
+                    capability as keyof ExpectedIntervalsMsByCapability
+                ];
+
+            if (expectedIntervalMs === undefined || !status.lastObservedAt) {
+                return [capability, { ...status, freshness: 'unknown' as const }];
             }
 
             const freshness: 'fresh' | 'stale' =
-                Date.parse(evaluatedAt) - Date.parse(status.lastObservedAt) > staleAfterMs
+                Date.parse(evaluatedAt) - Date.parse(status.lastObservedAt) > expectedIntervalMs * 3
                     ? 'stale'
                     : 'fresh';
 

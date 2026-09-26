@@ -271,7 +271,7 @@ export function createTemperatureRoomRuntime({
             deviceId,
             name,
             role,
-            expectedIntervalMs: intervalMs * intervalMsMultiplier,
+            expectedIntervalMsByCapability: { temperature: intervalMs * intervalMsMultiplier },
         }),
     );
     devices.push({ deviceId: 'led-main', name: 'Main LED', role: 'led-output' });

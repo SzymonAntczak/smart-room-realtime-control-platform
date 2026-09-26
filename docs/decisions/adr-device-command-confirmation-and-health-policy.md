@@ -67,9 +67,8 @@ brightness, temperature targets or values rounded by device firmware.
 Trusted acknowledgement remains available for device types that cannot report
 state well, but those exceptions must be documented and tested.
 
-The one-second skew tolerance accommodates the current one-second simulator
-cadence while bounding how much a device clock can make an observation appear
-fresh.
+The one-second skew tolerance bounds how much a device clock can make an
+observation appear fresh, independently of its reporting cadence.
 The bounded diagnostics record explains rejected reports during the local
 process lifetime; durable quarantine storage remains future work.
 

@@ -6,13 +6,13 @@ const device = {
     deviceId: 'temp-desk',
     name: 'Desk Temperature',
     role: 'temperature-sensor',
-    expectedIntervalMs: 10_000,
+    expectedIntervalMsByCapability: { temperature: 10_000 },
 } as const;
 const windowDevice = {
     deviceId: 'temp-window',
     name: 'Window Temperature',
     role: 'temperature-sensor',
-    expectedIntervalMs: 20_000,
+    expectedIntervalMsByCapability: { temperature: 20_000 },
 } as const;
 const ledDevice = {
     deviceId: 'led-main',
@@ -152,6 +152,82 @@ describe('createRoomProjector', () => {
                     temperature: { freshness: 'stale', lastObservedAt: at },
                 },
             });
+        },
+    );
+    it('evaluates two capabilities on one device using their own intervals', () => {
+        const room = createRoomProjector({
+            devices: [
+                {
+                    ...device,
+                    expectedIntervalMsByCapability: { temperature: 10_000, power: 20_000 },
+                },
+            ],
+            initialUpdatedAt: at,
+        });
+        room.applyTelemetryReadingRecorded(telemetry());
+        const projection = room.getProjection();
+        const sensor = projection.devices[0];
+
+        if (!sensor) {
+            throw new Error('Expected a temperature sensor projection.');
+        }
+
+        room.replaceProjection({
+            ...projection,
+            devices: [
+                {
+                    ...sensor,
+                    observationStatus: {
+                        ...sensor.observationStatus,
+                        power: { freshness: 'fresh', lastObservedAt: at, durability: 'durable' },
+                    },
+                },
+            ],
+        });
+
+        expect(
+            room.getProjection({ evaluatedAt: '2026-06-08T09:30:30.001Z' }).devices[0],
+        ).toMatchObject({
+            observationStatus: {
+                temperature: { freshness: 'stale' },
+                power: { freshness: 'fresh' },
+            },
+        });
+        expect(
+            room.getProjection({ evaluatedAt: '2026-06-08T09:31:00.001Z' }).devices[0]
+                ?.observationStatus.power?.freshness,
+        ).toBe('stale');
+    });
+    it('keeps an accepted observation unknown when its capability has no freshness policy', () => {
+        const room = createRoomProjector({
+            devices: [{ deviceId: device.deviceId, name: device.name, role: device.role }],
+            initialUpdatedAt: at,
+        });
+
+        room.applyTelemetryReadingRecorded(telemetry());
+
+        expect(
+            room.getProjection({ evaluatedAt: '2026-06-08T09:31:00.001Z' }).devices[0],
+        ).toMatchObject({
+            observationStatus: {
+                temperature: { freshness: 'unknown', lastObservedAt: at },
+            },
+        });
+    });
+    it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
+        'rejects an invalid expected reporting interval of %s',
+        (expectedIntervalMs) => {
+            expect(() =>
+                createRoomProjector({
+                    devices: [
+                        {
+                            ...device,
+                            expectedIntervalMsByCapability: { temperature: expectedIntervalMs },
+                        },
+                    ],
+                    initialUpdatedAt: at,
+                }),
+            ).toThrow(RangeError);
         },
     );
     it('keeps an installed derived freshness evaluation when a later projection is forked', () => {

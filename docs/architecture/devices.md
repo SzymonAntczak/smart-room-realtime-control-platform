@@ -63,6 +63,14 @@ actuator state, such as LED power, may retain `lastObservedAt` and optionally
 expose freshness when the age of that state matters. An ephemeral button press
 is an event, not a persistent observed value, so it has no freshness state.
 
+The reporting interval is configured per observable capability. An accepted
+observation is `fresh` through `3 × expectedIntervalMs` after `lastObservedAt`
+and becomes `stale` only when its age exceeds that boundary. The simulated
+desk temperature capability reports every 10 seconds (stale after 30 seconds);
+the window temperature capability reports every 20 seconds (stale after 60
+seconds). A capability without a freshness policy remains `unknown` after an
+accepted observation. LED power has no freshness policy in the current slice.
+
 Only accepted, time-valid reports may advance that capability's `lastObservedAt`.
 A future-dated report beyond the event contract's one-second clock-skew
 tolerance is ignored; it cannot make an observation appear fresh. An accepted

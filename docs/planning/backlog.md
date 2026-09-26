@@ -410,7 +410,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-04-04` | Rebuild open history after reconnect, expiry or generation change.             | `ST-4-03-02`, `ST-4-04-03` | `B`        | Tests cover same-generation recovery, expiry, `503` and replacement.      |
 | `[x] ST-4-04-05` | Verify complete no-loss behavior across actual HTTP/SSE ordering.              | `ST-4-04-02`, `ST-4-04-04` | `B`        | Controlled transport integration proves the story guarantee.              |
 
-### [ ] `DS-4-05` — Freshness derived from device cadence
+### [x] `DS-4-05` — Freshness derived from device cadence
 
 - **Value / observable outcome:** desk and window sensors become stale according
   to their own reporting cadence, never by changing availability.

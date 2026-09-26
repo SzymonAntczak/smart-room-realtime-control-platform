@@ -233,7 +233,7 @@ function createTemperatureReadPath({
             deviceId: 'temp-desk',
             name: 'Desk Temperature',
             role: 'temperature-sensor',
-            expectedIntervalMs: 1000,
+            expectedIntervalMsByCapability: { temperature: 1000 },
         },
     ];
     const pendingEventIds = [...eventIds];

@@ -20,13 +20,13 @@ import type {
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 
 import { commandAvailabilityFor } from './command-availability';
-import { withFreshness } from './observation-freshness';
+import { type ExpectedIntervalsMsByCapability, withFreshness } from './observation-freshness';
 
 export interface DeviceDefinition {
     deviceId: string;
     name: string;
     role: DeviceRole;
-    expectedIntervalMs?: number;
+    expectedIntervalMsByCapability?: ExpectedIntervalsMsByCapability;
 }
 
 export interface RoomProjectionConfig {
@@ -239,6 +239,18 @@ export function createRoomProjector({
     devices,
     initialUpdatedAt,
 }: RoomProjectionConfig): RoomProjector {
+    for (const device of devices) {
+        for (const [capability, intervalMs] of Object.entries(
+            device.expectedIntervalMsByCapability ?? {},
+        )) {
+            if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+                throw new RangeError(
+                    `Expected reporting interval for ${device.deviceId}.${capability} must be positive and finite.`,
+                );
+            }
+        }
+    }
+
     const definitions = new Map(devices.map((device) => [device.deviceId, device]));
     const projections = new Map<string, DeviceProjection>(
         devices.map((device) => [device.deviceId, bootstrap(device, initialUpdatedAt)]),
@@ -266,7 +278,13 @@ export function createRoomProjector({
             updatedAt = event.occurredAt;
             projections.set(
                 event.deviceId,
-                withObservation(current, 'power', event.occurredAt, event.payload.reportedState),
+                withObservation(
+                    current,
+                    'power',
+                    event.occurredAt,
+                    event.payload.reportedState,
+                    definitions.get(event.deviceId)?.expectedIntervalMsByCapability?.power,
+                ),
             );
             const active = activeByDeviceId.get(event.deviceId);
 
@@ -303,6 +321,7 @@ export function createRoomProjector({
                     'temperature',
                     event.occurredAt,
                     toTemperatureReportedState(event.payload),
+                    definitions.get(event.deviceId)?.expectedIntervalMsByCapability?.temperature,
                 ),
             );
 
@@ -652,7 +671,7 @@ export function createRoomProjector({
                     ...withFreshness(
                         device,
                         evaluatedAt,
-                        definitions.get(device.deviceId)?.expectedIntervalMs,
+                        definitions.get(device.deviceId)?.expectedIntervalMsByCapability,
                     ),
                 };
 
@@ -737,9 +756,9 @@ function withObservation(
     capability: string,
     observedAt: string,
     reportedState: DeviceState,
+    expectedIntervalMs: number | undefined,
 ): DeviceProjection {
-    const freshness =
-        device.role === 'temperature-sensor' && capability === 'temperature' ? 'fresh' : 'unknown';
+    const freshness = expectedIntervalMs === undefined ? 'unknown' : 'fresh';
 
     return {
         ...device,
