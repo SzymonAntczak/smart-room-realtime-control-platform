@@ -388,7 +388,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-03-03` | Return explicit durable-history unavailability while storage is degraded.     | `ST-4-03-01`                             | `E`        | BFF distinguishes `503` from an ordinary empty result.               |
 | `[x] ST-4-03-04` | Verify one HTTP session stays complete only through its pinned watermark.     | `ST-4-03-01`, `ST-4-03-02`, `ST-4-03-03` | `C`        | A concurrent write never appears on a later page of the old session. |
 
-### [ ] `DS-4-04` — Lossless HTTP/SSE history synchronization
+### [x] `DS-4-04` — Lossless HTTP/SSE history synchronization
 
 - **Value / observable outcome:** live additions are not lost during pagination,
   reconnect, expiry or database replacement.
