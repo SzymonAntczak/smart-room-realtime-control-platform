@@ -3884,6 +3884,46 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it('restores stale freshness through the emit-next-reading runtime scenario', () => {
+        const clock = createMutableClock('2026-06-08T09:30:00Z');
+        const timer = createManualTimer();
+        const runtime = createTemperatureRoomRuntime({
+            intervalMs: 1000,
+            snapshotBroadcastIntervalMs: 1000,
+            clock,
+            timer,
+            generateEventId: createEventIdGenerator(),
+        });
+
+        try {
+            runtime.start();
+            runtime.runDeviceScenario('temp-window', 'pause_telemetry');
+            clock.advanceBy(10_001);
+            timer.run(1);
+
+            expect(device(runtime, 'temp-window')).toMatchObject({
+                availability: 'online',
+                observationStatus: {
+                    temperature: { freshness: 'stale' },
+                },
+            });
+
+            runtime.runDeviceScenario('temp-window', 'emit_next_reading');
+
+            expect(device(runtime, 'temp-window')).toMatchObject({
+                availability: 'online',
+                observationStatus: {
+                    temperature: {
+                        freshness: 'fresh',
+                        lastObservedAt: '2026-06-08T09:30:10.001Z',
+                    },
+                },
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
     it('stops periodic telemetry while a sensor is offline and resumes its schedule on reconnect', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
