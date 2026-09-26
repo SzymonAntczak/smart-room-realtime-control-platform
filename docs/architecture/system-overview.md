@@ -243,7 +243,8 @@ When recovery restores projection data that a connected degraded client lacks,
 one full `commands.updated` reconciliation revision installs devices, commands
 and the bounded non-gap feed cache before the next gap-bearing
 `platform.updated(available)` revision.
-It remains a target contract until the shared schemas and BFF are implemented.
+The shared schemas, backend BFF and frontend clients implement these Stage 4
+history and realtime synchronization rules.
 Older facts and telemetry ranges remain explicit HTTP reads; the client merges
 them with every buffered SSE-delivered record by stable `recordId` and a pinned
 history generation and storage watermark. That HTTP session is complete through its bound. Non-feed
