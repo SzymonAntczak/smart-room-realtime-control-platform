@@ -20,19 +20,18 @@ import type {
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 
 import { commandAvailabilityFor } from './command-availability';
-import { type FreshnessThresholdsByRole, withFreshness } from './observation-freshness';
+import { withFreshness } from './observation-freshness';
 
 export interface DeviceDefinition {
     deviceId: string;
     name: string;
     role: DeviceRole;
+    expectedIntervalMs?: number;
 }
 
-export type { DeviceFreshnessThresholds, FreshnessThresholdsByRole } from './observation-freshness';
 export interface RoomProjectionConfig {
     devices: DeviceDefinition[];
     initialUpdatedAt: string;
-    freshnessThresholdsByRole?: FreshnessThresholdsByRole;
 }
 export interface ProjectionEvaluationOptions {
     evaluatedAt?: string;
@@ -239,7 +238,6 @@ export class InvalidLifecycleTransitionError extends Error {
 export function createRoomProjector({
     devices,
     initialUpdatedAt,
-    freshnessThresholdsByRole = defaultFreshnessThresholdsByRole,
 }: RoomProjectionConfig): RoomProjector {
     const definitions = new Map(devices.map((device) => [device.deviceId, device]));
     const projections = new Map<string, DeviceProjection>(
@@ -570,7 +568,6 @@ export function createRoomProjector({
             const forked = createRoomProjector({
                 devices,
                 initialUpdatedAt,
-                freshnessThresholdsByRole,
             });
             forked.installProjection(
                 structuredClone(build(defaultEvaluatedAt)),
@@ -652,7 +649,11 @@ export function createRoomProjector({
             devices: [...projections.values()].map((device) => {
                 const active = activeByDeviceId.get(device.deviceId);
                 const deviceWithoutActiveCommand = {
-                    ...withFreshness(device, evaluatedAt, freshnessThresholdsByRole),
+                    ...withFreshness(
+                        device,
+                        evaluatedAt,
+                        definitions.get(device.deviceId)?.expectedIntervalMs,
+                    ),
                 };
 
                 delete deviceWithoutActiveCommand.activeCommandId;
@@ -808,7 +809,4 @@ function toRejectedCommandFailure(event: CommandFailedEvent): TerminalCommandPro
     };
 }
 
-const defaultFreshnessThresholdsByRole: FreshnessThresholdsByRole = {
-    'temperature-sensor': { staleAfterMs: 2_500 },
-};
 export const ledSetPowerTimeoutMs = 5_000;

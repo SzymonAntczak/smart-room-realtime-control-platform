@@ -266,11 +266,14 @@ export function createTemperatureRoomRuntime({
         runtime: undefined as TemperatureSensorRuntime | undefined,
         adapter: undefined as SimulatorTemperatureAdapter | undefined,
     }));
-    const devices: DeviceDefinition[] = defaultSensors.map(({ deviceId, name, role }) => ({
-        deviceId,
-        name,
-        role,
-    }));
+    const devices: DeviceDefinition[] = defaultSensors.map(
+        ({ deviceId, name, role, intervalMsMultiplier }) => ({
+            deviceId,
+            name,
+            role,
+            expectedIntervalMs: intervalMs * intervalMsMultiplier,
+        }),
+    );
     devices.push({ deviceId: 'led-main', name: 'Main LED', role: 'led-output' });
     let led: ReturnType<typeof createLedScenario> | undefined;
     let ledAdapter: SimulatorLedAdapter | undefined;

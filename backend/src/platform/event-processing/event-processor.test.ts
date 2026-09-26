@@ -10,10 +10,22 @@ function processor(
     >[0]['acceptedInputIdentities'] = [],
 ) {
     return createEventProcessor({
-        devices: [{ deviceId: 'temp-desk', name: 'Desk Temperature', role: 'temperature-sensor' }],
+        devices: [
+            {
+                deviceId: 'temp-desk',
+                name: 'Desk Temperature',
+                role: 'temperature-sensor',
+                expectedIntervalMs: 1_000,
+            },
+        ],
         roomProjector: createRoomProjector({
             devices: [
-                { deviceId: 'temp-desk', name: 'Desk Temperature', role: 'temperature-sensor' },
+                {
+                    deviceId: 'temp-desk',
+                    name: 'Desk Temperature',
+                    role: 'temperature-sensor',
+                    expectedIntervalMs: 1_000,
+                },
             ],
             initialUpdatedAt: '2026-06-08T09:29:59Z',
         }),
@@ -118,7 +130,7 @@ describe('createEventProcessor', () => {
                 deviceId: 'temp-desk',
                 payload: { metric: 'temperature', value: 22.5, unit: 'celsius' },
             },
-            { receivedAt: '2026-06-08T09:30:03Z', ingestSequence: 1 },
+            { receivedAt: '2026-06-08T09:30:03.001Z', ingestSequence: 1 },
         );
 
         expect(prepared).toMatchObject({
@@ -150,14 +162,14 @@ describe('createEventProcessor', () => {
         });
 
         const prepared = room.prepareFreshnessProjection({
-            receivedAt: '2026-06-08T09:30:03Z',
+            receivedAt: '2026-06-08T09:30:03.001Z',
             ingestSequence: 2,
         });
 
         expect(prepared).toMatchObject({
             kind: 'derived_projection',
             records: [],
-            ingress: { receivedAt: '2026-06-08T09:30:03Z', ingestSequence: 2 },
+            ingress: { receivedAt: '2026-06-08T09:30:03.001Z', ingestSequence: 2 },
             candidateState: {
                 devices: [
                     {

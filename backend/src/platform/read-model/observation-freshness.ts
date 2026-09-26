@@ -1,22 +1,15 @@
-import type { DeviceRole } from '@smart-room/contracts/devices';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
-
-export interface DeviceFreshnessThresholds {
-    staleAfterMs: number;
-}
-
-export type FreshnessThresholdsByRole = Partial<Record<DeviceRole, DeviceFreshnessThresholds>>;
 
 export function withFreshness(
     device: DeviceProjection,
     evaluatedAt: string,
-    thresholdsByRole: FreshnessThresholdsByRole,
+    expectedIntervalMs: number | undefined,
 ): DeviceProjection {
-    const threshold = thresholdsByRole[device.role];
-
-    if (!threshold) {
+    if (expectedIntervalMs === undefined) {
         return device;
     }
+
+    const staleAfterMs = expectedIntervalMs * 3;
 
     const observationStatus = Object.fromEntries(
         Object.entries(device.observationStatus).map(([capability, status]) => {
@@ -25,7 +18,7 @@ export function withFreshness(
             }
 
             const freshness: 'fresh' | 'stale' =
-                Date.parse(evaluatedAt) - Date.parse(status.lastObservedAt) > threshold.staleAfterMs
+                Date.parse(evaluatedAt) - Date.parse(status.lastObservedAt) > staleAfterMs
                     ? 'stale'
                     : 'fresh';
 

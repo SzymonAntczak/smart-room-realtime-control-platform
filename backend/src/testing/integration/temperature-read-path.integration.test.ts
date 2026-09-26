@@ -134,7 +134,7 @@ describe('temperature read path integration', () => {
 
         readPath.sensor.tick('2026-06-08T09:30:00Z');
 
-        const staleProjection = readPath.getProjection('2026-06-08T09:30:02.501Z');
+        const staleProjection = readPath.getProjection('2026-06-08T09:30:03.001Z');
         expect(staleProjection.devices[0]?.observationStatus.temperature?.freshness).toBe('stale');
         expect(staleProjection.devices[0]?.availability).toBe('unknown');
         expect(staleProjection.devices[0]?.reportedState).toEqual({
@@ -233,6 +233,7 @@ function createTemperatureReadPath({
             deviceId: 'temp-desk',
             name: 'Desk Temperature',
             role: 'temperature-sensor',
+            expectedIntervalMs: 1000,
         },
     ];
     const pendingEventIds = [...eventIds];

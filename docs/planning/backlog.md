@@ -427,7 +427,7 @@ Each item has one difficulty rating only:
 | Subtask          | Purpose / primary boundary                                        | Depends on                 | Difficulty | Verification / done when                                                       |
 | ---------------- | ----------------------------------------------------------------- | -------------------------- | ---------- | ------------------------------------------------------------------------------ |
 | `[x] ST-4-05-01` | Add capability reporting intervals; desk is 10 s, window 20 s.    | none                       | `E`        | Device-definition test proves unrelated roles are unchanged.                   |
-| `[ ] ST-4-05-02` | Derive stale only after `3 × expectedIntervalMs`.                 | `ST-4-05-01`               | `C`        | Projector tests cover before, at and after both thresholds.                    |
+| `[x] ST-4-05-02` | Derive stale only after `3 × expectedIntervalMs`.                 | `ST-4-05-01`               | `C`        | Projector tests cover before, at and after both thresholds.                    |
 | `[ ] ST-4-05-03` | Keep `emit_next_reading` on the normal simulator-to-runtime path. | `ST-4-05-02`               | `E`        | Scenario test proves it restores freshness without direct projection mutation. |
 | `[ ] ST-4-05-04` | Verify both cadences in one runtime.                              | `ST-4-05-02`, `ST-4-05-03` | `C`        | Each sensor crosses its own threshold while availability remains stable.       |
 

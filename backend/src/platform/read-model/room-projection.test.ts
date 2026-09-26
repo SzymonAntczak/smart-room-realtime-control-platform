@@ -6,6 +6,13 @@ const device = {
     deviceId: 'temp-desk',
     name: 'Desk Temperature',
     role: 'temperature-sensor',
+    expectedIntervalMs: 10_000,
+} as const;
+const windowDevice = {
+    deviceId: 'temp-window',
+    name: 'Window Temperature',
+    role: 'temperature-sensor',
+    expectedIntervalMs: 20_000,
 } as const;
 const ledDevice = {
     deviceId: 'led-main',
@@ -113,21 +120,44 @@ describe('createRoomProjector', () => {
             health: 'unknown',
         });
     });
-    it('changes freshness without inferring availability from telemetry age', () => {
-        const room = projector();
-        room.applyDeviceAvailabilityChanged(availability('online'));
-        room.applyTelemetryReadingRecorded(telemetry());
-        const projection = room.getProjection({ evaluatedAt: '2026-06-08T09:30:03Z' });
-        expect(projection.devices[0]).toMatchObject({
-            availability: 'online',
-            health: 'unknown',
-            observationStatus: { temperature: { freshness: 'stale', lastObservedAt: at } },
-        });
-    });
+    it.each([
+        { sensor: device, staleAfterMs: 30_000 },
+        { sensor: windowDevice, staleAfterMs: 60_000 },
+    ])(
+        'marks $sensor.deviceId stale only after three expected reporting intervals',
+        ({ sensor, staleAfterMs }) => {
+            const room = createRoomProjector({ devices: [sensor], initialUpdatedAt: at });
+            room.applyDeviceAvailabilityChanged({
+                ...availability('online'),
+                deviceId: sensor.deviceId,
+            });
+            room.applyTelemetryReadingRecorded({ ...telemetry(), deviceId: sensor.deviceId });
+
+            const beforeThreshold = new Date(Date.parse(at) + staleAfterMs - 1).toISOString();
+            const atThreshold = new Date(Date.parse(at) + staleAfterMs).toISOString();
+            const afterThreshold = new Date(Date.parse(at) + staleAfterMs + 1).toISOString();
+
+            expect(
+                room.getProjection({ evaluatedAt: beforeThreshold }).devices[0]?.observationStatus
+                    .temperature?.freshness,
+            ).toBe('fresh');
+            expect(
+                room.getProjection({ evaluatedAt: atThreshold }).devices[0]?.observationStatus
+                    .temperature?.freshness,
+            ).toBe('fresh');
+            expect(room.getProjection({ evaluatedAt: afterThreshold }).devices[0]).toMatchObject({
+                availability: 'online',
+                health: 'unknown',
+                observationStatus: {
+                    temperature: { freshness: 'stale', lastObservedAt: at },
+                },
+            });
+        },
+    );
     it('keeps an installed derived freshness evaluation when a later projection is forked', () => {
         const room = projector();
         room.applyTelemetryReadingRecorded(telemetry());
-        const staleAt = '2026-06-08T09:30:02.501Z';
+        const staleAt = '2026-06-08T09:30:30.001Z';
         const derived = room.getProjection({ evaluatedAt: staleAt });
 
         room.installProjection(derived, staleAt);

@@ -3147,7 +3147,7 @@ describe('createTemperatureRoomRuntime', () => {
             const identitiesBeforeRestart = initialStorage.listAcceptedInputIdentities();
             const metadataBeforeRestart = initialStorage.getMetadata();
             initialStorage.close();
-            clock.advanceBy(2_501);
+            clock.advanceBy(30_001);
 
             recoveredStorage = createSqliteRoomStorage({ databasePath });
             recoveredRuntime = createTemperatureRoomRuntime({
@@ -3701,18 +3701,11 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.runDeviceScenario('temp-window', 'pause_telemetry');
             clock.advanceBy(1000);
             timer.run(2);
-            clock.advanceBy(1501);
+            clock.advanceBy(5_001);
             timer.run(1);
 
             expect(snapshots.at(-1)?.devices).toEqual(
                 expect.arrayContaining([
-                    expect.objectContaining({
-                        deviceId: 'temp-desk',
-                        availability: 'online',
-                        observationStatus: expect.objectContaining({
-                            temperature: expect.objectContaining({ freshness: 'fresh' }),
-                        }),
-                    }),
                     expect.objectContaining({
                         deviceId: 'temp-window',
                         availability: 'online',
@@ -3747,7 +3740,7 @@ describe('createTemperatureRoomRuntime', () => {
             timer.run(1);
             expect(snapshots).toHaveLength(0);
 
-            clock.advanceBy(2_501);
+            clock.advanceBy(3_001);
             timer.run(1);
             expect(snapshots).toHaveLength(1);
         } finally {
@@ -3792,7 +3785,7 @@ describe('createTemperatureRoomRuntime', () => {
                 expect(storage.port.getMetadata().lastStorageSequence).toBe(storedThroughSequence);
             });
 
-            clock.advanceBy(2_501);
+            clock.advanceBy(3_001);
             timer.run(1);
 
             expect(inspectedBeforeCommit).toBe(true);
@@ -3836,7 +3829,7 @@ describe('createTemperatureRoomRuntime', () => {
                 new StorageAvailabilityError('database is busy', undefined),
             );
 
-            clock.advanceBy(2_501);
+            clock.advanceBy(30_001);
             timer.run(1);
 
             expect(snapshots).toHaveLength(1);
