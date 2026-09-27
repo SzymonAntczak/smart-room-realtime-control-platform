@@ -1,7 +1,10 @@
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LedControl } from '../../controls/led/LedControl';
+import { RecentEventsFeed } from '../../history/RecentEventsFeed';
+import { useRecentEventsSidebar } from '../../history/use-recent-events-sidebar';
 import type { RoomRealtimeState } from '../../realtime/use-room-realtime';
 import { TemperatureControl } from '../../sensors/temperature/TemperatureControl';
 import type { RenderableDeviceProjection } from '../room-rendering';
@@ -24,9 +27,47 @@ export function RoomControlSurface({
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;
     const realtimeUncertain =
         room.connectionStatus === 'reconnecting' || room.contractError !== undefined;
+    const feedSidebar = useRecentEventsSidebar();
+    const FeedToggleIcon = feedSidebar.isOpen ? PanelLeftClose : PanelLeftOpen;
 
     return (
-        <main className={styles.shell}>
+        <main className={styles.shell} data-feed-open={feedSidebar.isOpen}>
+            <div className={styles.sidebarSlot}>
+                <div className={styles.sidebarViewport}>
+                    <aside
+                        id="recent-events-sidebar"
+                        className={styles.sidebar}
+                        aria-hidden={!feedSidebar.isOpen}
+                        inert={!feedSidebar.isOpen}
+                    >
+                        {snapshot ? (
+                            <RecentEventsFeed
+                                events={snapshot.recentEvents}
+                                devices={snapshot.devices}
+                                realtimeUncertain={realtimeUncertain}
+                            />
+                        ) : (
+                            <section
+                                className={styles.sidebarLoading}
+                                aria-labelledby="recent-events-heading"
+                            >
+                                <h2 id="recent-events-heading">{t('feed.heading')}</h2>
+                                <p>{t('feed.connecting')}</p>
+                            </section>
+                        )}
+                    </aside>
+                </div>
+                <button
+                    type="button"
+                    className={styles.sidebarToggle}
+                    aria-controls="recent-events-sidebar"
+                    aria-expanded={feedSidebar.isOpen}
+                    aria-label={feedSidebar.isOpen ? t('feed.hideSidebar') : t('feed.showSidebar')}
+                    onClick={feedSidebar.toggle}
+                >
+                    <FeedToggleIcon aria-hidden="true" size={22} strokeWidth={1.75} />
+                </button>
+            </div>
             <div className={styles.controls}>
                 {snapshot?.devices.map((device) => {
                     const extension = getDeviceExtension?.(device);

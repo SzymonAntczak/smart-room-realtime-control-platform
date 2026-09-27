@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
@@ -53,6 +54,116 @@ describe('App', () => {
         ).toBeInTheDocument();
     });
 
+    it('renders the bounded snapshot feed and marks it last known while reconnecting', () => {
+        render(<App />);
+        act(() =>
+            MockWebSocket.latest().emitMessage(
+                createRoomSnapshotMessage({
+                    recentEvents: [
+                        {
+                            recordId: `rec:v1:sha256:${'a'.repeat(64)}`,
+                            occurredAt: '2026-06-08T09:30:00.000Z',
+                            durability: 'volatile',
+                            source: 'backend',
+                            deviceId: 'led-main',
+                            commandId: 'cmd-1',
+                            eventType: 'command.requested',
+                            payload: {
+                                commandType: 'set.power',
+                                requestedState: { power: 'on' },
+                                requestedBy: 'user',
+                            },
+                        },
+                    ],
+                }),
+            ),
+        );
+
+        expect(
+            screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' }),
+        ).toHaveTextContent('Zażądano zasilania: Włączone.');
+        act(() => MockWebSocket.latest().emitError());
+        expect(screen.getByText(/Wyświetlane są ostatnio znane zdarzenia/)).toBeInTheDocument();
+    });
+
+    it('adds a feed fact from a contiguous device update', () => {
+        render(<App />);
+        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+
+        const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
+
+        act(() =>
+            MockWebSocket.latest().emitMessage({
+                messageType: 'device.updated',
+                previousRevision: 0,
+                revision: 1,
+                sentAt: '2026-06-08T09:30:02Z',
+                payload: ledDevice(),
+                recentEvents: [
+                    {
+                        recordId: `rec:v1:sha256:${'b'.repeat(64)}`,
+                        occurredAt: '2026-06-08T09:30:02.000Z',
+                        durability: 'volatile',
+                        source: 'backend',
+                        deviceId: 'led-main',
+                        commandId: 'cmd-1',
+                        eventType: 'command.dispatched',
+                        payload: { commandType: 'set.power', target: 'simulator-adapter' },
+                    },
+                ],
+            }),
+        );
+
+        expect(feed).toHaveTextContent('Polecenie wysłano do źródła urządzenia.');
+        expect(feed).toHaveTextContent('Główne LED');
+    });
+
+    it('opens the desktop feed by default and lets the same button hide and restore it', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        const toggle = screen.getByRole('button', { name: 'Ukryj ostatnie zdarzenia' });
+        expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByText('Ładowanie ostatnich zdarzeń…')).toBeInTheDocument();
+        expect(screen.queryByText('Brak istotnych zdarzeń.')).not.toBeInTheDocument();
+
+        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        expect(screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' })).toBeVisible();
+
+        await user.click(toggle);
+        expect(toggle).toHaveAccessibleName('Pokaż ostatnie zdarzenia');
+        expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByRole('region', { name: 'Ostatnie istotne zdarzenia' })).toBeNull();
+        expect(toggle).toHaveFocus();
+
+        await user.keyboard(' ');
+        expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' })).toBeVisible();
+
+        await user.keyboard('{Enter}');
+        expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('starts narrow views closed and keeps a manual choice through a viewport change', async () => {
+        const media = createMockMediaQuery(true);
+        vi.stubGlobal('matchMedia', media.matchMedia);
+        const user = userEvent.setup();
+        render(<App />);
+        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+
+        const toggle = screen.getByRole('button', { name: 'Pokaż ostatnie zdarzenia' });
+        expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByRole('region', { name: 'Ostatnie istotne zdarzenia' })).toBeNull();
+
+        await user.click(toggle);
+        expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        act(() => media.setNarrow(false));
+        expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        act(() => media.setNarrow(true));
+        expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    });
+
     it('rejects a snapshot with a role outside the current platform contract', () => {
         render(<App />);
         act(() =>
@@ -103,6 +214,28 @@ class MockWebSocket extends EventTarget {
     }
 }
 
+function createMockMediaQuery(initialNarrow: boolean) {
+    let narrow = initialNarrow;
+    const listeners = new Set<(event: MediaQueryListEvent) => void>();
+
+    return {
+        matchMedia: (media: string) => ({
+            media,
+            get matches() {
+                return narrow;
+            },
+            addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) =>
+                listeners.add(listener),
+            removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) =>
+                listeners.delete(listener),
+        }),
+        setNarrow(value: boolean) {
+            narrow = value;
+            listeners.forEach((listener) => listener({ matches: value } as MediaQueryListEvent));
+        },
+    };
+}
+
 function getRealtimeEventType(data: unknown): string {
     if (typeof data === 'object' && data !== null && 'messageType' in data) {
         const messageType = data.messageType;
@@ -118,9 +251,11 @@ function getRealtimeEventType(data: unknown): string {
 function createRoomSnapshotMessage({
     devices = [temperatureDevice(), windowTemperatureDevice(), ledDevice()],
     activeCommands = [pendingCommand()],
+    recentEvents = [],
 }: {
     devices?: unknown[];
     activeCommands?: unknown[];
+    recentEvents?: unknown[];
 } = {}) {
     return {
         messageType: 'room.snapshot',
@@ -132,7 +267,7 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands,
             recentCommands: [],
-            recentEvents: [],
+            recentEvents,
             platform: { storage: availableStorage() },
         },
     };

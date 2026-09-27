@@ -2,7 +2,7 @@
     container-type: inline-size;
     display: flex;
     flex-direction: column;
-    inline-size: min(100%, 32.5rem);
+    inline-size: 100%;
     padding: var(--space-8);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-sm);

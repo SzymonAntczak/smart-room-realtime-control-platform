@@ -40,7 +40,9 @@ describe('AppDev', () => {
 
         await user.click(screen.getByRole('button', { name: 'Zamknij panel' }));
 
-        expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole('complementary', { name: /Scenariusze programistyczne dla/ }),
+        ).not.toBeInTheDocument();
         await Promise.resolve();
         expect(trigger).toHaveFocus();
     });
@@ -55,7 +57,9 @@ describe('AppDev', () => {
         await screen.findByRole('heading', { name: 'Scenariusze temperatury' });
         await user.keyboard('{Escape}');
 
-        expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole('complementary', { name: /Scenariusze programistyczne dla/ }),
+        ).not.toBeInTheDocument();
         await Promise.resolve();
         expect(trigger).toHaveFocus();
     });

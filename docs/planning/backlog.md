@@ -447,7 +447,7 @@ Each item has one difficulty rating only:
 
 | Subtask          | Purpose / primary boundary                                        | Depends on                 | Difficulty | Verification / done when                                              |
 | ---------------- | ----------------------------------------------------------------- | -------------------------- | ---------- | --------------------------------------------------------------------- |
-| `[ ] ST-4-06-01` | Render all feed-worthy variants intelligibly in the Dashboard.    | `ST-4-01-01`               | `C`        | Component tests cover every supported record variant.                 |
+| `[x] ST-4-06-01` | Render all feed-worthy variants intelligibly in the Dashboard.    | `ST-4-01-01`               | `C`        | Component tests cover every supported record variant.                 |
 | `[ ] ST-4-06-02` | Exclude no-change, non-applying and individual telemetry records. | `ST-4-06-01`               | `E`        | Negative UI tests prove excluded input adds no feed item.             |
 | `[ ] ST-4-06-03` | Add browser coverage for explainable feed entries.                | `ST-4-06-01`, `ST-4-06-02` | `C`        | Playwright proves users identify representative facts and exclusions. |
 
