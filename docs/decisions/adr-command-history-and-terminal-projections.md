@@ -66,6 +66,18 @@ This amendment is accepted with the Stage 4 storage ADR.
 
 ## Consequences
 
+### DS-4-06a user-history distinction (implementation pending)
+
+The accepted [User History Projection and Virtualized Feed ADR](adr-user-history-projection-and-virtualized-feed.md)
+adds a BFF presentation over existing snapshots, publications and paged facts;
+it does not change
+`activeCommands`, terminal `recentCommands`, command confirmation or their
+durability rules. Progress remains at the control. A changed report produces one
+observed change, a confirmation without change produces none, and failure or
+timeout produces an unsuccessful-attempt entry. A later change cannot reopen
+timeout. Full lifecycle facts remain technical audit history. The product
+presentation is pending DS-4-06a; it adds no persisted projection or migration.
+
 The frontend receives a UI-oriented command history with the context needed to
 explain outcomes. A future dedicated history slice must define an audit-oriented
 fact feed separately.

@@ -4,6 +4,29 @@
 
 Accepted
 
+### DS-4-06a product-history amendment (implementation pending)
+
+The accepted [User History Projection and Virtualized Feed ADR](adr-user-history-projection-and-virtualized-feed.md)
+supersedes this ADR's technical fact-to-product-feed classification,
+`recentEvents` product wire presentation and 20-entry total view bound for the
+DS-4-06a target. The implementation after DS-4-06 still uses the original rules
+below; recording the successor decision does not deliver its schemas or runtime.
+
+For that target, the BFF transforms existing platform snapshots, realtime
+publications and significant-fact pages into user-facing entries. The platform
+facts, contracts, processor, database, retention and raw-history API remain
+unchanged. The frontend receives the BFF presentation contract; the new ADR owns
+the transformation and scrolling rules. References below to technical feed
+eligibility or the old total view limit describe the pre-successor
+implementation, not competing target rules.
+
+Audit facts, telemetry, deduplication, command lifecycle, failure taxonomy,
+atomic publication, generation/watermark, retention and pinned cursor rules
+remain binding. User-facing entries retain the source fact identity and are
+bounded by its existing sequence and retention; no new event stream or second
+SSE connection is introduced. Only the additive BFF response contract and its
+frontend consumer change during DS-4-06a.
+
 ## Context
 
 The completed simulator reference slices keep projections, deduplication state,
@@ -960,6 +983,10 @@ transaction, recovery and deterministic timeout tests protect the behavior.
   reference slice's needs.
 
 ## Verification
+
+The existing evidence below covers the original Stage 4 fact feed. DS-4-06a
+defines a future BFF presentation target; its task-specific plans and acceptance
+criteria will be created when its subtasks are planned.
 
 Acceptance requires all of these outcomes:
 

@@ -444,6 +444,9 @@ Each item has one difficulty rating only:
   and no telemetry/no-change/non-applying entries.
 - **Non-goals:** quarantine diagnostics or a full audit-history screen.
 - **Story verification:** mocked-BFF browser scenario with included and excluded facts.
+- **Successor:** `DS-4-06a` replaces the implemented technical fact presentation
+  with user-history entries and older-history navigation. This completed story
+  remains evidence of the current feed, not completion of its successor.
 
 | Subtask          | Purpose / primary boundary                                        | Depends on                 | Difficulty | Verification / done when                                              |
 | ---------------- | ----------------------------------------------------------------- | -------------------------- | ---------- | --------------------------------------------------------------------- |
@@ -451,13 +454,43 @@ Each item has one difficulty rating only:
 | `[x] ST-4-06-02` | Exclude no-change, non-applying and individual telemetry records. | `ST-4-06-01`               | `E`        | Negative UI tests prove excluded input adds no feed item.             |
 | `[x] ST-4-06-03` | Add browser coverage for explainable feed entries.                | `ST-4-06-01`, `ST-4-06-02` | `C`        | Playwright proves users identify representative facts and exclusions. |
 
+### [ ] `DS-4-06a` — User history with infinite scroll and virtualization
+
+- **Value / observable outcome:** users understand observed device changes and
+  unsuccessful attempts, browse older retained history and keep their reading
+  position without rendering the whole history into the DOM.
+- **Status:** accepted; implementation pending. All subtasks remain unchecked.
+- **Sources / boundaries:** [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
+- **Depends on:** `DS-4-03`, `DS-4-04`, `DS-4-06`.
+- **Difficulty:** `B`.
+- **Difficulty rationale:** BFF transformation, pinned pagination, live merge
+  and virtual-list anchoring cross boundaries.
+- **Scope:** BFF transforms existing facts and realtime publications into
+  user-facing history; frontend supports older history, live updates and bounded
+  accessible rendering. Existing facts and database remain unchanged.
+- **Non-goals:** administrator UI, raw audit-history screen, command lifecycle
+  changes, changes to significant-fact contracts or storage, data migration, a
+  second SSE stream, wider retention, telemetry charts, new device roles or
+  automatic command retry.
+
+| Subtask           | Scope                                                                                                   | Depends on                      | Difficulty |
+| ----------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------- |
+| `[ ] ST-4-06a-01` | Define additive BFF user-history response contracts and validate them at the client boundary.           | `DS-4-03`, `DS-4-04`, `DS-4-06` | `C`        |
+| `[ ] ST-4-06a-02` | Transform current room snapshots and existing realtime publications into user-history items in the BFF. | `ST-4-06a-01`                   | `B`        |
+| `[ ] ST-4-06a-03` | Build pinned, paged user history in the BFF from the existing significant-fact reader.                  | `ST-4-06a-01`, `ST-4-06a-02`    | `B`        |
+| `[ ] ST-4-06a-04` | Implement frontend history paging, live merge, reading-position preservation and recovery.              | `ST-4-06a-02`, `ST-4-06a-03`    | `B`        |
+| `[ ] ST-4-06a-05` | Present accessible user-history items and add virtual rendering.                                        | `ST-4-06a-04`                   | `C`        |
+| `[ ] ST-4-06a-06` | Complete story verification and delivery review.                                                        | `ST-4-06a-05`                   | `C`        |
+
 ### [ ] `DS-4-07` — Storage-aware Dashboard controls and evidence
 
 - **Value / observable outcome:** users see storage degradation and cannot mistake
   volatile state for restart-safe data.
 - **Sources / boundaries:** Stage 4 ADR; devices; reliability/testing; frontend
   platform status, command UI and mocked-BFF boundary.
-- **Depends on:** none.
+- **Feed integration:** planned after `DS-4-06a`; feed durability labels target
+  its user-history entries, with no technical-details section restored.
+- **Depends on:** `DS-4-06a` for the selected delivery order and feed integration.
 - **Difficulty:** `C`.
 - **Difficulty rationale:** several independent durability axes must remain
   visible.
@@ -521,8 +554,8 @@ Each item has one difficulty rating only:
   simulator platform and reproduce its walkthrough.
 - **Sources / boundaries:** roadmap; backlog verification section; reliability
   and testing; all Stage 4 test and documentation boundaries.
-- **Depends on:** `DS-4-03`, `DS-4-04`, `DS-4-05`, `DS-4-06`, `DS-4-07`,
-  `DS-4-08`, `DS-4-09`.
+- **Depends on:** `DS-4-03`, `DS-4-04`, `DS-4-05`, `DS-4-06`, `DS-4-06a`,
+  `DS-4-07`, `DS-4-08`, `DS-4-09`.
 - **Difficulty:** `C`.
 - **Difficulty rationale:** scope is procedural but evidence is broad.
 - **Acceptance criteria:** evidence map, valid browser fixtures, runnable
@@ -530,22 +563,25 @@ Each item has one difficulty rating only:
 - **Non-goals:** fixing defects discovered by the audit within this story.
 - **Story verification:** an independent reviewer repeats the documented run.
 
-| Subtask          | Purpose / primary boundary                                                    | Depends on                         | Difficulty | Verification / done when                                                  |
-| ---------------- | ----------------------------------------------------------------------------- | ---------------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `[ ] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence. | all Stage 4 implementation stories | `C`        | Each outcome links to evidence or a new narrow follow-up.                 |
-| `[ ] ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.       | `DS-4-06`, `DS-4-07`, `DS-4-08`    | `C`        | Fixture-validation suite and browser typecheck pass.                      |
-| `[ ] ST-4-10-03` | Write the local simulator-only checklist and walkthrough.                     | `ST-4-10-01`                       | `E`        | A clean local setup can follow the instructions without hidden knowledge. |
-| `[ ] ST-4-10-04` | Execute and record the dated local acceptance walkthrough.                    | `ST-4-10-02`, `ST-4-10-03`         | `C`        | A reviewer can reproduce commands and observed results from the record.   |
+| Subtask          | Purpose / primary boundary                                                    | Depends on                                  | Difficulty | Verification / done when                                                  |
+| ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------- | ---------- | ------------------------------------------------------------------------- |
+| `[ ] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence. | all Stage 4 implementation stories          | `C`        | Each outcome links to evidence or a new narrow follow-up.                 |
+| `[ ] ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.       | `DS-4-06`, `DS-4-06a`, `DS-4-07`, `DS-4-08` | `C`        | Fixture-validation suite and browser typecheck pass.                      |
+| `[ ] ST-4-10-03` | Write the local simulator-only checklist and walkthrough.                     | `ST-4-10-01`                                | `E`        | A clean local setup can follow the instructions without hidden knowledge. |
+| `[ ] ST-4-10-04` | Execute and record the dated local acceptance walkthrough.                    | `ST-4-10-02`, `ST-4-10-03`                  | `C`        | A reviewer can reproduce commands and observed results from the record.   |
 
 - **Recommended order:** `DS-4-01` → `DS-4-02` → `DS-4-03` → `DS-4-04` →
   `DS-4-08` → `DS-4-10`; complete `DS-4-05`, `DS-4-06`, `DS-4-07` and
-  `DS-4-09` before Stage acceptance.
-- **Technical parallel candidates:** `DS-4-05` and `DS-4-07`; also
+  `DS-4-09` before Stage acceptance. The next selected feed sequence is
+  `DS-4-06` → `DS-4-06a` → `DS-4-07`; `DS-4-06a` is also required before
+  `DS-4-10` acceptance.
+- **Technical parallel candidates:** `DS-4-05`; also
   `ST-4-01-02` with `ST-4-01-01`, then `DS-4-06` with `DS-4-09`.
 - **Critical path:** `DS-4-01` → `DS-4-02` → `DS-4-03` → `DS-4-04` →
   `DS-4-08` → `DS-4-10`.
 - **Cost hotspots:** cursor retention/purge, cursor safety, publication batching,
-  reconnect/generation recovery and telemetry-details integration.
+  reconnect/generation recovery, BFF user-history transformation,
+  virtual-list anchoring and telemetry-details integration.
 - **Decomposition warnings:** storage retention/caps/dedup, part of recent-events,
   batching and the future-dated scenario already have implementation evidence;
   audit them against their new Done conditions before writing duplicate code.

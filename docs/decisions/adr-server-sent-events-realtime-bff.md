@@ -47,6 +47,16 @@ spurious reconnect for the normal, short burst of command lifecycle updates.
 
 ### Stage 4 amendment
 
+The accepted [User History Projection and Virtualized Feed ADR](adr-user-history-projection-and-virtualized-feed.md)
+defines the pending DS-4-06a product payload: a BFF-mapped user-history
+snapshot and related deltas on this same stream, with older entries transformed
+from existing raw pages over HTTP. It replaces technical `recentEvents` only at
+the BFF presentation boundary, without changing platform messages or adding a
+second EventSource, replay or another watermark. Backpressure, revision
+continuity, atomic recovery publication and raw technical storage remain as
+defined here. The original feed payload described below still applies to current
+code until DS-4-06a is delivered.
+
 The Stage 4 storage decision retains this one SSE connection, revision
 continuity, bounded backpressure handling and no-replay behavior. It extends the future
 validated message union with `platform.updated`, and permits existing device or

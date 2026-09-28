@@ -148,6 +148,18 @@ volatile samples have no storage sequence. The client merges feed records by
 published first and `platform.updated` with the current watermark follows at
 the next revision. A durable non-applying fact needs only the watermark update.
 
+## DS-4-06a User-History Target (Implementation Pending)
+
+The preceding `recentEvents` feed rules describe the implemented DS-4-06
+technical presentation. The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+supersedes that product presentation for DS-4-06a while preserving platform
+event envelopes, full auditable significant facts, command lifecycle and
+confirmation matching.
+
+The BFF derives minimal user entries from existing snapshot before/after values, realtime publications and retained significant facts. No sidecar or new platform event is persisted. A changing report and its derived confirmation produce one user change, while intermediate lifecycle and confirmation-without-change produce none. Failure/timeout, applying availability/health value changes and room history gaps follow the new ADR's classification. Source-specific interpretation does not move into the frontend.
+
+The planned BFF history response preserves source identity, durability, generation/watermark and pinned retention. The BFF filters transformed entries before paging; clients merge HTTP/SSE entries by `recordId` rather than grouping raw event chains. Platform executable schemas remain unchanged; the user-facing response contract will be defined during its subtask. Technical payloads and raw audit reads remain separate from this product view.
+
 ## Initial Event Types
 
 | Event type                    | Purpose                                                               |

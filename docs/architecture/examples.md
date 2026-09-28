@@ -5,6 +5,35 @@ not implementation diagrams and do not describe the repository's current
 runtime state. They show target behavior for backend-backed slices as the system
 grows beyond the smallest read path.
 
+## User-History Feed Examples (DS-4-06a, Implementation Pending)
+
+These examples apply to the accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
+They are target scenarios for the unchecked DS-4-06a story, not current UI
+behavior. Technical audit still records every accepted lifecycle fact; device
+controls still show progress. The product feed has no diagnostic details.
+
+| Scenario                    | Backend evidence                                                                                               | User feed                                                                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Successful change           | LED was off; request and dispatch precede an applying on report and derived confirmation.                      | One entry: **Main LED** — "Power changed: off → on" with the report time.                                                                 |
+| Failed attempt              | An admitted known-device request reaches a terminal `failed` outcome.                                          | One entry: **Main LED** — "Could not turn the device on" with the failure time; raw reason/command ID stays technical.                    |
+| Timeout then late change    | No confirmation arrives before the deadline; a later applying report changes off to on.                        | A missing-confirmation entry with the timeout time and a separate power-change entry with the report time. The command stays `timed_out`. |
+| Confirmation without change | LED was already on; the matching fresh report confirms the pending on request without changing observed power. | No user-history entry; terminal confirmation remains at the device control and in audit history.                                          |
+| Independent change          | An applying report changes state without matching a pending request.                                           | One observed change, without claiming frontend or physical cause; the pending command remains pending until its own outcome.              |
+| Historical uncertainty      | Retention or a storage gap removed evidence needed to prove an old transition.                                 | No fabricated change; show the older-history completeness notice. Certain retained failures/timeouts/gaps remain available.               |
+
+All user descriptions are localized and use the existing date/time formatter;
+the strings above illustrate meaning rather than mandatory translation text.
+Availability/health value changes use device titles. A storage-gap entry instead
+uses **Room history** and explains its interval. User items keep durability
+labels independently of whether the underlying command intent was durable.
+
+The Stage 4 diagrams below retain their technical fact/storage paths. References
+to multiple feed facts and the old raw-fact product HTTP path describe the
+original feed; for the DS-4-06a target, the BFF transforms existing projections
+and significant-fact pages before returning user entries as defined in the new
+ADR. Technical command events are still stored, even when no user entry is
+generated.
+
 ## Local-First System Slice
 
 ```mermaid

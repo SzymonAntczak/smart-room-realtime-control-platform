@@ -162,6 +162,18 @@ relevant timestamps and failure detail. This UI-oriented history remains
 separate from the future fact-oriented event-history slice. The full rule is in
 [ADR: Command History and Terminal Projections](../decisions/adr-command-history-and-terminal-projections.md).
 
+## User History Target (DS-4-06a, Implementation Pending)
+
+The current DS-4-06 Dashboard shows individual significant facts. The accepted
+[User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+replaces that product feed with observed changes and unsuccessful attempts,
+without changing the command path or `recentCommands` described above.
+
+Requested/dispatch/pending progress stays at the device control. The BFF transforms existing inputs into one user entry when a report reflects a state change; its derived confirmation is not a second entry. A confirmation with already-matching state creates none. Failure or timeout creates one attempt outcome, and a late changing report creates a separate observed change while the timeout remains terminal. Entries describe outcomes rather than proving which action caused them. A non-matching independent change during pending work remains visible without closing that command.
+
+Technical facts continue to follow their existing commit/publication path. The BFF maps existing publications over one SSE connection and transforms older entries from the existing HTTP reader. History title/description/time and the room-gap exception follow the ADR; technical details are retained in audit/log surfaces. This is a pending
+DS-4-06a target, not a claim that the present feed has already been converted.
+
 ## Timing Rules
 
 The control loop should make time visible:

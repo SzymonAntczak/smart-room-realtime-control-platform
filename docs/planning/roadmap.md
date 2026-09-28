@@ -275,6 +275,10 @@ Expected outcome:
 - the simulator-backed Dashboard shows bounded telemetry history, recent events
   and storage durability with enough time context to explain current observed
   state, availability, health, freshness and command outcomes;
+- `DS-4-06a` replaces the completed `DS-4-06` technical feed at the BFF
+  presentation boundary with user-history changes and unsuccessful attempts,
+  device-name titles and readable descriptions/timestamps; older retained entries are reachable
+  through infinite scroll with bounded memory and virtual DOM rendering;
 - the UI can distinguish normal values from stale observations, explicit
   availability changes, degraded health, pending commands and terminal command
   outcomes without requiring raw-event interpretation by the user;
@@ -293,6 +297,13 @@ only the command-outcome history already exposed by the command slice.
 The accepted [Stage 4 Storage and Observability ADR](../decisions/adr-stage-4-storage-and-observability.md)
 defines the local persistence, diagnostics and history-transport model for this
 stage.
+
+The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+defines the successor product history. Its implementation is pending in
+`DS-4-06a`, scheduled after `DS-4-06` and before `DS-4-07`; documentation
+acceptance does not mean the new feed already exists. Stage acceptance requires
+its BFF transformation, pagination, reading-position and
+virtualization evidence as well as the remaining Stage 4 stories.
 
 Stage 4 is complete when the simulator route is a trustworthy platform
 reference: its state, telemetry, diagnostics and command outcomes can be

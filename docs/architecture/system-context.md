@@ -209,6 +209,10 @@ stream or replay missed data. The client retains its last known generation
 while degraded storage reports `null`; a different later non-null generation in
 a snapshot or `platform.updated` resets the old HTTP pages and overlay.
 
+The paragraph above describes the original significant-fact product feed. The
+accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+defines its DS-4-06a successor, whose implementation is pending: the BFF transforms existing snapshots, realtime publications and retained significant facts into user-history responses over the current SSE connection and paged history boundary. The frontend merges by source identity, bounds loaded history and virtualizes the feed. Raw technical history remains a distinct audit surface. Existing fact retention and generation/watermark/cursor rules apply; platform facts and database records are unchanged.
+
 SQLite is a durable history and recovery dependency in that proposed model, not
 a prerequisite for current device truth. During a storage outage, projections,
 freshness and commands continue in memory as explicitly volatile data; durable

@@ -313,6 +313,14 @@ Stage 4 UI focus areas:
 The LED scenario timing and transport defaults are defined in
 [ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
 
+### DS-4-06a user-history target (implementation pending)
+
+The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+records the target product behavior and boundaries. Story-specific verification
+plans and acceptance criteria will be written when its subtasks are planned.
+Existing no-replay, generation/watermark and source-fact retention rules remain
+binding; this target does not change platform processing or storage.
+
 ## Manual Acceptance Checklist
 
 Before treating a milestone as done, verify:
