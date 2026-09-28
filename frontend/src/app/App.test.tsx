@@ -1,4 +1,5 @@
-import { act, render, screen } from '@testing-library/react';
+import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -117,6 +118,108 @@ describe('App', () => {
 
         expect(feed).toHaveTextContent('Polecenie wysłano do źródła urządzenia.');
         expect(feed).toHaveTextContent('Główne LED');
+    });
+
+    it('keeps live telemetry out of the significant-events feed', () => {
+        const { telemetrySample } = createHistoryIdentityFixtures();
+        render(<App />);
+        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+
+        const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
+
+        act(() =>
+            MockWebSocket.latest().emitMessage({
+                messageType: 'device.updated',
+                previousRevision: 0,
+                revision: 1,
+                sentAt: '2026-09-10T10:00:01Z',
+                payload: temperatureDevice(),
+                telemetrySample,
+            }),
+        );
+
+        expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
+        expect(within(feed).queryByRole('listitem')).not.toBeInTheDocument();
+        expect(
+            screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
+        ).not.toBeInTheDocument();
+    });
+
+    it('keeps accepted non-applying facts out of the feed when only the watermark advances', () => {
+        render(<App />);
+        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+
+        const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        act(() =>
+            MockWebSocket.latest().emitMessage({
+                messageType: 'platform.updated',
+                previousRevision: 0,
+                revision: 1,
+                sentAt: '2026-09-10T10:00:01Z',
+                payload: {
+                    storage: { ...availableStorage(), storedThroughSequence: 1 },
+                },
+            }),
+        );
+
+        expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
+        expect(within(feed).queryByRole('listitem')).not.toBeInTheDocument();
+        expect(
+            screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
+        ).not.toBeInTheDocument();
+    });
+
+    it('does not add a no-change LED report after a command timeout', () => {
+        const timedOutLed = { ...ledDevice(), activeCommandId: undefined };
+        render(<App />);
+        act(() =>
+            MockWebSocket.latest().emitMessage(
+                createRoomSnapshotMessage({
+                    devices: [temperatureDevice(), windowTemperatureDevice(), timedOutLed],
+                    activeCommands: [],
+                    recentEvents: [
+                        {
+                            recordId: `rec:v1:sha256:${'c'.repeat(64)}`,
+                            occurredAt: '2026-06-08T09:30:01.000Z',
+                            durability: 'durable',
+                            storageSequence: 1,
+                            source: 'backend',
+                            deviceId: 'led-main',
+                            commandId: 'cmd-1',
+                            eventType: 'command.timed_out',
+                            payload: {
+                                timeoutMs: 5000,
+                                reason: 'confirmation_not_received',
+                            },
+                        },
+                    ],
+                }),
+            ),
+        );
+
+        const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia polecenia w czasie.');
+        expect(within(feed).getAllByRole('listitem')).toHaveLength(1);
+        expect(
+            screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
+        ).not.toBeInTheDocument();
+
+        act(() =>
+            MockWebSocket.latest().emitMessage({
+                messageType: 'device.updated',
+                previousRevision: 0,
+                revision: 1,
+                sentAt: '2026-06-08T09:30:02Z',
+                payload: timedOutLed,
+            }),
+        );
+
+        expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia polecenia w czasie.');
+        expect(within(feed).getAllByRole('listitem')).toHaveLength(1);
+        expect(
+            screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
+        ).not.toBeInTheDocument();
     });
 
     it('opens the desktop feed by default and lets the same button hide and restore it', async () => {
