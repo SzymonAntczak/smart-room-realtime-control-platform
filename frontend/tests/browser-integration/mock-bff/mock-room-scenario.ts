@@ -1,3 +1,8 @@
+import {
+    compareRecentEventsDescending,
+    type RecentEventProjection,
+    recentEventsLimit,
+} from '@smart-room/contracts/history';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type {
     RoomRealtimeServerMessage,
@@ -46,7 +51,7 @@ export class MockRoomScenario {
             );
         }
 
-        const nextSnapshot = applyUpdateToSnapshot(this.#snapshot, update);
+        const nextSnapshot = assertMockRoomSnapshot(applyUpdateToSnapshot(this.#snapshot, update));
 
         this.#snapshot = nextSnapshot;
         this.#revision = update.revision;
@@ -63,7 +68,8 @@ function applyUpdateToSnapshot(
         return {
             ...snapshot,
             updatedAt: update.sentAt,
-            platform: update.payload,
+            platform: { storage: update.payload.storage },
+            recentEvents: mergeRecentEvents(snapshot.recentEvents, update.payload.recentEvents),
         };
     }
 
@@ -76,6 +82,12 @@ function applyUpdateToSnapshot(
         ...snapshot,
         updatedAt: update.sentAt,
         devices,
+        recentEvents: mergeRecentEvents(
+            snapshot.recentEvents,
+            update.messageType === 'device.updated'
+                ? update.recentEvents
+                : update.payload.recentEvents,
+        ),
         ...(update.messageType === 'commands.updated'
             ? {
                   activeCommands: update.payload.activeCommands,
@@ -83,6 +95,23 @@ function applyUpdateToSnapshot(
               }
             : {}),
     };
+}
+
+function mergeRecentEvents(
+    current: RecentEventProjection[],
+    updates: RecentEventProjection[] | undefined,
+): RecentEventProjection[] {
+    if (!updates || updates.length === 0) {
+        return current;
+    }
+
+    const byRecordId = new Map(current.map((event) => [event.recordId, event]));
+
+    for (const event of updates) {
+        byRecordId.set(event.recordId, event);
+    }
+
+    return [...byRecordId.values()].sort(compareRecentEventsDescending).slice(0, recentEventsLimit);
 }
 
 function replaceDevice(

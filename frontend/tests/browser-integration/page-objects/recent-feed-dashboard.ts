@@ -12,12 +12,26 @@ interface ElementBounds {
 export class RecentFeedDashboard {
     readonly feed: Locator;
     readonly feedToggle: Locator;
+    readonly feedEntries: Locator;
     readonly temperatureCard: TemperatureCard;
 
     constructor(private readonly page: Page) {
         this.feed = page.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
         this.feedToggle = page.getByRole('button', { name: /ostatnie zdarzenia/i });
+        this.feedEntries = this.feed.getByRole('listitem');
         this.temperatureCard = new TemperatureCard(page, 'temp-desk');
+    }
+
+    entryContaining(text: string): Locator {
+        return this.feedEntries.filter({ hasText: text });
+    }
+
+    eventTime(text: string): Locator {
+        return this.entryContaining(text).getByRole('time');
+    }
+
+    eventDetails(text: string): Locator {
+        return this.entryContaining(text).getByText('Szczegóły', { exact: true });
     }
 
     async open(): Promise<void> {

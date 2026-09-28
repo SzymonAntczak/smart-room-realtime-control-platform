@@ -12,10 +12,15 @@ import {
     createDeviceUpdatedMessage,
     createOnlineLedDeviceProjection,
     createOnlineLedRoomSnapshot,
+    createOnlineTemperatureDeviceProjection,
     createOnlineTemperatureRoomSnapshot,
+    createPendingLedCommand,
+    createPendingLedDeviceProjection,
+    createPlatformUpdatedMessage,
     createTemperatureDeviceUpdatedMessage,
 } from './mock-bff-fixtures';
 import { MockRoomScenario } from './mock-room-scenario';
+import { createHealthFact, createLedStateFact } from './recent-feed-fixtures';
 
 describe('mock BFF shared-contract boundary', () => {
     it('accepts the online LED fixture and rejects an invalid snapshot', () => {
@@ -120,11 +125,104 @@ describe('mock BFF shared-contract boundary', () => {
     it('does not advance the revision when an update references an unknown device', () => {
         const scenario = new MockRoomScenario();
         const unknownDevice = { ...createOnlineLedDeviceProjection(), deviceId: 'led-secondary' };
+        const initialSnapshot = scenario.snapshotMessage();
 
         expect(() => scenario.applyUpdate(createDeviceUpdatedMessage(0, unknownDevice))).toThrow(
             'update references unknown device led-secondary',
         );
+        expect(scenario.snapshotMessage()).toEqual(initialSnapshot);
         expect(() => scenario.applyUpdate(createDeviceUpdatedMessage(0))).not.toThrow();
+    });
+
+    it('rejects a valid delta that would make the merged snapshot invalid without changing state', () => {
+        const baseSnapshot = createOnlineLedRoomSnapshot();
+        const scenario = new MockRoomScenario();
+        scenario.setSnapshot({
+            ...baseSnapshot,
+            devices: [createPendingLedDeviceProjection()],
+            activeCommands: [createPendingLedCommand()],
+        });
+        const initialSnapshot = scenario.snapshotMessage();
+
+        expect(() =>
+            scenario.applyUpdate(createDeviceUpdatedMessage(0, createOnlineLedDeviceProjection())),
+        ).toThrow('room snapshot did not match the shared contract');
+        expect(scenario.snapshotMessage()).toEqual(initialSnapshot);
+        expect(scenario.currentRevision()).toBe(0);
+    });
+
+    it('keeps realtime feed additions in snapshots and preserves them across watermark updates', () => {
+        const scenario = new MockRoomScenario();
+        const stateFact = createLedStateFact(21, '2026-06-08T09:30:01Z', 1, 'on');
+
+        scenario.applyUpdate(
+            createDeviceUpdatedMessage(
+                0,
+                { ...createOnlineLedDeviceProjection(), reportedState: { power: 'on' } },
+                [stateFact],
+                stateFact.occurredAt,
+            ),
+        );
+
+        expect(scenario.snapshotMessage().payload.recentEvents).toEqual([stateFact]);
+
+        scenario.applyUpdate(createPlatformUpdatedMessage(1, 1, '2026-06-08T09:30:02Z'));
+
+        expect(scenario.snapshotMessage().payload.recentEvents).toEqual([stateFact]);
+        expect(scenario.snapshotMessage().payload.platform.storage.storedThroughSequence).toBe(1);
+        expect(scenario.snapshotMessage().payload.platform.storage.changedAt).toBe(
+            '2026-06-08T09:30:00Z',
+        );
+    });
+
+    it('deduplicates feed records and keeps the newest twenty in shared feed order', () => {
+        const baseSnapshot = createOnlineTemperatureRoomSnapshot();
+        const initialEvents = Array.from({ length: 20 }, (_, index) => {
+            const second = String(index).padStart(2, '0');
+
+            return createHealthFact(
+                index + 1,
+                'healthy',
+                'degraded',
+                `2026-06-08T09:30:${second}Z`,
+                index + 1,
+            );
+        }).reverse();
+        const scenario = new MockRoomScenario();
+        scenario.setSnapshot({
+            ...baseSnapshot,
+            updatedAt: '2026-06-08T09:31:00Z',
+            recentEvents: initialEvents,
+            platform: {
+                storage: {
+                    status: 'available',
+                    changedAt: '2026-06-08T09:31:00Z',
+                    historyGenerationId: 'mock-history-generation',
+                    storedThroughSequence: 20,
+                },
+            },
+        });
+
+        const duplicate = createHealthFact(20, 'healthy', 'degraded', '2026-06-08T09:30:19Z', 20);
+        const newest = createHealthFact(21, 'degraded', 'healthy', '2026-06-08T09:30:22Z', 21);
+        scenario.applyUpdate(
+            createTemperatureDeviceUpdatedMessage(
+                0,
+                createOnlineTemperatureDeviceProjection(),
+                [newest, duplicate],
+                newest.occurredAt,
+            ),
+        );
+
+        const recentEvents = scenario.snapshotMessage().payload.recentEvents;
+        expect(recentEvents).toHaveLength(20);
+        expect(recentEvents[0]?.recordId).toBe(newest.recordId);
+        expect(
+            recentEvents.some((event) => event.recordId === initialEvents.at(-1)?.recordId),
+        ).toBe(false);
+        expect(recentEvents.filter((event) => event.recordId === duplicate.recordId)).toHaveLength(
+            1,
+        );
     });
 
     it('accepts only a documented set.power command request', () => {

@@ -1,10 +1,21 @@
 import type {
     ActiveCommandProjection,
+    ConfirmedCommandProjection,
     FailedCommandProjection,
     TerminalCommandProjection,
+    TimedOutCommandProjection,
 } from '@smart-room/contracts/commands';
-import type { DeviceProjection, RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type { CommandsUpdatedMessage, DeviceUpdatedMessage } from '@smart-room/contracts/realtime';
+import type { RecentEventProjection } from '@smart-room/contracts/history';
+import type {
+    DeviceProjection,
+    PlatformStorageProjection,
+    RoomSnapshotProjection,
+} from '@smart-room/contracts/projections';
+import type {
+    CommandsUpdatedMessage,
+    DeviceUpdatedMessage,
+    PlatformUpdatedMessage,
+} from '@smart-room/contracts/realtime';
 
 const fixtureTimestamp = '2026-06-08T09:30:00Z';
 const commandRequestedAt = '2026-06-08T09:30:01Z';
@@ -19,10 +30,10 @@ const temperatureRecoveredAt = '2026-06-08T09:34:00Z';
 const temperatureFreshAfterRecoveryAt = '2026-06-08T09:35:00Z';
 const ledCommandId = 'mock-command-1';
 
-function storagePlatform() {
+function storagePlatform(): { storage: PlatformStorageProjection } {
     return {
         storage: {
-            status: 'available' as const,
+            status: 'available',
             changedAt: fixtureTimestamp,
             historyGenerationId: 'mock-history-generation',
             storedThroughSequence: 0,
@@ -194,7 +205,7 @@ export function createPendingLedDeviceProjection(): DeviceProjection {
     };
 }
 
-export function createConfirmedLedCommand(): TerminalCommandProjection {
+export function createConfirmedLedCommand(): ConfirmedCommandProjection {
     return {
         commandId: ledCommandId,
         deviceId: 'led-main',
@@ -243,7 +254,7 @@ export function createFailedLedCommand(commandId: string): FailedCommandProjecti
     };
 }
 
-export function createTimedOutLedCommand(): TerminalCommandProjection {
+export function createTimedOutLedCommand(): TimedOutCommandProjection {
     return {
         commandId: ledCommandId,
         deviceId: 'led-main',
@@ -280,21 +291,26 @@ export function createLateReportedLedDeviceProjection(): DeviceProjection {
 export function createDeviceUpdatedMessage(
     previousRevision: number,
     device: DeviceProjection = createOnlineLedDeviceProjection(),
+    recentEvents?: RecentEventProjection[],
+    sentAt = fixtureTimestamp,
 ): DeviceUpdatedMessage {
     return {
         messageType: 'device.updated',
         previousRevision,
         revision: previousRevision + 1,
-        sentAt: fixtureTimestamp,
+        sentAt,
         payload: device,
+        ...(recentEvents === undefined ? {} : { recentEvents }),
     };
 }
 
 export function createTemperatureDeviceUpdatedMessage(
     previousRevision: number,
     device: DeviceProjection = createOnlineTemperatureDeviceProjection(),
+    recentEvents?: RecentEventProjection[],
+    sentAt = fixtureTimestamp,
 ): DeviceUpdatedMessage {
-    return createDeviceUpdatedMessage(previousRevision, device);
+    return createDeviceUpdatedMessage(previousRevision, device, recentEvents, sentAt);
 }
 
 export function createCommandsUpdatedMessage(
@@ -303,17 +319,47 @@ export function createCommandsUpdatedMessage(
         devices = [createOnlineLedDeviceProjection()],
         activeCommands = [],
         recentCommands = [],
+        recentEvents,
+        sentAt = fixtureTimestamp,
     }: {
         devices?: DeviceProjection[];
         activeCommands?: ActiveCommandProjection[];
         recentCommands?: TerminalCommandProjection[];
+        recentEvents?: RecentEventProjection[];
+        sentAt?: string;
     } = {},
 ): CommandsUpdatedMessage {
     return {
         messageType: 'commands.updated',
         previousRevision,
         revision: previousRevision + 1,
-        sentAt: fixtureTimestamp,
-        payload: { devices, activeCommands, recentCommands },
+        sentAt,
+        payload: {
+            devices,
+            activeCommands,
+            recentCommands,
+            ...(recentEvents === undefined ? {} : { recentEvents }),
+        },
+    };
+}
+
+export function createPlatformUpdatedMessage(
+    previousRevision: number,
+    storedThroughSequence: number,
+    sentAt: string,
+): PlatformUpdatedMessage {
+    return {
+        messageType: 'platform.updated' as const,
+        previousRevision,
+        revision: previousRevision + 1,
+        sentAt,
+        payload: {
+            storage: {
+                status: 'available',
+                historyGenerationId: 'mock-history-generation',
+                storedThroughSequence,
+                changedAt: fixtureTimestamp,
+            },
+        },
     };
 }
