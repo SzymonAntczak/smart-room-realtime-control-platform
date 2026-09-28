@@ -482,15 +482,94 @@ Each item has one difficulty rating only:
 | `[ ] ST-4-06a-05` | Present accessible user-history items and add virtual rendering.                                        | `ST-4-06a-04`                   | `C`        |
 | `[ ] ST-4-06a-06` | Complete story verification and delivery review.                                                        | `ST-4-06a-05`                   | `C`        |
 
+### [ ] `DS-4-06b` — Historical event search by device and date
+
+- **Value / observable outcome:** users inspect a device's history or a selected
+  period in a modal containing both a filter form and historical results,
+  independently of the Dashboard's unfiltered live feed.
+- **Status:** planned; implementation pending. All subtasks remain unchecked.
+- **Sources / boundaries:** developer-approved historical-search requirements;
+  [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md);
+  shared BFF response/query contracts, BFF history pagination, frontend history
+  sessions and mocked-BFF browser integration. Promote the new search rules to
+  architecture/decision documentation before implementation; this backlog does
+  not redefine the binding live-feed behavior.
+- **Depends on:** `DS-4-06a`.
+- **Difficulty:** `B`.
+- **Difficulty rationale:** filtering retained history, pinned cursor scope,
+  asynchronous search replacement and bounded virtual rendering cross the BFF
+  and frontend boundaries.
+- **Scope:** one user-history GET endpoint serves both contexts. The Dashboard
+  keeps its unfiltered, SSE-updated feed with infinite scroll and virtualization.
+  The search modal has an independent static session, cursor, results and scroll
+  position; its actions never change the Dashboard session. Reuse the user-item
+  contract and appropriate rendering/pagination primitives from `DS-4-06a`.
+- **Search interaction:** the feed's filter icon opens an accessible modal with
+  a device select, From/To date inputs, Search and a results area. All criteria
+  are optional individually, but Search requires at least one. Device options
+  come from the current validated room projection. Opening with no active
+  search shows an instruction to choose a filter and submit, without a history
+  GET. Valid submission keeps the modal open and displays results below the
+  form. Editing draft criteria does not fetch or change existing results;
+  summarize the applied criteria beside those results. Refresh starts a new
+  pinned session using the applied criteria, not unsaved draft values, and
+  returns to the top. Clear filters removes drafts, results and the session,
+  restoring the initial instruction without a GET. Closing releases the session
+  and ignores late responses; reopening starts with an empty form.
+- **Date semantics:** selected From/To days are inclusive in the browser time
+  zone. Send UTC timestamps for the start of From and the start of the day after
+  To, using an API interval of `[from, to)`. Either bound may be omitted. Account
+  for daylight-saving changes; equal dates are valid, while a reversed range
+  blocks submission and shows a field error.
+- **BFF behavior:** extend the `DS-4-06a` user-history GET query with optional
+  `deviceId`, `from` and `to`, combined with AND and applied to event time. The
+  endpoint still accepts no filters for the Dashboard; the minimum-one-filter
+  rule belongs to the modal. Filter the retained history before returning user
+  pages, preserving evidence needed for truthful fact transformation. Bind
+  normalized filters to the existing pinned generation, watermark, retention
+  view and cursor expiry. A raw page without matching items is not the end if
+  more raw records remain. Preserve existing ordering and typed cursor/storage
+  errors. Device-filtered results exclude room-level entries while history
+  completeness warnings remain visible.
+- **Static results and lifecycle:** do not merge SSE entries into search results
+  or refresh them automatically. Infinite scroll loads older pages from the same
+  pinned search session, with bounded memory, virtual rendering and an accessible
+  Load older control. Show loading, no matches, retry and end-of-history states.
+  A new search or Refresh invalidates earlier requests/pages; late responses
+  cannot replace new results. Cursor expiry or session invalidation asks for
+  explicit refresh. Read errors preserve a labeled last-known result view.
+- **Non-goals:** Dashboard filtering, live search-result merging, multi-device
+  selection, saved searches, telemetry or technical-audit filtering, retention
+  changes, database migration, a new user-history endpoint or another SSE stream.
+- **Story verification:** shared query/response validation and production BFF
+  tests protect filtering and cursor scope; deterministic frontend session tests
+  protect search replacement and cleanup; mocked-BFF Playwright scenarios protect
+  the modal interaction and independence of the two lists. Detailed acceptance
+  criteria and verification scenarios are defined when the selected work item
+  is planned. Complete every subtask and verify the resulting approved criteria,
+  documentation alignment and a delivery review with no blocking findings before
+  completing the story.
+
+| Subtask           | Purpose / primary boundary                                                                   | Depends on    | Difficulty | Difficulty rationale                            | Verification / done when                                                                                      |
+| ----------------- | -------------------------------------------------------------------------------------------- | ------------- | ---------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `[ ] ST-4-06b-01` | Document both history contexts and extend the shared BFF filter/query contract.              | `DS-4-06a`    | `C`        | Date semantics and cursor scope need precision. | Binding docs align; contracts validate optional filters and reject malformed ranges.                          |
+| `[ ] ST-4-06b-02` | Filter and paginate retained user history at the existing BFF GET boundary.                  | `ST-4-06b-01` | `B`        | Historical evidence and pinned pages interact.  | BFF tests cover combined/one-sided filters, sparse pages, cursor mismatch and storage errors.                 |
+| `[ ] ST-4-06b-03` | Add an independent static frontend search session with paging and manual refresh.            | `ST-4-06b-02` | `B`        | Session replacement and request races matter.   | Deterministic tests prove no SSE merge, refresh isolation, stale-response rejection and cleanup.              |
+| `[ ] ST-4-06b-04` | Present an accessible modal with the filter form and bounded virtualized historical results. | `ST-4-06b-03` | `C`        | Form, dates and virtual scrolling meet.         | UI tests cover submit/clear, applied vs draft values, local dates, focus and list states.                     |
+| `[ ] ST-4-06b-05` | Verify historical search and Dashboard independence through mocked-BFF browser integration.  | `ST-4-06b-04` | `C`        | Two views share contracts but not sessions.     | Playwright proves search, paging, refresh and live Dashboard updates with validated fixtures.                 |
+| `[ ] ST-4-06b-06` | Verify story acceptance and complete the bounded delivery review.                            | `ST-4-06b-05` | `C`        | Evidence spans BFF and frontend boundaries.     | All subtasks and criteria approved during task planning pass; docs align and review has no blocking findings. |
+
 ### [ ] `DS-4-07` — Storage-aware Dashboard controls and evidence
 
 - **Value / observable outcome:** users see storage degradation and cannot mistake
   volatile state for restart-safe data.
 - **Sources / boundaries:** Stage 4 ADR; devices; reliability/testing; frontend
   platform status, command UI and mocked-BFF boundary.
-- **Feed integration:** planned after `DS-4-06a`; feed durability labels target
-  its user-history entries, with no technical-details section restored.
-- **Depends on:** `DS-4-06a` for the selected delivery order and feed integration.
+- **Feed integration:** planned after `DS-4-06b` in the selected delivery order;
+  feed durability labels target the `DS-4-06a` user-history entries, with no
+  technical-details section restored.
+- **Depends on:** `DS-4-06a` for feed integration and `DS-4-06b` for the selected
+  delivery order.
 - **Difficulty:** `C`.
 - **Difficulty rationale:** several independent durability axes must remain
   visible.
@@ -555,7 +634,7 @@ Each item has one difficulty rating only:
 - **Sources / boundaries:** roadmap; backlog verification section; reliability
   and testing; all Stage 4 test and documentation boundaries.
 - **Depends on:** `DS-4-03`, `DS-4-04`, `DS-4-05`, `DS-4-06`, `DS-4-06a`,
-  `DS-4-07`, `DS-4-08`, `DS-4-09`.
+  `DS-4-06b`, `DS-4-07`, `DS-4-08`, `DS-4-09`.
 - **Difficulty:** `C`.
 - **Difficulty rationale:** scope is procedural but evidence is broad.
 - **Acceptance criteria:** evidence map, valid browser fixtures, runnable
@@ -563,25 +642,26 @@ Each item has one difficulty rating only:
 - **Non-goals:** fixing defects discovered by the audit within this story.
 - **Story verification:** an independent reviewer repeats the documented run.
 
-| Subtask          | Purpose / primary boundary                                                    | Depends on                                  | Difficulty | Verification / done when                                                  |
-| ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `[ ] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence. | all Stage 4 implementation stories          | `C`        | Each outcome links to evidence or a new narrow follow-up.                 |
-| `[ ] ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.       | `DS-4-06`, `DS-4-06a`, `DS-4-07`, `DS-4-08` | `C`        | Fixture-validation suite and browser typecheck pass.                      |
-| `[ ] ST-4-10-03` | Write the local simulator-only checklist and walkthrough.                     | `ST-4-10-01`                                | `E`        | A clean local setup can follow the instructions without hidden knowledge. |
-| `[ ] ST-4-10-04` | Execute and record the dated local acceptance walkthrough.                    | `ST-4-10-02`, `ST-4-10-03`                  | `C`        | A reviewer can reproduce commands and observed results from the record.   |
+| Subtask          | Purpose / primary boundary                                                    | Depends on                                              | Difficulty | Verification / done when                                                  |
+| ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------- | ---------- | ------------------------------------------------------------------------- |
+| `[ ] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence. | all Stage 4 implementation stories                      | `C`        | Each outcome links to evidence or a new narrow follow-up.                 |
+| `[ ] ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.       | `DS-4-06`, `DS-4-06a`, `DS-4-06b`, `DS-4-07`, `DS-4-08` | `C`        | Fixture-validation suite and browser typecheck pass.                      |
+| `[ ] ST-4-10-03` | Write the local simulator-only checklist and walkthrough.                     | `ST-4-10-01`                                            | `E`        | A clean local setup can follow the instructions without hidden knowledge. |
+| `[ ] ST-4-10-04` | Execute and record the dated local acceptance walkthrough.                    | `ST-4-10-02`, `ST-4-10-03`                              | `C`        | A reviewer can reproduce commands and observed results from the record.   |
 
 - **Recommended order:** `DS-4-01` → `DS-4-02` → `DS-4-03` → `DS-4-04` →
   `DS-4-08` → `DS-4-10`; complete `DS-4-05`, `DS-4-06`, `DS-4-07` and
   `DS-4-09` before Stage acceptance. The next selected feed sequence is
-  `DS-4-06` → `DS-4-06a` → `DS-4-07`; `DS-4-06a` is also required before
-  `DS-4-10` acceptance.
+  `DS-4-06` → `DS-4-06a` → `DS-4-06b` → `DS-4-07`; both `DS-4-06a` and
+  `DS-4-06b` are also required before `DS-4-10` acceptance.
 - **Technical parallel candidates:** `DS-4-05`; also
   `ST-4-01-02` with `ST-4-01-01`, then `DS-4-06` with `DS-4-09`.
 - **Critical path:** `DS-4-01` → `DS-4-02` → `DS-4-03` → `DS-4-04` →
   `DS-4-08` → `DS-4-10`.
 - **Cost hotspots:** cursor retention/purge, cursor safety, publication batching,
   reconnect/generation recovery, BFF user-history transformation,
-  virtual-list anchoring and telemetry-details integration.
+  static historical-search cursor scope/session isolation, virtual-list
+  anchoring and telemetry-details integration.
 - **Decomposition warnings:** storage retention/caps/dedup, part of recent-events,
   batching and the future-dated scenario already have implementation evidence;
   audit them against their new Done conditions before writing duplicate code.
