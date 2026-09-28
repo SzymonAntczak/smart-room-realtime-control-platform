@@ -431,7 +431,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-05-03` | Keep `emit_next_reading` on the normal simulator-to-runtime path. | `ST-4-05-02`               | `E`        | Scenario test proves it restores freshness without direct projection mutation. |
 | `[x] ST-4-05-04` | Verify both cadences in one runtime.                              | `ST-4-05-02`, `ST-4-05-03` | `C`        | Each sensor crosses its own threshold while availability remains stable.       |
 
-### [ ] `DS-4-06` — Explainable significant-fact feed
+### [x] `DS-4-06` — Explainable significant-fact feed
 
 - **Value / observable outcome:** a user can understand availability, health,
   command and meaningful LED-report changes without raw payloads or logs.
