@@ -43,7 +43,7 @@ const platformDelta = {
     payload: { storage: snapshot.platform.storage },
 };
 
-describe('BFF presentation boundary (AC-2, AC-4, AC-6)', () => {
+describe('BFF presentation contracts', () => {
     it('validates the new baseline and all delta types, retaining HTTP/SSE source identity', () => {
         expect(isRoomBffSnapshot(snapshot)).toBe(true);
 

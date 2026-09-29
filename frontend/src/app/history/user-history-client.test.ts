@@ -5,7 +5,7 @@ import { validateUserHistoryResponse } from './user-history-client';
 
 const { page, powerChange } = createUserHistoryFixtures();
 
-describe('user history HTTP boundary (AC-3, AC-5)', () => {
+describe('user history HTTP response validation', () => {
     it('returns a validated page without changing source identity or sparse-page semantics', () => {
         const body: unknown = structuredClone(page);
         const result = validateUserHistoryResponse(200, body);

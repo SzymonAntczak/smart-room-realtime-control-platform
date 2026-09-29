@@ -120,6 +120,9 @@ explicitly.
   contract before it can make a downstream assertion pass.
 - Prefer tests that exercise documented behavior, domain invariants, failure
   modes and user-visible reliability risks.
+- Write test suite and case descriptions as self-contained summaries of the
+  behavior they protect. Avoid references to task, story or acceptance-criteria
+  identifiers, since tests should remain understandable without task history.
 - Cover important negative and boundary cases when they affect the touched
   behavior, such as malformed events, duplicate events, unsupported event types,
   lifecycle cleanup, ordering, limits, stale/offline state, timeouts and late

@@ -11,7 +11,7 @@ const baseline = {
     payload: snapshot,
 };
 
-describe('BFF realtime client boundary (AC-4, AC-5)', () => {
+describe('BFF realtime message validation', () => {
     it('exposes only validated snapshots and deltas, preserving identity', () => {
         expect(validateRoomBffSnapshot(snapshot)).toEqual({ kind: 'snapshot', snapshot });
         expect(validateRoomBffRealtimeMessage(baseline)).toEqual({

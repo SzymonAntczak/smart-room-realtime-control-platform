@@ -209,7 +209,7 @@ function confirmationFact(index: number, occurredAt = later): RecentEventProject
     };
 }
 
-describe('BFF user-history projection (ST-4-06a-02)', () => {
+describe('BFF user-history projection', () => {
     it('maps only proven live power, availability and health changes using actual projections', () => {
         const previous = withReportedPower(rawSnapshot(), 'off');
         const power = stateFact(1, 'on', later);

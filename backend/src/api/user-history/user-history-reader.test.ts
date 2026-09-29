@@ -16,8 +16,8 @@ import { createUserHistoryReader } from './user-history-reader';
 
 type RawRead = (query: SignificantFactPageQuery) => RoomHistoryReadResult<SignificantFactPage>;
 
-describe('pinned user history reader (ST-4-06a-03)', () => {
-    it('uses only durable fact evidence for failures and gaps, omitting all raw device and progress variants (AC-2)', () => {
+describe('pinned user history reader', () => {
+    it('derives failures and gaps only from durable facts, omitting device state and command progress', () => {
         const facts: DurableSignificantFactProjection[] = [
             {
                 ...common(1),
@@ -107,7 +107,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
         expect(harness.raw).toHaveBeenCalledTimes(1);
     });
 
-    it('looks through multiple older pages for timeout targets without consuming them for pagination (AC-3, AC-4)', () => {
+    it('looks through older pages for timeout evidence without consuming those entries in pagination', () => {
         const harness = createHarness([request(1), gap(2), failure(3), timeout(4)]);
         const first = available(harness.reader.readPage({ pageSize: 1 }));
         expect(first.items).toEqual([
@@ -132,7 +132,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
         expect(harness.raw).toHaveBeenLastCalledWith({ pageSize: 1, cursor: 'raw:1' });
     });
 
-    it('returns empty pages with continuation and recognizes same-page timeout evidence (AC-3, AC-4)', () => {
+    it('returns empty pages with a continuation and recognizes timeout evidence on the same page', () => {
         const harness = createHarness([
             request(1),
             timeout(2),
@@ -159,7 +159,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
     });
 
     it.each(['missing', 'conflicting', 'wrong-device', 'wrong-command'] as const)(
-        'omits timeout with %s retained request evidence (AC-3)',
+        'omits timeout when retained request evidence is %s',
         (kind) => {
             const requests =
                 kind === 'missing'
@@ -179,7 +179,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
         },
     );
 
-    it('detects conflicting evidence even after finding a target and permits repeated consistent targets (AC-3)', () => {
+    it('detects conflicting evidence after finding a target and permits repeated consistent targets', () => {
         const conflict = createHarness([request(1, 'off'), request(2, 'on'), timeout(3)]);
         expect(available(conflict.reader.readPage({ pageSize: 1 })).items).toEqual([]);
         expect(conflict.raw).toHaveBeenCalledTimes(3);
@@ -190,7 +190,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
         });
     });
 
-    it('preserves storage ordering at equal timestamps instead of sorting by record ID (AC-2, AC-4)', () => {
+    it('preserves storage order for equal timestamps instead of sorting by record ID', () => {
         const lower = { ...failure(1), recordId: `rec:v1:sha256:${'f'.repeat(64)}` };
         const upper = { ...failure(2), occurredAt: lower.occurredAt };
         const harness = createHarness([lower, upper]);
@@ -208,7 +208,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
             error: { error: 'history_generation_changed', message: 'Changed.' },
         },
     ] satisfies RoomHistoryReadResult<SignificantFactPage>[])(
-        'propagates auxiliary failure $status without partial entries (AC-7)',
+        'propagates auxiliary failure $status without returning partial entries',
         (failureResult) => {
             const harness = createHarness([request(1), gap(2), timeout(3)]);
             harness.raw.mockReturnValueOnce(harness.page(0, 2)).mockReturnValueOnce(failureResult);
@@ -217,7 +217,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
     );
 
     it.each(['generation', 'watermark', 'retention', 'size', 'order', 'payload'] as const)(
-        'rejects invalid auxiliary %s evidence (AC-7)',
+        'rejects invalid auxiliary %s page evidence',
         (fault) => {
             const harness = createHarness([request(1), timeout(2)]);
             const main = harness.page(0, 1);
@@ -250,7 +250,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
         },
     );
 
-    it('rejects invalid main pages and invalid snapshots before downstream classification (AC-7)', () => {
+    it('rejects invalid main pages and snapshots before classifying history entries', () => {
         const harness = createHarness([failure(1)]);
         const invalid = {
             status: 'available',
@@ -272,7 +272,7 @@ describe('pinned user history reader (ST-4-06a-03)', () => {
         expect(reader.readPage({ pageSize: 1 })).toEqual({ status: 'invalid_internal_data' });
     });
 
-    it('scans maximum retained evidence using bounded page reads and emits only the main page (AC-3, AC-4)', () => {
+    it('scans the maximum retained evidence with bounded reads and emits only the requested page', () => {
         const facts = Array.from({ length: 4998 }, (_, index) => gap(index + 2));
         const harness = createHarness([request(1), ...facts, timeout(5000)]);
         const page = available(harness.reader.readPage({ pageSize: 50 }));

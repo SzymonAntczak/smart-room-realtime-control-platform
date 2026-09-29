@@ -14,8 +14,8 @@ import { isSchema } from './validation';
 
 const fixtures = createUserHistoryFixtures();
 
-describe('user history contracts (AC-1–AC-3)', () => {
-    it('defaults only an omitted page size to 50 without coercing or mutating query data (ST-4-06a-03 AC-1)', () => {
+describe('user history page contracts', () => {
+    it('defaults an omitted page size to 50 and rejects invalid query values without mutation', () => {
         const query = { cursor: 'opaque' };
         expect(isSchema(userHistoryFirstPageQuerySchema, {})).toBe(true);
         expect(normalizeUserHistoryPageQuery({})).toEqual({ pageSize: 50 });

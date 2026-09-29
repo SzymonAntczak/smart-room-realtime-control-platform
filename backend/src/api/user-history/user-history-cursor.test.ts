@@ -11,7 +11,7 @@ const payload: UserHistoryCursorPayload = {
     rawCursor: 'unchanged-raw-cursor',
 };
 
-describe('BFF user-history cursor (AC-6)', () => {
+describe('BFF user-history cursor encoding and validation', () => {
     it('preserves raw cursor and rejects tampering or another instance key', () => {
         const codec = createUserHistoryCursorCodec({ secret });
         const cursor = codec.encode(payload);

@@ -21,8 +21,8 @@ import { StorageAvailabilityError } from '../platform/storage/storage-errors';
 
 import { createRoomBffServer } from './room-bff';
 
-describe('BFF user history (ST-4-06a-03)', () => {
-    it('uses default 50 on first and subsequent pages and accepts explicit limits (AC-1, AC-6)', async () => {
+describe('BFF user history endpoint', () => {
+    it('uses the default page size across pages and accepts explicit limits', async () => {
         const history = createHarness();
 
         try {
@@ -57,7 +57,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         'deviceId=led-main',
         'from=2026-09-10',
         'unexpected=true',
-    ])('rejects invalid query %s before reading storage (AC-1, AC-7)', async (query) => {
+    ])('rejects invalid query %s before reading storage', async (query) => {
         const history = createHarness();
 
         try {
@@ -73,7 +73,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         }
     });
 
-    it('keeps user and raw cursors separate, signed and bound to effective page size (AC-6)', async () => {
+    it('keeps user and raw cursors separate, signed and bound to the effective page size', async () => {
         const history = createHarness();
 
         try {
@@ -121,7 +121,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         }
     });
 
-    it('preserves pinned watermark and retention membership until fixed expiry despite clock regression (AC-5)', async () => {
+    it('preserves the pinned watermark and retention membership until fixed expiry despite clock regression', async () => {
         const history = createHarness();
 
         try {
@@ -143,7 +143,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         }
     });
 
-    it('continues a pinned page after concurrent writes and count retirement at the same millisecond (AC-5)', async () => {
+    it('continues a pinned page after concurrent writes and same-millisecond count retirement', async () => {
         const history = createHarness();
 
         try {
@@ -164,7 +164,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         }
     });
 
-    it('rejects cursors after generation replacement and preserves 503 on unavailable reads (AC-5, AC-7)', async () => {
+    it('rejects cursors after generation replacement and returns 503 when history reads are unavailable', async () => {
         const history = createHarness();
 
         try {
@@ -192,7 +192,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         }
     });
 
-    it('expires at five minutes from the first page without extending on continuation (AC-5)', async () => {
+    it('expires a cursor five minutes after the first page without extending it on continuation', async () => {
         const history = createHarness();
 
         try {
@@ -211,7 +211,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         }
     });
 
-    it('joins historical timeout evidence through actual pinned SQLite reads without skipping older entries (AC-3, AC-4)', async () => {
+    it('joins historical timeout evidence across pinned SQLite pages without skipping older entries', async () => {
         const history = createHarness();
 
         try {
@@ -281,7 +281,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         code: number;
         error: string;
     }[])(
-        'returns $code without partial success on auxiliary $error (AC-7)',
+        'returns $code without partial success when an auxiliary read returns $error',
         async ({ result, code, error }) => {
             const history = createHarness();
 
@@ -315,7 +315,7 @@ describe('BFF user history (ST-4-06a-03)', () => {
         },
     );
 
-    it('distinguishes empty durable history from unavailable storage and rejects malformed raw data (AC-7)', async () => {
+    it('distinguishes empty history from unavailable storage and rejects malformed stored data', async () => {
         const history = createHarness();
 
         try {
