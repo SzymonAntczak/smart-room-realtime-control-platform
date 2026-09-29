@@ -70,12 +70,20 @@ endpoint. Runtime event processing diagnostics are available at
 
 When storage is available, durable history is exposed through these HTTP reads:
 
+- `GET /room/history/user-history?pageSize=N&cursor=...`
 - `GET /room/history/significant-facts?pageSize=N`
 - `GET /room/history/telemetry?deviceId=...&metric=temperature&from=...&to=...&pageSize=N`
 - `GET /room/history/trends?deviceId=...&metric=temperature&from=...&to=...&pointLimit=N`
 
 Page sizes must be from 1 to 100, and trend point limits must be from 2 to 200.
 Out-of-range values return `400 invalid_request`.
+
+The user-history `pageSize` is optional and defaults to 50. Its signed cursor is
+specific to the user-history endpoint and binds the effective page size; repeat
+an explicit non-default size when continuing that session. Filtering raw facts
+can produce a short or empty user-history page with a next cursor. The response
+marks completeness as `retained_evidence_only`; historical device changes are
+omitted when retained facts cannot prove that the reported transition applied.
 
 Each successful response carries its pinned history generation, storage watermark
 and retention time. Telemetry ranges are half-open (`[from,to)`). When another

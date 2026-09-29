@@ -110,17 +110,35 @@ export const userHistoryDeltaSchema = Type.Array(userHistoryItemSchema, {
     maxItems: recentEventsLimit,
 });
 
+export const defaultUserHistoryPageSize = 50;
 const pageSizeSchema = Type.Integer({ minimum: 1, maximum: historyPageSizeLimit });
 export const userHistoryFirstPageQuerySchema = Type.Object(
-    { pageSize: pageSizeSchema },
+    { pageSize: Type.Optional(pageSizeSchema) },
     { additionalProperties: false },
 );
 export const userHistoryPageQuerySchema = Type.Object(
-    { pageSize: pageSizeSchema, cursor: Type.Optional(nonEmptyStringSchema) },
+    { pageSize: Type.Optional(pageSizeSchema), cursor: Type.Optional(nonEmptyStringSchema) },
     { additionalProperties: false },
 );
 export type UserHistoryFirstPageQuery = Static<typeof userHistoryFirstPageQuerySchema>;
 export type UserHistoryPageQuery = Static<typeof userHistoryPageQuerySchema>;
+export type NormalizedUserHistoryPageQuery = Omit<UserHistoryPageQuery, 'pageSize'> & {
+    pageSize: number;
+};
+
+/** Applies the default after validation; never coerces invalid input to a default. */
+export function normalizeUserHistoryPageQuery(
+    value: unknown,
+): NormalizedUserHistoryPageQuery | undefined {
+    if (!isSchema(userHistoryPageQuerySchema, value)) {
+        return undefined;
+    }
+
+    return {
+        pageSize: value.pageSize ?? defaultUserHistoryPageSize,
+        ...(value.cursor !== undefined ? { cursor: value.cursor } : {}),
+    };
+}
 
 /** Presentation scope only; never a storage-port/raw significant-facts scope. */
 export const userHistoryCursorQueryScopeSchema = Type.Object(

@@ -316,8 +316,14 @@ The LED scenario timing and transport defaults are defined in
 ### DS-4-06a user-history target (implementation pending)
 
 The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
-records the target product behavior and boundaries. Story-specific verification
-plans and acceptance criteria will be written when its subtasks are planned.
+records the target product behavior and boundaries. `ST-4-06a-03` verifies the
+paged BFF endpoint with shared contract validation, deterministic raw-reader
+seams and isolated SQLite HTTP tests. Coverage includes default size 50,
+cross-page timeout evidence/conflicts, sparse-page continuation, signed cursor
+scope separation, writes/count retirement under pinned bounds, fixed expiry
+with clock regression, generation replacement and main/auxiliary read failures.
+The current room HTTP/SSE transport and Dashboard still use the technical feed;
+frontend/live integration and parent-story verification remain pending.
 Existing no-replay, generation/watermark and source-fact retention rules remain
 binding; this target does not change platform processing or storage.
 

@@ -5,6 +5,8 @@ import {
     isUserHistoryPage,
     isUserHistoryProjection,
     normalizeUserHistoryCursorQueryScope,
+    normalizeUserHistoryPageQuery,
+    userHistoryFirstPageQuerySchema,
     userHistoryPageQuerySchema,
 } from './user-history';
 import { createUserHistoryFixtures } from './user-history-fixtures';
@@ -13,6 +15,25 @@ import { isSchema } from './validation';
 const fixtures = createUserHistoryFixtures();
 
 describe('user history contracts (AC-1–AC-3)', () => {
+    it('defaults only an omitted page size to 50 without coercing or mutating query data (ST-4-06a-03 AC-1)', () => {
+        const query = { cursor: 'opaque' };
+        expect(isSchema(userHistoryFirstPageQuerySchema, {})).toBe(true);
+        expect(normalizeUserHistoryPageQuery({})).toEqual({ pageSize: 50 });
+        expect(normalizeUserHistoryPageQuery(query)).toEqual({ pageSize: 50, cursor: 'opaque' });
+        expect(query).toEqual({ cursor: 'opaque' });
+
+        for (const pageSize of [1, 20, 50, 100]) {
+            expect(normalizeUserHistoryPageQuery({ pageSize })).toEqual({ pageSize });
+        }
+
+        for (const pageSize of [null, '', '50', 'invalid', 0, 101, 1.5]) {
+            expect(normalizeUserHistoryPageQuery({ pageSize })).toBeUndefined();
+        }
+
+        expect(normalizeUserHistoryPageQuery({ cursor: '' })).toBeUndefined();
+        expect(normalizeUserHistoryPageQuery({ deviceId: 'led-main' })).toBeUndefined();
+        expect(normalizeUserHistoryPageQuery(null)).toBeUndefined();
+    });
     it('accepts every user meaning, including unknown prior state and missing failure target', () => {
         for (const item of fixtures.items) {
             expect(isUserHistoryItem(item)).toBe(true);

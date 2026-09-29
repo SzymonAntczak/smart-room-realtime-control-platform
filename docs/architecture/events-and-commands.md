@@ -158,7 +158,17 @@ confirmation matching.
 
 The BFF derives minimal user entries from existing snapshot before/after values, realtime publications and retained significant facts. No sidecar or new platform event is persisted. A changing report and its derived confirmation produce one user change, while intermediate lifecycle and confirmation-without-change produce none. Failure/timeout, applying availability/health value changes and room history gaps follow the new ADR's classification. Source-specific interpretation does not move into the frontend.
 
-The planned BFF history response preserves source identity, durability, generation/watermark and pinned retention. The BFF filters transformed entries before paging; clients merge HTTP/SSE entries by `recordId` rather than grouping raw event chains. Platform executable schemas remain unchanged. `ST-4-06a-01` supplies separate TypeBox BFF user-history schemas and client validation adapters. `ST-4-06a-02` adds a BFF-local transformer for snapshots and publication batches, still disconnected from the current HTTP/SSE transport. Paging and frontend integration remain pending. Technical payloads and raw audit reads remain separate from this product view.
+The BFF user-history response preserves source identity, durability, generation/watermark and pinned retention. Clients merge HTTP/SSE entries by `recordId` rather than grouping raw event chains. Platform executable schemas remain unchanged. `ST-4-06a-01` supplies separate TypeBox BFF schemas and client validation adapters; `ST-4-06a-02` adds the snapshot/publication transformer, still disconnected from the current room HTTP/SSE transport.
+
+`ST-4-06a-03` exposes `GET /room/history/user-history` with optional `pageSize`
+(1–100, default 50) and an optional opaque cursor. The effective size remains
+fixed for a cursor session, including when the parameter is omitted on later
+requests. Each response transforms one pinned raw page; it may be empty with a
+continuation. Cross-page request evidence can establish a timeout target without
+advancing the returned cursor past the main page. Historical device changes are
+omitted because raw facts do not prove their applied before/after values;
+`retained_evidence_only` makes this limitation explicit. Technical raw audit
+reads remain separate. Frontend/live integration and rendering remain pending.
 
 ## Initial Event Types
 

@@ -43,6 +43,12 @@ import {
     isRoomSnapshotProjection,
     type RoomPublicationBatch,
 } from '@smart-room/contracts/realtime';
+import {
+    durableHistoryUnavailableResponseSchema,
+    normalizeUserHistoryPageQuery,
+    userHistoryPageQuerySchema,
+    userHistoryPageSchema,
+} from '@smart-room/contracts/user-history';
 import { isSchema } from '@smart-room/contracts/validation';
 import Fastify, {
     type FastifyBaseLogger,
@@ -61,6 +67,7 @@ import {
     writeJson,
 } from './room-bff-http';
 import { startRoomRealtimeStream } from './room-bff-sse';
+import { createUserHistoryReader } from './user-history';
 
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
@@ -94,6 +101,9 @@ export function createRoomBffServer({
     now = realClock,
 }: RoomBffConfig): FastifyInstance {
     const server = loggerInstance ? Fastify({ loggerInstance }) : Fastify();
+    const userHistoryReader = readSignificantFactPage
+        ? createUserHistoryReader({ readSignificantFactPage, getRoomSnapshot })
+        : undefined;
     const handlers: RoomBffHandlers = {
         getRoomSnapshot,
         getDiagnosticsSnapshot,
@@ -163,6 +173,64 @@ export function createRoomBffServer({
             now,
         });
     });
+
+    server.get(
+        '/room/history/user-history',
+        {
+            schema: {
+                querystring: userHistoryPageQuerySchema,
+                response: {
+                    200: userHistoryPageSchema,
+                    400: apiErrorResponseSchema,
+                    503: durableHistoryUnavailableResponseSchema,
+                    500: apiErrorResponseSchema,
+                },
+            },
+            // Fastify's default Ajv removes additional query keys and can coerce arrays.
+            // Reject unsupported fields/repeated values before that mutation occurs.
+            preValidation(request, response, done) {
+                const query = request.query;
+
+                if (
+                    typeof query !== 'object' ||
+                    query === null ||
+                    Object.entries(query).some(
+                        ([key, value]) =>
+                            (key !== 'pageSize' && key !== 'cursor') || typeof value !== 'string',
+                    )
+                ) {
+                    writeJson(response, 400, {
+                        error: 'invalid_request',
+                        message: 'History query parameters do not match the transport contract.',
+                    });
+
+                    return;
+                }
+
+                done();
+            },
+        },
+        (request, response) => {
+            const query = normalizeUserHistoryPageQuery(request.query);
+
+            if (!query) {
+                writeJson(response, 400, {
+                    error: 'invalid_request',
+                    message: 'History query parameters do not match the transport contract.',
+                });
+
+                return;
+            }
+
+            if (!userHistoryReader) {
+                writeInvalidServerResponse(response);
+
+                return;
+            }
+
+            writeHistoryReadResponse(response, userHistoryReader.readPage(query));
+        },
+    );
 
     server.get(
         '/room/history/significant-facts',

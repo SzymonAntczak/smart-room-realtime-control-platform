@@ -7,8 +7,10 @@ Accepted
 Implementation partial: `ST-4-06a-01` supplies additive executable BFF contracts
 and tested client validation adapters. `ST-4-06a-02` adds a tested BFF-local
 transformer for room snapshots and atomic publications. It remains disconnected
-from HTTP/SSE; paged history and frontend integration are pending in
-`ST-4-06a-03` through `-06`. The completed `DS-4-06` still exposes the
+from the current room HTTP/SSE transport. `ST-4-06a-03` delivers the separate
+pinned user-history HTTP endpoint; frontend/live integration, rendering and
+parent-story verification remain pending in `ST-4-06a-04` through `-06`.
+The completed `DS-4-06` still exposes the
 significant-fact feed with separate command lifecycle entries and expandable
 technical details until its successor story is implemented.
 
@@ -145,10 +147,14 @@ Pages have at most `pageSize` items (1–100), unique IDs and storage sequences,
 and source order `(occurredAt, storageSequence)` descending. Each item sequence
 is at or below the pinned watermark. Filtering permits short or empty pages
 with a non-null next cursor, rather than falsely declaring the raw session ended.
-The query requires `pageSize` and optionally a nonempty `cursor`. The separate
+The query accepts optional `pageSize` (integer 1–100, default 50) and an optional
+nonempty `cursor`. The default applies to both first and continuation requests.
+An omitted size therefore matches a cursor issued for 50; a cursor issued for
+another size requires that same explicit size or returns `cursor_query_mismatch`.
+The response and cursor scope always carry the effective size. The separate
 BFF scope is `{ dataset: user_history, order: occurred_at_desc, pageSize }`;
 it does not extend the storage port's raw cursor scope. Device/date filtering
-belongs to `DS-4-06b`. Default page size is chosen with pagination integration.
+belongs to `DS-4-06b`.
 Existing typed cursor failures are reused; the shared unavailable response is
 `{ error: durable_history_unavailable, message }`, matching current HTTP 503.
 
@@ -189,8 +195,33 @@ raw facts for its product feed. Preserve the underlying page order
 `throughSequence`, `retentionAsOf`, private retention revision, five-minute
 expiry, 1–100 page-size limits, typed cursor errors and storage `503` behavior.
 The BFF cursor binds its user-dataset scope to the underlying raw session; it
-cannot be used as a raw significant-facts cursor. Page sizing is set when the
-relevant subtask is planned.
+cannot be used as a raw significant-facts cursor.
+
+`GET /room/history/user-history` uses one raw significant-fact page per user
+page, with the effective `pageSize` (default 50). Filtering may yield fewer or
+zero items while `nextCursor` still points to the next raw range. It does not
+fill pages by consuming additional ranges. A BFF-local HMAC-SHA256 cursor binds
+the user scope and unchanged raw cursor with a process-local random key. The
+raw cursor remains the owner of pinned bounds, private retention revision and
+fixed expiry; no database or storage-port change is needed.
+
+Historical rows do not retain before/after projection evidence or the applied
+classification. This endpoint therefore omits historical power, availability
+and health changes. It returns failed attempts using only their own payload
+for the optional target, history gaps, and timeouts whose matching retained
+command request proves one consistent target. Current device names are display
+fallbacks; current device state and terminal-command caches are not historical
+proof. Entries for devices absent from the current configuration are omitted.
+
+For timeouts on the main page, the BFF scans that page and older pages of the
+same pinned session through its end, retaining only the relevant request
+evidence. Missing or conflicting targets omit the timeout. Auxiliary reads
+never advance the returned cursor: it wraps the main raw page's `nextCursor`.
+Every raw page is validated and auxiliary boundaries/order must match. An
+auxiliary read failure fails the whole response instead of returning partial
+success. Pages without eligible timeouts need no auxiliary scan. A scan can
+read the remaining retained history (at most 5,000 facts), but neither facts
+nor user pages are cached across requests.
 
 The BFF maps its existing room snapshot and `device.updated`, `commands.updated`
 and `platform.updated` publications to user-history entries, without changing
@@ -271,10 +302,15 @@ the history boundary honestly.
 Contract and client-boundary tests for `ST-4-06a-01` cover the additive BFF
 schemas and validation adapters.
 The BFF-local snapshot and publication transformer is implemented and tested
-under `ST-4-06a-02`; it is deliberately not connected to HTTP/SSE. Pagination,
-live integration, rendering and parent-story verification remain pending.
-Contract and transformer tests do not establish that the running Dashboard
-already implements this ADR's target feed.
+under `ST-4-06a-02`; it is deliberately not connected to the room HTTP/SSE
+transport. `ST-4-06a-03` adds contract, cursor, reader and HTTP/SQLite tests for
+the optional size/default, conservative classification, cross-page timeout
+evidence, sparse pages, signed dataset/scope separation, fixed expiry, pinned
+retention/generation and whole-response error handling. Existing room/raw API
+and runtime-bootstrap tests protect the unchanged transport boundaries.
+Live integration, rendering and parent-story verification remain pending.
+These tests do not establish that the running Dashboard already implements
+this ADR's target feed.
 
 ## Links
 
