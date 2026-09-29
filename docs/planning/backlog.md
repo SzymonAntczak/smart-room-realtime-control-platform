@@ -478,15 +478,11 @@ Each item has one difficulty rating only:
 | Subtask           | Scope                                                                                                   | Depends on                      | Difficulty |
 | ----------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------- |
 | `[x] ST-4-06a-01` | Define additive BFF user-history response contracts and validate them at the client boundary.           | `DS-4-03`, `DS-4-04`, `DS-4-06` | `C`        |
-| `[ ] ST-4-06a-02` | Transform current room snapshots and existing realtime publications into user-history items in the BFF. | `ST-4-06a-01`                   | `B`        |
+| `[x] ST-4-06a-02` | Transform current room snapshots and existing realtime publications into user-history items in the BFF. | `ST-4-06a-01`                   | `B`        |
 | `[ ] ST-4-06a-03` | Build pinned, paged user history in the BFF from the existing significant-fact reader.                  | `ST-4-06a-01`, `ST-4-06a-02`    | `B`        |
 | `[ ] ST-4-06a-04` | Implement frontend history paging, live merge, reading-position preservation and recovery.              | `ST-4-06a-02`, `ST-4-06a-03`    | `B`        |
 | `[ ] ST-4-06a-05` | Present accessible user-history items and add virtual rendering.                                        | `ST-4-06a-04`                   | `C`        |
 | `[ ] ST-4-06a-06` | Complete story verification and delivery review.                                                        | `ST-4-06a-05`                   | `C`        |
-
-Contract-only acceptance evidence:
-[ST-4-06a-01](user-history-contract-acceptance.md). This does not complete the
-story or activate the new wire contract.
 
 ### [ ] `DS-4-06b` — Historical event search by device and date
 

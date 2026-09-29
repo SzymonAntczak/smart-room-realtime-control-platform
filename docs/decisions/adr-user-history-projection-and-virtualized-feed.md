@@ -5,12 +5,12 @@
 Accepted
 
 Implementation partial: `ST-4-06a-01` supplies additive executable BFF contracts
-and tested client validation adapters. BFF transformation, HTTP pagination and
-frontend integration remain pending in `ST-4-06a-02` through `-06`. These new
-contracts are not connected to the running HTTP/SSE transport. The completed
-`DS-4-06` still exposes the significant-fact feed with separate
-command lifecycle entries and expandable technical details until this successor
-story is implemented.
+and tested client validation adapters. `ST-4-06a-02` adds a tested BFF-local
+transformer for room snapshots and atomic publications. It remains disconnected
+from HTTP/SSE; paged history and frontend integration are pending in
+`ST-4-06a-03` through `-06`. The completed `DS-4-06` still exposes the
+significant-fact feed with separate command lifecycle entries and expandable
+technical details until its successor story is implemented.
 
 This ADR supersedes the Stage 4 storage ADR's product-feed presentation and
 total view bound for the DS-4-06a target. Significant-fact contracts, processor
@@ -268,11 +268,13 @@ the history boundary honestly.
 
 ## Verification
 
-Contract and client-boundary evidence for `ST-4-06a-01` is recorded in the
-[contract acceptance record](../planning/user-history-contract-acceptance.md).
-Transformation, pagination, live integration, rendering and story-level
-verification remain pending. Contract tests do not establish that the running
-Dashboard already implements this ADR's target feed.
+Contract and client-boundary tests for `ST-4-06a-01` cover the additive BFF
+schemas and validation adapters.
+The BFF-local snapshot and publication transformer is implemented and tested
+under `ST-4-06a-02`; it is deliberately not connected to HTTP/SSE. Pagination,
+live integration, rendering and parent-story verification remain pending.
+Contract and transformer tests do not establish that the running Dashboard
+already implements this ADR's target feed.
 
 ## Links
 
