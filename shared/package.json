@@ -13,7 +13,10 @@
         "./history": "./src/history.ts",
         "./projections": "./src/projections.ts",
         "./realtime": "./src/realtime.ts",
+        "./room-bff": "./src/room-bff.ts",
         "./storage": "./src/storage.ts",
+        "./user-history": "./src/user-history.ts",
+        "./user-history-fixtures": "./src/user-history-fixtures.ts",
         "./validation": "./src/validation.ts"
     },
     "scripts": {

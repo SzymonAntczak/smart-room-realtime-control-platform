@@ -4,9 +4,11 @@
 
 Accepted
 
-Implementation pending: `DS-4-06a`. This documentation decision does not change
-the running application, shared executable schemas, database or tests. The
-completed `DS-4-06` still exposes the significant-fact feed with separate
+Implementation partial: `ST-4-06a-01` supplies additive executable BFF contracts
+and tested client validation adapters. BFF transformation, HTTP pagination and
+frontend integration remain pending in `ST-4-06a-02` through `-06`. These new
+contracts are not connected to the running HTTP/SSE transport. The completed
+`DS-4-06` still exposes the significant-fact feed with separate
 command lifecycle entries and expandable technical details until this successor
 story is implemented.
 
@@ -94,6 +96,69 @@ records, raw payloads, command IDs and diagnostic reason strings. The response
 contract is defined in `ST-4-06a-01`; it does not alter platform
 `RecentEventProjection`, durable significant facts, processor results,
 checkpoints or stored database records.
+
+#### Executable contract delivered by ST-4-06a-01
+
+`@smart-room/contracts/user-history` owns TypeBox schemas and semantic guards
+for the presentation contract. `UserHistoryItem` is discriminated by `kind`:
+
+| Kind                   | Presentation data beyond common fields                                              |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `power_changed`        | `previous: on/off/null`, `current: on/off`                                          |
+| `availability_changed` | `previous: online/offline/unknown/null`, `current: online/offline/unknown`          |
+| `health_changed`       | `previous: healthy/degraded/unknown/null`, `current: healthy/degraded/unknown`      |
+| `attempt_failed`       | Optional `requestedPower: on/off`, only when the target is known                    |
+| `confirmation_missing` | Required `requestedPower: on/off`; absence of confirmation does not prove no action |
+| `history_gap`          | `outageStartedAt`, `outageEndedAt`; a room-level entry                              |
+
+Every entry carries its source fact's `recordId`, canonical UTC `occurredAt`,
+`source` and `durability`. Durable entries require `storageSequence`; volatile
+entries forbid it. Device entries carry `deviceId` and `deviceName` (the current
+device display-name fallback, localized in the browser by device identity).
+The room gap has no device fields and uses source `backend`. A known previous
+value must differ from the current value. `null` means the previous value is
+not evidenced; it is distinct from a known domain value of `unknown`.
+The gap interval is chronological and its end equals `occurredAt`.
+No item includes translated sentences, raw payloads, command IDs, technical
+reason strings, or command-progress/confirmation entries. Structural validation
+cannot prove that a transition applied: the later BFF transformation must still
+enforce the classification and retained-evidence rules above.
+
+`@smart-room/contracts/room-bff` exposes `RoomBffSnapshot` and
+`RoomBffRealtimeServerMessage`, separate from platform projections and runtime
+publications. It replaces `recentEvents` with `userHistory` at the corresponding
+snapshot/delta positions, retaining all other current room/command/storage and
+telemetry fields, the four existing message names and revision envelopes.
+The snapshot allows 0–20 entries; an optional delta addition contains 1–20.
+Collections have unique IDs and presentation order `(occurredAt, recordId)`
+descending. Device additions must refer to the updated device and cannot share
+one delta with a telemetry sample. Existing platform semantic guards validate
+the unchanged projection portion; the new guards do not duplicate command or
+storage rules. Live sequences are not compared with the preceding watermark,
+since its update follows at a later revision.
+
+`UserHistoryPage` carries durable-only `items`, `historyGenerationId`,
+`throughSequence`, `retentionAsOf`, `pageSize`, opaque `nextCursor` or `null`,
+and `completeness: retained_evidence_only`. The completeness label warns that
+unproven transitions may be omitted; it does not assert exhaustive user history.
+Pages have at most `pageSize` items (1–100), unique IDs and storage sequences,
+and source order `(occurredAt, storageSequence)` descending. Each item sequence
+is at or below the pinned watermark. Filtering permits short or empty pages
+with a non-null next cursor, rather than falsely declaring the raw session ended.
+The query requires `pageSize` and optionally a nonempty `cursor`. The separate
+BFF scope is `{ dataset: user_history, order: occurred_at_desc, pageSize }`;
+it does not extend the storage port's raw cursor scope. Device/date filtering
+belongs to `DS-4-06b`. Default page size is chosen with pagination integration.
+Existing typed cursor failures are reused; the shared unavailable response is
+`{ error: durable_history_unavailable, message }`, matching current HTTP 503.
+
+Client adapters validate decoded `unknown` HTTP/SSE data without coercion,
+partial success or stripping extra fields. They return a validated page,
+snapshot/message or a typed failure; they perform no fetching, event aggregation
+or session/UI update. Production EventSource, history sessions and mocked-BFF
+fixtures stay on the current raw contract until their integration subtasks.
+Once integrated, the BFF/client use one strict current wire contract; the added
+schemas are not a runtime compatibility union or a second SSE connection.
 
 The BFF transforms data as it crosses its existing API boundary. For live
 updates it uses the existing raw history additions and before/after room
@@ -203,10 +268,11 @@ the history boundary honestly.
 
 ## Verification
 
-Implementation evidence is pending. Task-specific plans and acceptance criteria
-will be created when the DS-4-06a subtasks are planned. This ADR records product
-and architecture decisions only; it does not establish implementation evidence
-or complete a subtask.
+Contract and client-boundary evidence for `ST-4-06a-01` is recorded in the
+[contract acceptance record](../planning/user-history-contract-acceptance.md).
+Transformation, pagination, live integration, rendering and story-level
+verification remain pending. Contract tests do not establish that the running
+Dashboard already implements this ADR's target feed.
 
 ## Links
 
