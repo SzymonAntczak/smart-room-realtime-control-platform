@@ -1,33 +1,21 @@
 ---
 name: smart-room-event-contract
-description: Use when designing, implementing, reviewing, or testing Smart Room events, commands, event envelopes, payloads, command lifecycle states, confirmation matching, duplicate events, stale/offline device state, or derived room state behavior.
+description: Design or verify Smart Room event and command contracts, lifecycle, confirmations or state derivation. Use for changes to those semantics, not unrelated code or documentation edits.
 ---
 
 # Smart Room Event Contract
 
-Use this skill whenever code or docs affect the event and command model.
+Identify the affected event, command, projection, simulator or UI boundary.
+Read `docs/architecture/events-and-commands.md` for contract shape and validation;
+follow the relevant control-loop, devices and reliability-and-testing sections
+for lifecycle, availability and timing.
 
-## Required Sources
+For command behavior, read the command-correlation/concurrency and
+device-confirmation/health ADRs. Read the MQTT source-parity ADR when the boundary
+includes MQTT traffic, simulator scenarios or source availability.
 
-Read these before changing behavior:
-
-- `docs/architecture/events-and-commands.md`
-- `docs/architecture/control-loop.md`
-- `docs/architecture/devices.md`
-- `docs/architecture/reliability-and-testing.md`
-- `docs/decisions/adr-command-correlation-confirmation-and-concurrency.md`
-- `docs/decisions/adr-device-command-confirmation-and-health-policy.md`
-- `docs/decisions/adr-mqtt-source-parity-before-device-expansion.md` when the
-  affected boundary includes MQTT runtime traffic, simulator scenarios or
-  source availability.
-
-## Workflow
-
-1. Summarize the binding contract from the required sources before changing or
-   reviewing code.
-2. Identify the affected event, command, projection, simulator or UI boundary.
-3. Check whether the change preserves the documented contract shape,
-   lifecycle, timing, validation and confirmation behavior.
-4. Check whether tests or simulator scenarios cover the affected contract edge.
-5. If behavior is ambiguous, recommend a documentation or ADR update before
-   treating the new behavior as durable.
+Summarize the binding contract before changing or reviewing it. Check shape,
+lifecycle, timing, validation and confirmation semantics against those sources,
+then inspect tests/scenarios for the affected contract edges. If behavior is
+ambiguous, surface the documentation or human decision needed before treating
+new behavior as durable.

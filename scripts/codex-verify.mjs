@@ -37,6 +37,12 @@ const rootVerificationPaths = new Set([
     'package.json',
     'tsconfig.json',
 ]);
+const instructionPaths = new Set([
+    'AGENTS.md',
+    'backend/AGENTS.md',
+    'frontend/AGENTS.md',
+    'simulator/AGENTS.md',
+]);
 
 function extensionOf(path) {
     const dotIndex = basename(path).lastIndexOf('.');
@@ -118,10 +124,11 @@ export function buildVerificationPlan(paths, isFilePresent = () => true) {
         );
     }
 
-    const backendChanged = normalizedPaths.some((path) => hasPrefix(path, 'backend/'));
-    const simulatorChanged = normalizedPaths.some((path) => hasPrefix(path, 'simulator/'));
-    const sharedChanged = normalizedPaths.some((path) => hasPrefix(path, 'shared/'));
-    const frontendChanged = normalizedPaths.some(
+    const runtimePaths = normalizedPaths.filter((path) => !instructionPaths.has(path));
+    const backendChanged = runtimePaths.some((path) => hasPrefix(path, 'backend/'));
+    const simulatorChanged = runtimePaths.some((path) => hasPrefix(path, 'simulator/'));
+    const sharedChanged = runtimePaths.some((path) => hasPrefix(path, 'shared/'));
+    const frontendChanged = runtimePaths.some(
         (path) => hasPrefix(path, 'frontend/src/') || path === 'frontend/vite.config.ts',
     );
     const browserChanged = normalizedPaths.some(
@@ -163,6 +170,7 @@ export function buildVerificationPlan(paths, isFilePresent = () => true) {
             hasPrefix(path, '.agents/') ||
             hasPrefix(path, '.codex/') ||
             hasPrefix(path, 'scripts/') ||
+            instructionPaths.has(path) ||
             rootVerificationPaths.has(path) ||
             path === 'playwright.config.ts',
     );

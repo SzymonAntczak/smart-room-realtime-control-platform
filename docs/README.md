@@ -22,6 +22,11 @@ treat that as drift to resolve in code, tests, documentation or a new decision.
 - [Architecture examples](architecture/examples.md)
 - [AI collaboration model](architecture/ai-collaboration.md)
 
+## Development
+
+- [Coding and testing conventions](development/coding-guidelines.md)
+- [Frontend development conventions](development/frontend-guidelines.md)
+
 ## Planning
 
 - [Planning README](planning/README.md)

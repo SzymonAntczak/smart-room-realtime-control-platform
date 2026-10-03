@@ -1,6 +1,6 @@
 ---
 name: smart-room-browser-integration-testing
-description: Use when adding, changing or reviewing Smart Room Playwright browser-integration tests, the test-local mocked BFF, browser-test runtime or Playwright configuration under frontend/tests/browser-integration. Use for mocked-BFF browser scenarios, not root-level full-runtime end-to-end tests.
+description: Add or review Smart Room mocked-BFF Playwright scenarios and their harness/configuration. Applies to frontend browser integration, not root-level full-runtime end-to-end tests.
 ---
 
 # Smart Room Browser Integration Testing
@@ -12,6 +12,8 @@ Use this skill for the mocked-BFF Playwright suite.
 Read the relevant parts of:
 
 - `frontend/AGENTS.md`
+- [frontend guidelines](../../../docs/development/frontend-guidelines.md#browser-integration-tests),
+  Browser Integration Tests section
 - `docs/decisions/adr-playwright-frontend-integration-tests.md`
 - `docs/architecture/reliability-and-testing.md`
 - root `package.json`, `frontend/package.json` and `playwright.config.ts`
@@ -43,16 +45,5 @@ command lifecycle, availability, freshness, health or history behavior.
     - `npm run test:frontend` when changing mock-BFF unit tests
     - relevant lint or format checks
 
-## Keep Boundaries Intact
-
-- Start only Vite and the test-local mocked BFF for this suite.
-- Do not start the production backend or simulator.
-- Do not inject frontend state or use simulator-native messages to arrange a
-  scenario.
-- Do not use arbitrary time waits; release or observe a deterministic condition.
-- Do not use CSS selectors or DOM structure as browser locators.
-- Do not redefine system behavior here. Refer to the architecture documents and
-  accepted ADRs that own it.
-
-The mocked-BFF rules above do not apply to the separate root-level full-runtime
-end-to-end suite.
+Apply the browser-suite conventions from the linked frontend guidelines throughout
+this workflow. Architecture documents and accepted ADRs own system behavior.

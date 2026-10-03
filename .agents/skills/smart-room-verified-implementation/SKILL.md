@@ -1,89 +1,47 @@
 ---
 name: smart-room-verified-implementation
-description: Use when implementing an approved Smart Room plan or cohesive behavior change that needs explicit acceptance criteria, verification, and a bounded delivery gate. Use the minimal path for small changes.
+description: Implement an approved Smart Room change with acceptance evidence and an independent bounded delivery gate. Use a minimal contract for small changes; not for unapproved architecture decisions.
 ---
 
 # Smart Room Verified Implementation
 
-Implement an approved Smart Room change through one accountable writer, trace
-the result to stable success criteria and finish with an independent delivery
-gate. This skill does not authorize architecture changes, specification changes
-or commits that the user did not request.
+Load the approved plan/Goal contract, preserving stable AC and DoD identifiers.
+Read applicable instructions and binding sources, inspect the worktree and
+preserve unrelated changes. Derive missing minimum criteria only from approved
+sources; unresolved behavior or architecture requires a human decision.
 
-## Establish The Execution Contract
+## Execute
 
-1. Load the approved plan or Goal Execution Contract. Preserve stable
-   acceptance-criterion and definition-of-done identifiers.
-2. If the task has no explicit criteria, derive the minimum necessary criteria
-   only from the user's request, binding architecture and accepted ADRs. Do not
-   invent behavior. Stop for a human decision when those sources are ambiguous
-   or conflicting.
-3. Read the relevant `AGENTS.md` files, architecture documents and ADRs before
-   changing behavior.
-4. Inspect the worktree and preserve unrelated user changes.
-5. Confirm the scope, non-goals, verification scenarios, checkpoints, pause
-   conditions and stop condition. Use a compact version for small local work.
+- Keep one accountable writer in one checkout per execution unit. Research agents
+  stay read-only; do not split one Goal's criteria among concurrent writers.
+  Independent approved Goals require independent scopes, dependencies and checkouts.
+- Map criteria to verification. Lock only explicitly identified acceptance evidence
+  as the Specification Lock; do not rewrite it to force a pass. Unrelated tests
+  are not locked. Docs/config refactors need no synthetic red phase.
+- Implement the smallest cohesive approved change. At checkpoints run the narrowest
+  credible checks; report what establishes each criterion.
+- Continue authorized reversible work without repeated approval. Do not change
+  architecture, specification or scope, or commit without explicit authorization.
 
-## Implement Through One Writer
+## Delivery Gate
 
-- Keep one agent responsible for all repository writes in one implementation
-  execution unit. An implementation Goal runs in exactly one checkout: Local
-  or one worktree. Research subagents, when useful, remain read-only and
-  return evidence.
-- Do not divide acceptance criteria of one Goal among concurrent writers.
-  Independently approved Goals may use separate worktrees and writers when
-  their checkout, scope and verification remain independent.
-- Identify the tests or other specification evidence that directly maps to each
-  acceptance criterion.
-- When meaningful for behavior work, add or refine acceptance-level evidence
-  before implementation and confirm that it fails for the intended reason.
-  Documentation, configuration and mechanical refactors do not require a
-  synthetic red phase.
-- Treat only explicitly identified acceptance-mapped evidence as the
-  Specification Lock. Do not rewrite it merely to make the implementation pass.
-  Unrelated tests are not locked.
-- Implement the smallest cohesive change that satisfies the approved contract.
-- At each checkpoint, run the narrowest credible tests and static checks. Keep
-  acceptance criteria, definition-of-done items and verification results
-  traceable.
-- Do not create a git commit unless the user explicitly asks for one.
+Use the configured `smart_room_delivery_reviewer`, not a general review pass.
+Supply the approved plan/contract, AC, DoD, Specification Lock, scoped diff and
+verification results. It independently returns `DELIVERY_REVIEW: PASS` or
+`DELIVERY_REVIEW: BLOCKING`.
 
-## Run The Delivery Gate
+Read the Goal-Oriented Task Delivery policy in
+`docs/architecture/ai-collaboration.md` when handling the gate. After first
+BLOCKING, classify every blocker. Apply at most one cohesive correction batch
+only for confirmed `implementation_defect` blockers within scope, rerun affected
+checks and request one final review. Stop immediately for
+`specification_defect`, `requirement_ambiguity`, `architecture_conflict`,
+`scope_gap` or `verification_environment`. A second BLOCKING also stops work.
 
-Give the configured `smart_room_delivery_reviewer` agent—not a general review
-pass—the approved plan or Goal contract, stable acceptance criteria, definition
-of done, Specification Lock, relevant diff and verification results. The
-reviewer independently inspects repository evidence and returns
-`DELIVERY_REVIEW: PASS` or `DELIVERY_REVIEW: BLOCKING`.
+Return the decision package for a stop: classification, affected AC/DoD, source
+evidence, completed verification and one recommended next workflow. Advisories
+are not blockers unless the approved contract requires them.
 
-If the first review is `BLOCKING`:
-
-1. Classify every blocker as `implementation_defect`, `specification_defect`,
-   `requirement_ambiguity`, `architecture_conflict`, `scope_gap` or
-   `verification_environment`.
-2. Apply at most one cohesive correction batch, and only when every blocker to
-   be corrected is a confirmed `implementation_defect` within the approved
-   scope.
-3. Rerun the affected verification and request one final delivery review.
-
-Stop immediately without autonomous remediation for any other blocker class. A
-second `BLOCKING` result also ends autonomous work. Return a decision package
-containing the blocker classification, affected acceptance criteria and
-definition-of-done items, source evidence, completed verification and one
-recommended next workflow.
-
-`PASS` means there are no blocking findings. Record advisories, but do not treat
-them as failed delivery unless the approved contract makes them required.
-
-## Completion
-
-Report:
-
-- acceptance criteria and definition-of-done status,
-- files changed,
-- verification run and its result,
-- delivery-review result and advisories,
-- residual risks or human decisions.
-
-If a Goal is active, mark it complete only after all required criteria and
-definition-of-done items pass and the delivery review returns `PASS`.
+Report AC/DoD status, files, checks, gate result/advisories and remaining decisions.
+If a Goal is active, complete it only after every required criterion and DoD
+passes and delivery review returns PASS.

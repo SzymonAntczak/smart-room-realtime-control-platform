@@ -10,7 +10,9 @@ subagent prompts.
 1. `docs/architecture/` and accepted ADRs in `docs/decisions/` define binding
    system behavior.
 2. `AGENTS.md` files provide local operating instructions for AI agents working
-   in a repository area.
+   in a repository area and route to applicable developer guidance in
+   `docs/development/`. Developer guidance owns detailed coding and testing
+   conventions, not product behavior.
 3. Skills provide reusable workflows for common kinds of work.
 4. Hooks provide deterministic lifecycle feedback or enforcement for workflows.
    They do not define Smart Room system behavior.
@@ -43,7 +45,16 @@ They may include:
 
 They should avoid restating detailed behavior rules from architecture docs or
 ADRs. Short guardrails are acceptable when they prevent common mistakes, but the
-file should link to the binding document that owns the rule.
+file should link to the binding document that owns the rule. Do not keep a
+condensed copy of detailed coding or testing conventions in AGENTS.md after
+moving them to developer guidance. Link to the owning section and specify when
+to load it; local ownership and authorization reminders may remain.
+
+Keep instructions loaded at session start short. Load detailed developer
+guidance when changing or reviewing the code it governs; load architecture and
+ADRs relevant to the behavior at hand. An editorial fix does not require reading
+every architecture document. Reducing context must preserve existing rules and
+make their new location and loading condition explicit.
 
 If an `AGENTS.md` file conflicts with architecture docs or accepted ADRs, treat
 that as AI-configuration drift and update the `AGENTS.md` file.
@@ -62,6 +73,12 @@ They may include:
 They should not duplicate domain behavior from architecture docs, ADRs or
 `AGENTS.md` files. When a skill needs behavior context, it should load or cite
 the relevant source document.
+
+Keep skill descriptions precise enough to distinguish planning, decomposition,
+implementation and review. Put substantial mode-specific procedures and output
+templates in linked references, loaded only for that mode. Preserve essential
+authorization and stop conditions in the entrypoint; progressive disclosure
+must not weaken the delivery policy.
 
 ## Delivery Work Hierarchy
 
@@ -149,6 +166,13 @@ the Goal Execution Contract, the one-writer rule or the delivery gate. Each
 worktree must have the dependencies and local setup required for its own
 verification. Do not add ignored local files to a worktree automatically; make
 that an explicit human-owned decision when it becomes necessary.
+
+Within an approved scope, continue routine reversible local work and the
+necessary verification without asking for repeated approval. Existing user
+authorization persists. Ask for a human decision when behavior, architecture or
+scope requires one; the blocker and two-pass delivery rules below still apply.
+Use explicit completion criteria and the narrowest credible checks instead of
+repeating successful broad checks without new evidence or changes.
 
 Specification evidence may be locked selectively when it directly represents
 an approved acceptance criterion. Locked evidence is not rewritten merely to

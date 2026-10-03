@@ -1,56 +1,23 @@
 ---
 name: smart-room-architecture-decision
-description: Use for Smart Room architecture planning, ADR drafting, trade-off analysis, roadmap alignment, or preparing options for human-owned system behavior decisions. Trigger when work touches docs/architecture, docs/decisions, control-loop design, simulator-before-hardware, local-first architecture, or AI-assisted development boundaries.
+description: Prepare Smart Room architecture options, trade-offs or ADR decisions for human approval. Use when choosing or changing system behavior; not for editorial fixes or routine implementation of an approved decision.
 ---
 
 # Smart Room Architecture Decision
 
-Use this skill to keep architecture work deliberate, documented and aligned with
-the project goal.
+Identify whether the work is a new decision, an ADR update or a temporary
+trade-off. Read the architecture and accepted ADRs relevant to the affected
+behavior; use goal/roadmap for direction and tradeoffs.md for early options.
 
-## Workflow
+Pull behavior from binding sources, document consequences and keep human
+ownership explicit. Promote a planning idea into architecture or an ADR before
+treating it as durable behavior.
 
-1. Read the relevant planning and architecture docs before proposing changes.
-2. Identify whether the work is a new decision, an update to an existing ADR, or
-   a temporary trade-off.
-3. Pull behavior rules from the architecture docs and accepted ADRs, not from
-   this workflow.
-4. Document consequences, not only the chosen option.
-5. When a planning idea becomes binding, move it into architecture or an ADR.
+Use `docs/decisions/adr-template.md` for ADR work: status, context, decision,
+consequences, relevant rejected alternatives and verification/acceptance criteria.
+For implementation planning, state what establishes completion.
 
-## Source Files
-
-Use these files as the main context:
-
-- `docs/planning/goal.md`
-- `docs/planning/roadmap.md`
-- `docs/architecture/system-overview.md`
-- `docs/architecture/system-context.md`
-- `docs/architecture/control-loop.md`
-- `docs/architecture/devices.md`
-- `docs/architecture/events-and-commands.md`
-- `docs/architecture/reliability-and-testing.md`
-- `docs/architecture/ai-collaboration.md`
-- `docs/decisions/adr-template.md`
-- `docs/decisions/adr-local-first-before-cloud.md`
-- `docs/decisions/adr-event-simulator-before-real-devices.md`
-- `docs/decisions/adr-command-correlation-confirmation-and-concurrency.md`
-- `docs/decisions/adr-device-command-confirmation-and-health-policy.md`
-- `docs/decisions/adr-command-history-and-terminal-projections.md`
-- `docs/decisions/adr-json-schema-transport-contracts.md`
-- `docs/decisions/adr-mqtt-source-parity-before-device-expansion.md`
-- `docs/decisions/tradeoffs.md`
-
-## Decision Output
-
-For ADR-style work, include:
-
-- status
-- context
-- decision
-- consequences
-- rejected alternatives when useful
-- verification or acceptance criteria
-
-For implementation planning, end with what should be true before the step is
-considered complete.
+Load `docs/architecture/ai-collaboration.md` for AI delivery/governance decisions,
+control-loop/events/devices/reliability documents for their respective behavior,
+and the corresponding accepted ADRs from `docs/decisions/`. Do not load the
+entire documentation tree merely because one architecture file is touched.

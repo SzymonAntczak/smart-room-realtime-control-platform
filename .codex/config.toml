@@ -2,10 +2,12 @@
 
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
-project_doc_max_bytes = 65536
-review_model = "gpt-5.6-sol"
+review_model = "gpt-6.1-sol"
 
 [agents]
 max_concurrent_threads_per_session = 4
-default_subagent_model = "gpt-5.6-terra"
-default_subagent_reasoning_effort = "medium"
+default_subagent_model = "gpt-6-luna"
+default_subagent_reasoning_effort = "high"
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"

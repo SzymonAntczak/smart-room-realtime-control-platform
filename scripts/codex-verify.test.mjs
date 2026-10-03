@@ -149,6 +149,67 @@ test('does not send unsupported TOML files to Prettier', () => {
     );
 });
 
+test('formats repository and package instructions without runtime checks', () => {
+    const paths = ['AGENTS.md', 'backend/AGENTS.md', 'frontend/AGENTS.md', 'simulator/AGENTS.md'];
+    const plan = buildVerificationPlan(paths);
+
+    assert.deepEqual(
+        plan.map((command) => command.key),
+        ['format:files'],
+    );
+    assert.deepEqual(plan[0].args, ['run', 'format:files', '--', ...paths]);
+});
+
+test('keeps affected runtime checks when code and instructions change together', () => {
+    for (const path of [
+        'backend/src/platform/example.ts',
+        'simulator/src/example.ts',
+        'shared/src/realtime.ts',
+        'frontend/src/app/example.ts',
+    ]) {
+        const runtimePlan = buildVerificationPlan([path]);
+        const mixedPlan = buildVerificationPlan([
+            path,
+            'AGENTS.md',
+            'backend/AGENTS.md',
+            'simulator/AGENTS.md',
+        ]);
+
+        assert.deepEqual(
+            mixedPlan.filter((command) => command.key !== 'format:files'),
+            runtimePlan.filter((command) => command.key !== 'format:files'),
+        );
+    }
+});
+
+test('does not format deleted instructions or schedule runtime checks for them', () => {
+    assert.deepEqual(
+        buildVerificationPlan(
+            ['AGENTS.md', 'backend/AGENTS.md', 'simulator/AGENTS.md'],
+            () => false,
+        ),
+        [],
+    );
+});
+
+test('still verifies hooks when instructions change alongside their configuration', () => {
+    assert.deepEqual(
+        buildVerificationPlan(['AGENTS.md', '.codex/hooks.json']).map((command) => command.key),
+        ['format:files', 'test:codex-hooks'],
+    );
+});
+
+test('keeps the safe suite for unknown files outside the recognized instruction paths', () => {
+    const keys = buildVerificationPlan(['another-package/AGENTS.md']).map((command) => command.key);
+
+    assert.ok(keys.includes('lint'));
+    assert.ok(keys.includes('typecheck'));
+    assert.ok(keys.includes('test:contracts'));
+    assert.ok(keys.includes('test:backend'));
+    assert.ok(keys.includes('test:frontend'));
+    assert.ok(keys.includes('test:simulator'));
+});
+
 test('runs npm commands without spawning npm.cmd directly on Windows', async () => {
     const result = await runCommand(
         { args: ['--version'], key: 'npm-version', label: 'npm version' },

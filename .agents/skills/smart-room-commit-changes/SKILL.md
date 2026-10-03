@@ -1,86 +1,28 @@
 ---
 name: smart-room-commit-changes
-description: Use when the user asks Codex to commit, create a git commit, stage changes, write a commit message, split changes into commits, or prepare a clean commit in the Smart Room repository. This skill enforces careful diff review, scoped staging, verification notes, and protection of unrelated user changes.
+description: Prepare scoped Smart Room staging and commits when the user requests staging, committing, commit messages or splitting commits.
 ---
 
 # Smart Room Commit Changes
 
-Use this skill to turn finished work into one or more clean Git commits.
+Inspect `git status --short`, staged/unstaged diffs and untracked contents before
+staging. Treat existing changes as user work unless this session created them.
+Stage only the authorized scope; split unrelated commits only when requested.
+Do not amend, rebase, reset, stash, clean or force-push without explicit request.
+For dubious ownership, use a one-off `git -c safe.directory=...`; do not change
+global configuration unless requested.
 
-## Core Rules
+## Prepare And Commit
 
-- Never commit before inspecting `git status` and the relevant diffs.
-- Treat untracked and modified files as user work unless this session clearly
-  created them.
-- Do not stage unrelated changes just because they are present.
-- Do not amend, rebase, reset, stash, clean, or force-push unless the user
-  explicitly asks.
-- If the worktree contains unrelated changes, commit only the intended paths or
-  ask the user to choose the scope.
-- If Git reports dubious ownership, use a one-off `git -c safe.directory=...`
-  command rather than changing global Git config unless the user asks.
-
-## Workflow
-
-1. Check repository state:
-    - `git status --short`
-    - inspect staged changes with `git diff --cached`
-    - inspect unstaged changes with `git diff`
-    - include untracked files by reading their contents before staging
-2. Decide commit scope:
-    - group closely related changes into one commit
-    - split unrelated changes into separate commits only when the user wants that
-    - leave unrelated user changes unstaged
-3. Check README impact before staging:
-    - inspect README files in changed directories and relevant parent documentation
-      indexes when changed files affect their structure, scripts, configuration,
-      endpoints or navigation
-    - update affected README files when they no longer describe the committed
-      behavior, and verify their relative Markdown links
-    - record whether README files were updated, checked without changes, or were
-      not relevant to the commit scope
-4. Verify when practical:
-    - run the narrowest relevant test, lint, typecheck, or documentation check
-    - if no command exists, say that explicitly in the final summary
-5. Stage only intended files.
-6. Re-check staged diff before committing.
-7. Write a concise imperative commit message.
-8. Run `git commit -m "<message>"`.
-9. Report commit hash, commit message, files included, and verification.
-
-## Commit Message Style
-
-Prefer a short imperative subject:
-
-- `Add Codex repo guidance`
-- `Document command lifecycle rules`
-- `Add smart room commit workflow skill`
-
-Use a body only when it helps explain why the change matters. Keep the subject
-under 72 characters when practical.
-
-## Before Committing Current Project Docs
-
-For this repository, consider whether documentation or AI-environment changes
-affect:
-
-- `AGENTS.md`
-- `.codex/config.toml`
-- `.codex/agents/`
-- `.agents/skills/`
-- `docs/architecture/`
-- `docs/decisions/`
-
-AI-environment setup changes can usually be one commit when they form a coherent
-working setup.
-
-## Final Summary
-
-After committing, include:
-
-- commit hash
-- commit subject
-- staged/committed files
-- README impact check and any README updates
-- verification performed or why none was run
-- any remaining uncommitted changes
+- Inspect affected README files and parent indexes when structure, commands,
+  configuration, endpoints or navigation change. Update stale guidance, check
+  relative links and record whether README updates were needed.
+- Run the narrowest relevant verification when practical; report absent commands.
+- Stage the intended paths and inspect the staged diff again. A staging-only or
+  message-only request does not authorize creating a commit.
+- When committing is requested, use a concise imperative subject, normally under
+  72 characters, and a body only when it explains the reason. Coherent AI setup
+  changes may form one commit; check AGENTS, config, roles, skills and relevant
+  architecture/decision docs for consistency.
+- Report hash/subject when committed, included files, README impact, verification
+  and remaining uncommitted work.
