@@ -1,11 +1,71 @@
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
-import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
+import type { RoomBffSnapshot } from '@smart-room/contracts/room-bff';
+import type { RoomBffRealtimeServerMessage } from '@smart-room/contracts/room-bff';
+import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createUserHistorySession } from '../history/user-history-session';
+
+import { createRoomHistorySource } from './room-history-source';
 import { connectRoomRealtime as connectTemperatureRealtime } from './room-realtime-client';
 
 describe('connectTemperatureRealtime', () => {
+    it('keeps the known generation when opening history during unknown storage so a replacement HTTP page cannot merge old live entries', async () => {
+        const history = createRoomHistorySource();
+        const connection = connectTemperatureRealtime(
+            {
+                ...createHandlers(),
+                onHistoryUpdate: (update, baseline) => history.publish(update, baseline),
+            },
+            MockWebSocket,
+        );
+        history.setRequestBaseline(() => connection.requestBaseline());
+        const fixtures = createUserHistoryFixtures();
+        MockWebSocket.latest().emitMessage(
+            createRoomSnapshotMessage({ userHistory: [fixtures.gap] }),
+        );
+        MockWebSocket.latest().emitMessage({
+            messageType: 'platform.updated',
+            previousRevision: 0,
+            revision: 1,
+            sentAt: '2026-06-08T09:30:02Z',
+            payload: {
+                storage: {
+                    status: 'degraded',
+                    changedAt: '2026-06-08T09:30:02Z',
+                    reason: 'storage_write_failed',
+                    historyGenerationId: null,
+                    storedThroughSequence: null,
+                },
+            },
+        } satisfies RoomBffRealtimeServerMessage);
+        const baseline = history.source.getBaseline();
+
+        if (!baseline) {
+            throw new Error('Missing validated baseline');
+        }
+
+        const close = vi.spyOn(MockWebSocket.latest(), 'close');
+        const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    ...fixtures.page,
+                    pageSize: 50,
+                    historyGenerationId: 'replacement',
+                }),
+            ),
+        );
+        const session = createUserHistorySession(fetcher, history.source.requestBaseline);
+        const unsubscribe = history.source.subscribe((update) => session.acceptRealtime(update));
+        session.acceptRealtime(baseline);
+        await session.loadNextPage();
+        expect(session.getState().status).toBe('waiting_for_baseline');
+        expect(session.getState().items).not.toEqual(expect.arrayContaining(fixtures.page.items));
+        expect(close).toHaveBeenCalledOnce();
+        unsubscribe();
+        session.close();
+        connection.close();
+    });
     beforeEach(() => {
         MockWebSocket.instances.length = 0;
         vi.useFakeTimers();
@@ -52,7 +112,7 @@ describe('connectTemperatureRealtime', () => {
         connectTemperatureRealtime(handlers, MockWebSocket);
 
         MockWebSocket.latest().emitMessage(
-            createRoomSnapshotMessage({ recentEvents: fixtures.recentEvents }),
+            createRoomSnapshotMessage({ userHistory: [createUserHistoryFixtures().gap] }),
         );
         const deviceUpdate = createDeviceUpdatedMessage();
 
@@ -63,7 +123,7 @@ describe('connectTemperatureRealtime', () => {
         MockWebSocket.latest().emitMessage({
             ...deviceUpdate,
             telemetrySample: fixtures.telemetrySample,
-        } satisfies RoomRealtimeServerMessage);
+        } satisfies RoomBffRealtimeServerMessage);
         const feedUpdate = createDeviceUpdatedMessage({ previousRevision: 1, revision: 2 });
 
         if (feedUpdate.messageType !== 'device.updated') {
@@ -71,23 +131,22 @@ describe('connectTemperatureRealtime', () => {
         }
 
         const addedFact = {
-            recordId: `rec:v1:sha256:${'c'.repeat(64)}`,
-            eventType: 'device.state.reported' as const,
-            occurredAt: '2026-06-08T09:30:02.000Z',
-            durability: 'durable' as const,
-            storageSequence: 9,
+            ...createUserHistoryFixtures().availabilityChange,
             deviceId: 'temp-desk',
-            source: 'simulator-adapter' as const,
-            payload: { reportedState: { temperature: 22.8, temperatureUnit: 'celsius' } },
+            deviceName: 'Desk Temperature',
         };
         MockWebSocket.latest().emitMessage({
             ...feedUpdate,
-            recentEvents: [addedFact],
-        } satisfies RoomRealtimeServerMessage);
+            userHistory: [addedFact],
+        } satisfies RoomBffRealtimeServerMessage);
 
         expect(onHistoryUpdate).toHaveBeenNthCalledWith(
             1,
-            expect.objectContaining({ kind: 'baseline', recentEvents: fixtures.recentEvents }),
+            expect.objectContaining({
+                kind: 'baseline',
+                userHistory: [createUserHistoryFixtures().gap],
+            }),
+            expect.anything(),
         );
         expect(onHistoryUpdate).toHaveBeenNthCalledWith(
             2,
@@ -95,10 +154,12 @@ describe('connectTemperatureRealtime', () => {
                 kind: 'addition',
                 telemetrySample: fixtures.telemetrySample,
             }),
+            expect.anything(),
         );
         expect(onHistoryUpdate).toHaveBeenNthCalledWith(
             3,
-            expect.objectContaining({ kind: 'addition', recentEvents: [addedFact] }),
+            expect.objectContaining({ kind: 'addition', userHistory: [addedFact] }),
+            expect.anything(),
         );
         expect(handlers.onInvalidMessage).not.toHaveBeenCalled();
     });
@@ -113,27 +174,16 @@ describe('connectTemperatureRealtime', () => {
     });
 
     it('replaces the event cache and publishes a history baseline on generation change', () => {
-        const fixtures = createHistoryIdentityFixtures();
         const onHistoryUpdate = vi.fn();
         const handlers = { ...createHandlers(), onHistoryUpdate };
         connectTemperatureRealtime(handlers, MockWebSocket);
         MockWebSocket.latest().emitMessage(
-            createRoomSnapshotMessage({ recentEvents: fixtures.recentEvents }),
+            createRoomSnapshotMessage({ userHistory: [createUserHistoryFixtures().gap] }),
         );
         const replacementGap = {
+            ...createUserHistoryFixtures().gap,
             recordId: `rec:v1:sha256:${'d'.repeat(64)}`,
-            eventType: 'storage.gap.recorded' as const,
-            occurredAt: '2026-06-08T09:31:00.000Z',
-            durability: 'durable' as const,
             storageSequence: 1,
-            source: 'backend' as const,
-            payload: {
-                outageStartedAt: '2026-06-08T09:30:00.000Z',
-                outageEndedAt: '2026-06-08T09:31:00.000Z',
-                failureReason: 'storage_replaced',
-                boundaryBasis: 'same_process_first_degraded_at' as const,
-                observationsBackfilled: false as const,
-            },
         };
         MockWebSocket.latest().emitMessage({
             messageType: 'platform.updated',
@@ -147,15 +197,16 @@ describe('connectTemperatureRealtime', () => {
                     historyGenerationId: 'replacement-generation',
                     storedThroughSequence: 1,
                 },
-                recentEvents: [replacementGap],
+                userHistory: [replacementGap],
             },
-        } satisfies RoomRealtimeServerMessage);
+        } satisfies RoomBffRealtimeServerMessage);
 
         expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
-            expect.objectContaining({ recentEvents: [replacementGap] }),
+            expect.objectContaining({ userHistory: [replacementGap] }),
         );
         expect(onHistoryUpdate).toHaveBeenLastCalledWith(
-            expect.objectContaining({ kind: 'baseline', recentEvents: [replacementGap] }),
+            expect.objectContaining({ kind: 'baseline', userHistory: [replacementGap] }),
+            expect.anything(),
         );
     });
 
@@ -246,7 +297,7 @@ describe('connectTemperatureRealtime', () => {
                 const snapshotWithoutRecentEvents: Record<string, unknown> = {
                     ...createRoomSnapshotMessage().payload,
                 };
-                delete snapshotWithoutRecentEvents['recentEvents'];
+                delete snapshotWithoutRecentEvents['userHistory'];
 
                 return snapshotWithoutRecentEvents;
             })(),
@@ -387,7 +438,7 @@ describe('connectTemperatureRealtime', () => {
                     storedThroughSequence: null,
                 },
             },
-        } satisfies RoomRealtimeServerMessage);
+        } satisfies RoomBffRealtimeServerMessage);
 
         expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
             expect.objectContaining({
@@ -400,11 +451,10 @@ describe('connectTemperatureRealtime', () => {
     });
 
     it('retains the event cache across repeated null-generation platform updates', () => {
-        const fixtures = createHistoryIdentityFixtures();
         const handlers = createHandlers();
         connectTemperatureRealtime(handlers, MockWebSocket);
         MockWebSocket.latest().emitMessage(
-            createRoomSnapshotMessage({ recentEvents: fixtures.recentEvents }),
+            createRoomSnapshotMessage({ userHistory: [createUserHistoryFixtures().gap] }),
         );
         MockWebSocket.latest().emitMessage({
             messageType: 'platform.updated',
@@ -420,7 +470,7 @@ describe('connectTemperatureRealtime', () => {
                     storedThroughSequence: null,
                 },
             },
-        } satisfies RoomRealtimeServerMessage);
+        } satisfies RoomBffRealtimeServerMessage);
         MockWebSocket.latest().emitMessage({
             messageType: 'platform.updated',
             previousRevision: 1,
@@ -435,10 +485,10 @@ describe('connectTemperatureRealtime', () => {
                     storedThroughSequence: null,
                 },
             },
-        } satisfies RoomRealtimeServerMessage);
+        } satisfies RoomBffRealtimeServerMessage);
 
         expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
-            expect.objectContaining({ recentEvents: fixtures.recentEvents }),
+            expect.objectContaining({ userHistory: [createUserHistoryFixtures().gap] }),
         );
     });
 
@@ -458,30 +508,25 @@ describe('connectTemperatureRealtime', () => {
                     historyGenerationId: 'generation-test',
                     storedThroughSequence: 1,
                 },
-                recentEvents: [
+                userHistory: [
                     {
                         recordId: `rec:v1:sha256:${'1'.repeat(64)}`,
-                        eventType: 'storage.gap.recorded',
-                        occurredAt: '2026-09-03T08:00:01Z',
+                        occurredAt: '2026-09-03T08:00:01.000Z',
                         durability: 'durable',
                         storageSequence: 1,
                         source: 'backend',
-                        payload: {
-                            outageStartedAt: '2026-09-03T08:00:00Z',
-                            outageEndedAt: '2026-09-03T08:00:01Z',
-                            failureReason: 'storage_write_failed',
-                            boundaryBasis: 'same_process_first_degraded_at',
-                            observationsBackfilled: false,
-                        },
+                        outageStartedAt: '2026-09-03T08:00:00.000Z',
+                        outageEndedAt: '2026-09-03T08:00:01.000Z',
+                        kind: 'history_gap',
                     },
                 ],
             },
-        } satisfies RoomRealtimeServerMessage);
+        } satisfies RoomBffRealtimeServerMessage);
 
         expect(handlers.onInvalidMessage).not.toHaveBeenCalled();
         expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
             expect.objectContaining({
-                recentEvents: [expect.objectContaining({ eventType: 'storage.gap.recorded' })],
+                userHistory: [expect.objectContaining({ kind: 'history_gap' })],
             }),
         );
     });
@@ -548,23 +593,18 @@ describe('connectTemperatureRealtime', () => {
         connectTemperatureRealtime(handlers, MockWebSocket);
         MockWebSocket.latest().emitMessage(createRoomSnapshotMessage());
         const recentEvent = {
-            recordId: `rec:v1:sha256:${'d'.repeat(64)}`,
-            eventType: 'device.state.reported' as const,
-            occurredAt: '2026-06-08T09:30:02.000Z',
-            durability: 'durable' as const,
-            storageSequence: 9,
+            ...createUserHistoryFixtures().availabilityChange,
             deviceId: 'temp-desk',
-            source: 'simulator-adapter' as const,
-            payload: { reportedState: { temperature: 22.8, temperatureUnit: 'celsius' } },
+            deviceName: 'Desk Temperature',
         };
 
         MockWebSocket.latest().emitMessage({
             ...createDeviceUpdatedMessage(),
-            recentEvents: [recentEvent],
+            userHistory: [recentEvent],
         });
 
         expect(handlers.onSnapshot).toHaveBeenLastCalledWith(
-            expect.objectContaining({ recentEvents: [recentEvent] }),
+            expect.objectContaining({ userHistory: [recentEvent] }),
         );
     });
 
@@ -803,7 +843,7 @@ function createHandlers() {
 
 function createInvalidRenderableDevices(): readonly {
     label: string;
-    device: RoomSnapshotProjection['devices'][number];
+    device: RoomBffSnapshot['devices'][number];
 }[] {
     return [
         {
@@ -828,17 +868,17 @@ function createRoomSnapshotMessage({
     devices = [createTemperatureDevice()],
     activeCommands = [],
     recentCommands = [],
-    recentEvents = [],
+    userHistory = [],
 }: {
-    devices?: RoomRealtimeServerMessage extends { payload: infer Payload }
+    devices?: RoomBffRealtimeServerMessage extends { payload: infer Payload }
         ? Payload extends { devices: infer Devices }
             ? Devices
             : never
         : never;
-    activeCommands?: RoomSnapshotProjection['activeCommands'];
-    recentCommands?: RoomSnapshotProjection['recentCommands'];
-    recentEvents?: RoomSnapshotProjection['recentEvents'];
-} = {}): RoomRealtimeServerMessage {
+    activeCommands?: RoomBffSnapshot['activeCommands'];
+    recentCommands?: RoomBffSnapshot['recentCommands'];
+    userHistory?: RoomBffSnapshot['userHistory'];
+} = {}): RoomBffRealtimeServerMessage {
     return {
         messageType: 'room.snapshot',
         revision: 0,
@@ -849,7 +889,7 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands,
             recentCommands,
-            recentEvents,
+            userHistory,
             platform: {
                 storage: {
                     status: 'available',
@@ -873,10 +913,10 @@ function createDeviceUpdatedMessage({
     previousRevision?: number;
     revision?: number;
     deviceId?: string;
-    health?: RoomSnapshotProjection['devices'][number]['health'];
+    health?: RoomBffSnapshot['devices'][number]['health'];
     healthReason?: string;
     reportedState?: { temperature: number; temperatureUnit: 'celsius' };
-} = {}): RoomRealtimeServerMessage {
+} = {}): RoomBffRealtimeServerMessage {
     return {
         messageType: 'device.updated',
         previousRevision,
@@ -892,7 +932,7 @@ function createDeviceUpdatedMessage({
     };
 }
 
-function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
+function createTemperatureDevice(): RoomBffSnapshot['devices'][number] {
     return {
         deviceId: 'temp-desk',
         name: 'Desk Temperature',
@@ -921,7 +961,7 @@ function createTemperatureDevice(): RoomSnapshotProjection['devices'][number] {
     };
 }
 
-function createLedDevice(activeCommandId?: string): RoomSnapshotProjection['devices'][number] {
+function createLedDevice(activeCommandId?: string): RoomBffSnapshot['devices'][number] {
     return {
         deviceId: 'led-main',
         name: 'Main LED',
@@ -954,10 +994,10 @@ function createCommandsUpdatedMessage({
 }: {
     previousRevision?: number;
     revision?: number;
-    devices?: RoomSnapshotProjection['devices'];
-    activeCommands?: RoomSnapshotProjection['activeCommands'];
-    recentCommands?: RoomSnapshotProjection['recentCommands'];
-} = {}): RoomRealtimeServerMessage {
+    devices?: RoomBffSnapshot['devices'];
+    activeCommands?: RoomBffSnapshot['activeCommands'];
+    recentCommands?: RoomBffSnapshot['recentCommands'];
+} = {}): RoomBffRealtimeServerMessage {
     return {
         messageType: 'commands.updated',
         previousRevision,
@@ -971,7 +1011,7 @@ function createCommandsUpdatedMessage({
     };
 }
 
-function createPendingCommand(): RoomSnapshotProjection['activeCommands'][number] {
+function createPendingCommand(): RoomBffSnapshot['activeCommands'][number] {
     return {
         commandId: 'cmd-1',
         deviceId: 'led-main',
@@ -989,7 +1029,7 @@ function createPendingCommand(): RoomSnapshotProjection['activeCommands'][number
     };
 }
 
-function createConfirmedCommand(): RoomSnapshotProjection['recentCommands'][number] {
+function createConfirmedCommand(): RoomBffSnapshot['recentCommands'][number] {
     return {
         commandId: 'cmd-1',
         deviceId: 'led-main',

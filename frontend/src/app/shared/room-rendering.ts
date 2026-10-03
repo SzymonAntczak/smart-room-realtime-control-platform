@@ -1,5 +1,6 @@
 import type { PowerState } from '@smart-room/contracts/devices';
-import type { DeviceProjection, RoomSnapshotProjection } from '@smart-room/contracts/projections';
+import type { DeviceProjection } from '@smart-room/contracts/projections';
+import type { RoomBffSnapshot } from '@smart-room/contracts/room-bff';
 
 type ObservationStatus = DeviceProjection['observationStatus'][string];
 
@@ -30,11 +31,11 @@ export interface TemperatureSensorDeviceProjection extends Omit<
 
 export type RenderableDeviceProjection = LedDeviceProjection | TemperatureSensorDeviceProjection;
 
-export interface RenderableRoomSnapshot extends Omit<RoomSnapshotProjection, 'devices'> {
+export interface RenderableRoomSnapshot extends Omit<RoomBffSnapshot, 'devices'> {
     readonly devices: RenderableDeviceProjection[];
 }
 
-export function toRenderableRoomSnapshot(snapshot: RoomSnapshotProjection): RenderableRoomSnapshot {
+export function toRenderableRoomSnapshot(snapshot: RoomBffSnapshot): RenderableRoomSnapshot {
     return {
         ...snapshot,
         devices: snapshot.devices.flatMap((device) => {

@@ -18,7 +18,7 @@ export function validateRoomBffSnapshot(value: unknown): RoomBffSnapshotResult {
         : { kind: 'invalid_response' };
 }
 
-/** The existing EventSource remains on its current platform contract until ST-4-06a-02. */
+/** Validates the single current BFF contract before applying realtime updates. */
 export function validateRoomBffRealtimeMessage(value: unknown): RoomBffRealtimeResult {
     return isRoomBffRealtimeServerMessage(value)
         ? { kind: 'message', message: value }

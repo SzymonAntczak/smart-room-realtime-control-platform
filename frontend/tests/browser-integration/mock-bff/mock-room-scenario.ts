@@ -1,16 +1,15 @@
+import type { RoomBffSnapshot } from '@smart-room/contracts/room-bff';
+import type { RoomBffRealtimeServerMessage } from '@smart-room/contracts/room-bff';
 import {
-    compareRecentEventsDescending,
-    type RecentEventProjection,
-    recentEventsLimit,
-} from '@smart-room/contracts/history';
-import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type {
-    RoomRealtimeServerMessage,
-    RoomSnapshotMessage,
-} from '@smart-room/contracts/realtime';
+    compareUserHistoryDescending,
+    type UserHistoryItem,
+} from '@smart-room/contracts/user-history';
 
 import { assertMockRoomSnapshot, assertMockSseMessage } from './mock-bff-contracts';
 import { createOnlineLedRoomSnapshot } from './mock-bff-fixtures';
+
+const userHistoryLimit = 20;
+type RoomSnapshotMessage = Extract<RoomBffRealtimeServerMessage, { messageType: 'room.snapshot' }>;
 
 export class MockRoomScenario {
     #snapshot = createOnlineLedRoomSnapshot();
@@ -38,7 +37,7 @@ export class MockRoomScenario {
         return this.#revision;
     }
 
-    applyUpdate(message: unknown): RoomRealtimeServerMessage {
+    applyUpdate(message: unknown): RoomBffRealtimeServerMessage {
         const update = assertMockSseMessage(message);
 
         if (update.messageType === 'room.snapshot') {
@@ -61,15 +60,21 @@ export class MockRoomScenario {
 }
 
 function applyUpdateToSnapshot(
-    snapshot: RoomSnapshotProjection,
-    update: Exclude<RoomRealtimeServerMessage, { messageType: 'room.snapshot' }>,
-): RoomSnapshotProjection {
+    snapshot: RoomBffSnapshot,
+    update: Exclude<RoomBffRealtimeServerMessage, { messageType: 'room.snapshot' }>,
+): RoomBffSnapshot {
     if (update.messageType === 'platform.updated') {
         return {
             ...snapshot,
             updatedAt: update.sentAt,
             platform: { storage: update.payload.storage },
-            recentEvents: mergeRecentEvents(snapshot.recentEvents, update.payload.recentEvents),
+            userHistory:
+                update.payload.storage.historyGenerationId !== null &&
+                snapshot.platform.storage.historyGenerationId !== null &&
+                update.payload.storage.historyGenerationId !==
+                    snapshot.platform.storage.historyGenerationId
+                    ? (update.payload.userHistory ?? [])
+                    : mergeUserHistory(snapshot.userHistory, update.payload.userHistory),
         };
     }
 
@@ -82,11 +87,13 @@ function applyUpdateToSnapshot(
         ...snapshot,
         updatedAt: update.sentAt,
         devices,
-        recentEvents: mergeRecentEvents(
-            snapshot.recentEvents,
+        userHistory: mergeUserHistory(
+            snapshot.userHistory,
             update.messageType === 'device.updated'
-                ? update.recentEvents
-                : update.payload.recentEvents,
+                ? 'userHistory' in update
+                    ? update.userHistory
+                    : undefined
+                : update.payload.userHistory,
         ),
         ...(update.messageType === 'commands.updated'
             ? {
@@ -97,10 +104,10 @@ function applyUpdateToSnapshot(
     };
 }
 
-function mergeRecentEvents(
-    current: RecentEventProjection[],
-    updates: RecentEventProjection[] | undefined,
-): RecentEventProjection[] {
+function mergeUserHistory(
+    current: UserHistoryItem[],
+    updates: UserHistoryItem[] | undefined,
+): UserHistoryItem[] {
     if (!updates || updates.length === 0) {
         return current;
     }
@@ -108,16 +115,20 @@ function mergeRecentEvents(
     const byRecordId = new Map(current.map((event) => [event.recordId, event]));
 
     for (const event of updates) {
-        byRecordId.set(event.recordId, event);
+        const previous = byRecordId.get(event.recordId);
+
+        if (!previous || previous.durability !== 'durable' || event.durability === 'durable') {
+            byRecordId.set(event.recordId, event);
+        }
     }
 
-    return [...byRecordId.values()].sort(compareRecentEventsDescending).slice(0, recentEventsLimit);
+    return [...byRecordId.values()].sort(compareUserHistoryDescending).slice(0, userHistoryLimit);
 }
 
 function replaceDevice(
-    devices: RoomSnapshotProjection['devices'],
-    updatedDevice: RoomSnapshotProjection['devices'][number],
-): RoomSnapshotProjection['devices'] {
+    devices: RoomBffSnapshot['devices'],
+    updatedDevice: RoomBffSnapshot['devices'][number],
+): RoomBffSnapshot['devices'] {
     if (!devices.some((device) => device.deviceId === updatedDevice.deviceId)) {
         throw new Error(`Mock BFF update references unknown device ${updatedDevice.deviceId}.`);
     }

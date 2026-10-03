@@ -1,6 +1,6 @@
 import type { APIRequestContext } from '@playwright/test';
-import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type { RoomRealtimeServerMessage } from '@smart-room/contracts/realtime';
+import type { RoomBffSnapshot } from '@smart-room/contracts/room-bff';
+import type { RoomBffRealtimeServerMessage } from '@smart-room/contracts/room-bff';
 
 import { mockBffUrls } from '../browser-test-runtime';
 
@@ -20,14 +20,14 @@ export async function publishAcceptedCommandBeforeResponse(
 
 export async function setMockRoomSnapshot(
     request: APIRequestContext,
-    snapshot: RoomSnapshotProjection,
+    snapshot: RoomBffSnapshot,
 ): Promise<void> {
     await assertControlResponse(await request.put(mockBffUrls.snapshot, { data: snapshot }));
 }
 
 export async function publishMockRoomUpdate(
     request: APIRequestContext,
-    message: Exclude<RoomRealtimeServerMessage, { messageType: 'room.snapshot' }>,
+    message: Exclude<RoomBffRealtimeServerMessage, { messageType: 'room.snapshot' }>,
 ): Promise<void> {
     await assertControlResponse(
         await request.post(mockBffUrls.scenarioRealtime, { data: message }),
@@ -48,4 +48,11 @@ async function assertControlResponse(
     throw new Error(
         `Mock BFF scenario control failed (${response.status()}): ${await response.text()}`,
     );
+}
+
+export async function configureMockHistory(
+    request: APIRequestContext,
+    value: { pages?: unknown; hold?: boolean; release?: boolean; status?: number; error?: unknown },
+): Promise<void> {
+    await assertControlResponse(await request.post(mockBffUrls.historyControl, { data: value }));
 }

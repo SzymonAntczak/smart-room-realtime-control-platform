@@ -9,6 +9,10 @@ describe('App', () => {
     beforeEach(() => {
         MockWebSocket.instances.length = 0;
         vi.stubGlobal('EventSource', MockWebSocket);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => new Promise(() => undefined)),
+        );
     });
 
     afterEach(() => vi.unstubAllGlobals());
@@ -60,20 +64,15 @@ describe('App', () => {
         act(() =>
             MockWebSocket.latest().emitMessage(
                 createRoomSnapshotMessage({
-                    recentEvents: [
+                    userHistory: [
                         {
                             recordId: `rec:v1:sha256:${'a'.repeat(64)}`,
                             occurredAt: '2026-06-08T09:30:00.000Z',
                             durability: 'volatile',
                             source: 'backend',
                             deviceId: 'led-main',
-                            commandId: 'cmd-1',
-                            eventType: 'command.requested',
-                            payload: {
-                                commandType: 'set.power',
-                                requestedState: { power: 'on' },
-                                requestedBy: 'user',
-                            },
+                            deviceName: 'Device',
+                            kind: 'attempt_failed',
                         },
                     ],
                 }),
@@ -82,7 +81,7 @@ describe('App', () => {
 
         expect(
             screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' }),
-        ).toHaveTextContent('Zażądano zasilania: Włączone.');
+        ).toHaveTextContent('Próba sterowania nie powiodła się.');
         act(() => MockWebSocket.latest().emitError());
         expect(screen.getByText(/Wyświetlane są ostatnio znane zdarzenia/)).toBeInTheDocument();
     });
@@ -101,22 +100,21 @@ describe('App', () => {
                 revision: 1,
                 sentAt: '2026-06-08T09:30:02Z',
                 payload: ledDevice(),
-                recentEvents: [
+                userHistory: [
                     {
                         recordId: `rec:v1:sha256:${'b'.repeat(64)}`,
                         occurredAt: '2026-06-08T09:30:02.000Z',
                         durability: 'volatile',
                         source: 'backend',
                         deviceId: 'led-main',
-                        commandId: 'cmd-1',
-                        eventType: 'command.dispatched',
-                        payload: { commandType: 'set.power', target: 'simulator-adapter' },
+                        deviceName: 'Device',
+                        kind: 'attempt_failed',
                     },
                 ],
             }),
         );
 
-        expect(feed).toHaveTextContent('Polecenie wysłano do źródła urządzenia.');
+        expect(feed).toHaveTextContent('Próba sterowania nie powiodła się.');
         expect(feed).toHaveTextContent('Główne LED');
     });
 
@@ -178,7 +176,7 @@ describe('App', () => {
                 createRoomSnapshotMessage({
                     devices: [temperatureDevice(), windowTemperatureDevice(), timedOutLed],
                     activeCommands: [],
-                    recentEvents: [
+                    userHistory: [
                         {
                             recordId: `rec:v1:sha256:${'c'.repeat(64)}`,
                             occurredAt: '2026-06-08T09:30:01.000Z',
@@ -186,12 +184,9 @@ describe('App', () => {
                             storageSequence: 1,
                             source: 'backend',
                             deviceId: 'led-main',
-                            commandId: 'cmd-1',
-                            eventType: 'command.timed_out',
-                            payload: {
-                                timeoutMs: 5000,
-                                reason: 'confirmation_not_received',
-                            },
+                            deviceName: 'Device',
+                            kind: 'confirmation_missing',
+                            requestedPower: 'on',
                         },
                     ],
                 }),
@@ -199,7 +194,7 @@ describe('App', () => {
         );
 
         const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
-        expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia polecenia w czasie.');
+        expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia zmiany zasilania');
         expect(within(feed).getAllByRole('listitem')).toHaveLength(1);
         expect(
             screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
@@ -215,7 +210,7 @@ describe('App', () => {
             }),
         );
 
-        expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia polecenia w czasie.');
+        expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia zmiany zasilania');
         expect(within(feed).getAllByRole('listitem')).toHaveLength(1);
         expect(
             screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
@@ -354,11 +349,11 @@ function getRealtimeEventType(data: unknown): string {
 function createRoomSnapshotMessage({
     devices = [temperatureDevice(), windowTemperatureDevice(), ledDevice()],
     activeCommands = [pendingCommand()],
-    recentEvents = [],
+    userHistory = [],
 }: {
     devices?: unknown[];
     activeCommands?: unknown[];
-    recentEvents?: unknown[];
+    userHistory?: unknown[];
 } = {}) {
     return {
         messageType: 'room.snapshot',
@@ -370,7 +365,7 @@ function createRoomSnapshotMessage({
             devices,
             activeCommands,
             recentCommands: [],
-            recentEvents,
+            userHistory,
             platform: { storage: availableStorage() },
         },
     };

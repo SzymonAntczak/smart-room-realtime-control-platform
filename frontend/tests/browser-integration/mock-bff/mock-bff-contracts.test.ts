@@ -1,4 +1,4 @@
-import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
+import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -20,7 +20,7 @@ import {
     createTemperatureDeviceUpdatedMessage,
 } from './mock-bff-fixtures';
 import { MockRoomScenario } from './mock-room-scenario';
-import { createHealthFact, createLedStateFact } from './recent-feed-fixtures';
+import { createHealthHistoryItem, createPowerHistoryItem } from './recent-feed-fixtures';
 
 describe('mock BFF shared-contract boundary', () => {
     it('accepts the online LED fixture and rejects an invalid snapshot', () => {
@@ -57,15 +57,15 @@ describe('mock BFF shared-contract boundary', () => {
     });
 
     it('accepts the shared history fixture in both snapshot and SSE feed boundaries', () => {
-        const fixtures = createHistoryIdentityFixtures();
+        const fixtures = createUserHistoryFixtures();
         const baseRoomSnapshot = createOnlineLedRoomSnapshot();
         const roomSnapshot = {
             ...baseRoomSnapshot,
-            recentEvents: fixtures.recentEvents,
+            userHistory: [fixtures.gap],
             platform: {
                 storage: {
                     ...baseRoomSnapshot.platform.storage,
-                    storedThroughSequence: fixtures.telemetrySample.storageSequence,
+                    storedThroughSequence: fixtures.page.throughSequence,
                 },
             },
         };
@@ -76,14 +76,14 @@ describe('mock BFF shared-contract boundary', () => {
             sentAt: '2026-09-10T10:01:00.000Z',
             payload: {
                 storage: roomSnapshot.platform.storage,
-                recentEvents: fixtures.recentEvents,
+                userHistory: [fixtures.gap],
             },
         } as const;
 
-        expect(assertMockRoomSnapshot(roomSnapshot).recentEvents[0]?.recordId).toBe(
-            fixtures.recentEvent.recordId,
+        expect(assertMockRoomSnapshot(roomSnapshot).userHistory[0]?.recordId).toBe(
+            fixtures.gap.recordId,
         );
-        expect(serializeMockSseMessage(message)).toContain(fixtures.recentEvent.recordId);
+        expect(serializeMockSseMessage(message)).toContain(fixtures.gap.recordId);
     });
 
     it('creates revision-linked device and command updates', () => {
@@ -153,7 +153,7 @@ describe('mock BFF shared-contract boundary', () => {
 
     it('keeps realtime feed additions in snapshots and preserves them across watermark updates', () => {
         const scenario = new MockRoomScenario();
-        const stateFact = createLedStateFact(21, '2026-06-08T09:30:01Z', 1, 'on');
+        const stateFact = createPowerHistoryItem(21, '2026-06-08T09:30:01Z', 1, 'on');
 
         scenario.applyUpdate(
             createDeviceUpdatedMessage(
@@ -164,11 +164,11 @@ describe('mock BFF shared-contract boundary', () => {
             ),
         );
 
-        expect(scenario.snapshotMessage().payload.recentEvents).toEqual([stateFact]);
+        expect(scenario.snapshotMessage().payload.userHistory).toEqual([stateFact]);
 
         scenario.applyUpdate(createPlatformUpdatedMessage(1, 1, '2026-06-08T09:30:02Z'));
 
-        expect(scenario.snapshotMessage().payload.recentEvents).toEqual([stateFact]);
+        expect(scenario.snapshotMessage().payload.userHistory).toEqual([stateFact]);
         expect(scenario.snapshotMessage().payload.platform.storage.storedThroughSequence).toBe(1);
         expect(scenario.snapshotMessage().payload.platform.storage.changedAt).toBe(
             '2026-06-08T09:30:00Z',
@@ -180,7 +180,7 @@ describe('mock BFF shared-contract boundary', () => {
         const initialEvents = Array.from({ length: 20 }, (_, index) => {
             const second = String(index).padStart(2, '0');
 
-            return createHealthFact(
+            return createHealthHistoryItem(
                 index + 1,
                 'healthy',
                 'degraded',
@@ -192,7 +192,7 @@ describe('mock BFF shared-contract boundary', () => {
         scenario.setSnapshot({
             ...baseSnapshot,
             updatedAt: '2026-06-08T09:31:00Z',
-            recentEvents: initialEvents,
+            userHistory: initialEvents,
             platform: {
                 storage: {
                     status: 'available',
@@ -203,8 +203,20 @@ describe('mock BFF shared-contract boundary', () => {
             },
         });
 
-        const duplicate = createHealthFact(20, 'healthy', 'degraded', '2026-06-08T09:30:19Z', 20);
-        const newest = createHealthFact(21, 'degraded', 'healthy', '2026-06-08T09:30:22Z', 21);
+        const duplicate = createHealthHistoryItem(
+            20,
+            'healthy',
+            'degraded',
+            '2026-06-08T09:30:19Z',
+            20,
+        );
+        const newest = createHealthHistoryItem(
+            21,
+            'degraded',
+            'healthy',
+            '2026-06-08T09:30:22Z',
+            21,
+        );
         scenario.applyUpdate(
             createTemperatureDeviceUpdatedMessage(
                 0,
@@ -214,13 +226,13 @@ describe('mock BFF shared-contract boundary', () => {
             ),
         );
 
-        const recentEvents = scenario.snapshotMessage().payload.recentEvents;
-        expect(recentEvents).toHaveLength(20);
-        expect(recentEvents[0]?.recordId).toBe(newest.recordId);
-        expect(
-            recentEvents.some((event) => event.recordId === initialEvents.at(-1)?.recordId),
-        ).toBe(false);
-        expect(recentEvents.filter((event) => event.recordId === duplicate.recordId)).toHaveLength(
+        const userHistory = scenario.snapshotMessage().payload.userHistory;
+        expect(userHistory).toHaveLength(20);
+        expect(userHistory[0]?.recordId).toBe(newest.recordId);
+        expect(userHistory.some((event) => event.recordId === initialEvents.at(-1)?.recordId)).toBe(
+            false,
+        );
+        expect(userHistory.filter((event) => event.recordId === duplicate.recordId)).toHaveLength(
             1,
         );
     });

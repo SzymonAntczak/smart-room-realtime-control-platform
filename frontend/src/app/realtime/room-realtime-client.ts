@@ -1,17 +1,18 @@
+import type { LiveTelemetrySampleProjection } from '@smart-room/contracts/history';
+import { roomRealtimeServerMessageTypes } from '@smart-room/contracts/realtime';
 import {
-    compareRecentEventsDescending,
-    type LiveTelemetrySampleProjection,
-    type RecentEventProjection,
-} from '@smart-room/contracts/history';
-import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
+    isRoomBffSnapshot,
+    type RoomBffRealtimeServerMessage,
+    type RoomBffSnapshot,
+} from '@smart-room/contracts/room-bff';
 import {
-    isRoomRealtimeServerMessage,
-    isRoomSnapshotProjection,
-    type RoomRealtimeServerMessage,
-    roomRealtimeServerMessageTypes,
-} from '@smart-room/contracts/realtime';
+    compareUserHistoryDescending,
+    type UserHistoryItem,
+} from '@smart-room/contracts/user-history';
 
 import { type RenderableRoomSnapshot, toRenderableRoomSnapshot } from '../shared/room-rendering';
+
+import { validateRoomBffRealtimeMessage } from './room-bff-client';
 
 const defaultRoomRealtimeUrl = 'http://localhost:4310/room/realtime';
 const defaultReconnectDelayMs = 1000;
@@ -26,24 +27,30 @@ export interface RoomRealtimeClientHandlers {
     onConnectionStatus(status: RoomRealtimeConnectionStatus): void;
     onSnapshot(snapshot: RenderableRoomSnapshot): void;
     onInvalidMessage(): void;
-    onHistoryUpdate?(update: RoomHistoryRealtimeUpdate): void;
+    onHistoryUpdate?(
+        update: RoomHistoryRealtimeUpdate,
+        baseline?: Extract<RoomHistoryRealtimeUpdate, { kind: 'baseline' }>,
+    ): void;
 }
 
 export type RoomHistoryRealtimeUpdate =
     | { kind: 'interrupted' }
     | {
           kind: 'baseline';
-          storage: RoomSnapshotProjection['platform']['storage'];
-          recentEvents: RecentEventProjection[];
+          storage: RoomBffSnapshot['platform']['storage'];
+          userHistory: readonly UserHistoryItem[];
+          /** Connection evidence retained when current storage metadata is unknown. */
+          lastKnownHistoryGenerationId?: string | null;
       }
     | {
           kind: 'addition';
-          storage: RoomSnapshotProjection['platform']['storage'];
-          recentEvents?: RecentEventProjection[];
+          storage: RoomBffSnapshot['platform']['storage'];
+          userHistory?: readonly UserHistoryItem[];
           telemetrySample?: LiveTelemetrySampleProjection;
       };
 
 export interface RoomRealtimeConnection {
+    requestBaseline(): void;
     close(): void;
 }
 
@@ -66,13 +73,20 @@ export function connectRoomRealtime(
     let isClosed = false;
     let activeSource: RealtimeEventSource | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    let roomSnapshot: RoomSnapshotProjection | undefined;
+    let roomSnapshot: RoomBffSnapshot | undefined;
     let revision: number | undefined;
     let lastKnownHistoryGenerationId: string | null = null;
 
     connectSocket('connecting');
 
     return {
+        requestBaseline() {
+            if (activeSource) {
+                const source = activeSource;
+                scheduleReconnect(source);
+                source.close();
+            }
+        },
         close() {
             isClosed = true;
 
@@ -131,31 +145,35 @@ export function connectRoomRealtime(
 
                 const renderableSnapshot = toRenderableRoomSnapshot(snapshot);
 
-                if (message.messageType === 'room.snapshot') {
-                    handlers.onHistoryUpdate?.({
-                        kind: 'baseline',
-                        storage: snapshot.platform.storage,
-                        recentEvents: snapshot.recentEvents,
-                    });
-                } else if (generationChanged) {
-                    handlers.onHistoryUpdate?.({
-                        kind: 'baseline',
-                        storage: snapshot.platform.storage,
-                        recentEvents: snapshot.recentEvents,
-                    });
+                const baseline = {
+                    kind: 'baseline',
+                    storage: snapshot.platform.storage,
+                    userHistory: snapshot.userHistory,
+                    lastKnownHistoryGenerationId,
+                } as const;
+
+                if (message.messageType === 'room.snapshot' || generationChanged) {
+                    handlers.onHistoryUpdate?.(baseline, baseline);
                 } else {
-                    handlers.onHistoryUpdate?.({
-                        kind: 'addition',
-                        storage: snapshot.platform.storage,
-                        recentEvents:
-                            message.messageType === 'device.updated'
-                                ? message.recentEvents
-                                : message.payload.recentEvents,
-                        telemetrySample:
-                            message.messageType === 'device.updated'
-                                ? message.telemetrySample
-                                : undefined,
-                    });
+                    handlers.onHistoryUpdate?.(
+                        {
+                            kind: 'addition',
+                            storage: snapshot.platform.storage,
+                            userHistory:
+                                message.messageType === 'device.updated'
+                                    ? 'userHistory' in message
+                                        ? message.userHistory
+                                        : undefined
+                                    : message.payload.userHistory,
+                            telemetrySample:
+                                message.messageType === 'device.updated'
+                                    ? 'telemetrySample' in message
+                                        ? message.telemetrySample
+                                        : undefined
+                                    : undefined,
+                        },
+                        baseline,
+                    );
                 }
 
                 handlers.onSnapshot(renderableSnapshot);
@@ -190,7 +208,7 @@ export function connectRoomRealtime(
         }, reconnectDelayMs);
     }
 
-    function applyRealtimeMessage(message: RoomRealtimeServerMessage): RoomSnapshotProjection {
+    function applyRealtimeMessage(message: RoomBffRealtimeServerMessage): RoomBffSnapshot {
         if (message.messageType === 'room.snapshot') {
             if (roomSnapshot || revision !== undefined) {
                 throw new Error('Realtime room stream sent an unexpected snapshot baseline.');
@@ -221,13 +239,13 @@ export function connectRoomRealtime(
                 const nextSnapshot = {
                     ...roomSnapshot,
                     devices,
-                    recentEvents: mergeRecentEvents(
-                        roomSnapshot.recentEvents,
-                        message.recentEvents,
+                    userHistory: mergeUserHistory(
+                        roomSnapshot.userHistory,
+                        'userHistory' in message ? message.userHistory : undefined,
                     ),
                 };
 
-                if (!isRoomSnapshotProjection(nextSnapshot)) {
+                if (!isRoomBffSnapshot(nextSnapshot)) {
                     throw new Error(
                         'Realtime device update did not produce a valid room snapshot.',
                     );
@@ -247,13 +265,13 @@ export function connectRoomRealtime(
                     devices: message.payload.devices,
                     activeCommands: message.payload.activeCommands,
                     recentCommands: message.payload.recentCommands,
-                    recentEvents: mergeRecentEvents(
-                        roomSnapshot.recentEvents,
-                        message.payload.recentEvents,
+                    userHistory: mergeUserHistory(
+                        roomSnapshot.userHistory,
+                        message.payload.userHistory,
                     ),
                 };
 
-                if (!isRoomSnapshotProjection(roomSnapshot)) {
+                if (!isRoomBffSnapshot(roomSnapshot)) {
                     throw new Error(
                         'Realtime command update did not produce a valid room snapshot.',
                     );
@@ -272,15 +290,12 @@ export function connectRoomRealtime(
                 roomSnapshot = {
                     ...roomSnapshot,
                     platform: { storage: message.payload.storage },
-                    recentEvents: generationChanged
-                        ? (message.payload.recentEvents ?? [])
-                        : mergeRecentEvents(
-                              roomSnapshot.recentEvents,
-                              message.payload.recentEvents,
-                          ),
+                    userHistory: generationChanged
+                        ? (message.payload.userHistory ?? [])
+                        : mergeUserHistory(roomSnapshot.userHistory, message.payload.userHistory),
                 };
 
-                if (!isRoomSnapshotProjection(roomSnapshot)) {
+                if (!isRoomBffSnapshot(roomSnapshot)) {
                     throw new Error(
                         'Realtime platform update did not produce a valid room snapshot.',
                     );
@@ -296,10 +311,10 @@ export function connectRoomRealtime(
     }
 }
 
-function mergeRecentEvents(
-    current: RecentEventProjection[],
-    updates: RecentEventProjection[] | undefined,
-): RecentEventProjection[] {
+function mergeUserHistory(
+    current: UserHistoryItem[],
+    updates: UserHistoryItem[] | undefined,
+): UserHistoryItem[] {
     if (!updates || updates.length === 0) {
         return current;
     }
@@ -307,15 +322,19 @@ function mergeRecentEvents(
     const byRecordId = new Map(current.map((event) => [event.recordId, event]));
 
     for (const event of updates) {
-        byRecordId.set(event.recordId, event);
+        const previous = byRecordId.get(event.recordId);
+
+        if (!previous || event.durability === 'durable' || previous.durability !== 'durable') {
+            byRecordId.set(event.recordId, event);
+        }
     }
 
-    return [...byRecordId.values()].sort(compareRecentEventsDescending).slice(0, 20);
+    return [...byRecordId.values()].sort(compareUserHistoryDescending).slice(0, 20);
 }
 
 function hasSameDeviceSet(
-    currentDevices: RoomSnapshotProjection['devices'],
-    updatedDevices: RoomSnapshotProjection['devices'],
+    currentDevices: RoomBffSnapshot['devices'],
+    updatedDevices: RoomBffSnapshot['devices'],
 ): boolean {
     if (currentDevices.length !== updatedDevices.length) {
         return false;
@@ -335,16 +354,18 @@ function getRoomRealtimeUrl(): string {
     return import.meta.env.VITE_ROOM_REALTIME_URL ?? defaultRoomRealtimeUrl;
 }
 
-function parseRoomRealtimeMessage(data: unknown): RoomRealtimeServerMessage {
+function parseRoomRealtimeMessage(data: unknown): RoomBffRealtimeServerMessage {
     if (typeof data !== 'string') {
         throw new Error('Realtime message data must be text.');
     }
 
     const body: unknown = JSON.parse(data);
 
-    if (!isRoomRealtimeServerMessage(body)) {
+    const result = validateRoomBffRealtimeMessage(body);
+
+    if (result.kind !== 'message') {
         throw new Error('Realtime message did not match the room snapshot contract.');
     }
 
-    return body;
+    return result.message;
 }

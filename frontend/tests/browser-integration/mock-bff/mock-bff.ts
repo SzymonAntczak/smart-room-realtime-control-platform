@@ -14,9 +14,12 @@ import {
     createPendingLedDeviceProjection,
 } from './mock-bff-fixtures';
 import { MockRoomScenario } from './mock-room-scenario';
+import { MockUserHistory } from './mock-user-history';
+import { createHistoryPage } from './recent-feed-fixtures';
 
 const realtimeStreams = new Set<ServerResponse>();
 const roomScenario = new MockRoomScenario();
+const history = new MockUserHistory();
 let nextCommandId = 1;
 let rejectNextCommand = false;
 let publishAcceptedBeforeResponse = false;
@@ -41,6 +44,69 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         return;
     }
 
+    const url = new URL(request.url ?? '/', browserTestUrls.mockBff);
+
+    if (request.method === 'GET' && url.pathname === mockBffPaths.history) {
+        try {
+            const storage = roomScenario.snapshotMessage().payload.platform.storage;
+            const result = await history.read(
+                url,
+                createHistoryPage(
+                    [],
+                    null,
+                    storage.storedThroughSequence ?? 0,
+                    storage.historyGenerationId ?? 'unknown',
+                ),
+            );
+
+            if (!response.destroyed) {
+                respondJson(response, result.status, result.body);
+            }
+        } catch (error) {
+            respondScenarioError(response, error);
+        }
+
+        return;
+    }
+
+    if (url.pathname === mockBffPaths.historyControl) {
+        try {
+            if (request.method === 'GET') {
+                respondJson(response, 200, { held: history.hasHeldResponse() });
+
+                return;
+            }
+
+            const value: unknown = parseJson(await readRequestBody(request));
+
+            if (typeof value !== 'object' || value === null) {
+                throw new Error('Invalid history control');
+            }
+
+            if ('pages' in value) {
+                history.setPages(value.pages);
+            }
+
+            if ('error' in value && 'status' in value && typeof value.status === 'number') {
+                history.setError(value.status, value.error);
+            }
+
+            if ('hold' in value && value.hold === true) {
+                history.holdNext();
+            }
+
+            if ('release' in value && value.release === true) {
+                history.release();
+            }
+
+            respondJson(response, 204, undefined);
+        } catch (error) {
+            respondScenarioError(response, error);
+        }
+
+        return;
+    }
+
     if (request.method === 'GET' && request.url === mockBffPaths.health) {
         respondJson(response, 200, { status: 'ready' });
 
@@ -55,6 +121,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
     if (request.method === 'POST' && request.url === mockBffPaths.reset) {
         roomScenario.reset();
+        history.reset();
         nextCommandId = 1;
         rejectNextCommand = false;
         publishAcceptedBeforeResponse = false;

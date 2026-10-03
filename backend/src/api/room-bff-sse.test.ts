@@ -5,16 +5,18 @@ import { join } from 'node:path';
 
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type {
-    RoomPublicationBatch,
-    RoomRealtimeServerMessage,
-} from '@smart-room/contracts/realtime';
+import type { RoomPublicationBatch } from '@smart-room/contracts/realtime';
+import {
+    isRoomBffRealtimeServerMessage,
+    type RoomBffRealtimeServerMessage,
+} from '@smart-room/contracts/room-bff';
 import { describe, expect, it } from 'vitest';
 
 import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
 import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
 
 import { type RoomRealtimeWritable, startRoomRealtimePublisher } from './room-bff-sse';
+import { toRoomBffSnapshot } from './user-history/user-history-projection';
 
 describe('startRoomRealtimePublisher', () => {
     it('gives an in-batch connection the final baseline and keeps later revisions contiguous', () => {
@@ -101,7 +103,12 @@ describe('startRoomRealtimePublisher', () => {
                     ]),
                 },
             });
-            expect(secondMessages[0]?.payload).toEqual(firstBatchSnapshot);
+
+            if (!firstBatchSnapshot) {
+                throw new Error('Missing batch snapshot');
+            }
+
+            expect(secondMessages[0]?.payload).toEqual(toRoomBffSnapshot(firstBatchSnapshot));
             expect(secondMessages[1]).toMatchObject({
                 messageType: 'device.updated',
                 previousRevision: 0,
@@ -219,7 +226,7 @@ describe('startRoomRealtimePublisher', () => {
             messageType: 'platform.updated',
             payload: {
                 storage: { storedThroughSequence: historyFixtureWatermark() },
-                recentEvents: [expect.objectContaining({ eventType: 'storage.gap.recorded' })],
+                userHistory: [expect.objectContaining({ kind: 'history_gap' })],
             },
         });
     });
@@ -353,7 +360,7 @@ describe('startRoomRealtimePublisher', () => {
             expect.objectContaining({
                 messageType: 'room.snapshot',
                 revision: 0,
-                payload: recovered,
+                payload: toRoomBffSnapshot(recovered),
             }),
         ]);
     });
@@ -581,7 +588,7 @@ function historyFixtureWatermark(): number {
     return createHistoryIdentityFixtures().telemetrySample.storageSequence;
 }
 
-function messages(stream: ControlledWritable): RoomRealtimeServerMessage[] {
+function messages(stream: ControlledWritable): RoomBffRealtimeServerMessage[] {
     return stream.writes.map((frame) => {
         const message = messageFromFrame(frame);
 
@@ -593,17 +600,27 @@ function messages(stream: ControlledWritable): RoomRealtimeServerMessage[] {
     });
 }
 
-function messageFromFrame(frame: string): RoomRealtimeServerMessage | undefined {
+function messageFromFrame(frame: string): RoomBffRealtimeServerMessage | undefined {
     const data = frame
         .split('\n')
         .find((line) => line.startsWith('data: '))
         ?.slice('data: '.length);
 
-    return data ? (JSON.parse(data) as RoomRealtimeServerMessage) : undefined;
+    if (!data) {
+        return undefined;
+    }
+
+    const message: unknown = JSON.parse(data);
+
+    if (!isRoomBffRealtimeServerMessage(message)) {
+        throw new Error('Invalid BFF message');
+    }
+
+    return message;
 }
 
 function revisions(
-    realtimeMessages: readonly RoomRealtimeServerMessage[],
+    realtimeMessages: readonly RoomBffRealtimeServerMessage[],
 ): Array<[number | undefined, number]> {
     return realtimeMessages.map((message) => [
         message.messageType === 'room.snapshot' ? undefined : message.previousRevision,

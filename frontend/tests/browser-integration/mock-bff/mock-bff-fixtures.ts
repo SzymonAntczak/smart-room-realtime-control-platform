@@ -5,17 +5,25 @@ import type {
     TerminalCommandProjection,
     TimedOutCommandProjection,
 } from '@smart-room/contracts/commands';
-import type { RecentEventProjection } from '@smart-room/contracts/history';
 import type {
     DeviceProjection,
     PlatformStorageProjection,
-    RoomSnapshotProjection,
 } from '@smart-room/contracts/projections';
-import type {
-    CommandsUpdatedMessage,
-    DeviceUpdatedMessage,
-    PlatformUpdatedMessage,
-} from '@smart-room/contracts/realtime';
+import type { RoomBffRealtimeServerMessage, RoomBffSnapshot } from '@smart-room/contracts/room-bff';
+import type { UserHistoryItem } from '@smart-room/contracts/user-history';
+
+type CommandsUpdatedMessage = Extract<
+    RoomBffRealtimeServerMessage,
+    { messageType: 'commands.updated' }
+>;
+type DeviceUpdatedMessage = Extract<
+    RoomBffRealtimeServerMessage,
+    { messageType: 'device.updated' }
+>;
+type PlatformUpdatedMessage = Extract<
+    RoomBffRealtimeServerMessage,
+    { messageType: 'platform.updated' }
+>;
 
 const fixtureTimestamp = '2026-06-08T09:30:00Z';
 const commandRequestedAt = '2026-06-08T09:30:01Z';
@@ -64,14 +72,14 @@ export function createOnlineLedDeviceProjection(): DeviceProjection {
     };
 }
 
-export function createOnlineLedRoomSnapshot(): RoomSnapshotProjection {
+export function createOnlineLedRoomSnapshot(): RoomBffSnapshot {
     return {
         roomName: 'Smart Room',
         updatedAt: fixtureTimestamp,
         devices: [createOnlineLedDeviceProjection()],
         activeCommands: [],
         recentCommands: [],
-        recentEvents: [],
+        userHistory: [],
         platform: storagePlatform(),
     };
 }
@@ -108,7 +116,7 @@ export function createOnlineWindowTemperatureDeviceProjection(): DeviceProjectio
     };
 }
 
-export function createOnlineTemperatureRoomSnapshot(): RoomSnapshotProjection {
+export function createOnlineTemperatureRoomSnapshot(): RoomBffSnapshot {
     return {
         roomName: 'Smart Room',
         updatedAt: fixtureTimestamp,
@@ -118,7 +126,7 @@ export function createOnlineTemperatureRoomSnapshot(): RoomSnapshotProjection {
         ],
         activeCommands: [],
         recentCommands: [],
-        recentEvents: [],
+        userHistory: [],
         platform: storagePlatform(),
     };
 }
@@ -291,7 +299,7 @@ export function createLateReportedLedDeviceProjection(): DeviceProjection {
 export function createDeviceUpdatedMessage(
     previousRevision: number,
     device: DeviceProjection = createOnlineLedDeviceProjection(),
-    recentEvents?: RecentEventProjection[],
+    userHistory?: UserHistoryItem[],
     sentAt = fixtureTimestamp,
 ): DeviceUpdatedMessage {
     return {
@@ -300,17 +308,17 @@ export function createDeviceUpdatedMessage(
         revision: previousRevision + 1,
         sentAt,
         payload: device,
-        ...(recentEvents === undefined ? {} : { recentEvents }),
+        ...(userHistory === undefined ? {} : { userHistory }),
     };
 }
 
 export function createTemperatureDeviceUpdatedMessage(
     previousRevision: number,
     device: DeviceProjection = createOnlineTemperatureDeviceProjection(),
-    recentEvents?: RecentEventProjection[],
+    userHistory?: UserHistoryItem[],
     sentAt = fixtureTimestamp,
 ): DeviceUpdatedMessage {
-    return createDeviceUpdatedMessage(previousRevision, device, recentEvents, sentAt);
+    return createDeviceUpdatedMessage(previousRevision, device, userHistory, sentAt);
 }
 
 export function createCommandsUpdatedMessage(
@@ -319,13 +327,13 @@ export function createCommandsUpdatedMessage(
         devices = [createOnlineLedDeviceProjection()],
         activeCommands = [],
         recentCommands = [],
-        recentEvents,
+        userHistory,
         sentAt = fixtureTimestamp,
     }: {
         devices?: DeviceProjection[];
         activeCommands?: ActiveCommandProjection[];
         recentCommands?: TerminalCommandProjection[];
-        recentEvents?: RecentEventProjection[];
+        userHistory?: UserHistoryItem[];
         sentAt?: string;
     } = {},
 ): CommandsUpdatedMessage {
@@ -338,7 +346,7 @@ export function createCommandsUpdatedMessage(
             devices,
             activeCommands,
             recentCommands,
-            ...(recentEvents === undefined ? {} : { recentEvents }),
+            ...(userHistory === undefined ? {} : { userHistory }),
         },
     };
 }

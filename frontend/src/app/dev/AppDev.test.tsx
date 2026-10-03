@@ -25,6 +25,7 @@ describe('AppDev', () => {
 
     it('opens a device-scoped scenario sidebar and restores trigger focus after closing it', async () => {
         const user = userEvent.setup();
+        deferHistoryRequests();
         render(<AppDev />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
@@ -49,6 +50,7 @@ describe('AppDev', () => {
 
     it('closes the panel with Escape and restores trigger focus', async () => {
         const user = userEvent.setup();
+        deferHistoryRequests();
         render(<AppDev />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
@@ -104,6 +106,7 @@ describe('AppDev', () => {
                 ),
         );
         const user = userEvent.setup();
+        deferHistoryRequests();
         render(<AppDev />);
         act(() =>
             MockWebSocket.latest().emitMessage(createRoomSnapshotMessage([createLedDevice()])),
@@ -169,7 +172,7 @@ function createRoomSnapshotMessage(devices: unknown[] = [createTemperatureDevice
             updatedAt: '2026-06-08T09:30:00Z',
             activeCommands: [],
             recentCommands: [],
-            recentEvents: [],
+            userHistory: [],
             devices,
             platform: { storage: availableStorage() },
         },
@@ -229,4 +232,16 @@ function availableStorage() {
         historyGenerationId: 'generation-test',
         storedThroughSequence: 0,
     };
+}
+
+function deferHistoryRequests() {
+    const developmentFetch = globalThis.fetch;
+    vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>((input, init) =>
+            String(input).includes('/room/history/')
+                ? new Promise(() => undefined)
+                : developmentFetch(input, init),
+        ),
+    );
 }

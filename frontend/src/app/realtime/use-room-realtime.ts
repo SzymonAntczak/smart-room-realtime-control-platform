@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 
 import type { RenderableRoomSnapshot } from '../shared/room-rendering';
 
+import { createRoomHistorySource, type RoomHistorySource } from './room-history-source';
 import { connectRoomRealtime, type RoomRealtimeConnectionStatus } from './room-realtime-client';
 
-export type RoomRealtimeState =
+type RoomRealtimeView =
     | {
           status: 'connecting';
           connectionStatus: Extract<RoomRealtimeConnectionStatus, 'connecting' | 'reconnecting'>;
@@ -17,14 +18,18 @@ export type RoomRealtimeState =
           contractError?: string;
       };
 
+export type RoomRealtimeState = RoomRealtimeView & { historySource: RoomHistorySource };
+
 export function useRoomRealtime(): RoomRealtimeState {
-    const [state, setState] = useState<RoomRealtimeState>({
+    const [history] = useState(createRoomHistorySource);
+    const [state, setState] = useState<RoomRealtimeView>({
         status: 'connecting',
         connectionStatus: 'connecting',
     });
 
     useEffect(() => {
         const connection = connectRoomRealtime({
+            onHistoryUpdate: (update, baseline) => history.publish(update, baseline),
             onConnectionStatus(connectionStatus) {
                 setState((current) => {
                     if (current.status === 'ready') {
@@ -56,8 +61,13 @@ export function useRoomRealtime(): RoomRealtimeState {
             },
         });
 
-        return () => connection.close();
-    }, []);
+        history.setRequestBaseline(() => connection.requestBaseline());
 
-    return state;
+        return () => {
+            history.setRequestBaseline(() => undefined);
+            connection.close();
+        };
+    }, [history]);
+
+    return { ...state, historySource: history.source };
 }

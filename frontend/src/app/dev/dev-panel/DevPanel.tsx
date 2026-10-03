@@ -83,7 +83,7 @@ function DevPanelSidebar({
     onRequestChange,
 }: {
     target: DevPanelTarget;
-    snapshot: RoomSnapshotProjection;
+    snapshot: Pick<RoomSnapshotProjection, 'devices' | 'activeCommands' | 'recentCommands'>;
     onClose(): void;
     onRequestChange(deviceId: string, isPending: boolean): void;
 }) {

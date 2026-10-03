@@ -2,34 +2,28 @@ import {
     compareRecentEventsDescending,
     isHistoryCursorErrorResponse,
     isRawTelemetryPage,
-    isSignificantFactPage,
     type LiveTelemetrySampleProjection,
     normalizeRawTelemetryFirstPageQuery,
     type RawTelemetryPage,
-    type RecentEventProjection,
-    type SignificantFactPage,
 } from '@smart-room/contracts/history';
 
 import type { RoomHistoryRealtimeUpdate } from '../realtime/room-realtime-client';
 
 const defaultBffUrl = 'http://localhost:4310';
-const factLimit = 20;
 const telemetryLimit = 100;
 
-type HistoryKind = 'significant-facts' | 'telemetry';
-type HistoryItem = RecentEventProjection | LiveTelemetrySampleProjection;
-type HistoryPage = SignificantFactPage | RawTelemetryPage;
+type HistoryKind = 'telemetry';
+type HistoryItem = LiveTelemetrySampleProjection;
+type HistoryPage = RawTelemetryPage;
 
-export type RoomHistorySessionOptions =
-    | { kind: 'significant-facts'; pageSize?: number }
-    | {
-          kind: 'telemetry';
-          deviceId: string;
-          metric: 'temperature';
-          from: string;
-          to: string;
-          pageSize?: number;
-      };
+export type RoomHistorySessionOptions = {
+    kind: 'telemetry';
+    deviceId: string;
+    metric: 'temperature';
+    from: string;
+    to: string;
+    pageSize?: number;
+};
 
 export interface RoomHistorySessionState {
     kind: HistoryKind;
@@ -56,27 +50,26 @@ export function createRoomHistorySession(
     options: RoomHistorySessionOptions,
     fetchImplementation: typeof fetch = fetch,
 ): RoomHistorySession {
-    const limit = options.kind === 'significant-facts' ? factLimit : telemetryLimit;
+    const limit = telemetryLimit;
     const pageSize = options.pageSize ?? limit;
 
     if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > limit) {
         throw new Error('History page size is outside the view bound.');
     }
 
-    const telemetryQuery =
-        options.kind === 'telemetry'
-            ? normalizeRawTelemetryFirstPageQuery({
-                  deviceId: options.deviceId,
-                  metric: options.metric,
-                  from: options.from,
-                  to: options.to,
-                  pageSize,
-              })
-            : undefined;
+    const parsedQuery = normalizeRawTelemetryFirstPageQuery({
+        deviceId: options.deviceId,
+        metric: options.metric,
+        from: options.from,
+        to: options.to,
+        pageSize,
+    });
 
-    if (options.kind === 'telemetry' && !telemetryQuery) {
+    if (!parsedQuery) {
         throw new Error('Telemetry history range did not match the shared query contract.');
     }
+
+    const telemetryQuery = parsedQuery;
 
     let status: RoomHistorySessionState['status'] = 'waiting_for_baseline';
     let error: RoomHistorySessionState['error'];
@@ -144,10 +137,6 @@ export function createRoomHistorySession(
                 hasBaseline = true;
                 awaitingBaseline = false;
 
-                if (options.kind === 'significant-facts') {
-                    overlay = mergeBounded([], update.recentEvents, limit);
-                }
-
                 if (hasOpened) {
                     status = 'loading';
                     void loadPage(null);
@@ -189,11 +178,8 @@ export function createRoomHistorySession(
                 generation = incomingGeneration;
             }
 
-            if (options.kind === 'significant-facts') {
-                overlay = mergeBounded(overlay, update.recentEvents ?? [], limit);
-            } else if (
+            if (
                 update.telemetrySample &&
-                telemetryQuery &&
                 update.telemetrySample.deviceId === telemetryQuery.deviceId &&
                 update.telemetrySample.metric === telemetryQuery.metric &&
                 update.telemetrySample.occurredAt >= telemetryQuery.from &&
@@ -252,20 +238,13 @@ export function createRoomHistorySession(
         const epoch = ++requestEpoch;
 
         try {
-            const url = new URL(
-                options.kind === 'significant-facts'
-                    ? '/room/history/significant-facts'
-                    : '/room/history/telemetry',
-                getBffUrl(),
-            );
+            const url = new URL('/room/history/telemetry', getBffUrl());
             url.searchParams.set('pageSize', String(pageSize));
 
-            if (telemetryQuery) {
-                url.searchParams.set('deviceId', telemetryQuery.deviceId);
-                url.searchParams.set('metric', telemetryQuery.metric);
-                url.searchParams.set('from', telemetryQuery.from);
-                url.searchParams.set('to', telemetryQuery.to);
-            }
+            url.searchParams.set('deviceId', telemetryQuery.deviceId);
+            url.searchParams.set('metric', telemetryQuery.metric);
+            url.searchParams.set('from', telemetryQuery.from);
+            url.searchParams.set('to', telemetryQuery.to);
 
             if (cursor !== null) {
                 url.searchParams.set('cursor', cursor);
@@ -342,10 +321,7 @@ export function createRoomHistorySession(
                 return;
             }
 
-            const valid =
-                options.kind === 'significant-facts'
-                    ? isSignificantFactPage(body)
-                    : isRawTelemetryPage(body);
+            const valid = isRawTelemetryPage(body);
 
             if (!valid) {
                 fail('invalid_response');
@@ -402,17 +378,13 @@ export function createRoomHistorySession(
                 (page.historyGenerationId === generation &&
                     page.throughSequence === throughSequence &&
                     page.retentionAsOf === retentionAsOf)) &&
-            (options.kind !== 'telemetry' ||
-                (telemetryQuery !== undefined &&
-                    page.items.every(
-                        (item) =>
-                            'deviceId' in item &&
-                            item.deviceId === telemetryQuery.deviceId &&
-                            'metric' in item &&
-                            item.metric === telemetryQuery.metric &&
-                            item.occurredAt >= telemetryQuery.from &&
-                            item.occurredAt < telemetryQuery.to,
-                    )))
+            page.items.every(
+                (item) =>
+                    item.deviceId === telemetryQuery.deviceId &&
+                    item.metric === telemetryQuery.metric &&
+                    item.occurredAt >= telemetryQuery.from &&
+                    item.occurredAt < telemetryQuery.to,
+            )
         );
     }
 

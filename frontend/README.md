@@ -11,9 +11,18 @@ the backend; one shared sidebar swaps temperature or LED content for the card
 that opened it.
 
 `VITE_BFF_URL` configures the shared HTTP origin for development scenarios and
-diagnostics. `VITE_ROOM_REALTIME_URL` independently configures the SSE endpoint,
+diagnostics and user history. `VITE_ROOM_REALTIME_URL` independently configures the SSE endpoint,
 and `VITE_ROOM_COMMAND_URL` configures the LED command endpoint. Each has a
 localhost default for the local BFF.
+
+The Dashboard history panel consumes strict BFF user entries from the same SSE
+connection and `/room/history/user-history?pageSize=50`. One open session pins
+generation, watermark and retention time, caches up to 5,000 HTTP entries and
+200 live entries, and runs one fetch at a time. It preserves a reading anchor
+through live merge and bounded recovery, labels last-known/error/limited history,
+and releases its cache when closed. The list is not yet virtualized; that work
+belongs to ST-4-06a-05. Raw significant-fact sessions are not a frontend product
+path; the separate telemetry history session remains available and tested.
 
 ## Source Of Truth
 

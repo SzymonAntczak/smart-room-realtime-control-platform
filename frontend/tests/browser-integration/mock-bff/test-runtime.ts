@@ -27,6 +27,7 @@ export default async function startBrowserTestRuntime(): Promise<() => Promise<v
                 '--strictPort',
             ],
             {
+                VITE_BFF_URL: browserTestUrls.mockBff,
                 VITE_ROOM_COMMAND_URL: mockBffUrls.commands,
                 VITE_ROOM_REALTIME_URL: mockBffUrls.realtime,
             },

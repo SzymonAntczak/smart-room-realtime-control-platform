@@ -1,10 +1,10 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LedControl } from '../../controls/led/LedControl';
-import { RecentEventsFeed } from '../../history/RecentEventsFeed';
 import { useRecentEventsSidebar } from '../../history/use-recent-events-sidebar';
+import { UserHistoryPanel } from '../../history/UserHistoryPanel';
 import type { RoomRealtimeState } from '../../realtime/use-room-realtime';
 import { TemperatureControl } from '../../sensors/temperature/TemperatureControl';
 import type { RenderableDeviceProjection } from '../room-rendering';
@@ -27,6 +27,7 @@ export function RoomControlSurface({
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;
     const realtimeUncertain =
         room.connectionStatus === 'reconnecting' || room.contractError !== undefined;
+    const scrollRoot = useRef<HTMLElement | null>(null);
     const feedSidebar = useRecentEventsSidebar();
     const FeedToggleIcon = feedSidebar.isOpen ? PanelLeftClose : PanelLeftOpen;
 
@@ -35,14 +36,17 @@ export function RoomControlSurface({
             <div className={styles.sidebarSlot}>
                 <div className={styles.sidebarViewport}>
                     <aside
+                        ref={scrollRoot}
                         id="recent-events-sidebar"
+                        aria-label={t('feed.heading')}
                         className={styles.sidebar}
                         aria-hidden={!feedSidebar.isOpen}
                         inert={!feedSidebar.isOpen}
                     >
-                        {snapshot ? (
-                            <RecentEventsFeed
-                                events={snapshot.recentEvents}
+                        {snapshot && feedSidebar.isOpen ? (
+                            <UserHistoryPanel
+                                source={room.historySource}
+                                scrollRoot={scrollRoot}
                                 devices={snapshot.devices}
                                 realtimeUncertain={realtimeUncertain}
                             />

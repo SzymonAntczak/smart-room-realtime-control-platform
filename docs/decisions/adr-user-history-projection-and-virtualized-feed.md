@@ -4,15 +4,13 @@
 
 Accepted
 
-Implementation partial: `ST-4-06a-01` supplies additive executable BFF contracts
-and tested client validation adapters. `ST-4-06a-02` adds a tested BFF-local
-transformer for room snapshots and atomic publications. It remains disconnected
-from the current room HTTP/SSE transport. `ST-4-06a-03` delivers the separate
-pinned user-history HTTP endpoint; frontend/live integration, rendering and
-parent-story verification remain pending in `ST-4-06a-04` through `-06`.
-The completed `DS-4-06` still exposes the
-significant-fact feed with separate command lifecycle entries and expandable
-technical details until its successor story is implemented.
+Implementation partial: `ST-4-06a-01` through `-03` supply executable BFF
+contracts, transformation and pinned HTTP pagination. `ST-4-06a-04` connects
+the transformer to `/room` and the existing SSE, and the Dashboard to a bounded
+user-history session with paging, live merge and reading-position recovery.
+The Dashboard presents a simple user-history list without technical details.
+Virtual rendering and final presentation remain in `ST-4-06a-05`; parent-story
+verification remains in `ST-4-06a-06`. This is not completion of `DS-4-06a`.
 
 This ADR supersedes the Stage 4 storage ADR's product-feed presentation and
 total view bound for the DS-4-06a target. Significant-fact contracts, processor
@@ -263,14 +261,47 @@ for complete delivery of all intervening entries. Volatile eviction remains
 subject to the existing bounded, non-durable guarantee.
 
 Reconnect and cursor expiry obtain a new pinned session while preserving bounded
-live additions. Rebuild through the previous anchor where it remains retained;
-if retention removed it, explain that limitation and use the nearest retained
-position. A changed generation invalidates all old cursors/pages/overlay and
+live additions. Rebuild through the previous anchor where it remains available;
+if the entry is absent, explain the missing entry and use the nearest available
+position without attributing the absence to retention without evidence.
+A changed generation invalidates all old cursors/pages/overlay and
 restarts from the new baseline; unrelated generations are never merged. A
 storage `503` preserves a labeled last-known view; availability recovery refetches
 before claiming completeness. Closing the panel stops pagination, releases its
 loaded pages and ignores late responses. Reopening uses the current validated
 room baseline and the existing SSE connection.
+
+### Connected session limits and recovery
+
+The approved `ST-4-06a-04` implementation uses HTTP pages of 50, at most 5,000
+cached HTTP entries and a separate 200-entry live overlay, with one active
+fetch. During rebuilding, a labeled previous cache and its replacement may
+coexist (two caches of at most 5,000 entries plus one overlay). Closing releases
+both caches and aborts the operation; responses are also guarded by operation ID.
+The overlay protects its current live reading anchor within its bound.
+
+The session subscribes to the existing realtime connection before reading its
+current baseline and starting HTTP. The port preserves the connection's last
+known non-null generation alongside the current storage metadata, so opening
+during an unknown degraded state cannot merge old live entries into a replacement
+HTTP generation. Every validated addition reaches the
+session directly; React snapshot batching cannot discard intermediate additions.
+The first HTTP page pins generation, watermark and retention time. Sparse pages
+with a cursor continue. Manual loading and automatic loading within one viewport
+of the end share the same operation. The simple list currently renders all
+loaded entries; virtualization is explicitly deferred to `ST-4-06a-05`.
+
+Reading position is `{ recordId, occurredAt, offsetPx }` relative to the scroll
+container and is restored before paint. Same-generation reconnect rebuilds
+sequentially through that anchor. Expired or restart-invalid cursors restart
+once per operation; a second failure requires explicit retry. Reconstruction is
+limited to 100 pages per operation. A generation disagreement detected by HTTP
+requests a fresh baseline by reconnecting the existing SSE. Changed generations
+clear pages, cursor, overlay and anchor. A storage 503 retains the labeled view
+and live additions; availability recovery refetches before clearing the warning.
+Malformed responses and cursor-query mismatches do not start automatic loops.
+Returning to newest after overlay overflow refetches durable history without
+promising recovery of omitted historical changes or evicted volatile entries.
 
 ## Consequences
 
@@ -302,15 +333,16 @@ the history boundary honestly.
 Contract and client-boundary tests for `ST-4-06a-01` cover the additive BFF
 schemas and validation adapters.
 The BFF-local snapshot and publication transformer is implemented and tested
-under `ST-4-06a-02`; it is deliberately not connected to the room HTTP/SSE
-transport. `ST-4-06a-03` adds contract, cursor, reader and HTTP/SQLite tests for
+under `ST-4-06a-02` and connected to the room HTTP/SSE boundary by `ST-4-06a-04`.
+`ST-4-06a-03` adds contract, cursor, reader and HTTP/SQLite tests for
 the optional size/default, conservative classification, cross-page timeout
 evidence, sparse pages, signed dataset/scope separation, fixed expiry, pinned
-retention/generation and whole-response error handling. Existing room/raw API
-and runtime-bootstrap tests protect the unchanged transport boundaries.
-Live integration, rendering and parent-story verification remain pending.
-These tests do not establish that the running Dashboard already implements
-this ADR's target feed.
+retention/generation and whole-response error handling. Platform/raw API and
+runtime-bootstrap tests protect the unchanged internal contracts.
+`ST-4-06a-04` adds strict BFF transport tests, deterministic history session
+tests, actual HTTP/SSE integration and mocked-BFF desktop/mobile browser tests
+for paging, anchors, bounded overlay, recovery and panel cleanup.
+Virtual rendering and parent-story verification remain pending.
 
 ## Links
 

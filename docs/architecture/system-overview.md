@@ -223,19 +223,21 @@ snapshot when a delta is malformed or has a revision gap.
 
 - `messageType: "room.snapshot"`
 - `sentAt`: backend send timestamp
-- `payload`: the current `RoomSnapshotProjection`
+- `payload`: the current `RoomBffSnapshot` (derived from the internal
+  `RoomSnapshotProjection`)
 
 Unsupported message types and malformed payloads are not renderable frontend
 state. Accepted events and projection changes to availability, health or freshness reach
 connected clients through `device.updated`.
 
 The Stage 4 contract extends this one SSE connection rather than
-adding a history stream: the snapshot gains a bounded 20-entry `recentEvents`
-feed and `platform.storage`, which solely owns the durable-history generation
+adding a history stream: the BFF snapshot carries a bounded 20-entry `userHistory`
+feed (the internal platform projection retains `recentEvents`) and
+`platform.storage`, which solely owns the durable-history generation
 and watermark.
 Existing projection deltas may carry multiple related live feed records or one
 telemetry sample at the same revision. `platform.updated` carries storage status
-and may carry `storage.gap.recorded`. It also follows a durable outcome as a
+and may carry a transformed `history_gap` user entry. It also follows a durable outcome as a
 watermark-only next revision so `platform.storage` remains current. Command projections distinguish intent
 durability from lifecycle durability; availability, health and capability
 observations carry their own evidence durability.
@@ -247,9 +249,13 @@ The shared schemas, backend BFF and frontend clients implement these Stage 4
 history and realtime synchronization rules.
 Older facts and telemetry ranges remain explicit HTTP reads; the client merges
 them with every buffered SSE-delivered record by stable `recordId` and a pinned
-history generation and storage watermark. That HTTP session is complete through its bound. Non-feed
-facts committed above it require an explicit refetch because SSE intentionally
-does not turn them into feed entries. Retention tombstones preserve that pinned
+history generation and storage watermark. Raw HTTP sessions are complete through
+their bound; user history explicitly marks `retained_evidence_only` because raw
+facts cannot prove every historical applied change. Non-feed facts committed
+above the bound require an explicit refetch. The Dashboard's user-history
+session caches at most 5,000 HTTP entries and 200 live entries, preserving its
+reading anchor across updates and same-generation recovery. It uses a simple
+list until virtual rendering in `ST-4-06a-05`. Retention tombstones preserve the pinned
 view for the cursor's fixed five-minute lifetime; an expired cursor begins a new
 session. A changed history generation invalidates the previous pages, cursor
 and overlay instead of merging unrelated databases. The client retains the last

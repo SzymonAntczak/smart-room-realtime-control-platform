@@ -35,14 +35,12 @@ import {
     type TrendResponse,
     trendResponseSchema,
 } from '@smart-room/contracts/history';
-import {
-    type RoomSnapshotProjection,
-    roomSnapshotProjectionSchema,
-} from '@smart-room/contracts/projections';
+import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
     isRoomSnapshotProjection,
     type RoomPublicationBatch,
 } from '@smart-room/contracts/realtime';
+import { isRoomBffSnapshot, roomBffSnapshotSchema } from '@smart-room/contracts/room-bff';
 import {
     durableHistoryUnavailableResponseSchema,
     normalizeUserHistoryPageQuery,
@@ -68,6 +66,7 @@ import {
 } from './room-bff-http';
 import { startRoomRealtimeStream } from './room-bff-sse';
 import { createUserHistoryReader } from './user-history';
+import { toRoomBffSnapshot } from './user-history/user-history-projection';
 
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
@@ -485,7 +484,7 @@ export function createRoomBffServer({
 
     server.all(
         '/room',
-        { schema: { response: { 200: roomSnapshotProjectionSchema } } },
+        { schema: { response: { 200: roomBffSnapshotSchema } } },
         (request, response) => {
             handleRoomBffRequest(request, response, handlers);
         },
@@ -590,7 +589,19 @@ function handleRoomBffRequest(
         return;
     }
 
-    writeJson(response, 200, snapshot);
+    try {
+        const result = toRoomBffSnapshot(snapshot);
+
+        if (!isRoomBffSnapshot(result)) {
+            writeInvalidServerResponse(response);
+
+            return;
+        }
+
+        writeJson(response, 200, result);
+    } catch {
+        writeInvalidServerResponse(response);
+    }
 }
 
 async function handleDeviceScenarioRequest(

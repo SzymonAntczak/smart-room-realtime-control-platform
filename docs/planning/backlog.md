@@ -461,9 +461,10 @@ Each item has one difficulty rating only:
   position without rendering the whole history into the DOM.
 - **Status:** accepted; `ST-4-06a-01` contracts/client validation,
   `ST-4-06a-02` BFF-local snapshot/publication transformation and
-  `ST-4-06a-03` pinned HTTP pagination delivered. Frontend/live integration,
-  rendering and story verification remain pending; the running Dashboard still
-  uses the technical fact feed.
+  `ST-4-06a-03` pinned HTTP pagination and `ST-4-06a-04` connected HTTP/SSE
+  paging, live merge and reading-position recovery delivered. The Dashboard uses
+  a simple user-history list. Virtual rendering, final presentation and
+  story-level verification remain pending in `ST-4-06a-05` and `-06`.
 - **Sources / boundaries:** [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
 - **Depends on:** `DS-4-03`, `DS-4-04`, `DS-4-06`.
 - **Difficulty:** `B`.
@@ -482,7 +483,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-06a-01` | Define additive BFF user-history response contracts and validate them at the client boundary.           | `DS-4-03`, `DS-4-04`, `DS-4-06` | `C`        |
 | `[x] ST-4-06a-02` | Transform current room snapshots and existing realtime publications into user-history items in the BFF. | `ST-4-06a-01`                   | `B`        |
 | `[x] ST-4-06a-03` | Build pinned, paged user history in the BFF from the existing significant-fact reader.                  | `ST-4-06a-01`, `ST-4-06a-02`    | `B`        |
-| `[ ] ST-4-06a-04` | Implement frontend history paging, live merge, reading-position preservation and recovery.              | `ST-4-06a-02`, `ST-4-06a-03`    | `B`        |
+| `[x] ST-4-06a-04` | Implement frontend history paging, live merge, reading-position preservation and recovery.              | `ST-4-06a-02`, `ST-4-06a-03`    | `B`        |
 | `[ ] ST-4-06a-05` | Present accessible user-history items and add virtual rendering.                                        | `ST-4-06a-04`                   | `C`        |
 | `[ ] ST-4-06a-06` | Complete story verification and delivery review.                                                        | `ST-4-06a-05`                   | `C`        |
 

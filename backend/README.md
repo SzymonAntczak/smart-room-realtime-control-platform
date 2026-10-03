@@ -65,7 +65,9 @@ cutover queue is bounded by `SMART_ROOM_STORAGE_RECOVERY_QUEUE_LIMIT` (default
 The local development BFF listens on `http://localhost:4310` by default. The
 frontend runtime reads room state from `http://localhost:4310/room/realtime` using SSE.
 `GET http://localhost:4310/room` remains available as a debug/read snapshot
-endpoint. Runtime event processing diagnostics are available at
+endpoint. Both room HTTP and SSE expose strict BFF `userHistory` contracts;
+internal platform snapshots/publications and raw history APIs retain their
+existing technical facts. Runtime event processing diagnostics are available at
 `GET http://localhost:4310/diagnostics`. The port can be overridden with `PORT`.
 
 When storage is available, durable history is exposed through these HTTP reads:

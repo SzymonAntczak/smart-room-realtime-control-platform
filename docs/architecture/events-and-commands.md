@@ -140,25 +140,27 @@ reports that change neither reported state nor command lifecycle remain
 auditable history without entering the feed. Accepted telemetry is published as
 a separate live sample and never as a significant feed fact.
 
-On the existing SSE connection, `device.updated` keeps the device projection in
-`payload` and may add either `recentEvents` or one `telemetrySample` beside it.
+Internal platform publications keep the device projection in `payload` and
+may add either `recentEvents` or one `telemetrySample` beside it. The public BFF
+SSE transforms `recentEvents` to `userHistory`; telemetry remains separate.
 The sample uses the same `recordId` and durable storage sequence as HTTP history;
 volatile samples have no storage sequence. The client merges feed records by
 `recordId`. When a durable result has a device or command delta, that result is
 published first and `platform.updated` with the current watermark follows at
 the next revision. A durable non-applying fact needs only the watermark update.
 
-## DS-4-06a User-History Target (Implementation Pending)
+## DS-4-06a User History (Paging Connected; Virtual Rendering Pending)
 
-The preceding `recentEvents` feed rules describe the implemented DS-4-06
-technical presentation. The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+The preceding `recentEvents` rules describe the platform projection and
+internal publications. They remain separate from the Dashboard presentation.
+The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
 supersedes that product presentation for DS-4-06a while preserving platform
 event envelopes, full auditable significant facts, command lifecycle and
 confirmation matching.
 
 The BFF derives minimal user entries from existing snapshot before/after values, realtime publications and retained significant facts. No sidecar or new platform event is persisted. A changing report and its derived confirmation produce one user change, while intermediate lifecycle and confirmation-without-change produce none. Failure/timeout, applying availability/health value changes and room history gaps follow the new ADR's classification. Source-specific interpretation does not move into the frontend.
 
-The BFF user-history response preserves source identity, durability, generation/watermark and pinned retention. Clients merge HTTP/SSE entries by `recordId` rather than grouping raw event chains. Platform executable schemas remain unchanged. `ST-4-06a-01` supplies separate TypeBox BFF schemas and client validation adapters; `ST-4-06a-02` adds the snapshot/publication transformer, still disconnected from the current room HTTP/SSE transport.
+The BFF user-history response preserves source identity, durability, generation/watermark and pinned retention. Clients merge HTTP/SSE entries by `recordId` rather than grouping raw event chains. Platform executable schemas remain unchanged. `ST-4-06a-01` supplies separate TypeBox BFF schemas and client validation adapters; `ST-4-06a-02` adds the snapshot/publication transformer and `ST-4-06a-04` connects it to the strict BFF room HTTP/SSE boundary. No dual-format compatibility is exposed.
 
 `ST-4-06a-03` exposes `GET /room/history/user-history` with optional `pageSize`
 (1–100, default 50) and an optional opaque cursor. The effective size remains
@@ -168,7 +170,11 @@ continuation. Cross-page request evidence can establish a timeout target without
 advancing the returned cursor past the main page. Historical device changes are
 omitted because raw facts do not prove their applied before/after values;
 `retained_evidence_only` makes this limitation explicit. Technical raw audit
-reads remain separate. Frontend/live integration and rendering remain pending.
+reads remain separate. The Dashboard uses these pages plus directly delivered
+SSE user entries in a bounded session (50 per page, 5,000 HTTP entries, 200 live
+entries). Same-generation recovery preserves the reading anchor and rebuilds
+up to 100 pages; changed generations reset it. The current list is intentionally
+not virtualized; final presentation and story verification remain pending.
 
 ## Initial Event Types
 

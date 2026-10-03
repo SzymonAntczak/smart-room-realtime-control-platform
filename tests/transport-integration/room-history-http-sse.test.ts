@@ -3,7 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { isRawTelemetryPage, isSignificantFactPage } from '@smart-room/contracts/history';
+import { isRawTelemetryPage } from '@smart-room/contracts/history';
+import { isUserHistoryPage } from '@smart-room/contracts/user-history';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -15,12 +16,16 @@ import { createSqliteRoomStorage } from '../../backend/src/platform/storage/sqli
 import { StorageAvailabilityError } from '../../backend/src/platform/storage/storage-errors';
 import { createTemperatureRoomRuntime } from '../../backend/src/runtime/temperature-room-runtime';
 import { createRoomHistorySession } from '../../frontend/src/app/history/room-history-session';
+import { createUserHistorySession } from '../../frontend/src/app/history/user-history-session';
 import type { RoomHistoryRealtimeUpdate } from '../../frontend/src/app/realtime/room-realtime-client';
 import {
     connectRoomRealtime,
     type RoomRealtimeConnection,
 } from '../../frontend/src/app/realtime/room-realtime-client';
-import type { RoomRealtimeServerMessage } from '../../shared/src/realtime';
+import {
+    isRoomBffRealtimeServerMessage,
+    type RoomBffRealtimeServerMessage,
+} from '../../shared/src/room-bff';
 
 const initialTime = '2026-09-26T10:00:00.000Z';
 const telemetryRange = {
@@ -39,7 +44,93 @@ describe('room history over the actual HTTP and SSE transports', () => {
         await Promise.all(harnesses.splice(0).map((harness) => harness.close()));
     });
 
-    it.each(['significant-facts', 'telemetry'] as const)(
+    it('merges user entries before, during and between pinned HTTP pages over one SSE connection', async () => {
+        const harness = await createRuntimeHarness();
+        harnesses.push(harness);
+        harness.clock.advanceBy(1000);
+        harness.runtime.runDeviceScenario('led-main', 'disconnect_device');
+
+        const rejectAttempt = () => {
+            harness.clock.advanceBy(1000);
+            expect(
+                harness.runtime.requestCommand({
+                    deviceId: 'led-main',
+                    commandType: 'set.power',
+                    requestedState: { power: 'on' },
+                }).status,
+            ).toBe('rejected');
+        };
+
+        for (let index = 0; index < 51; index += 1) {
+            rejectAttempt();
+        }
+
+        const updates = createUpdateQueue();
+        const historyFetch = createHistoryFetch(() => harness.baseUrl);
+        const session = createUserHistorySession(historyFetch.fetch);
+        const connection = connectRoomRealtime(
+            {
+                onConnectionStatus() {},
+                onSnapshot() {},
+                onInvalidMessage() {
+                    throw new Error('Invalid production BFF message');
+                },
+                onHistoryUpdate(update) {
+                    session.acceptRealtime(update);
+                    updates.push(update);
+                },
+            },
+            createFetchEventSourceFactory(() => harness.baseUrl, eventSources),
+        );
+        connections.push(connection);
+        await updates.waitFor((update) => update.kind === 'baseline');
+        const seenIds = new Set<string>();
+        rejectAttempt();
+        await updates.waitFor((update) => hasAddition(update, 'significant-facts', seenIds));
+        const gate = historyFetch.holdNextResponse();
+        const loading = session.loadNextPage();
+        const first = await gate.captured;
+
+        if (!isUserHistoryPage(first.body)) {
+            throw new Error('Invalid history page');
+        }
+
+        rejectAttempt();
+        await updates.waitFor((update) => hasAddition(update, 'significant-facts', seenIds));
+        gate.release();
+        await loading;
+        rejectAttempt();
+        await updates.waitFor((update) => hasAddition(update, 'significant-facts', seenIds));
+        await session.loadNextPage();
+        const ids = session.getState().items.map((entry) => entry.recordId);
+        expect(new Set(ids).size).toBe(ids.length);
+
+        for (const id of seenIds) {
+            expect(ids).toContain(id);
+        }
+
+        expect(historyFetch.responses).toHaveLength(2);
+
+        for (const response of historyFetch.responses) {
+            if (!isUserHistoryPage(response.body)) {
+                throw new Error('Invalid history page');
+            }
+
+            expect(response.body.throughSequence).toBe(first.body.throughSequence);
+
+            for (const record of response.body.items) {
+                const merged = session
+                    .getState()
+                    .items.find((entry) => entry.recordId === record.recordId);
+                expect(merged).toMatchObject({ ...record, occurredAt: expect.any(String) });
+                expect(Date.parse(merged?.occurredAt ?? '')).toBe(Date.parse(record.occurredAt));
+            }
+        }
+
+        expect(eventSources).toHaveLength(1);
+    });
+
+    it.each(['telemetry'] as const)(
         'keeps additions before, during and between pages for %s',
         async (kind) => {
             const harness = await createRuntimeHarness();
@@ -48,15 +139,13 @@ describe('room history over the actual HTTP and SSE transports', () => {
             const updates = createUpdateQueue();
             const historyFetch = createHistoryFetch(() => activeBaseUrl.current);
             const session = createRoomHistorySession(
-                kind === 'significant-facts'
-                    ? { kind, pageSize: 1 }
-                    : {
-                          kind,
-                          deviceId: 'temp-desk',
-                          metric: 'temperature',
-                          ...telemetryRange,
-                          pageSize: 1,
-                      },
+                {
+                    kind,
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    ...telemetryRange,
+                    pageSize: 1,
+                },
                 historyFetch.fetch,
             );
             const sourceFactory = createFetchEventSourceFactory(
@@ -83,10 +172,7 @@ describe('room history over the actual HTTP and SSE transports', () => {
 
             const seenIds = new Set<string>();
 
-            if (kind === 'significant-facts') {
-                harness.clock.advanceBy(1_000);
-                harness.runtime.runDeviceScenario('temp-desk', 'disconnect_device');
-            } else {
+            {
                 harness.clock.advanceBy(1_000);
                 harness.runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
             }
@@ -97,16 +183,9 @@ describe('room history over the actual HTTP and SSE transports', () => {
             const firstPageLoad = session.loadFirstPage();
             const firstPage = await heldResponse.captured;
             expect(firstPage.status).toBe(200);
-            expect(
-                kind === 'significant-facts'
-                    ? isSignificantFactPage(firstPage.body)
-                    : isRawTelemetryPage(firstPage.body),
-            ).toBe(true);
+            expect(isRawTelemetryPage(firstPage.body)).toBe(true);
 
-            if (kind === 'significant-facts') {
-                harness.clock.advanceBy(1_000);
-                harness.runtime.runDeviceScenario('temp-desk', 'reconnect_device');
-            } else {
+            {
                 harness.clock.advanceBy(1_000);
                 harness.runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
             }
@@ -117,10 +196,7 @@ describe('room history over the actual HTTP and SSE transports', () => {
 
             expect(session.getState().nextCursor).not.toBeNull();
 
-            if (kind === 'significant-facts') {
-                harness.clock.advanceBy(1_000);
-                harness.runtime.runDeviceScenario('temp-desk', 'degrade_device');
-            } else {
+            {
                 harness.clock.advanceBy(1_000);
                 harness.runtime.runDeviceScenario('temp-desk', 'emit_next_reading');
             }
@@ -135,10 +211,6 @@ describe('room history over the actual HTTP and SSE transports', () => {
             const pagedIds = historyFetch.responses.flatMap((response) => {
                 if (response.status !== 200) {
                     return [];
-                }
-
-                if (kind === 'significant-facts' && isSignificantFactPage(response.body)) {
-                    return response.body.items.map((item) => item.recordId);
                 }
 
                 if (kind === 'telemetry' && isRawTelemetryPage(response.body)) {
@@ -161,10 +233,10 @@ describe('room history over the actual HTTP and SSE transports', () => {
             const additionWatermarkPair = rawMessages.find(
                 (message, index) =>
                     message.messageType === 'device.updated' &&
-                    (message.telemetrySample !== undefined
+                    ('telemetrySample' in message && message.telemetrySample !== undefined
                         ? seenIds.has(message.telemetrySample.recordId)
-                        : (message.recentEvents ?? []).some((event) =>
-                              seenIds.has(event.recordId),
+                        : (('userHistory' in message ? message.userHistory : undefined) ?? []).some(
+                              (event) => seenIds.has(event.recordId),
                           )) &&
                     rawMessages[index + 1]?.messageType === 'platform.updated',
             );
@@ -183,7 +255,7 @@ describe('room history over the actual HTTP and SSE transports', () => {
             });
 
             if (watermark?.messageType === 'platform.updated') {
-                expect(watermark.payload.recentEvents ?? []).toEqual([]);
+                expect(watermark.payload.userHistory ?? []).toEqual([]);
                 const previousWatermark = rawMessages
                     .slice(0, additionIndex)
                     .reverse()
@@ -208,8 +280,12 @@ describe('room history over the actual HTTP and SSE transports', () => {
             const rawAdditionIds = rawMessages.flatMap((message) =>
                 message.messageType === 'device.updated'
                     ? [
-                          ...(message.recentEvents?.map((event) => event.recordId) ?? []),
-                          ...(message.telemetrySample ? [message.telemetrySample.recordId] : []),
+                          ...(('userHistory' in message ? message.userHistory : undefined)?.map(
+                              (event) => event.recordId,
+                          ) ?? []),
+                          ...('telemetrySample' in message && message.telemetrySample
+                              ? [message.telemetrySample.recordId]
+                              : []),
                       ]
                     : [],
             );
@@ -223,12 +299,21 @@ describe('room history over the actual HTTP and SSE transports', () => {
     it('restarts an expired cursor through HTTP and keeps SSE additions in the bounded overlay', async () => {
         const harness = await createRuntimeHarness();
         harnesses.push(harness);
+        harness.clock.advanceBy(1000);
+        harness.runtime.runDeviceScenario('led-main', 'disconnect_device');
+
+        for (let index = 0; index < 51; index += 1) {
+            const rejected = harness.runtime.requestCommand({
+                deviceId: 'led-main',
+                commandType: 'set.power',
+                requestedState: { power: 'on' },
+            });
+            expect(rejected.status).toBe('rejected');
+        }
+
         const baseUrl = { current: harness.baseUrl };
         const updates = createUpdateQueue();
-        const session = createRoomHistorySession(
-            { kind: 'significant-facts', pageSize: 1 },
-            createHistoryFetch(() => baseUrl.current).fetch,
-        );
+        const session = createUserHistorySession(createHistoryFetch(() => baseUrl.current).fetch);
         const connection = connectRoomRealtime(
             {
                 onConnectionStatus() {},
@@ -245,17 +330,17 @@ describe('room history over the actual HTTP and SSE transports', () => {
         );
         connections.push(connection);
         await updates.waitFor((update) => update.kind === 'baseline');
-        await session.loadFirstPage();
+        await session.loadNextPage();
         expect(session.getState().nextCursor).not.toBeNull();
 
         harness.clock.advanceBy(300_001);
         harness.runtime.runDeviceScenario('temp-desk', 'disconnect_device');
         const expiredAddition = await updates.waitFor(
-            (update) => update.kind === 'addition' && (update.recentEvents?.length ?? 0) > 0,
+            (update) => update.kind === 'addition' && (update.userHistory?.length ?? 0) > 0,
         );
         const expiredRecordIds =
             expiredAddition.kind === 'addition'
-                ? (expiredAddition.recentEvents?.map((event) => event.recordId) ?? [])
+                ? (expiredAddition.userHistory?.map((event) => event.recordId) ?? [])
                 : [];
 
         await session.loadNextPage();
@@ -275,10 +360,7 @@ describe('room history over the actual HTTP and SSE transports', () => {
         const baseUrl = { current: harness.baseUrl };
         const updates = createUpdateQueue();
         const historyFetch = createHistoryFetch(() => baseUrl.current);
-        const session = createRoomHistorySession(
-            { kind: 'significant-facts', pageSize: 1 },
-            historyFetch.fetch,
-        );
+        const session = createUserHistorySession(historyFetch.fetch);
         const connection = connectRoomRealtime(
             {
                 onConnectionStatus() {},
@@ -298,18 +380,18 @@ describe('room history over the actual HTTP and SSE transports', () => {
         await updates.waitFor((update) => update.kind === 'baseline');
 
         const oldResponseGate = historyFetch.holdNextResponse();
-        const firstLoad = session.loadFirstPage();
+        const firstLoad = session.loadNextPage();
         const oldResponse = await oldResponseGate.captured;
         expect(oldResponse.status).toBe(200);
 
         harness.clock.advanceBy(1_000);
         harness.runtime.runDeviceScenario('temp-desk', 'disconnect_device');
         const firstLiveAddition = await updates.waitFor(
-            (update) => update.kind === 'addition' && (update.recentEvents?.length ?? 0) > 0,
+            (update) => update.kind === 'addition' && (update.userHistory?.length ?? 0) > 0,
         );
         const firstLiveIds =
             firstLiveAddition.kind === 'addition'
-                ? (firstLiveAddition.recentEvents?.map((event) => event.recordId) ?? [])
+                ? (firstLiveAddition.userHistory?.map((event) => event.recordId) ?? [])
                 : [];
 
         const newResponseGate = historyFetch.holdNextResponse();
@@ -327,11 +409,11 @@ describe('room history over the actual HTTP and SSE transports', () => {
         harness.clock.advanceBy(1_000);
         harness.runtime.runDeviceScenario('temp-desk', 'reconnect_device');
         const secondLiveAddition = await updates.waitFor(
-            (update) => update.kind === 'addition' && (update.recentEvents?.length ?? 0) > 0,
+            (update) => update.kind === 'addition' && (update.userHistory?.length ?? 0) > 0,
         );
         const secondLiveIds =
             secondLiveAddition.kind === 'addition'
-                ? (secondLiveAddition.recentEvents?.map((event) => event.recordId) ?? [])
+                ? (secondLiveAddition.userHistory?.map((event) => event.recordId) ?? [])
                 : [];
 
         newResponseGate.release();
@@ -355,10 +437,7 @@ describe('room history over the actual HTTP and SSE transports', () => {
         const baseUrl = { current: original.baseUrl };
         const updates = createUpdateQueue();
         const fetcher = createHistoryFetch(() => baseUrl.current);
-        const session = createRoomHistorySession(
-            { kind: 'significant-facts', pageSize: 1 },
-            fetcher.fetch,
-        );
+        const session = createUserHistorySession(fetcher.fetch);
         const connection = connectRoomRealtime(
             {
                 onConnectionStatus() {},
@@ -376,17 +455,17 @@ describe('room history over the actual HTTP and SSE transports', () => {
         );
         connections.push(connection);
         await updates.waitFor((update) => update.kind === 'baseline');
-        await session.loadFirstPage();
+        await session.loadNextPage();
         const oldIds = session.getState().items.map((item) => item.recordId);
 
         original.clock.advanceBy(1_000);
         original.runtime.runDeviceScenario('temp-desk', 'disconnect_device');
         const oldGenerationAddition = await updates.waitFor(
-            (update) => update.kind === 'addition' && (update.recentEvents?.length ?? 0) > 0,
+            (update) => update.kind === 'addition' && (update.userHistory?.length ?? 0) > 0,
         );
 
         if (oldGenerationAddition.kind === 'addition') {
-            oldGenerationAddition.recentEvents?.forEach((event) => oldIds.push(event.recordId));
+            oldGenerationAddition.userHistory?.forEach((event) => oldIds.push(event.recordId));
         }
 
         baseUrl.current = replacement.baseUrl;
@@ -714,7 +793,7 @@ class FetchEventSource {
     private readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
     private readonly abortController = new AbortController();
     private isClosed = false;
-    readonly messages: RoomRealtimeServerMessage[] = [];
+    readonly messages: RoomBffRealtimeServerMessage[] = [];
 
     constructor(
         _url: string,
@@ -795,7 +874,12 @@ class FetchEventSource {
             .join('\n');
 
         if (eventType && data) {
-            const message = JSON.parse(data) as RoomRealtimeServerMessage;
+            const message: unknown = JSON.parse(data);
+
+            if (!isRoomBffRealtimeServerMessage(message)) {
+                throw new Error('Invalid BFF SSE frame');
+            }
+
             this.messages.push(message);
             this.dispatch(eventType, new MessageEvent(eventType, { data }));
         }
@@ -858,7 +942,7 @@ function hasAddition(
     const additions =
         update.kind === 'addition'
             ? kind === 'significant-facts'
-                ? (update.recentEvents ?? [])
+                ? (update.userHistory ?? [])
                 : update.telemetrySample
                   ? [update.telemetrySample]
                   : []

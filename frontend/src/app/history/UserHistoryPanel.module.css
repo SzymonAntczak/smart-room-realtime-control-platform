@@ -1,0 +1,28 @@
+.panel {
+    overflow-anchor: none;
+}
+.status,
+.header {
+    padding-inline: var(--space-8);
+    padding-block: var(--space-3);
+}
+.header {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    background: var(--color-surface);
+}
+.status p,
+.header p {
+    color: var(--color-text-muted);
+}
+.status button,
+.header button {
+    font: inherit;
+    cursor: pointer;
+}
+.status button:focus-visible,
+.header button:focus-visible {
+    outline: var(--border-width-thin) solid var(--color-info-text);
+    outline-offset: var(--space-1);
+}

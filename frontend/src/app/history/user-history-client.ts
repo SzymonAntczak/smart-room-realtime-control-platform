@@ -15,7 +15,7 @@ export type UserHistoryResponseResult =
     | { kind: 'unavailable'; error: DurableHistoryUnavailableResponse }
     | { kind: 'invalid_response' };
 
-/** Validates decoded HTTP data. Fetch/session integration belongs to ST-4-06a-04. */
+/** Validates decoded data at the user-history HTTP boundary. */
 export function validateUserHistoryResponse(
     status: number,
     value: unknown,

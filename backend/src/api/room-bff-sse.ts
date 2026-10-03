@@ -1,12 +1,19 @@
 import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import {
-    isRoomRealtimeServerMessage,
     isRoomSnapshotProjection,
     type RoomPublicationBatch,
-    type RoomRealtimeServerMessage,
 } from '@smart-room/contracts/realtime';
+import {
+    isRoomBffRealtimeServerMessage,
+    type RoomBffRealtimeServerMessage,
+} from '@smart-room/contracts/room-bff';
 import { normalizeIsoTimestamp } from '@smart-room/contracts/validation';
 import type { FastifyReply } from 'fastify';
+
+import {
+    toRoomBffPublicationDeltas,
+    toRoomBffSnapshot,
+} from './user-history/user-history-projection';
 
 interface RoomRealtimeStreamConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
@@ -95,7 +102,15 @@ export function startRoomRealtimePublisher(
             return;
         }
 
-        const built = buildExplicitRoomDeltaBatch(batch, revision, now);
+        let built: BatchBuildResult;
+
+        try {
+            built = buildExplicitRoomDeltaBatch(baseline, batch, revision, now);
+        } catch {
+            close();
+
+            return;
+        }
 
         if (built.kind === 'invalid') {
             close();
@@ -117,7 +132,15 @@ export function startRoomRealtimePublisher(
     stream.once('error', close);
 
     baseline = getRoomSnapshot();
-    const initial = buildRoomSnapshotBatch(baseline, now);
+    let initial: BatchBuildResult;
+
+    try {
+        initial = buildRoomSnapshotBatch(baseline, now);
+    } catch {
+        close();
+
+        return;
+    }
 
     if (initial.kind !== 'ready') {
         close();
@@ -205,22 +228,23 @@ function buildRoomSnapshotBatch(
                 messageType: 'room.snapshot',
                 revision: 0,
                 sentAt,
-                payload: snapshot,
-            } as RoomRealtimeServerMessage,
+                payload: toRoomBffSnapshot(snapshot),
+            },
         ],
         0,
     );
 }
 
 function buildExplicitRoomDeltaBatch(
+    previousSnapshot: RoomSnapshotProjection,
     batch: RoomPublicationBatch,
     revision: number,
     now: () => string,
 ): BatchBuildResult {
-    const messages: RoomRealtimeServerMessage[] = [];
+    const messages: RoomBffRealtimeServerMessage[] = [];
     let nextRevision = revision;
 
-    for (const delta of batch.deltas) {
+    for (const delta of toRoomBffPublicationDeltas(previousSnapshot, batch)) {
         const sentAt = normalizedNow(now);
 
         if (!sentAt) {
@@ -233,21 +257,21 @@ function buildExplicitRoomDeltaBatch(
             previousRevision: nextRevision - 1,
             revision: nextRevision,
             sentAt,
-        } as RoomRealtimeServerMessage);
+        });
     }
 
     return messages.length === 0 ? { kind: 'empty' } : buildBatch(messages, nextRevision);
 }
 
 function buildBatch(
-    messages: readonly RoomRealtimeServerMessage[],
+    messages: readonly RoomBffRealtimeServerMessage[],
     nextRevision: number,
 ): BatchBuildResult {
     if (messages.length === 0) {
         return { kind: 'empty' };
     }
 
-    if (!messages.every(isRoomRealtimeServerMessage)) {
+    if (!messages.every(isRoomBffRealtimeServerMessage)) {
         return { kind: 'invalid' };
     }
 
@@ -268,7 +292,7 @@ function normalizedNow(now: () => string): string | undefined {
     }
 }
 
-function formatSseMessage(message: RoomRealtimeServerMessage): string {
+function formatSseMessage(message: RoomBffRealtimeServerMessage): string {
     return `event: ${message.messageType}\ndata: ${JSON.stringify(message)}\n\n`;
 }
 

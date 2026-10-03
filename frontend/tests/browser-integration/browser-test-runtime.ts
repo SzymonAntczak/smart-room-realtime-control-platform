@@ -15,6 +15,8 @@ export const browserTestUrls = {
 
 export const mockBffPaths = {
     health: '/health',
+    history: '/room/history/user-history',
+    historyControl: '/test/room/history',
     realtime: '/room/realtime',
     commands: '/room/commands',
     reset: '/test/room/reset',
@@ -27,6 +29,7 @@ export const mockBffPaths = {
 
 export const mockBffUrls = {
     health: `${browserTestUrls.mockBff}${mockBffPaths.health}`,
+    historyControl: `${browserTestUrls.mockBff}${mockBffPaths.historyControl}`,
     realtime: `${browserTestUrls.mockBff}${mockBffPaths.realtime}`,
     commands: `${browserTestUrls.mockBff}${mockBffPaths.commands}`,
     reset: `${browserTestUrls.mockBff}${mockBffPaths.reset}`,

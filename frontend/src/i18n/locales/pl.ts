@@ -61,6 +61,40 @@ export const pl = {
                 backend: 'backend',
             },
         },
+        history: {
+            room: 'Historia pokoju',
+            completeness: 'Historia obejmuje tylko wpisy potwierdzone dostępnymi danymi.',
+            lastKnown:
+                'Wyświetlana jest ostatnio znana historia. Trwałe dane wymagają odświeżenia.',
+            anchor_unavailable:
+                'Poprzedni wpis nie jest dostępny w odświeżonej historii. Pokazano najbliższą dostępną pozycję.',
+            generation_changed: 'Historia została zastąpiona. Wyświetlane są dane nowej historii.',
+            overflow:
+                'Część zmian na żywo nie mieści się w pamięci widoku. Powrót do nowych zdarzeń odświeży dostępną trwałą historię.',
+            newEvents: 'Nowe zdarzenia',
+            loading: 'Ładowanie historii…',
+            loadOlder: 'Wczytaj starsze',
+            retry: 'Spróbuj ponownie',
+            end: 'Koniec dostępnego zakresu historii.',
+            powerChanged: 'Zaobserwowano zmianę zasilania: {{previous}} → {{current}}.',
+            powerObserved: 'Zaobserwowano zasilanie: {{current}}. Poprzedni stan nie jest znany.',
+            availabilityObserved:
+                'Zaobserwowano dostępność: {{current}}. Poprzednia dostępność nie jest znana.',
+            healthObserved:
+                'Zaobserwowano stan działania: {{current}}. Poprzedni stan nie jest znany.',
+            failed: 'Próba sterowania nie powiodła się.',
+            confirmationMissing:
+                'Nie otrzymano potwierdzenia zmiany zasilania na {{power}}. Urządzenie mogło wykonać polecenie.',
+            errors: {
+                history_unavailable: 'Trwała historia jest chwilowo niedostępna.',
+                invalid_response: 'Nie udało się odczytać poprawnej historii.',
+                request_failed: 'Nie udało się pobrać historii.',
+                recovery_limit:
+                    'Nie udało się zakończyć odbudowy historii. Spróbuj odświeżyć widok.',
+                cursor_query_mismatch:
+                    'Nie udało się kontynuować tego zakresu historii. Spróbuj odświeżyć widok.',
+            },
+        },
         devices: {
             ledMain: 'Główne LED',
             temperatureDesk: 'Temperatura biurka',

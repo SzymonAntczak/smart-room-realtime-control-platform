@@ -6,10 +6,8 @@ import { join } from 'node:path';
 import type { DeviceScenarioAction } from '@smart-room/contracts/development';
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import type {
-    RoomPublicationBatch,
-    RoomRealtimeServerMessage,
-} from '@smart-room/contracts/realtime';
+import type { RoomPublicationBatch } from '@smart-room/contracts/realtime';
+import type { RoomBffRealtimeServerMessage } from '@smart-room/contracts/room-bff';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -21,6 +19,7 @@ import { StorageAvailabilityError } from '../platform/storage/storage-errors';
 import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
 
 import { createRoomBffServer } from './room-bff';
+import { toRoomBffSnapshot } from './user-history/user-history-projection';
 
 describe('createRoomBffServer', () => {
     const openServers: FastifyInstance[] = [];
@@ -42,10 +41,10 @@ describe('createRoomBffServer', () => {
         expect(response.status).toBe(200);
         expect(response.headers.get('content-type')).toContain('application/json');
         expect(response.headers.get('access-control-allow-origin')).toBe('*');
-        await expect(response.json()).resolves.toEqual(createRoomSnapshot());
+        await expect(response.json()).resolves.toEqual(toRoomBffSnapshot(createRoomSnapshot()));
     });
 
-    it('serves the shared history fact unchanged in the HTTP room feed', async () => {
+    it('presents a shared history gap at the HTTP BFF boundary', async () => {
         const fixtures = createHistoryIdentityFixtures();
         const roomSnapshot = {
             ...createRoomSnapshot(),
@@ -64,7 +63,7 @@ describe('createRoomBffServer', () => {
 
         expect(response.status).toBe(200);
         await expect(response.json()).resolves.toMatchObject({
-            recentEvents: [{ recordId: fixtures.recentEvent.recordId }],
+            userHistory: [{ recordId: fixtures.recentEvent.recordId }],
         });
     });
 
@@ -1082,7 +1081,7 @@ describe('createRoomBffServer', () => {
             messageType: 'room.snapshot',
             revision: 0,
             sentAt: '2026-06-08T09:30:01Z',
-            payload: expect.objectContaining(createRoomSnapshot()),
+            payload: expect.objectContaining(toRoomBffSnapshot(createRoomSnapshot())),
         });
     });
 
@@ -1760,7 +1759,7 @@ interface SseConnection {
 interface SseFrame {
     event: string | undefined;
     id: string | undefined;
-    message: RoomRealtimeServerMessage;
+    message: RoomBffRealtimeServerMessage;
 }
 
 async function connectSse(server: FastifyInstance): Promise<SseConnection> {
@@ -1808,7 +1807,7 @@ async function connectSse(server: FastifyInstance): Promise<SseConnection> {
                                 .split('\n')
                                 .find((line) => line.startsWith('id: '))
                                 ?.slice('id: '.length),
-                            message: JSON.parse(data) as RoomRealtimeServerMessage,
+                            message: JSON.parse(data) as RoomBffRealtimeServerMessage,
                         };
                     }
                 }
@@ -1825,7 +1824,7 @@ async function connectSse(server: FastifyInstance): Promise<SseConnection> {
     };
 }
 
-function readRealtimeMessage(stream: SseConnection): Promise<RoomRealtimeServerMessage> {
+function readRealtimeMessage(stream: SseConnection): Promise<RoomBffRealtimeServerMessage> {
     return stream.readFrame().then((frame) => frame.message);
 }
 

@@ -4,16 +4,16 @@ import {
     type SetPowerCommandRequest,
     setPowerCommandRequestSchema,
 } from '@smart-room/contracts/commands';
-import { type RoomSnapshotProjection } from '@smart-room/contracts/projections';
+import { type RoomBffSnapshot } from '@smart-room/contracts/room-bff';
 import {
-    isRoomRealtimeServerMessage,
-    isRoomSnapshotProjection,
-    type RoomRealtimeServerMessage,
-} from '@smart-room/contracts/realtime';
+    isRoomBffRealtimeServerMessage,
+    isRoomBffSnapshot,
+    type RoomBffRealtimeServerMessage,
+} from '@smart-room/contracts/room-bff';
 import { isSchema } from '@smart-room/contracts/validation';
 
-export function assertMockRoomSnapshot(value: unknown): RoomSnapshotProjection {
-    if (!isRoomSnapshotProjection(value)) {
+export function assertMockRoomSnapshot(value: unknown): RoomBffSnapshot {
+    if (!isRoomBffSnapshot(value)) {
         throw new Error('Mock BFF room snapshot did not match the shared contract.');
     }
 
@@ -21,7 +21,7 @@ export function assertMockRoomSnapshot(value: unknown): RoomSnapshotProjection {
 }
 
 export function serializeMockSseMessage(value: unknown): string {
-    if (!isRoomRealtimeServerMessage(value)) {
+    if (!isRoomBffRealtimeServerMessage(value)) {
         throw new Error('Mock BFF SSE message did not match the shared contract.');
     }
 
@@ -52,8 +52,8 @@ export function assertMockRejectedCommandResponse(value: unknown): RejectedComma
     return value;
 }
 
-export function assertMockSseMessage(value: unknown): RoomRealtimeServerMessage {
-    if (!isRoomRealtimeServerMessage(value)) {
+export function assertMockSseMessage(value: unknown): RoomBffRealtimeServerMessage {
+    if (!isRoomBffRealtimeServerMessage(value)) {
         throw new Error('Mock BFF SSE message did not match the shared contract.');
     }
 

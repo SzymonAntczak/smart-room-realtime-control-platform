@@ -1,21 +1,23 @@
-import type { RecentEventProjection } from '@smart-room/contracts/history';
+import type { UserHistoryItem } from '@smart-room/contracts/user-history';
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../i18n/time';
 import { getDeviceDisplayName } from '../shared/device-presentation';
 import type { RenderableDeviceProjection } from '../shared/room-rendering';
 
-import { presentRecentEvent } from './recent-event-presentation';
 import styles from './RecentEventsFeed.module.css';
+import { describeUserHistory } from './user-history-presentation';
 
 export function RecentEventsFeed({
     events,
     devices,
     realtimeUncertain,
+    registerEntry,
 }: {
-    events: readonly RecentEventProjection[];
+    events: readonly UserHistoryItem[];
     devices: readonly RenderableDeviceProjection[];
     realtimeUncertain: boolean;
+    registerEntry?(recordId: string, element: HTMLElement | null): void;
 }) {
     const { t } = useTranslation('dashboard');
 
@@ -28,7 +30,6 @@ export function RecentEventsFeed({
             ) : (
                 <ol className={styles.list}>
                     {events.map((event) => {
-                        const presentation = presentRecentEvent(event, t);
                         const device =
                             'deviceId' in event
                                 ? devices.find((candidate) => candidate.deviceId === event.deviceId)
@@ -37,14 +38,19 @@ export function RecentEventsFeed({
                             device !== undefined
                                 ? getDeviceDisplayName(device, (key) => t(key))
                                 : 'deviceId' in event
-                                  ? event.deviceId
-                                  : undefined;
+                                  ? event.deviceName
+                                  : t('history.room');
 
                         return (
-                            <li className={styles.entry} key={event.recordId}>
-                                <strong>{presentation.summary}</strong>
+                            <li
+                                className={styles.entry}
+                                key={event.recordId}
+                                data-testid={`history-item-${event.recordId}`}
+                                ref={(element) => registerEntry?.(event.recordId, element)}
+                            >
+                                <strong>{deviceName}</strong>
+                                <p>{describeUserHistory(event, t)}</p>
                                 <div className={styles.context}>
-                                    {deviceName ? <span>{deviceName}</span> : null}
                                     <time dateTime={event.occurredAt}>
                                         {formatTimestamp(event.occurredAt)}
                                     </time>
@@ -54,27 +60,6 @@ export function RecentEventsFeed({
                                         </span>
                                     ) : null}
                                 </div>
-                                {event.eventType === 'storage.gap.recorded' ? (
-                                    <p className={styles.interval}>
-                                        {t('feed.gapInterval', {
-                                            from: formatTimestamp(event.payload.outageStartedAt),
-                                            to: formatTimestamp(event.payload.outageEndedAt),
-                                        })}
-                                    </p>
-                                ) : null}
-                                {presentation.details.length > 0 ? (
-                                    <details className={styles.details}>
-                                        <summary>{t('feed.details')}</summary>
-                                        <dl>
-                                            {presentation.details.map((detail) => (
-                                                <div key={detail.label}>
-                                                    <dt>{detail.label}</dt>
-                                                    <dd>{detail.value}</dd>
-                                                </div>
-                                            ))}
-                                        </dl>
-                                    </details>
-                                ) : null}
                             </li>
                         );
                     })}
