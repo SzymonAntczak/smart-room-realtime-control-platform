@@ -120,19 +120,19 @@ test('retains the read page when live overlay overflows and refetches when retur
             createHistoryPage(records.slice(100)),
         ],
     });
+    const firstOlderPage = page.waitForResponse((response) =>
+        response.url().includes('cursor=range-1'),
+    );
+    const secondOlderPage = page.waitForResponse((response) =>
+        response.url().includes('cursor=range-2'),
+    );
     await openHistory(page);
     await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
     const root = panel(page);
-
-    for (const cursor of ['range-1', 'range-2']) {
-        const nextPage = page.waitForResponse((response) =>
-            response.url().includes(`cursor=${cursor}`),
-        );
-        await root.evaluate((element) => {
-            element.scrollTop = element.scrollHeight;
-        });
-        await nextPage;
-    }
+    await root.press('End');
+    await firstOlderPage;
+    await root.press('End');
+    await secondOlderPage;
 
     const anchor = await scrollToHistoryEntry(page, records[120]?.recordId ?? 'missing');
 
