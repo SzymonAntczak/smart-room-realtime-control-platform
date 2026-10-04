@@ -65,9 +65,24 @@ for (const viewport of [
         await expect
             .poll(async () => Math.abs((await offset(anchor, panel(page))) - before))
             .toBeLessThanOrEqual(2);
-        await expect(
-            page.getByRole('button', { name: 'Nowe zdarzenia', exact: true }),
-        ).toBeVisible();
+        const newestButton = page.getByRole('button', {
+            name: 'Na górę',
+            exact: true,
+        });
+        await expect(newestButton).toBeVisible();
+        const buttonBounds = await newestButton.evaluate((element) =>
+            element.getBoundingClientRect().toJSON(),
+        );
+        const panelBounds = await panel(page).evaluate((element) =>
+            element.getBoundingClientRect().toJSON(),
+        );
+
+        expect(buttonBounds.x + buttonBounds.width).toBeGreaterThan(
+            panelBounds.x + panelBounds.width - 64,
+        );
+        expect(buttonBounds.y + buttonBounds.height).toBeGreaterThan(
+            panelBounds.y + panelBounds.height - 64,
+        );
         await configureMockHistory(page.request, { hold: true });
         const pageAnchor = await scrollToHistoryEntry(page, records[49]?.recordId ?? 'missing');
         await expect
@@ -89,7 +104,7 @@ for (const viewport of [
         await expect
             .poll(async () => Math.abs((await offset(pageAnchor, panel(page))) - beforePage))
             .toBeLessThanOrEqual(2);
-        await page.getByRole('button', { name: 'Nowe zdarzenia', exact: true }).click();
+        await page.getByRole('button', { name: 'Na górę', exact: true }).click();
         await expect.poll(() => panel(page).evaluate((element) => element.scrollTop)).toBe(0);
     });
 }
@@ -97,13 +112,31 @@ for (const viewport of [
 test('retains the read page when live overlay overflows and refetches when returning to newest', async ({
     page,
 }) => {
-    const records = createHistoryItems(50);
-    await configureMockHistory(page.request, { pages: [createHistoryPage(records)] });
+    const records = createHistoryItems(150);
+    await configureMockHistory(page.request, {
+        pages: [
+            createHistoryPage(records.slice(0, 50), 'range-1'),
+            createHistoryPage(records.slice(50, 100), 'range-2'),
+            createHistoryPage(records.slice(100)),
+        ],
+    });
     await openHistory(page);
     await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
-    const anchor = await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
+    const root = panel(page);
 
-    await expect(page.getByRole('button', { name: 'Nowe zdarzenia', exact: true })).toBeVisible();
+    for (const cursor of ['range-1', 'range-2']) {
+        const nextPage = page.waitForResponse((response) =>
+            response.url().includes(`cursor=${cursor}`),
+        );
+        await root.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        await nextPage;
+    }
+
+    const anchor = await scrollToHistoryEntry(page, records[120]?.recordId ?? 'missing');
+
+    await expect(page.getByRole('button', { name: 'Na górę', exact: true })).toBeVisible();
     const before = await offset(anchor, panel(page));
     const live = createHistoryItems(201, 10001);
 
@@ -114,20 +147,46 @@ test('retains the read page when live overlay overflows and refetches when retur
         );
     }
 
-    await expect(anchor).toHaveAttribute('aria-setsize', '250');
+    await expect(anchor).toHaveAttribute('aria-setsize', '350');
     await expect
         .poll(async () => Math.abs((await offset(anchor, panel(page))) - before))
         .toBeLessThanOrEqual(2);
     await configureMockHistory(page.request, {
-        pages: [createHistoryPage(live.slice(0, 50), null, 10201)],
+        pages: [
+            createHistoryPage(live.slice(0, 50), 'newer-1', 10201),
+            createHistoryPage(live.slice(50, 100), 'newer-2', 10201),
+            createHistoryPage(records.slice(100), null, 10201),
+        ],
+        hold: true,
+    });
+    const refetchRequests: string[] = [];
+    page.on('request', (request) => {
+        if (request.url().includes('/room/history/user-history')) {
+            refetchRequests.push(request.url());
+        }
     });
     const refetch = page.waitForResponse((response) =>
         response.url().includes('/room/history/user-history'),
     );
-    await page.getByRole('button', { name: 'Nowe zdarzenia', exact: true }).click();
+    await page.getByRole('button', { name: 'Na górę', exact: true }).click();
+    await expect
+        .poll(
+            async () =>
+                (
+                    (await (await page.request.get(mockBffUrls.historyControl)).json()) as {
+                        held: boolean;
+                    }
+                ).held,
+        )
+        .toBe(true);
+    await configureMockHistory(page.request, { release: true });
     await refetch;
-    await expect(item(page, records[15]?.recordId ?? 'missing')).toHaveCount(0);
+    await expect(item(page, records[120]?.recordId ?? 'missing')).toHaveCount(0);
     await expect.poll(() => panel(page).evaluate((element) => element.scrollTop)).toBe(0);
+    expect(refetchRequests).toHaveLength(1);
+    await expect(
+        page.getByRole('status').filter({ hasText: 'Poprzedni wpis nie jest dostępny' }),
+    ).toHaveCount(0);
 });
 
 test('rebuilds through the previous anchor on reconnect and on cursor expiry', async ({ page }) => {
@@ -141,7 +200,7 @@ test('rebuilds through the previous anchor on reconnect and on cursor expiry', a
     await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
     const anchor = await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
 
-    await expect(page.getByRole('button', { name: 'Nowe zdarzenia', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Na górę', exact: true })).toBeVisible();
     const before = await offset(anchor, panel(page));
     const rebuilt = page.waitForResponse(
         (response) =>
@@ -194,14 +253,14 @@ test('explains an unavailable anchor and does not merge a replacement generation
     await openHistory(page);
     await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
     await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
-    await expect(page.getByRole('button', { name: 'Nowe zdarzenia', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Na górę', exact: true })).toBeVisible();
     await configureMockHistory(page.request, { pages: [createHistoryPage(records.slice(25))] });
     await disconnectMockRealtime(page.request);
     await expect(
         page.getByRole('status').filter({ hasText: 'Poprzedni wpis nie jest dostępny' }),
     ).toBeVisible();
     const replacement = createHistoryItems(1, 20000);
-    await page.getByRole('button', { name: 'Nowe zdarzenia', exact: true }).focus();
+    await page.getByRole('button', { name: 'Na górę', exact: true }).focus();
     const toggle = page.getByRole('button', { name: 'Ukryj ostatnie zdarzenia', exact: true });
     await toggle.focus();
     await configureMockHistory(page.request, {

@@ -1,11 +1,12 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
-export const historyHeading = 'Ostatnie istotne zdarzenia';
+export const historyHeading = 'Historia zdarzeń';
 export const historyPanel = (page: Page) =>
+    page.getByRole('region', { name: 'Przewijana historia zdarzeń' });
+export const historySidebar = (page: Page) =>
     page.getByRole('complementary', { name: historyHeading });
 export const historyEntry = (page: Page, id: string) => page.getByTestId(`history-item-${id}`);
-export const historyEntries = (page: Page) =>
-    page.getByRole('region', { name: historyHeading }).getByRole('listitem');
+export const historyEntries = (page: Page) => historyPanel(page).getByRole('listitem');
 
 export async function openHistory(page: Page) {
     await page.goto('/');
@@ -16,7 +17,7 @@ export async function openHistory(page: Page) {
         await toggle.click();
     }
 
-    await expect(page.getByRole('region', { name: historyHeading })).toBeVisible();
+    await expect(historyPanel(page)).toBeVisible();
 }
 
 export async function scrollToHistoryEntry(page: Page, id: string) {
@@ -39,20 +40,19 @@ export async function scrollToHistoryEntry(page: Page, id: string) {
         )
         .toBe(true);
     await expect(entry).toHaveRole('listitem');
-    const navigation = await page.getByRole('group', { name: 'Nawigacja historii' }).boundingBox();
     const entryBox = await entry.boundingBox();
     const rootBox = await root.boundingBox();
 
-    if (!navigation || !entryBox || !rootBox) {
+    if (!entryBox || !rootBox) {
         throw new Error('History reading geometry unavailable');
     }
 
-    // Make this item the first unobscured row, rather than testing a row below the anchor.
+    // Align the row with the scroll viewport's content edge.
     await root.evaluate(
         (element, delta) => {
             element.scrollTop += delta;
         },
-        entryBox.y - rootBox.y - navigation.height - 1,
+        entryBox.y - rootBox.y - 1,
     );
     await expect(entry).toBeVisible();
     // Wait for measured layout to settle, without arbitrary time delays.

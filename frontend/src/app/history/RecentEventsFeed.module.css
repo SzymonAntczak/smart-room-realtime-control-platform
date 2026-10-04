@@ -1,6 +1,5 @@
 .feed {
     inline-size: 100%;
-    padding: var(--space-8);
 }
 .feed h2 {
     margin-block: 0 var(--space-5);
@@ -12,13 +11,11 @@
 }
 .list {
     position: relative;
-    row-gap: var(--space-4);
+    row-gap: 0;
     margin: 0;
     padding: 0;
     list-style: none;
 }
-@media (max-width: 32.5rem) {
-    .feed {
-        padding: var(--space-5);
-    }
+.loadAnchor {
+    block-size: 1px;
 }

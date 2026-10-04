@@ -231,10 +231,18 @@ pages. Merge by `recordId`, preferring durable evidence; display newest first
 using the existing `(occurredAt, recordId)` presentation order. HTTP cursor
 position remains based on storage order, never the DOM index or SSE revision.
 
-Load another page near the end of the virtual range with one request in flight.
-Expose loading, explicit retry and the end of retained history. Invalid payloads
-remain an error rather than triggering an automatic retry loop. Provide an
-accessible "Load older" control using the same pagination operation.
+Load another page when a sentinel after the virtualized list enters an
+`IntersectionObserver` whose root is the history content scroller and whose
+bottom `rootMargin` equals one viewport height. Use one request in flight.
+Expose a loading state, explicit retry after errors and the end of retained
+history. Invalid payloads remain an error rather than triggering an automatic
+retry loop. Keep the history title and footer controls outside the scrollable
+content; scrolling applies only to the entries and their loading/end states.
+The footer provides an inactive Filter control and a persistent Return to top
+control. Activating Return to top while already at the top gives a temporary
+tooltip without refreshing history; returning from an older position retains
+the existing newest-entry behavior, including a refetch after live-overlay
+overflow.
 
 Bound the loaded user-history cache and live overlay so memory remains limited.
 Virtual scrolling renders the visible range with a suitable overscan and stable
@@ -276,9 +284,10 @@ during an unknown degraded state cannot merge old live entries into a replacemen
 HTTP generation. Every validated addition reaches the
 session directly; React snapshot batching cannot discard intermediate additions.
 The first HTTP page pins generation, watermark and retention time. Sparse pages
-with a cursor continue. Manual loading and automatic loading within one viewport
-of the end share the same operation. The frontend renders only a measured virtual
-range; virtual indexes never determine the HTTP cursor or change session limits.
+with a cursor continue as the observer reattaches after each completed page.
+The observer and explicit retry share the same single-flight session operation.
+The frontend renders only a measured virtual range; virtual indexes never
+determine the HTTP cursor or change session limits.
 
 Reading position is `{ recordId, occurredAt, offsetPx }` relative to the scroll
 container and is restored before paint. Same-generation reconnect rebuilds
@@ -307,8 +316,10 @@ anchoring an obscured previous row, and restores identity and offset through
 range mounting and measurement. Programmatic corrections do not overwrite the
 session's reading position. Measurements are reset on width or generation
 changes, dropped item sizes are pruned, and detached DOM references/observers
-are released. Sparse-page advancement and the explicit older-history action
-still use the existing single-flight session operation.
+are released. Sparse-page advancement through the intersection observer and
+explicit retry still use the existing single-flight session operation.
+Pagination is triggered by the content-rooted observer rather than by virtual
+range geometry.
 
 The list retains `ol`/`li` semantics, exposing each row's position. Its total
 size is unknown (`aria-setsize=-1`) until the session reaches the end; the final
@@ -358,8 +369,11 @@ Strict BFF transport tests, deterministic history-session tests, actual HTTP/SSE
 integration and mocked-BFF desktop/mobile browser tests must cover paging,
 anchors, bounded overlay, recovery and panel cleanup. Item presentation and
 browser scenarios must verify 1,000 loaded entries with bounded DOM, mixed-height
-anchors through resize/reconnect, keyboard access, single-flight older loading
-and predictable focus.
+anchors through resize/reconnect, keyboard access, single-flight observer paging
+and predictable focus. The sidebar title and footer remain visible while only
+history content scrolls; intersection-triggered paging starts one viewport
+before the sentinel reaches the visible edge. The persistent Return to top
+control shows a temporary accessible tooltip when activated at the top.
 
 ## Links
 

@@ -27,9 +27,11 @@
 }
 
 .sidebar {
+    display: grid;
     inline-size: clamp(19rem, 27vw, 24rem);
     block-size: 100%;
-    overflow-y: auto;
+    min-block-size: 0;
+    overflow: hidden;
     border-inline-end: var(--border-width-thin) solid var(--color-border);
     background: var(--color-surface);
     box-shadow: var(--shadow-panel);
@@ -51,22 +53,11 @@
         visibility 0s linear 340ms;
 }
 
-.sidebarLoading {
-    padding: var(--space-8);
-}
-
-.sidebar:focus-visible {
-    outline: var(--border-width-thin) solid var(--color-info-text);
-    outline-offset: calc(-1 * var(--space-1));
-}
-
-.sidebarLoading h2 {
-    margin-block: 0 var(--space-5);
+.sidebarHeading {
+    margin: 0;
+    padding: var(--space-5) var(--space-8);
+    border-block-end: var(--border-width-thin) solid var(--color-border);
     font-size: var(--font-size-heading-md);
-}
-
-.sidebarLoading p {
-    color: var(--color-text-muted);
 }
 
 .sidebarToggle {
@@ -130,7 +121,7 @@
         inset-block-end: env(safe-area-inset-bottom, 0px);
         z-index: 5;
         inline-size: 100%;
-        block-size: 50dvh;
+        block-size: 75dvh;
         transform: translateY(0);
         transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
     }
@@ -149,6 +140,10 @@
         border-inline-end: 0;
         border-block-start: var(--border-width-thin) solid var(--color-border);
         overscroll-behavior: contain;
+    }
+
+    .sidebarHeading {
+        padding-inline: var(--space-5);
     }
 
     .shell[data-feed-open='false'] .sidebarSlot {

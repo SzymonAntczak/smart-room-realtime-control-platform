@@ -62,9 +62,12 @@ export const pl = {
             },
         },
         history: {
-            navigation: 'Nawigacja historii',
+            scrollRegion: 'Przewijana historia zdarzeń',
             room: 'Historia pokoju',
-            completeness: 'Historia obejmuje tylko wpisy potwierdzone dostępnymi danymi.',
+            title: 'Historia zdarzeń',
+            filter: 'Filtruj',
+            returnToTop: 'Na górę',
+            alreadyAtTop: 'Jesteś już na samej górze',
             lastKnown:
                 'Wyświetlana jest ostatnio znana historia. Trwałe dane wymagają odświeżenia.',
             anchor_unavailable:
@@ -72,9 +75,7 @@ export const pl = {
             generation_changed: 'Historia została zastąpiona. Wyświetlane są dane nowej historii.',
             overflow:
                 'Część zmian na żywo nie mieści się w pamięci widoku. Powrót do nowych zdarzeń odświeży dostępną trwałą historię.',
-            newEvents: 'Nowe zdarzenia',
             loading: 'Ładowanie historii…',
-            loadOlder: 'Wczytaj starsze',
             retry: 'Spróbuj ponownie',
             end: 'Koniec dostępnego zakresu historii.',
             powerChanged: 'Zaobserwowano zmianę zasilania: {{previous}} → {{current}}.',

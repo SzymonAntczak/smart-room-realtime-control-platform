@@ -1,28 +1,145 @@
 .panel {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-block-size: 0;
+    block-size: 100%;
+    overflow: hidden;
     overflow-anchor: none;
 }
-.status,
+
 .header {
-    padding-inline: var(--space-8);
-    padding-block: var(--space-3);
-}
-.header {
-    position: sticky;
-    inset-block-start: 0;
-    z-index: 1;
+    padding: var(--space-5) var(--space-8);
+    border-block-end: var(--border-width-thin) solid var(--color-border);
     background: var(--color-surface);
 }
-.status p,
-.header p {
+
+.header h2 {
+    margin: 0;
+    font-size: var(--font-size-heading-md);
+}
+
+.content {
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding: var(--space-5) var(--space-8);
+}
+
+.content:focus-visible {
+    outline: var(--border-width-thin) solid var(--color-info-text);
+    outline-offset: calc(-1 * var(--space-1));
+}
+
+.notice,
+.status {
+    margin-block: 0 var(--space-4);
     color: var(--color-text-muted);
 }
+
+.historyEnd {
+    margin-block-start: var(--space-4);
+    margin-block-end: var(--space-4);
+}
+
+.loading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.loading svg {
+    flex: none;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .status button,
-.header button {
+.footer button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-block-size: 2.75rem;
+    padding: var(--space-2) var(--space-4);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
     font: inherit;
     cursor: pointer;
 }
+
 .status button:focus-visible,
-.header button:focus-visible {
+.footer button:focus-visible {
     outline: var(--border-width-thin) solid var(--color-info-text);
     outline-offset: var(--space-1);
+}
+
+.footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5);
+    border-block-start: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface);
+}
+
+.footer button:hover {
+    color: var(--color-action-primary);
+}
+
+.topAction {
+    position: relative;
+    min-inline-size: 0;
+}
+
+.filterButton {
+    min-inline-size: 0;
+    inline-size: 100%;
+}
+
+.topAction button {
+    inline-size: 100%;
+}
+
+.tooltip {
+    position: absolute;
+    inset-block-end: calc(100% + var(--space-2));
+    inset-inline-end: 0;
+    z-index: 3;
+    inline-size: max-content;
+    max-inline-size: min(18rem, 75vw);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--color-text);
+    color: var(--color-surface);
+    box-shadow: var(--shadow-panel);
+    font-size: var(--font-size-body-sm);
+}
+
+@media (max-width: 32.5rem) {
+    .header {
+        padding-inline: var(--space-5);
+    }
+
+    .content {
+        padding-inline: var(--space-5);
+    }
+
+    .footer {
+        padding-inline: var(--space-4);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loading svg {
+        animation-duration: 2s;
+    }
 }

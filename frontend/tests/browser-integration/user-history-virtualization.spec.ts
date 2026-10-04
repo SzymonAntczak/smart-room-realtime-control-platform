@@ -98,6 +98,35 @@ for (const viewport of [
         await openHistory(page);
         const anchor = await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
         const root = historyPanel(page);
+        const anchorBounds = await anchor.boundingBox();
+        const rootBounds = await root.boundingBox();
+        expect(anchorBounds).not.toBeNull();
+        expect(rootBounds).not.toBeNull();
+        await root.evaluate(
+            (element, bounds) => {
+                if (!bounds) {
+                    return;
+                }
+
+                const targetBottom = bounds.rootY + 20;
+                element.scrollTop += bounds.anchorBottom - targetBottom;
+            },
+            {
+                anchorBottom: (anchorBounds?.y ?? 0) + (anchorBounds?.height ?? 0),
+                rootY: rootBounds?.y ?? 0,
+            },
+        );
+
+        await expect
+            .poll(async () => {
+                const entryBounds = await anchor.boundingBox();
+                const containerBounds = await root.boundingBox();
+
+                return entryBounds && containerBounds
+                    ? Math.abs(entryBounds.y + entryBounds.height - (containerBounds.y + 20))
+                    : Number.POSITIVE_INFINITY;
+            })
+            .toBeLessThanOrEqual(2);
         await root.focus();
         const before = await historyOffset(anchor, root);
         await publishMockRoomUpdate(
@@ -135,7 +164,7 @@ for (const viewport of [
     });
 }
 
-test('keeps keyboard focus and one older request while loading, then returns focus from disappearing controls', async ({
+test('keeps keyboard focus through automatic paging and retains the footer controls', async ({
     page,
 }) => {
     const records = mixedHistory(100);
@@ -161,8 +190,9 @@ test('keeps keyboard focus and one older request while loading, then returns foc
     await root.press('PageUp');
     await expect(root).toBeFocused();
     await configureMockHistory(page.request, { hold: true });
-    const load = page.getByRole('button', { name: 'Wczytaj starsze', exact: true });
-    await load.focus();
+    await root.evaluate((element) => {
+        element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight * 2 + 50);
+    });
     await expect
         .poll(
             async () =>
@@ -173,18 +203,21 @@ test('keeps keyboard focus and one older request while loading, then returns foc
                 ).held,
         )
         .toBe(true);
-    await expect(load).toBeDisabled();
-    await load.press('Enter');
     expect(olderRequests).toBe(1);
     await expect(root).toBeFocused();
     await configureMockHistory(page.request, { release: true });
-    await expect(load).toHaveCount(0);
+    await expect(
+        page.getByRole('status').filter({ hasText: 'Koniec dostępnego zakresu historii.' }),
+    ).toBeVisible();
     await expect(root).toBeFocused();
-    const newest = page.getByRole('button', { name: 'Nowe zdarzenia', exact: true });
+    const newest = page.getByRole('button', { name: 'Na górę', exact: true });
     await newest.focus();
     await newest.press('Enter');
-    await expect(newest).toHaveCount(0);
-    await expect(root).toBeFocused();
+    await expect.poll(() => root.evaluate((element) => element.scrollTop)).toBe(0);
+    await newest.press('Enter');
+    await expect(page.getByRole('tooltip')).toHaveText('Jesteś już na samej górze');
+    await expect(newest).toBeVisible();
+    await expect(newest).toBeFocused();
     await expect.poll(() => root.evaluate((element) => element.scrollTop)).toBe(0);
     const toggle = page.getByRole('button', { name: /ostatnie zdarzenia/i });
     await toggle.focus();
@@ -196,6 +229,92 @@ test('keeps keyboard focus and one older request while loading, then returns foc
     await expect(toggle).toBeFocused();
 });
 
+test('keeps the sidebar frame fixed and shows a temporary top hint while filter remains inactive', async ({
+    page,
+}) => {
+    const records = mixedHistory(100);
+    await configureMockHistory(page.request, {
+        pages: [
+            createHistoryPage(records.slice(0, 50), 'older'),
+            createHistoryPage(records.slice(50)),
+        ],
+    });
+    await openHistory(page);
+    await page.clock.install();
+    const root = historyPanel(page);
+    const heading = page.getByRole('heading', { name: 'Historia zdarzeń' });
+    const filter = page.getByRole('button', { name: 'Filtruj', exact: true });
+    const top = page.getByRole('button', { name: 'Na górę', exact: true });
+    const requests: string[] = [];
+    page.on('request', (request) => requests.push(request.url()));
+
+    const headingBefore = await heading.boundingBox();
+    const filterBefore = await filter.boundingBox();
+    const topBefore = await top.boundingBox();
+    await root.evaluate((element) => {
+        element.scrollTop = element.scrollHeight / 2;
+    });
+    await expect.poll(() => root.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await heading.boundingBox()).toEqual(headingBefore);
+    expect(await filter.boundingBox()).toEqual(filterBefore);
+    expect(await top.boundingBox()).toEqual(topBefore);
+
+    const requestCount = requests.length;
+    await filter.click();
+    expect(requests).toHaveLength(requestCount);
+    await top.click();
+    await expect.poll(() => root.evaluate((element) => element.scrollTop)).toBe(0);
+    await top.click();
+    await expect(page.getByRole('tooltip')).toHaveText('Jesteś już na samej górze');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await top.click();
+    await expect(page.getByRole('tooltip')).toBeVisible();
+    await page.clock.fastForward(3000);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const toggle = page.getByRole('button', { name: /ostatnie zdarzenia/i });
+    const sidebarSlot = toggle.locator('xpath=..');
+    await toggle.click();
+
+    await expect(root).toBeVisible();
+    await expect
+        .poll(() => sidebarSlot.evaluate((element) => getComputedStyle(element).transform))
+        .toBe('matrix(1, 0, 0, 1, 0, 0)');
+    const mobileHeading = await heading.boundingBox();
+    const mobileFilter = await filter.boundingBox();
+    const mobileTop = await top.boundingBox();
+    await root.evaluate((element) => {
+        element.scrollTop = element.scrollHeight / 2;
+    });
+    await expect.poll(() => root.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    const mobileHeadingAfter = await heading.boundingBox();
+    const mobileFilterAfter = await filter.boundingBox();
+    const mobileTopAfter = await top.boundingBox();
+
+    expect(Math.abs((mobileHeadingAfter?.y ?? 0) - (mobileHeading?.y ?? 0))).toBeLessThanOrEqual(2);
+    expect(Math.abs((mobileFilterAfter?.y ?? 0) - (mobileFilter?.y ?? 0))).toBeLessThanOrEqual(2);
+    expect(Math.abs((mobileTopAfter?.y ?? 0) - (mobileTop?.y ?? 0))).toBeLessThanOrEqual(2);
+});
+
+test('returns to the newest entries immediately when reduced motion is enabled', async ({
+    page,
+}) => {
+    const records = mixedHistory(50);
+    await configureMockHistory(page.request, { pages: [createHistoryPage(records)] });
+    await openHistory(page);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
+
+    const root = historyPanel(page);
+    expect(await root.evaluate((element) => element.scrollTop)).toBeGreaterThan(1);
+    await page.getByRole('button', { name: 'Na górę', exact: true }).click();
+
+    expect(await root.evaluate((element) => element.scrollTop)).toBe(0);
+});
+
 test('does not reclaim focus after the user clicks nonfocusable content outside history', async ({
     page,
 }) => {
@@ -203,7 +322,7 @@ test('does not reclaim focus after the user clicks nonfocusable content outside 
     await configureMockHistory(page.request, { pages: [createHistoryPage(records)] });
     await openHistory(page);
     await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
-    await page.getByRole('button', { name: 'Nowe zdarzenia', exact: true }).focus();
+    await page.getByRole('button', { name: 'Na górę', exact: true }).focus();
     await page.getByRole('heading', { name: 'Główne LED', exact: true }).click();
     const root = historyPanel(page);
     await expect(root).not.toBeFocused();
@@ -221,7 +340,7 @@ test('does not reclaim focus after the user clicks nonfocusable content outside 
     };
     await publishMockRoomUpdate(page.request, update);
     await expect(historyEntry(page, replacement[0]?.recordId ?? 'missing')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Nowe zdarzenia', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Na górę', exact: true })).toBeVisible();
     await expect(root).not.toBeFocused();
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BODY');
 });

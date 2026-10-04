@@ -4,7 +4,7 @@ import {
     type Range,
     useVirtualizer,
 } from '@tanstack/react-virtual';
-import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type RefObject, useCallback, useLayoutEffect, useRef, useState } from 'react';
 
 import type { UserHistoryReadingPosition, UserHistorySessionState } from './user-history-session';
 
@@ -12,20 +12,19 @@ import type { UserHistoryReadingPosition, UserHistorySessionState } from './user
 export function useUserHistoryVirtualizer({
     state,
     scrollRoot,
-    header,
     updateReadingPosition,
-    loadOlder,
 }: {
     state: UserHistorySessionState;
     scrollRoot: RefObject<HTMLElement | null>;
-    header: RefObject<HTMLDivElement | null>;
     updateReadingPosition(position: UserHistoryReadingPosition | null): void;
-    loadOlder(): void;
 }) {
     const listRef = useRef<HTMLOListElement | null>(null);
     const position = useRef<UserHistoryReadingPosition | null>(null);
     const current = useRef({ state, updateReadingPosition });
     const expectedScroll = useRef<number | null>(null);
+    const smoothTopInProgress = useRef(false);
+    const smoothTopRequested = useRef(false);
+    const [smoothScrollActive, setSmoothScrollActive] = useState(false);
     const focused = useRef<HTMLElement | null>(null);
     const [geometry, setGeometry] = useState({ scrollMargin: 0, gap: 0 });
     const anchorIndex = state.position
@@ -56,13 +55,19 @@ export function useUserHistoryVirtualizer({
             observeElementOffset(instance, (offset, scrolling) => {
                 const root = scrollRoot.current;
 
+                if (smoothTopInProgress.current && offset <= 1) {
+                    smoothTopInProgress.current = false;
+                    setSmoothScrollActive(false);
+                }
+
                 if (
+                    !smoothTopInProgress.current &&
                     scrolling &&
                     root &&
                     (expectedScroll.current === null ||
                         Math.abs(offset - expectedScroll.current) > 1)
                 ) {
-                    const visibleOffset = offset + (header.current?.offsetHeight ?? 0);
+                    const visibleOffset = offset;
                     const candidate = instance.getVirtualItemForOffset(visibleOffset);
                     // A gap belongs to neither row: anchor the next visible item, not the
                     // already obscured row returned by the virtualizer's start-offset search.
@@ -95,6 +100,12 @@ export function useUserHistoryVirtualizer({
     virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
 
     useLayoutEffect(() => {
+        const returningToNewest = position.current !== null && state.position === null;
+
+        if (returningToNewest) {
+            smoothTopRequested.current = true;
+        }
+
         current.current = { state, updateReadingPosition };
         position.current = state.position;
         const keys = new Set(state.items.map((item) => item.recordId));
@@ -148,9 +159,21 @@ export function useUserHistoryVirtualizer({
                 : anchor
                   ? root.scrollTop
                   : 0;
+        const shouldScrollSmoothly =
+            smoothTopRequested.current &&
+            root.scrollTop > 1 &&
+            !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        smoothTopRequested.current = false;
 
         if (Math.abs(target - root.scrollTop) > 0.5) {
-            root.scrollTop = target;
+            if (shouldScrollSmoothly) {
+                smoothTopInProgress.current = true;
+                setSmoothScrollActive(true);
+                root.scrollTo({ top: target, behavior: 'smooth' });
+            } else if (!smoothTopInProgress.current) {
+                root.scrollTop = target;
+            }
+
             expectedScroll.current = root.scrollTop;
         }
 
@@ -199,10 +222,6 @@ export function useUserHistoryVirtualizer({
         observer.observe(root);
         observer.observe(list);
 
-        if (header.current) {
-            observer.observe(header.current);
-        }
-
         const onFocus = (event: FocusEvent) => {
             focused.current = event.target instanceof HTMLElement ? event.target : null;
         };
@@ -222,37 +241,44 @@ export function useUserHistoryVirtualizer({
             }
         };
 
+        const onScrollIntent = () => {
+            smoothTopInProgress.current = false;
+            setSmoothScrollActive(false);
+            expectedScroll.current = null;
+        };
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (
+                [' ', 'ArrowDown', 'ArrowUp', 'End', 'Home', 'PageDown', 'PageUp'].includes(
+                    event.key,
+                )
+            ) {
+                onScrollIntent();
+            }
+        };
+
         root.addEventListener('focusin', onFocus);
         root.addEventListener('focusout', onBlur);
+        root.addEventListener('wheel', onScrollIntent, { passive: true });
+        root.addEventListener('touchstart', onScrollIntent, { passive: true });
+        root.addEventListener('pointerdown', onScrollIntent);
+        root.addEventListener('keydown', onKeyDown);
         document.addEventListener('pointerdown', onPointerDown, true);
 
         return () => {
             observer.disconnect();
             root.removeEventListener('focusin', onFocus);
             root.removeEventListener('focusout', onBlur);
+            root.removeEventListener('wheel', onScrollIntent);
+            root.removeEventListener('touchstart', onScrollIntent);
+            root.removeEventListener('pointerdown', onScrollIntent);
+            root.removeEventListener('keydown', onKeyDown);
             document.removeEventListener('pointerdown', onPointerDown, true);
         };
-    }, [header, scrollRoot, virtualizer]);
+    }, [scrollRoot, virtualizer]);
 
     const rows = virtualizer.getVirtualItems();
     const totalSize = virtualizer.getTotalSize();
-    const scrollOffset = virtualizer.scrollOffset;
-
-    // Also progresses sparse/empty pages and newly opened mobile panels without a scroll event.
-    useEffect(() => {
-        const root = scrollRoot.current;
-
-        if (
-            state.status === 'ready' &&
-            !state.endReached &&
-            root &&
-            root.clientHeight > 0 &&
-            geometry.scrollMargin + totalSize - root.scrollTop - root.clientHeight <=
-                root.clientHeight
-        ) {
-            loadOlder();
-        }
-    }, [state, scrollRoot, loadOlder, geometry.scrollMargin, totalSize, scrollOffset]);
 
     return {
         listRef,
@@ -260,5 +286,6 @@ export function useUserHistoryVirtualizer({
         totalSize,
         scrollMargin: geometry.scrollMargin,
         measureElement: virtualizer.measureElement,
+        smoothScrollActive,
     };
 }

@@ -84,7 +84,7 @@ describe('App', () => {
         );
 
         expect(
-            screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' }),
+            screen.getByRole('region', { name: 'Przewijana historia zdarzeń' }),
         ).toHaveTextContent('Próba sterowania nie powiodła się.');
         act(() => MockWebSocket.latest().emitError());
         expect(screen.getByText(/Wyświetlane są ostatnio znane zdarzenia/)).toBeInTheDocument();
@@ -94,7 +94,7 @@ describe('App', () => {
         render(<App />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
         expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
 
         act(() =>
@@ -127,7 +127,7 @@ describe('App', () => {
         render(<App />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
         expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
 
         act(() =>
@@ -152,7 +152,7 @@ describe('App', () => {
         render(<App />);
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
         act(() =>
             MockWebSocket.latest().emitMessage({
                 messageType: 'platform.updated',
@@ -197,7 +197,7 @@ describe('App', () => {
             ),
         );
 
-        const feed = screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
         expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia zmiany zasilania');
         expect(within(feed).getAllByRole('listitem')).toHaveLength(1);
         expect(
@@ -231,17 +231,17 @@ describe('App', () => {
         expect(screen.queryByText('Brak istotnych zdarzeń.')).not.toBeInTheDocument();
 
         act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
-        expect(screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' })).toBeVisible();
+        expect(screen.getByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeVisible();
 
         await user.click(toggle);
         expect(toggle).toHaveAccessibleName('Pokaż ostatnie zdarzenia');
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
-        expect(screen.queryByRole('region', { name: 'Ostatnie istotne zdarzenia' })).toBeNull();
+        expect(screen.queryByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeNull();
         expect(toggle).toHaveFocus();
 
         await user.keyboard(' ');
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
-        expect(screen.getByRole('region', { name: 'Ostatnie istotne zdarzenia' })).toBeVisible();
+        expect(screen.getByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeVisible();
 
         await user.keyboard('{Enter}');
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -256,7 +256,7 @@ describe('App', () => {
 
         const toggle = screen.getByRole('button', { name: 'Pokaż ostatnie zdarzenia' });
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
-        expect(screen.queryByRole('region', { name: 'Ostatnie istotne zdarzenia' })).toBeNull();
+        expect(screen.queryByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeNull();
 
         await user.click(toggle);
         expect(toggle).toHaveAttribute('aria-expanded', 'true');

@@ -331,8 +331,9 @@ browser tests protect desktop/mobile offsets (2 px tolerance), overlay overflow,
 reconnect, expiry, missing-anchor fallback, storage recovery, invalid payloads
 and closing a panel with an outstanding request. Component tests must cover accessible user entries and mocked-BFF browser scenarios for 1,000
 loaded entries with bounded DOM, mixed-height anchors through width changes and
-reconnect, keyboard scrolling, single-flight older loading, and focus recovery
-when navigation controls disappear or become disabled. App composition tests
+reconnect, keyboard scrolling, single-flight observer loading, a persistent
+navigation footer, and focus recovery when retry controls disappear or become
+disabled. App composition tests
 replace geometry with a test-local rendering seam; only the real-browser suite
 establishes virtual range, measurements and the 2 px anchor tolerance.
 Existing no-replay, generation/watermark and source-fact retention rules remain

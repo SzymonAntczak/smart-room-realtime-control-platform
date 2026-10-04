@@ -42,10 +42,12 @@ test('keeps the feed beside cards and gives cards the freed width after collapse
     expect(breakpointDesktopSidebar.width).toBeLessThan(769);
 
     await page.setViewportSize({ width: 768, height: 900 });
-    await expect.poll(async () => (await dashboard.sidebarBounds()).height).toBeCloseTo(450, 0);
+    await expect
+        .poll(async () => (await dashboard.sidebarBounds()).height)
+        .toBeCloseTo(900 * 0.75, 0);
     const breakpointMobileSidebar = await dashboard.sidebarBounds();
     expect(breakpointMobileSidebar.width).toBeCloseTo(768, 0);
-    expect(breakpointMobileSidebar.height).toBeCloseTo(450, 0);
+    expect(breakpointMobileSidebar.height).toBeCloseTo(900 * 0.75, 0);
 });
 
 for (const viewport of [
@@ -75,7 +77,7 @@ for (const viewport of [
         await expect(dashboard.feedToggle).toHaveAttribute('aria-expanded', 'true');
         await expect
             .poll(async () => (await dashboard.sidebarBounds()).y)
-            .toBeCloseTo(viewport.height / 2, 0);
+            .toBeCloseTo(viewport.height * 0.25, 0);
 
         const sidebarBox = await dashboard.sidebarBounds();
         const cardBox = await dashboard.temperatureCardBounds();
@@ -93,7 +95,7 @@ for (const viewport of [
 
         expect(sidebarBox.x).toBe(0);
         expect(sidebarBox.width).toBeCloseTo(viewport.width, 0);
-        expect(sidebarBox.height).toBeCloseTo(viewport.height / 2, 0);
+        expect(sidebarBox.height).toBeCloseTo(viewport.height * 0.75, 0);
         expect(sidebarBox.y).toBeLessThan(coveredCardBox.y + coveredCardBox.height);
         expect(sidebarBox.y + sidebarBox.height).toBeGreaterThan(coveredCardBox.y);
         expect(cardBox.x).toBeCloseTo(closedCardBox.x, 0);

@@ -1,5 +1,5 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { type ReactNode, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LedControl } from '../../controls/led/LedControl';
@@ -27,7 +27,6 @@ export function RoomControlSurface({
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;
     const realtimeUncertain =
         room.connectionStatus === 'reconnecting' || room.contractError !== undefined;
-    const scrollRoot = useRef<HTMLElement | null>(null);
     const feedSidebar = useRecentEventsSidebar();
     const FeedToggleIcon = feedSidebar.isOpen ? PanelLeftClose : PanelLeftOpen;
 
@@ -36,29 +35,21 @@ export function RoomControlSurface({
             <div className={styles.sidebarSlot}>
                 <div className={styles.sidebarViewport}>
                     <aside
-                        ref={scrollRoot}
                         id="recent-events-sidebar"
-                        aria-label={t('feed.heading')}
-                        tabIndex={0}
+                        aria-label={t('history.title')}
                         className={styles.sidebar}
                         aria-hidden={!feedSidebar.isOpen}
                         inert={!feedSidebar.isOpen}
                     >
-                        {snapshot && feedSidebar.isOpen ? (
+                        {feedSidebar.isOpen ? (
                             <UserHistoryPanel
                                 source={room.historySource}
-                                scrollRoot={scrollRoot}
-                                devices={snapshot.devices}
+                                devices={snapshot?.devices ?? []}
                                 realtimeUncertain={realtimeUncertain}
+                                waitingForRoom={!snapshot}
                             />
                         ) : (
-                            <section
-                                className={styles.sidebarLoading}
-                                aria-labelledby="recent-events-heading"
-                            >
-                                <h2 id="recent-events-heading">{t('feed.heading')}</h2>
-                                <p>{t('feed.connecting')}</p>
-                            </section>
+                            <h2 className={styles.sidebarHeading}>{t('history.title')}</h2>
                         )}
                     </aside>
                 </div>

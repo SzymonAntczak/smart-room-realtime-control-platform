@@ -1,9 +1,10 @@
-import type { RefObject } from 'react';
+import { type RefObject, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { RenderableDeviceProjection } from '../shared/room-rendering';
 
 import styles from './RecentEventsFeed.module.css';
+import { useHistoryPageObserver } from './use-history-page-observer';
 import { useUserHistoryVirtualizer } from './use-user-history-virtualizer';
 import type { UserHistoryReadingPosition, UserHistorySessionState } from './user-history-session';
 import { UserHistoryItemRow } from './UserHistoryItemRow';
@@ -13,7 +14,6 @@ export function RecentEventsFeed({
     devices,
     realtimeUncertain,
     scrollRoot,
-    header,
     updateReadingPosition,
     loadOlder,
 }: {
@@ -21,7 +21,6 @@ export function RecentEventsFeed({
     devices: readonly RenderableDeviceProjection[];
     realtimeUncertain: boolean;
     scrollRoot: RefObject<HTMLElement | null>;
-    header: RefObject<HTMLDivElement | null>;
     updateReadingPosition(position: UserHistoryReadingPosition | null): void;
     loadOlder(): void;
 }) {
@@ -29,14 +28,19 @@ export function RecentEventsFeed({
     const history = useUserHistoryVirtualizer({
         state,
         scrollRoot,
-        header,
         updateReadingPosition,
+    });
+    const loadAnchor = useRef<HTMLDivElement | null>(null);
+    useHistoryPageObserver({
+        state,
+        scrollRoot,
+        anchor: loadAnchor,
         loadOlder,
+        disabled: history.smoothScrollActive,
     });
 
     return (
-        <section className={styles.feed} aria-labelledby="recent-events-heading">
-            <h2 id="recent-events-heading">{t('feed.heading')}</h2>
+        <div className={styles.feed}>
             {realtimeUncertain ? <p className={styles.notice}>{t('feed.lastKnown')}</p> : null}
             {state.items.length === 0 ? <p className={styles.empty}>{t('feed.empty')}</p> : null}
             <ol
@@ -65,6 +69,7 @@ export function RecentEventsFeed({
                     ) : null;
                 })}
             </ol>
-        </section>
+            <div ref={loadAnchor} className={styles.loadAnchor} aria-hidden="true" />
+        </div>
     );
 }

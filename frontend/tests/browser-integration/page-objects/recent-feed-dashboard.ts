@@ -18,8 +18,8 @@ export class RecentFeedDashboard {
     readonly windowTemperatureCard: Locator;
 
     constructor(private readonly page: Page) {
-        this.feed = page.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
-        this.sidebar = page.getByRole('complementary', { name: 'Ostatnie istotne zdarzenia' });
+        this.feed = page.getByRole('region', { name: 'Przewijana historia zdarzeń' });
+        this.sidebar = page.getByRole('complementary', { name: 'Historia zdarzeń' });
         this.feedToggle = page.getByRole('button', { name: /ostatnie zdarzenia/i });
         this.feedEntries = this.feed.getByRole('listitem');
         this.temperatureCard = new TemperatureCard(page, 'temp-desk');
