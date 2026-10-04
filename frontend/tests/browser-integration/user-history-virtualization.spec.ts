@@ -270,6 +270,7 @@ async function assertBoundedRows(page: Page) {
 
             return boxes.length - visible;
         })
-        .toBeLessThanOrEqual(11);
+        // A short mobile viewport can keep the reading anchor beyond both overscan edges.
+        .toBeLessThanOrEqual(12);
     expect(await historyEntries(page).count()).toBeLessThan(40);
 }

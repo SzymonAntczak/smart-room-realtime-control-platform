@@ -124,42 +124,58 @@
     }
 
     .sidebarSlot {
-        position: relative;
-        inline-size: calc(100% - 2.75rem);
-        block-size: auto;
-        max-block-size: 70dvh;
-        transition: max-block-size 340ms cubic-bezier(0.22, 1, 0.36, 1);
+        position: fixed;
+        inset-block-start: auto;
+        inset-inline: 0;
+        inset-block-end: env(safe-area-inset-bottom, 0px);
+        z-index: 5;
+        inline-size: 100%;
+        block-size: 50dvh;
+        transform: translateY(0);
+        transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     .sidebarViewport {
-        position: relative;
-        max-block-size: 70dvh;
-        transition: max-block-size 340ms cubic-bezier(0.22, 1, 0.36, 1);
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        box-shadow: var(--shadow-panel-up);
     }
 
     .sidebar {
         inline-size: 100%;
-        block-size: auto;
-        max-block-size: 70dvh;
-        transform: translateY(0);
-        border-block-end: var(--border-width-thin) solid var(--color-border);
+        block-size: 100%;
+        padding-block-end: env(safe-area-inset-bottom, 0px);
+        border-inline-end: 0;
+        border-block-start: var(--border-width-thin) solid var(--color-border);
+        overscroll-behavior: contain;
     }
 
     .shell[data-feed-open='false'] .sidebarSlot {
-        block-size: 0;
-        max-block-size: 0;
-    }
-
-    .shell[data-feed-open='false'] .sidebarViewport {
-        max-block-size: 0;
+        transform: translateY(100%);
     }
 
     .sidebarToggle {
-        inset-block-start: var(--space-5);
+        position: absolute;
+        inset-block-start: -2.75rem;
+        inset-inline-start: 50%;
+        inset-inline-end: auto;
+        border-inline-start: var(--border-width-thin) solid var(--color-border-strong);
+        border-block-end: 0;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        box-shadow: var(--shadow-panel-up);
+        transform: translateX(-50%);
+    }
+
+    .sidebarToggle svg {
+        transform: rotate(-90deg);
     }
 
     .shell[data-feed-open='false'] .sidebarToggle {
-        inset-block-start: var(--space-5);
+        position: absolute;
+        inset-block-start: -2.75rem;
+        inset-inline-start: 50%;
+        inset-inline-end: auto;
     }
 
     .controls {
@@ -167,13 +183,13 @@
     }
 
     .shell[data-feed-open='false'] .controls {
-        padding-block-start: calc(var(--space-12) + var(--space-12));
+        padding-block-start: var(--space-8);
     }
 }
 
 @media (max-width: 48rem) {
     .sidebar[aria-hidden='true'] {
-        transform: translateY(-0.75rem);
+        transform: translateY(0.75rem);
     }
 }
 

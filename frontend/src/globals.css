@@ -56,6 +56,7 @@
     --border-width-thin: 0.0625rem;
 
     --shadow-panel: 0 1.125rem 2.8125rem oklch(35% 0.025 235 / 12%);
+    --shadow-panel-up: 0 -1.125rem 2.8125rem oklch(35% 0.025 235 / 16%);
 
     font-family: var(--font-family-sans);
     color: var(--color-text);

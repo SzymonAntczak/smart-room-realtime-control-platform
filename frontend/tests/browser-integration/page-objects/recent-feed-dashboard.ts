@@ -11,15 +11,19 @@ interface ElementBounds {
 
 export class RecentFeedDashboard {
     readonly feed: Locator;
+    readonly sidebar: Locator;
     readonly feedToggle: Locator;
     readonly feedEntries: Locator;
     readonly temperatureCard: TemperatureCard;
+    readonly windowTemperatureCard: Locator;
 
     constructor(private readonly page: Page) {
         this.feed = page.getByRole('region', { name: 'Ostatnie istotne zdarzenia' });
+        this.sidebar = page.getByRole('complementary', { name: 'Ostatnie istotne zdarzenia' });
         this.feedToggle = page.getByRole('button', { name: /ostatnie zdarzenia/i });
         this.feedEntries = this.feed.getByRole('listitem');
         this.temperatureCard = new TemperatureCard(page, 'temp-desk');
+        this.windowTemperatureCard = page.getByTestId('temp-window-temperature-card');
     }
 
     entryContaining(text: string): Locator {
@@ -46,12 +50,20 @@ export class RecentFeedDashboard {
         return this.visibleBounds(this.feed);
     }
 
+    async sidebarBounds(): Promise<ElementBounds> {
+        return this.visibleBounds(this.sidebar);
+    }
+
     async feedToggleBounds(): Promise<ElementBounds> {
         return this.visibleBounds(this.feedToggle);
     }
 
     async temperatureCardBounds(): Promise<ElementBounds> {
         return this.visibleBounds(this.temperatureCard.card);
+    }
+
+    async windowTemperatureCardBounds(): Promise<ElementBounds> {
+        return this.visibleBounds(this.windowTemperatureCard);
     }
 
     async hasNoHorizontalOverflow(viewportWidth: number): Promise<boolean> {
