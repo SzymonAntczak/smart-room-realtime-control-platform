@@ -30,3 +30,8 @@ delegate at most two read-only passes. Give each one question, a boundary and
 expected sources/observations/risks/uncertainty/confidence. Do not delegate user
 decisions, plan synthesis, dependent work or small clear tasks. The main agent
 owns the final plan. Delegation does not authorize implementation.
+
+Follow the documentation and delivery-output policies in
+`docs/README.md` and `docs/architecture/ai-collaboration.md`. Return plans,
+review results and AC/DoD evidence in the conversation or PR description; do not
+create repository reports or append execution results to architecture or ADRs.

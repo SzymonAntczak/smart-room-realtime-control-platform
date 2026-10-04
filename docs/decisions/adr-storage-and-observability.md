@@ -1,41 +1,39 @@
-# ADR: Stage 4 Storage and Observability
+# ADR: Storage and Observability
 
 ## Status
 
 Accepted
 
-### DS-4-06a product-history amendment
+### Product-history supersession
 
 The accepted [User History Projection and Virtualized Feed ADR](adr-user-history-projection-and-virtualized-feed.md)
 supersedes this ADR's technical fact-to-product-feed classification,
-`recentEvents` product wire presentation and 20-entry total view bound for the
-delivered DS-4-06a presentation. Its schemas, BFF transformation and frontend
-are implemented and story verification is complete. The original rules below remain technical
-platform/storage context where superseded at the product boundary.
+`recentEvents` product wire presentation and 20-entry total view bound. The
+original classification below remains technical platform/storage context where
+superseded at the product boundary.
 
 The BFF transforms existing platform snapshots, realtime
 publications and significant-fact pages into user-facing entries. The platform
 facts, contracts, processor, database, retention and raw-history API remain
 unchanged. The frontend receives the BFF presentation contract; the new ADR owns
 the transformation and scrolling rules. References below to technical feed
-eligibility or the old total view limit describe the pre-successor
-implementation, not competing target rules.
+eligibility or the old total view limit describe the superseded product model, not competing target rules.
 
 Audit facts, telemetry, deduplication, command lifecycle, failure taxonomy,
 atomic publication, generation/watermark, retention and pinned cursor rules
 remain binding. User-facing entries retain the source fact identity and are
 bounded by its existing sequence and retention; no new event stream or second
 SSE connection is introduced. Only the additive BFF response contract and its
-frontend consumer change during DS-4-06a.
+frontend consumer differ from the raw platform contract.
 
 ## Context
 
-The completed simulator reference slices keep projections, deduplication state,
+An in-memory-only simulator platform keeps projections, deduplication state,
 terminal command history and ignored-input diagnostics in process memory. This
 is enough to demonstrate the control loop, but it cannot retain an explanation
 of current state across a restart or provide bounded telemetry history.
 
-Stage 4 needs durable local storage without adopting full event sourcing, an
+The platform needs durable local storage without adopting full event sourcing, an
 ORM, a query builder or a new MQTT runtime. SQLite is an observability and
 recovery dependency, not the source of current device truth. A storage outage
 must be visible without unnecessarily stopping fresh observations or local
@@ -61,7 +59,7 @@ inspection surface, not a Dashboard feed.
 ### Storage boundary and connection
 
 Use direct `node:sqlite` `DatabaseSync` behind a replaceable backend storage
-port. The Stage 4 runtime supports Node.js `>=24.15 <25`. The port owns domain
+port. The runtime supports Node.js `>=24.15 <25`. The port owns domain
 operations and transaction boundaries; platform code and BFF handlers do not
 depend on SQLite tables, SQL or `DatabaseSync`.
 
@@ -369,7 +367,7 @@ commands instead of pretending that durable history exists.
 
 ### SQLite failure classification
 
-This taxonomy applies to every operation on the shared Stage 4 SQLite file,
+This taxonomy applies to every operation on the shared local SQLite file,
 including history, checkpoint, outbox and simulator-receipt operations. Receipt
 failures additionally report command-handoff evidence as defined below. Storage
 errors have one of three reactions:
@@ -413,7 +411,7 @@ validation instead of being overwritten.
 Manual-intervention degraded does not poll or mutate the damaged database. The
 operator repairs or replaces the file and restarts the backend; normal startup
 validation then either opens it as `available` or applies the fatal startup
-rules. Stage 4 has no live administrative recovery endpoint.
+rules. The local runtime has no live administrative recovery endpoint.
 
 ### Durable and volatile commands
 
@@ -469,7 +467,7 @@ It does not claim that `command.dispatched` occurred. A matching state report
 may still confirm this pending command because the first attempt may have
 reached the source.
 
-Stage 4 command projections replace the assumption that every `pending` or
+Command projections replace the assumption that every `pending` or
 terminal command has `dispatchedAt` with discriminated delivery evidence:
 
 - `delivery.status: handed_off` carries `dispatchedAt` and `deadlineAt`;
@@ -522,7 +520,7 @@ terminal backend outbox entries are retained for 30 days, matching the maximum
 time-retention window for their command facts; pending intents are never evicted
 by age.
 
-For a command delivered from the durable outbox, before the Stage 4 simulator
+For a command delivered from the durable outbox, before the simulator
 consumes its selected scenario or schedules any native result, it durably
 records a compact source receipt containing at least
 `commandId`, a canonical command-payload fingerprint, the chosen scenario,
@@ -558,7 +556,7 @@ invent a second outcome or unnecessarily stop a safely identifiable realtime
 result.
 
 The simulator owns this receipt boundary through a simulator-local receipt port.
-For the in-process Stage 4 simulator, the runtime composition implements that
+For the in-process simulator, the runtime composition implements that
 port with a logically separate table in the same SQLite database and through
 the same connection owner as history and outbox. The simulator package does not
 import backend storage internals. Receipt persistence is a distinct transaction
@@ -579,7 +577,7 @@ The ordinary adapter handoff rules either close the command without retry or
 retain the outbox for idempotent retry after storage recovery and before its
 fixed deadline.
 
-This co-location is an implementation choice for the in-process Stage 4
+This co-location is an implementation choice for the in-process
 simulator, not a relaxation of source-owned idempotency. A later out-of-process
 or hardware source must persist equivalent receipts on its side of the
 transport before automatic retry is enabled.
@@ -641,7 +639,7 @@ pristine file but no target generation; a later cutover can safely retry first
 initialization. A crash after commit restores the committed checkpoint and
 normal unclosed-session rules apply.
 
-The cutover queue has a configurable hard limit with a Stage 4 default of 1,000
+The cutover queue has a configurable hard limit with a local default of 1,000
 inputs. If accepting another input would exceed it, the coordinator aborts the
 recovery attempt, returns to `degraded`, resumes dequeuing the already queued
 raw inputs in FIFO order, prepares them against the current volatile projection
@@ -706,7 +704,7 @@ timeline is unavailable, it does not fabricate exact boundaries or backfill a
 gap into the new generation. This manual replacement exception is distinct from
 automatic recovery of the same database and from first-ever creation when no
 database exists and no replacement intent was supplied.
-Because the Stage 4 simulator receipts and backend outbox are co-located, the
+Because the simulator receipts and backend outbox are co-located, the
 new generation starts with both empty and never reconstructs or redispatches a
 command from the replaced file.
 
@@ -782,7 +780,7 @@ persisted as part of startup reconciliation without creating history, feed,
 deduplication or a storage sequence. This prevents downtime from leaving a
 restored observation falsely fresh. The reevaluation preserves the durability
 of the underlying observation evidence.
-For Stage 4, `recentCommands` orders descending by its discriminated terminal
+For durable operation, `recentCommands` orders descending by its discriminated terminal
 timestamp (`confirmedAt`, `failedAt` or `timedOutAt`) and then descending
 lexicographically by `commandId`. Live insertion, checkpoint selection and
 restart restoration use the same order and 20-entry bound.
@@ -793,7 +791,7 @@ timed-out or failed command.
 
 ### Realtime and HTTP history synchronization
 
-The frontend uses one `GET /room/realtime` SSE connection; Stage 4 adds neither
+The frontend uses one `GET /room/realtime` SSE connection; the storage model adds neither
 a second history stream nor replay. `room.snapshot` extends
 `RoomSnapshotProjection` with a bounded newest-first `recentEvents` feed of 20
 and `platform.storage`, which owns `historyGenerationId` and
@@ -805,7 +803,7 @@ or one `telemetrySample`; they never carry both. The array may contain multiple
 facts. Accepted telemetry that does not change current device state may still
 produce `device.updated` with an otherwise unchanged device projection.
 
-The one proposed recovery exception uses `commands.updated` as the existing
+The recovery exception uses `commands.updated` as the existing
 atomic full device/command projection carrier even when only recovery
 reconciliation, rather than a new command fact, changed that payload. It may
 carry the complete bounded non-gap recent-event cache, but no telemetry. This avoids
@@ -813,7 +811,7 @@ a new SSE type and preserves command/device reference invariants in one
 revision.
 
 `platform.updated` carries the complete current `platform.storage` projection
-and may carry `recentEvents`, but never `telemetrySample`. In Stage 4 its
+and may carry `recentEvents`, but never `telemetrySample`. In the local persistence model its
 feed-bearing case delivers `storage.gap.recorded`. Every delta follows the
 existing contiguous SSE revision rules.
 
@@ -833,7 +831,7 @@ backend also captures the private `retentionRevision` in the same transaction.
 Every page includes rows whose `storageSequence <= throughSequence` and whose
 internal `retiredRevision` is absent or greater than that private revision.
 This makes membership stable even when a later count-retention run shares the
-same millisecond. A future opaque cursor carries the private revision together
+same millisecond. An opaque cursor carries the private revision together
 with the public bounds and last `(occurredAt, storageSequence)` position; it
 does not expose the revision in the shared page schema. An SSE revision is
 never a storage cursor.
@@ -850,8 +848,7 @@ binding and validation are mandatory.
 The cursor is server-issued and clients cannot author or alter its bounds,
 expiry, position or query fingerprint. Its implementation must either be
 tamper-evident or reference equivalent server-side state. Malformed, forged or
-otherwise unverifiable cursors return a typed `invalid_cursor` response. Stage
-4 does not promise cursor survival across backend restart; an invalidated
+otherwise unverifiable cursors return a typed `invalid_cursor` response. The local cursor contract does not promise cursor survival across backend restart; an invalidated
 five-minute cursor starts a new first-page session while the client preserves
 its bounded live overlay until the new baseline merges.
 
@@ -985,9 +982,8 @@ transaction, recovery and deterministic timeout tests protect the behavior.
 
 ## Verification
 
-The existing evidence below covers the original Stage 4 fact feed. The delivered
-DS-4-06a BFF presentation was verified separately without changing the storage
-criteria below.
+The outcomes below protect technical storage and raw platform facts. The
+user-history ADR owns verification of the product presentation.
 
 Acceptance requires all of these outcomes:
 
@@ -1015,9 +1011,8 @@ Acceptance requires all of these outcomes:
   generation or be reused under a different query.
 - **AC-8:** A no-change LED report without an active command remains outside the
   feed regardless of an earlier timeout.
-- **AC-9:** These Stage 4 rules and all dependent ADR amendments are promoted
-  together, so accepted ADRs do not retain conflicting realtime, command or
-  evidence-durability rules.
+- **AC-9:** Storage, realtime, command and evidence-durability contracts remain
+  consistent across their accepted decisions.
 - **AC-10:** A simulator receipt operation preserves definite non-acceptance,
   uncertain prior acceptance and fatal indeterminate commit as distinct cases,
   while a newly created volatile command bypasses receipt persistence and keeps

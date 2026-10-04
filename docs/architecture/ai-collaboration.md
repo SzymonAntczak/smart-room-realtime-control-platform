@@ -32,6 +32,25 @@ When behavior changes, update the relevant architecture document or ADR first.
 Other AI-facing files should point back to those sources instead of becoming a
 parallel contract.
 
+Documentation authors must follow the [documentation policy](../README.md#documentation-policy).
+Architecture specifies agreed target behavior; it is not an implementation
+progress report.
+
+## Delivery Output
+
+Do not create repository files or append document sections whose purpose is to
+confirm completion of a task, Dev Story, review or acceptance run. This includes
+completion reports, evidence ledgers, dated acceptance records and saved delivery
+verdicts. Report AC/DoD status, checks, findings and verdicts in the conversation
+or PR description. An approved execution contract can remain in the conversation;
+a durable handoff does not require a repository file.
+
+Backlog completion markers and concise task status remain valid. Maintain reusable
+setup instructions, scenarios and walkthrough checklists where they explain how
+to operate or verify the platform, without embedding a particular run's results.
+Do not relocate removed delivery reports into new files. A different output
+location requires an explicit human request.
+
 ## AGENTS.md Files
 
 `AGENTS.md` files should explain how AI agents should work in a specific scope.
@@ -98,9 +117,18 @@ unit may be a whole Dev Story or one Subtask.
 
 When a Dev Story is selected, its Subtasks become internal steps of that
 execution unit. When a Subtask is selected, the execution scope is limited to
-that Subtask and its parent Dev Story remains incomplete. A Dev Story is
-complete only when all of its Subtasks are complete and its story-level
-acceptance criteria have been verified.
+that Subtask and its parent Dev Story remains incomplete. Every new Dev Story ends with a distinct whole-story review Subtask, depending
+on all preceding Subtasks. It checks story-level acceptance criteria, integration,
+documentation alignment and credible verification through the independent delivery
+gate. A Dev Story is complete only when all preceding Subtasks are complete, that
+final review returns PASS and the human accepts the outcome. BLOCKING or an
+unfinished review leaves the story incomplete. The existing two-pass gate policy
+also applies to whole-story review; a Subtask gate alone does not close its parent.
+
+For the backlog policy migration, previously completed stories without a distinct
+final review retain their historical status. This exception does not apply to
+open or newly decomposed stories and does not manufacture retrospective PASS
+results.
 
 Separate Subtasks may become separate Goals or run in parallel only after the
 developer chooses that execution shape and confirms that their dependencies

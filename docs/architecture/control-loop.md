@@ -38,7 +38,7 @@ The platform is event-driven, but the user experience is command-driven. The use
 7. The realtime API/BFF reads and publishes the updated projections.
 8. The frontend receives the updated state in realtime.
 
-The Stage 4 processor separates non-mutating preparation from runtime
+The processor separates non-mutating preparation from runtime
 commit. With storage `available`, the durable record, deduplication state and
 candidate projection commit atomically before SSE publication. If that write
 fails, the platform changes to `degraded`, applies the prepared observation in
@@ -63,12 +63,12 @@ the observation was stored.
    matching confirmation arrives.
 10. The realtime API/BFF streams the updated projection to the UI.
 
-In the Stage 4 available path, acceptance also persists a durable
+In the available path, acceptance also persists a durable
 outbox intent before adapter dispatch. The at-least-once dispatch worker uses a
 stable `commandId`, and the receiving source must treat its retries as one
 logical command across its own restarts by persisting a source receipt before
 scheduling native behavior. The simulator owns that receipt through a
-simulator-local port. In Stage 4 the runtime implements that port with a
+simulator-local port. In the local persistence model the runtime implements that port with a
 logically separate table in the shared SQLite database without exposing backend
 storage internals to the simulator package. A confirmed failure before
 acceptance is definite no-handoff, while inability to inspect a possible prior
@@ -147,7 +147,7 @@ The late report should remain visible in history so the system can explain that
 the device eventually reached the requested state after the command stopped
 waiting for confirmation.
 
-In the Stage 4 serialized coordinator, deadline matching uses the
+In the serialized coordinator, deadline matching uses the
 backend `receivedAt` captured before queueing. A report received strictly before
 `deadlineAt` may confirm even if recovery delays preparation; a report received
 at or after the deadline updates observed state only after timeout becomes
@@ -159,19 +159,19 @@ terminal. Device `occurredAt` cannot extend the backend waiting window.
 `confirmed`, `failed` and `timed_out` outcomes are exposed separately as a
 bounded, newest-first `recentCommands` projection with their requested state,
 relevant timestamps and failure detail. This UI-oriented history remains
-separate from the future fact-oriented event-history slice. The full rule is in
+separate from durable fact-oriented audit history. The full rule is in
 [ADR: Command History and Terminal Projections](../decisions/adr-command-history-and-terminal-projections.md).
 
-## User History (DS-4-06a)
+## User History
 
-The original DS-4-06 Dashboard showed individual significant facts. The accepted
+The accepted
 [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
-replaces that product feed with observed changes and unsuccessful attempts,
+defines the product feed as a presentation of technical facts with observed changes and unsuccessful attempts,
 without changing the command path or `recentCommands` described above.
 
 Requested/dispatch/pending progress stays at the device control. The BFF transforms existing inputs into one user entry when a report reflects a state change; its derived confirmation is not a second entry. A confirmation with already-matching state creates none. Failure or timeout creates one attempt outcome, and a late changing report creates a separate observed change while the timeout remains terminal. Entries describe outcomes rather than proving which action caused them. A non-matching independent change during pending work remains visible without closing that command.
 
-Technical facts continue to follow their existing commit/publication path. The BFF maps existing publications over one SSE connection and transforms older entries from the existing HTTP reader. History title/description/time and the room-gap exception follow the ADR; technical details are retained in audit/log surfaces. The Dashboard connects paging/recovery with accessible, measured virtual rendering. Parent-story verification is complete.
+Technical facts continue to follow their existing commit/publication path. The BFF maps existing publications over one SSE connection and transforms older entries from the existing HTTP reader. History title/description/time and the room-gap exception follow the ADR; technical details are retained in audit/log surfaces. The Dashboard connects paging/recovery with accessible, measured virtual rendering.
 
 ## Timing Rules
 

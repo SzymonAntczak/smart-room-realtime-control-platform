@@ -38,7 +38,7 @@ Source-specific backend adapters validate their native topics and payloads and
 translate them to the shared platform contracts; sources are not required to
 share a native MQTT shape.
 
-The roadmap must not add a new device role until all three runtime sources run
+Do not expand device roles until all three runtime sources run
 concurrently in one Dashboard. Every source has a distinct platform
 `deviceId`. Source parity means equivalent platform semantics for each
 capability that a source supports; it does not require every source to expose
@@ -48,7 +48,7 @@ events and logs. A later scene must issue ordinary platform commands and must
 not bypass command lifecycle or history.
 
 The source-aware logs in that later Dashboard are an operational view. They do
-not turn Stage 4 quarantine diagnostics into recent-event product history;
+not turn quarantine diagnostics into recent-event product history;
 ignored input remains available through its technical diagnostics contract and
 correlated logs unless a later accepted decision explicitly changes that
 boundary.
@@ -96,7 +96,7 @@ and MQTT delivery guarantees do not replace platform deduplication.
   ESP32/ESPHome and a standalone MQTT-capable device together,
   including applicable telemetry or reported state, logs, events and on/off
   command outcomes.
-- No roadmap stage schedules a new device role before the source-parity gate.
+- No new device role is introduced before the source-parity gate.
 
 ## Links
 

@@ -69,8 +69,9 @@ state well, but those exceptions must be documented and tested.
 
 The one-second skew tolerance bounds how much a device clock can make an
 observation appear fresh, independently of its reporting cadence.
-The bounded diagnostics record explains rejected reports during the local
-process lifetime; durable quarantine storage remains future work.
+Bounded diagnostics explain rejected reports. The
+[storage decision](adr-storage-and-observability.md) defines durable quarantine
+retention and degraded-operation behavior separately.
 
 Read-only sensors remain useful while blocking commands. The UI should avoid
 presenting controls for them, and backend command handling should reject command

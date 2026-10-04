@@ -21,3 +21,8 @@ Load `docs/architecture/ai-collaboration.md` for AI delivery/governance decision
 control-loop/events/devices/reliability documents for their respective behavior,
 and the corresponding accepted ADRs from `docs/decisions/`. Do not load the
 entire documentation tree merely because one architecture file is touched.
+
+Follow the documentation and delivery-output policies in
+`docs/README.md` and `docs/architecture/ai-collaboration.md`. Return plans,
+review results and AC/DoD evidence in the conversation or PR description; do not
+create repository reports or append execution results to architecture or ADRs.

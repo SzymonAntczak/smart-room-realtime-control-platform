@@ -4,16 +4,8 @@
 
 Accepted
 
-Implementation complete: `ST-4-06a-01` through `-03` supply executable BFF
-contracts, transformation and pinned HTTP pagination. `ST-4-06a-04` connects
-the transformer to `/room` and the existing SSE, and the Dashboard to a bounded
-user-history session with paging, live merge and reading-position recovery.
-`ST-4-06a-05` adds accessible user-history entries and measured virtual rendering
-without technical details. `ST-4-06a-06` completed parent-story verification
-and independent delivery review with `PASS`; `DS-4-06a` is complete.
-
-This ADR supersedes the Stage 4 storage ADR's product-feed presentation and
-total view bound for the DS-4-06a target. Significant-fact contracts, processor
+This ADR supersedes the local storage ADR's product-feed presentation and
+total view bound. Significant-fact contracts, processor
 classification, database rows/schema, lifecycle, durability, retention and raw
 history cursors remain unchanged.
 
@@ -47,7 +39,7 @@ The BFF is the sole owner of transforming existing platform projections and
 significant facts into user-history responses. It derives the presentation at
 the HTTP/SSE boundary and emits no new domain event. The event processor,
 read-model projection, significant-fact contracts and stored fact rows remain
-as implemented by DS-4-06. The frontend validates and renders BFF user-history
+at the platform boundary. The frontend validates and renders BFF user-history
 items; it never interprets or aggregates raw command sequences.
 
 An entry's title is the localized device display name. Its description explains
@@ -89,15 +81,15 @@ command-history entry, consistently with the existing admission rules.
 
 ### BFF response contract
 
-The BFF will return a user-facing history response for current and paged history.
+The BFF returns a user-facing history response for current and paged history.
 Its presentation data uses source identity and event time, with existing
 durability bounds where known. It excludes translated sentences in platform
 records, raw payloads, command IDs and diagnostic reason strings. The response
-contract is defined in `ST-4-06a-01`; it does not alter platform
+contract has separate executable schemas; it does not alter platform
 `RecentEventProjection`, durable significant facts, processor results,
 checkpoints or stored database records.
 
-#### Executable contract delivered by ST-4-06a-01
+#### Executable contract
 
 `@smart-room/contracts/user-history` owns TypeBox schemas and semantic guards
 for the presentation contract. `UserHistoryItem` is discriminated by `kind`:
@@ -152,16 +144,14 @@ another size requires that same explicit size or returns `cursor_query_mismatch`
 The response and cursor scope always carry the effective size. The separate
 BFF scope is `{ dataset: user_history, order: occurred_at_desc, pageSize }`;
 it does not extend the storage port's raw cursor scope. Device/date filtering
-belongs to `DS-4-06b`.
+is outside this decision.
 Existing typed cursor failures are reused; the shared unavailable response is
 `{ error: durable_history_unavailable, message }`, matching current HTTP 503.
 
 Client adapters validate decoded `unknown` HTTP/SSE data without coercion,
 partial success or stripping extra fields. They return a validated page,
 snapshot/message or a typed failure; they perform no fetching, event aggregation
-or session/UI update. Production EventSource, history sessions and mocked-BFF
-fixtures stay on the current raw contract until their integration subtasks.
-Once integrated, the BFF/client use one strict current wire contract; the added
+or session/UI update. Production EventSource, history sessions and mocked-BFF fixtures use one strict current wire contract; the added
 schemas are not a runtime compatibility union or a second SSE connection.
 
 The BFF transforms data as it crosses its existing API boundary. For live
@@ -249,8 +239,7 @@ accessible "Load older" control using the same pagination operation.
 Bound the loaded user-history cache and live overlay so memory remains limited.
 Virtual scrolling renders the visible range with a suitable overscan and stable
 item keys. Preserve list semantics, keyboard access, focus and desktop/mobile
-layout. The implementation choices and exact limits are left to subtask
-planning.
+layout. The session limits and measured rendering rules are defined below.
 
 When the user is at the newest entries, normal live updates remain visible.
 When reading older history, preserve the visible `recordId` and its viewport
@@ -273,7 +262,7 @@ room baseline and the existing SSE connection.
 
 ### Connected session limits and recovery
 
-The approved `ST-4-06a-04` implementation uses HTTP pages of 50, at most 5,000
+The frontend history session uses HTTP pages of 50, at most 5,000
 cached HTTP entries and a separate 200-entry live overlay, with one active
 fetch. During rebuilding, a labeled previous cache and its replacement may
 coexist (two caches of at most 5,000 entries plus one overlay). Closing releases
@@ -288,7 +277,7 @@ HTTP generation. Every validated addition reaches the
 session directly; React snapshot batching cannot discard intermediate additions.
 The first HTTP page pins generation, watermark and retention time. Sparse pages
 with a cursor continue. Manual loading and automatic loading within one viewport
-of the end share the same operation. `ST-4-06a-05` renders only a measured virtual
+of the end share the same operation. The frontend renders only a measured virtual
 range; virtual indexes never determine the HTTP cursor or change session limits.
 
 Reading position is `{ recordId, occurredAt, offsetPx }` relative to the scroll
@@ -303,7 +292,7 @@ Malformed responses and cursor-query mismatches do not start automatic loops.
 Returning to newest after overlay overflow refetches durable history without
 promising recovery of omitted historical changes or evicted volatile entries.
 
-### Measured virtual rendering delivered by ST-4-06a-05
+### Measured virtual rendering
 
 The frontend uses `@tanstack/react-virtual` 3.14.9 in the existing history scroll
 container. Rows have stable `recordId` keys, a 192 px initial height estimate
@@ -358,28 +347,23 @@ the history boundary honestly.
 
 ## Verification
 
-Contract and client-boundary tests for `ST-4-06a-01` cover the additive BFF
-schemas and validation adapters.
-The BFF-local snapshot and publication transformer is implemented and tested
-under `ST-4-06a-02` and connected to the room HTTP/SSE boundary by `ST-4-06a-04`.
-`ST-4-06a-03` adds contract, cursor, reader and HTTP/SQLite tests for
-the optional size/default, conservative classification, cross-page timeout
+Contract and client-boundary tests must protect the BFF schemas and validation
+adapters. Transformer, cursor, reader and isolated HTTP/SQLite tests must cover
+optional page size/default, conservative classification, cross-page timeout
 evidence, sparse pages, signed dataset/scope separation, fixed expiry, pinned
-retention/generation and whole-response error handling. Platform/raw API and
-runtime-bootstrap tests protect the unchanged internal contracts.
-`ST-4-06a-04` adds strict BFF transport tests, deterministic history session
-tests, actual HTTP/SSE integration and mocked-BFF desktop/mobile browser tests
-for paging, anchors, bounded overlay, recovery and panel cleanup.
-`ST-4-06a-05` adds item presentation tests and desktop/mobile mocked-BFF browser
-coverage for 1,000 loaded entries with bounded DOM, mixed-height anchors through
-resize/reconnect, keyboard access, single-flight older loading and predictable
-focus. `ST-4-06a-06` reran the contract, backend, frontend, actual HTTP/SSE and
-Chromium suites plus workspace/browser/transport typechecks. The independent
-delivery gate returned `PASS` for the complete story.
+retention/generation and whole-response errors. Platform/raw API and runtime
+bootstrap tests must protect the unchanged internal contracts.
+
+Strict BFF transport tests, deterministic history-session tests, actual HTTP/SSE
+integration and mocked-BFF desktop/mobile browser tests must cover paging,
+anchors, bounded overlay, recovery and panel cleanup. Item presentation and
+browser scenarios must verify 1,000 loaded entries with bounded DOM, mixed-height
+anchors through resize/reconnect, keyboard access, single-flight older loading
+and predictable focus.
 
 ## Links
 
-- [Stage 4 Storage and Observability](adr-stage-4-storage-and-observability.md)
+- [Storage and Observability](adr-storage-and-observability.md)
 - [Room Realtime Synchronization](adr-room-realtime-synchronization.md)
 - [Server-Sent Events for the Realtime BFF](adr-server-sent-events-realtime-bff.md)
 - [Command History and Terminal Projections](adr-command-history-and-terminal-projections.md)

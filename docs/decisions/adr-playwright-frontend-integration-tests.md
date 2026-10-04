@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Stage 3.5 needs deterministic browser-level tests for the LED command loop.
+The frontend needs deterministic browser-level tests for the LED command loop.
 They must drive the frontend in a real browser against a mocked BFF, without
 starting the production backend or simulator. The test boundary must provide an
 initial room snapshot, named SSE updates and `POST /room/commands` responses
@@ -24,7 +24,7 @@ project.
 
 ## Decision
 
-Use Playwright Test with TypeScript for the Stage 3.5 browser integration suite.
+Use Playwright Test with TypeScript for the frontend browser integration suite.
 
 Each test starts the Vite frontend and a test-local mocked BFF. The mocked BFF
 implements only the frontend-facing contract: `GET /room/realtime` as a

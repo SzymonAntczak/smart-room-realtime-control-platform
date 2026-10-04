@@ -6,10 +6,9 @@ Accepted
 
 ## Context
 
-The first temperature slice streamed a complete `room.snapshot` after every
-accepted reading and on a periodic freshness check. That was clear for one
-device, but it causes unrelated device cards to receive and process a complete
-room projection when only one device changes.
+Sending a complete `room.snapshot` after every accepted reading and periodic
+freshness check is simple for one device, but causes unrelated device cards to
+receive and process a complete room projection when only one device changes.
 
 The repository is still in deep local development. Its simulator, backend and
 frontend evolve together, so retaining multiple wire shapes would hide drift
@@ -34,31 +33,29 @@ connection is established or re-established. The snapshot is the client's
 baseline and has revision `0`.
 
 Later changes use named, validated `device.updated` messages. Each carries only
-the changed current device projection. Event history is not part of either a
-snapshot or a delta until a dedicated history slice defines its storage,
-retention and details-view contract. Every delta carries its previous and new
+the changed current device projection. History and platform storage metadata follow the storage and BFF presentation
+rules below. Every delta carries its previous and new
 revision. A client must apply only the next contiguous
 revision. A malformed delta, an unknown device, or a revision gap preserves
 the last valid view and closes the connection; reconnect obtains a new
 snapshot baseline.
 
-### Stage 4 amendment
+### Storage and durability
 
-The feed details in this section describe the implemented pre-DS-4-06a contract.
+The feed details in this section describe raw platform publications.
 The accepted [User History Projection and Virtualized Feed ADR](adr-user-history-projection-and-virtualized-feed.md)
-supersedes its product-feed payload/classification and total view bound for the
-delivered successor. DS-4-06a replaces technical `recentEvents` only at the BFF
+supersedes the product-feed payload/classification and total view bound. It
+replaces technical `recentEvents` only at the BFF
 presentation boundary: the platform snapshot and publication contracts remain
 unchanged, while the BFF maps them to its additive user-history response for the
 frontend. The snapshot's newest source cache remains 20; older entries are
 transformed from the existing pinned HTTP dataset and use a bounded page cache.
 Revision continuity, atomic batches, one SSE connection, generation/watermark,
 cursor scope and no replay remain unchanged. The user-history ADR owns the
-current overlay, refetch and reading-position behavior, implemented and verified
-in DS-4-06a.
+overlay, refetch and reading-position behavior.
 
-The Stage 4 storage ADR preserves the current recovery model while
-adding these explicit Stage 4 extensions:
+The local storage ADR preserves the current recovery model while
+defining these storage and history rules:
 
 - the snapshot adds a bounded recent-event feed and `platform.storage`, which
   owns the durable-history generation and watermark;
@@ -118,7 +115,7 @@ ID performs ordinary recovery and refetch. The client rebuilds a changed
 generation instead of comparing reset storage sequences or merging unrelated
 history.
 
-These rules define the Stage 4 contract. They promote this amendment and the
+These rules define the contract. They promote this amendment and the
 related SSE ADR amendment together.
 
 The BFF and clients support one current realtime contract. They reject messages
@@ -172,13 +169,12 @@ versioning decision and its rollout plan are complete.
 ## Verification
 
 - A connection receives one full snapshot and later receives deltas only.
-- The current runtime's snapshots and deltas contain current device values and
-  health, not event history. The Stage 4 contract explicitly extends that
-  current behavior: its snapshot includes the bounded feed, platform status and
+- Snapshots and deltas contain current device values and health. The snapshot
+  also includes the bounded BFF user-history feed, platform status and
   durable generation and watermark; existing deltas may carry related live records at the same
   revision and `platform.updated` may carry a storage status change with related
   platform facts such as `storage.gap.recorded`.
-- Stage 4 verification adds buffering of every SSE-delivered
+- Storage verification adds buffering of every SSE-delivered
   addition across an HTTP read, pinned-generation/watermark merging by
   `recordId`, explicit refetch for non-feed facts, watermark-only platform
   deltas, retention-safe cursor expiry, storage recovery refetch and a rule that

@@ -7,13 +7,13 @@
 - Offline devices must not be silently treated as available.
 - Degraded health must be visible without being misrepresented as offline.
 - Stale observation data must be visible when it is still shown.
-- A future dedicated history slice should make important user actions traceable.
+- Durable significant-fact history must make important user actions traceable.
 - Command failures and timeouts should be first-class states, not generic errors.
 - Terminal command outcomes should remain available through bounded command
   history with their reason and timing metadata.
-- The Stage 4 UI must keep storage `degraded` and `recovering` visible,
+- The UI must keep storage `degraded` and `recovering` visible,
   and must never present volatile observations or commands as durable.
-- A Stage 4 SQLite outage must not by itself stop fresh device projections,
+- A local SQLite outage must not by itself stop fresh device projections,
   freshness evaluation or explicitly volatile commands.
 - For a production-like MQTT source, broker loss makes its devices unavailable
   to the platform with the explicit reason `broker_unavailable`; it blocks
@@ -24,7 +24,7 @@
 
 ## Failure Modes To Simulate
 
-The completed temperature reference slice covers the following read-path
+The temperature read path must cover the following read-path
 scenarios through automated tests and development controls where applicable:
 
 - lost telemetry event
@@ -39,7 +39,7 @@ scenarios through automated tests and development controls where applicable:
 - sustained SSE backpressure beyond one waiting publication batch closes the
   stream so the client recovers with a fresh snapshot
 
-The completed LED reference slice covers delayed confirmations, command rejection
+The LED command path must cover delayed confirmations, command rejection
 and late confirmation after timeout. It also covers an availability change while
 a command is pending and preserves that command until its normal terminal
 outcome. Degraded health reports are part of the device-state model. Future-dated device
@@ -64,9 +64,9 @@ The platform should make these questions easy to answer:
 - Was the device healthy when the command was sent?
 - Is the device unavailable because of its own signal or because its required
   broker transport is unavailable?
-- For Stage 4, was storage available, and is each relevant observation
+- For durable operation, was storage available, and is each relevant observation
   or command lifecycle durable or volatile?
-- For Stage 4, does durable history contain an explicit gap for a
+- For durable operation, does durable history contain an explicit gap for a
   storage outage?
 
 ## Recovery Behavior
@@ -78,7 +78,7 @@ When explicit availability evidence reports that a device reconnects:
 3. the UI should replace stale values when a fresh observation arrives
 4. unresolved commands should remain historically visible, even after recovery
 
-Automatic Stage 4 storage recovery probes SQLite every five seconds by default
+Automatic Local storage recovery probes SQLite every five seconds by default
 with a schema check and rollback-only write transaction. It enters
 `recovering`, temporarily blocks new commands and keeps processing observations
 as volatile. A serialized cutover briefly stops dequeuing, checkpoints every
@@ -106,7 +106,7 @@ Focus areas:
 - required envelope fields
 - unknown or malformed events
 - idempotency for duplicate events
-- Stage 4 durability discriminators, platform storage status and history
+- Evidence durability discriminators, platform storage status and history
   generation/watermark/cursor separation
 
 ### State Model Tests
@@ -126,7 +126,7 @@ Focus areas:
 - delayed or equal-timestamp availability and health transitions cannot regress state
 - availability loss during an active command leaves it pending until explicit failure or timeout
 
-Stage 4 focus areas:
+Storage and recovery focus areas:
 
 - prepare does not mutate state before runtime commit
 - time-derived freshness is a projection-only outcome: it commits before
@@ -156,7 +156,7 @@ Stage 4 focus areas:
 - a confirmed rollback while marking a due source result terminal degrades
   storage before emitting its pre-persisted stable identity as volatile;
   recovery closes it and crash can only re-emit that identity
-- the simulator-owned receipt port uses a separate table in the shared Stage 4
+- the simulator-owned receipt port uses a separate table in the shared local
   database; a known failure before acceptance produces definite no-handoff, an
   unreadable possible prior acceptance remains uncertain, an indeterminate
   current commit is fatal, the SQLite error follows platform storage ordering,
@@ -261,7 +261,7 @@ Initial scenarios:
 
 ### MQTT Runtime And Transport Tests
 
-After Stage 5, run the real local broker for every simulator runtime or
+For MQTT-backed runtime sources, run the real local broker for every simulator runtime or
 end-to-end test. Direct seams are limited to isolated domain and adapter tests.
 In addition to normal command and observation flows, verify:
 
@@ -285,9 +285,9 @@ Focus areas:
 - availability and stale observation data are visible as distinct states
 - degraded health is visible separately from availability and freshness
 - failed and timed-out commands remain understandable
-- future history work has an explicit traceability acceptance criterion
+- durable history makes important user actions traceable
 
-Stage 4 UI focus areas:
+Storage-aware UI focus areas:
 
 - storage degradation is permanently visible while current volatile device and
   command updates continue
@@ -313,34 +313,28 @@ Stage 4 UI focus areas:
 The LED scenario timing and transport defaults are defined in
 [ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
 
-### DS-4-06a user history (verified)
+### User history
 
 The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
-records the target product behavior and boundaries. `ST-4-06a-03` verifies the
+records the target product behavior and boundaries. Verify the
 paged BFF endpoint with shared contract validation, deterministic raw-reader
-seams and isolated SQLite HTTP tests. Coverage includes default size 50,
+seams and isolated SQLite HTTP tests. Required coverage includes default size 50,
 cross-page timeout evidence/conflicts, sparse-page continuation, signed cursor
 scope separation, writes/count retirement under pinned bounds, fixed expiry
 with clock regression, generation replacement and main/auxiliary read failures.
-`ST-4-06a-04` connects strict BFF HTTP/SSE user entries and Dashboard paging.
+Verify strict BFF HTTP/SSE user entries and Dashboard paging.
 Session tests protect identity merge, durability preference, sparse pages,
 single-flight fetch, pinned parameters, cursor cycles, one automatic cursor
 restart, generation replacement, 503 recovery and cache bounds. Actual transport
 tests exercise user-history and telemetry against the BFF/runtime. Mocked-BFF
 browser tests protect desktop/mobile offsets (2 px tolerance), overlay overflow,
 reconnect, expiry, missing-anchor fallback, storage recovery, invalid payloads
-and closing a panel with an outstanding request. `ST-4-06a-05` adds component
-coverage for accessible user entries and mocked-BFF browser scenarios for 1,000
+and closing a panel with an outstanding request. Component tests must cover accessible user entries and mocked-BFF browser scenarios for 1,000
 loaded entries with bounded DOM, mixed-height anchors through width changes and
 reconnect, keyboard scrolling, single-flight older loading, and focus recovery
 when navigation controls disappear or become disabled. App composition tests
 replace geometry with a test-local rendering seam; only the real-browser suite
 establishes virtual range, measurements and the 2 px anchor tolerance.
-`ST-4-06a-06` completed parent-story verification and independent delivery
-review with `PASS`. Contract, backend, frontend, actual HTTP/SSE and Chromium
-suites and workspace/browser/transport typechecks passed. Initial concurrent
-backend/frontend runs hit test/worker timeouts; fresh runs passed without
-changing tests or timeouts, with frontend workers limited to two.
 Existing no-replay, generation/watermark and source-fact retention rules remain
 binding; this target does not change platform processing or storage.
 

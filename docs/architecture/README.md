@@ -1,6 +1,6 @@
 # Architecture
 
-This folder describes the current target shape of the Smart Room Realtime
+This folder describes the agreed target shape of the Smart Room Realtime
 Control Platform.
 
 Architecture documents are the working model for system behavior: control
@@ -36,22 +36,11 @@ behavior:
 
 ## Rules To Preserve
 
-The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
-defines the delivered DS-4-06a user-history feed beyond the original DS-4-06
-fact presentation. The [backlog](../planning/backlog.md) records its completed
-subtasks, including verification of BFF contracts/transformation, HTTP/SSE
-paging/recovery, virtual rendering and independent delivery acceptance.
-No data migration was required. Sections
-identifying the original feed retain historical platform/audit context; the
-user-history ADR owns the current product-history rules.
-
-The completed Stage 2/2.5 temperature slice and Stage 3 LED reference slice
-use backend adapters, event processing, read-model projections and the realtime
-BFF. They expose independent availability, operational health and observation
-freshness; the LED slice also implements command lifecycle, confirmation and
-bounded terminal-command projections. Event history remains a later dedicated
-slice. Development-only controls exercise normal and failure scenarios through
-that same backend-owned path.
+The [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+defines user-facing history over technical platform facts. Backend adapters,
+event processing, projections, durable storage and the realtime BFF preserve
+independent availability, health, freshness and command lifecycle evidence.
+Development controls exercise scenarios through the backend-owned path.
 
 - Events are facts that already happened.
 - Commands are requests for something to happen.

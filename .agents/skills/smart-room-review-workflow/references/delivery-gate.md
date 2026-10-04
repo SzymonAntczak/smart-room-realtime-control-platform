@@ -20,3 +20,9 @@ Return:
 Stay read-only; do not change the plan, specification, AC or DoD. Use the
 two-pass stop policy in `docs/architecture/ai-collaboration.md`; the implementer
 owns any authorized correction batch, not the reviewer.
+
+Check documentation independence, prohibited delivery artifacts and, for a
+whole-story gate, all story criteria and preceding Subtask completion. Violations
+of these approved requirements block acceptance. Return the verdict in the
+conversation, never a repository report. PASS still requires human acceptance
+before the final review Subtask and its parent story are marked complete.

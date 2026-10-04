@@ -91,28 +91,25 @@ snapshots can be used for current reads.
 
 Status: keep as trade-off for now.
 
-## Stage 1 Runtime Reset (Superseded)
+## Read-Path Scope Reset (Superseded)
 
-Decision: withdraw the dedicated Stage 1 runtime ADR and restart implementation
-from a smaller read-only temperature sensor slice.
+Decision: withdraw an oversized runtime decision and establish a smaller
+read-only temperature path before the full control loop.
 
-Reason: the previous Stage 1 runtime decision made the first implementation too
-large before the project had a simple realtime read path.
+Reason: coupled backend, transport, commands and simulator work obscured the
+simplest observable realtime outcome.
 
-Benefit: the project can rebuild confidence with one understandable sensor,
-less frontend scaffold and fewer runtime assumptions.
+Benefit: one understandable sensor path reduced scaffold and runtime assumptions.
 
-Cost at the time: backend, WebSocket transport, command handling and the
-separate simulator runtime were deferred while the read path was simplified.
+Cost at the time: backend, bidirectional transport, commands and a separate
+simulator runtime were deferred while the read path was simplified.
 
-Consequence: this reset established the narrow read-path starting point. The
-completed Stage 2/2.5 slice has since replaced the temporary frontend-only
-approach with a simulator, backend adapter, event processor, read-model
-projection, WebSocket BFF and development scenario controls. Command handling
-remains the next separate slice.
+Consequence: the temporary frontend-only approach was an incremental starting
+point, not a durable platform boundary. Backend-owned adapters, processing,
+projections and the SSE BFF define the agreed runtime responsibilities.
 
-Status: historical trade-off; superseded by the completed Stage 2/2.5
-temperature reference slice.
+Status: historical trade-off; superseded by the backend-owned architecture and
+accepted transport and command decisions.
 
 ## AI As Implementation Assistant
 

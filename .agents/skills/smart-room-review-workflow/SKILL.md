@@ -25,3 +25,8 @@ and confidence. Researchers do not issue the final review, plan or delivery verd
 Only the dedicated reviewer may issue a bounded delivery verdict against approved
 inputs. It does not redesign the plan or change specification, AC or DoD.
 Preserve the two-pass stop policy in `docs/architecture/ai-collaboration.md`.
+
+Follow the documentation and delivery-output policies in
+`docs/README.md` and `docs/architecture/ai-collaboration.md`. Return plans,
+review results and AC/DoD evidence in the conversation or PR description; do not
+create repository reports or append execution results to architecture or ADRs.

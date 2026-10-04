@@ -45,3 +45,8 @@ are not blockers unless the approved contract requires them.
 Report AC/DoD status, files, checks, gate result/advisories and remaining decisions.
 If a Goal is active, complete it only after every required criterion and DoD
 passes and delivery review returns PASS.
+
+Follow the documentation and delivery-output policies in
+`docs/README.md` and `docs/architecture/ai-collaboration.md`. Return plans,
+review results and AC/DoD evidence in the conversation or PR description; do not
+create repository reports or append execution results to architecture or ADRs.

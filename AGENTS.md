@@ -14,6 +14,11 @@ uncertainty and failure visible. AI assists implementation; humans own architect
   `docs/architecture/ai-collaboration.md` when planning, implementing or reviewing
   a change.
 
+- When editing documentation, follow the standalone target-architecture and ADR
+  policy in [docs/README.md](docs/README.md#documentation-policy).
+- Do not create or append task-completion, acceptance-run or review reports in
+  the repository; follow [delivery output](docs/architecture/ai-collaboration.md#delivery-output).
+
 ## Code And Tests
 
 When changing or reviewing code, module boundaries or tests, read the relevant

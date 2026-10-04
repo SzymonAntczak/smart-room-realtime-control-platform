@@ -304,7 +304,16 @@ explainable operation without full event sourcing or a new MQTT runtime.
 
 The following Dev Stories and Subtasks supersede the flat unchecked Stage 4
 checklist retained below as an HTML comment for traceability. A Dev Story is
-complete only when all of its Subtasks and the stated story verification pass.
+complete only when all preceding Subtasks are complete, its final whole-story
+review returns PASS and the human accepts the outcome. Review checks all story
+criteria, integration, documentation alignment and credible verification; a
+BLOCKING or unfinished review leaves the story open. Use the bounded two-pass
+policy in [AI collaboration](../architecture/ai-collaboration.md).
+
+Historical migration exception: completed DS-4-01 through DS-4-06 keep their
+recorded completion without adding retrospective review tasks or PASS results.
+DS-4-06a retains its completed final review. Open and new stories follow the
+explicit final-review rule.
 Each item has one difficulty rating only:
 
 | Rating | Meaning                                                   |
@@ -557,14 +566,14 @@ Each item has one difficulty rating only:
   documentation alignment and a delivery review with no blocking findings before
   completing the story.
 
-| Subtask           | Purpose / primary boundary                                                                   | Depends on    | Difficulty | Difficulty rationale                            | Verification / done when                                                                                      |
-| ----------------- | -------------------------------------------------------------------------------------------- | ------------- | ---------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `[ ] ST-4-06b-01` | Document both history contexts and extend the shared BFF filter/query contract.              | `DS-4-06a`    | `C`        | Date semantics and cursor scope need precision. | Binding docs align; contracts validate optional filters and reject malformed ranges.                          |
-| `[ ] ST-4-06b-02` | Filter and paginate retained user history at the existing BFF GET boundary.                  | `ST-4-06b-01` | `B`        | Historical evidence and pinned pages interact.  | BFF tests cover combined/one-sided filters, sparse pages, cursor mismatch and storage errors.                 |
-| `[ ] ST-4-06b-03` | Add an independent static frontend search session with paging and manual refresh.            | `ST-4-06b-02` | `B`        | Session replacement and request races matter.   | Deterministic tests prove no SSE merge, refresh isolation, stale-response rejection and cleanup.              |
-| `[ ] ST-4-06b-04` | Present an accessible modal with the filter form and bounded virtualized historical results. | `ST-4-06b-03` | `C`        | Form, dates and virtual scrolling meet.         | UI tests cover submit/clear, applied vs draft values, local dates, focus and list states.                     |
-| `[ ] ST-4-06b-05` | Verify historical search and Dashboard independence through mocked-BFF browser integration.  | `ST-4-06b-04` | `C`        | Two views share contracts but not sessions.     | Playwright proves search, paging, refresh and live Dashboard updates with validated fixtures.                 |
-| `[ ] ST-4-06b-06` | Verify story acceptance and complete the bounded delivery review.                            | `ST-4-06b-05` | `C`        | Evidence spans BFF and frontend boundaries.     | All subtasks and criteria approved during task planning pass; docs align and review has no blocking findings. |
+| Subtask           | Purpose / primary boundary                                                                   | Depends on                                                                | Difficulty | Difficulty rationale                            | Verification / done when                                                                                                                                                           |
+| ----------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[ ] ST-4-06b-01` | Document both history contexts and extend the shared BFF filter/query contract.              | `DS-4-06a`                                                                | `C`        | Date semantics and cursor scope need precision. | Binding docs align; contracts validate optional filters and reject malformed ranges.                                                                                               |
+| `[ ] ST-4-06b-02` | Filter and paginate retained user history at the existing BFF GET boundary.                  | `ST-4-06b-01`                                                             | `B`        | Historical evidence and pinned pages interact.  | BFF tests cover combined/one-sided filters, sparse pages, cursor mismatch and storage errors.                                                                                      |
+| `[ ] ST-4-06b-03` | Add an independent static frontend search session with paging and manual refresh.            | `ST-4-06b-02`                                                             | `B`        | Session replacement and request races matter.   | Deterministic tests prove no SSE merge, refresh isolation, stale-response rejection and cleanup.                                                                                   |
+| `[ ] ST-4-06b-04` | Present an accessible modal with the filter form and bounded virtualized historical results. | `ST-4-06b-03`                                                             | `C`        | Form, dates and virtual scrolling meet.         | UI tests cover submit/clear, applied vs draft values, local dates, focus and list states.                                                                                          |
+| `[ ] ST-4-06b-05` | Verify historical search and Dashboard independence through mocked-BFF browser integration.  | `ST-4-06b-04`                                                             | `C`        | Two views share contracts but not sessions.     | Playwright proves search, paging, refresh and live Dashboard updates with validated fixtures.                                                                                      |
+| `[ ] ST-4-06b-06` | Verify story acceptance and complete the bounded delivery review.                            | `ST-4-06b-01`, `ST-4-06b-02`, `ST-4-06b-03`, `ST-4-06b-04`, `ST-4-06b-05` | `C`        | Evidence spans BFF and frontend boundaries.     | All preceding subtasks and approved story criteria pass; integration and docs align; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-07` — Storage-aware Dashboard controls and evidence
 
@@ -585,11 +594,14 @@ Each item has one difficulty rating only:
 - **Non-goals:** automatic resubmission of user intent.
 - **Story verification:** mocked-BFF sequence available → degraded → recovering.
 
-| Subtask          | Purpose / primary boundary                                              | Depends on   | Difficulty | Verification / done when                                            |
-| ---------------- | ----------------------------------------------------------------------- | ------------ | ---------- | ------------------------------------------------------------------- |
-| `[ ] ST-4-07-01` | Display current platform storage status prominently.                    | none         | `E`        | Component tests cover available, degraded and recovering.           |
-| `[ ] ST-4-07-02` | Label volatile observations, feed records and command evidence.         | `ST-4-07-01` | `C`        | Mixed intent/lifecycle/evidence durability remains distinguishable. |
-| `[ ] ST-4-07-03` | Apply degraded warning, recovering disablement and racing-503 handling. | `ST-4-07-01` | `C`        | Browser tests show no phantom state or automatic retry.             |
+- **Final review difficulty rationale:** Review covers established storage indicators, durability labels and command controls across frontend boundaries.
+
+| Subtask          | Purpose / primary boundary                                                     | Depends on                               | Difficulty | Verification / done when                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------ | ---------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[ ] ST-4-07-01` | Display current platform storage status prominently.                           | none                                     | `E`        | Component tests cover available, degraded and recovering.                                                                                     |
+| `[ ] ST-4-07-02` | Label volatile observations, feed records and command evidence.                | `ST-4-07-01`                             | `C`        | Mixed intent/lifecycle/evidence durability remains distinguishable.                                                                           |
+| `[ ] ST-4-07-03` | Apply degraded warning, recovering disablement and racing-503 handling.        | `ST-4-07-01`                             | `C`        | Browser tests show no phantom state or automatic retry.                                                                                       |
+| `[ ] ST-4-07-04` | Review the complete story against all criteria, integration and documentation. | `ST-4-07-01`, `ST-4-07-02`, `ST-4-07-03` | `C`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-08` — Accessible bounded telemetry details
 
@@ -606,12 +618,15 @@ Each item has one difficulty rating only:
 - **Non-goals:** unbounded raw cache or editing telemetry.
 - **Story verification:** browser test with HTTP baseline, SSE sample and reconnect.
 
-| Subtask          | Purpose / primary boundary                                                 | Depends on                 | Difficulty | Verification / done when                                                 |
-| ---------------- | -------------------------------------------------------------------------- | -------------------------- | ---------- | ------------------------------------------------------------------------ |
-| `[ ] ST-4-08-01` | Add selected-device entry point and accessible chart/table details view.   | none                       | `C`        | Component tests cover opening, focus/heading and table semantics.        |
-| `[ ] ST-4-08-02` | Load a bounded telemetry baseline from paged HTTP history.                 | `ST-4-03-01`, `ST-4-08-01` | `C`        | Frontend tests prove pages cannot become unbounded memory.               |
-| `[ ] ST-4-08-03` | Merge live SSE telemetry into chart and table with deterministic eviction. | `ST-4-04-03`, `ST-4-08-02` | `B`        | Tests cover additions before/after page response and duplicate identity. |
-| `[ ] ST-4-08-04` | Verify reconnect/refetch and stale/offline presentation end to end.        | `ST-4-04-04`, `ST-4-08-03` | `B`        | Browser test proves no lost point and honest reliability labels.         |
+- **Final review difficulty rationale:** Review crosses HTTP/SSE ordering, bounded telemetry, reconnect and accessible chart/table behavior.
+
+| Subtask          | Purpose / primary boundary                                                     | Depends on                                             | Difficulty | Verification / done when                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[ ] ST-4-08-01` | Add selected-device entry point and accessible chart/table details view.       | none                                                   | `C`        | Component tests cover opening, focus/heading and table semantics.                                                                             |
+| `[ ] ST-4-08-02` | Load a bounded telemetry baseline from paged HTTP history.                     | `ST-4-03-01`, `ST-4-08-01`                             | `C`        | Frontend tests prove pages cannot become unbounded memory.                                                                                    |
+| `[ ] ST-4-08-03` | Merge live SSE telemetry into chart and table with deterministic eviction.     | `ST-4-04-03`, `ST-4-08-02`                             | `B`        | Tests cover additions before/after page response and duplicate identity.                                                                      |
+| `[ ] ST-4-08-04` | Verify reconnect/refetch and stale/offline presentation end to end.            | `ST-4-04-04`, `ST-4-08-03`                             | `B`        | Browser test proves no lost point and honest reliability labels.                                                                              |
+| `[ ] ST-4-08-05` | Review the complete story against all criteria, integration and documentation. | `ST-4-08-01`, `ST-4-08-02`, `ST-4-08-03`, `ST-4-08-04` | `B`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-09` — Durable non-applying-input diagnostics
 
@@ -628,11 +643,14 @@ Each item has one difficulty rating only:
 - **Non-goals:** product Dashboard quarantine feed.
 - **Story verification:** focused end-to-end ignored-input scenarios.
 
-| Subtask          | Purpose / primary boundary                                                 | Depends on                 | Difficulty | Verification / done when                                                                      |
-| ---------------- | -------------------------------------------------------------------------- | -------------------------- | ---------- | --------------------------------------------------------------------------------------------- |
-| `[ ] ST-4-09-01` | Expose bounded persisted quarantine metadata at `GET /diagnostics`.        | `ST-4-01-01`, `ST-4-02-02` | `C`        | API tests cover schema, ordering, bounds and degraded storage.                                |
-| `[ ] ST-4-09-02` | Complete malformed and future-dated development scenarios on normal flow.  | none                       | `C`        | Scenario tests trace native input through adapter and processor.                              |
-| `[ ] ST-4-09-03` | Prove duplicate, malformed and future-dated diagnostics stay non-applying. | `ST-4-09-01`, `ST-4-09-02` | `B`        | Integration tests verify diagnostics/logs appear while projection/history/feed do not change. |
+- **Final review difficulty rationale:** Review must establish non-applying semantics across simulator, processor, persistence, diagnostics and logs.
+
+| Subtask          | Purpose / primary boundary                                                     | Depends on                               | Difficulty | Verification / done when                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------ | ---------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[ ] ST-4-09-01` | Expose bounded persisted quarantine metadata at `GET /diagnostics`.            | `ST-4-01-01`, `ST-4-02-02`               | `C`        | API tests cover schema, ordering, bounds and degraded storage.                                                                                |
+| `[ ] ST-4-09-02` | Complete malformed and future-dated development scenarios on normal flow.      | none                                     | `C`        | Scenario tests trace native input through adapter and processor.                                                                              |
+| `[ ] ST-4-09-03` | Prove duplicate, malformed and future-dated diagnostics stay non-applying.     | `ST-4-09-01`, `ST-4-09-02`               | `B`        | Integration tests verify diagnostics/logs appear while projection/history/feed do not change.                                                 |
+| `[ ] ST-4-09-04` | Review the complete story against all criteria, integration and documentation. | `ST-4-09-01`, `ST-4-09-02`, `ST-4-09-03` | `B`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-10` — Reproducible Stage 4 acceptance evidence
 
@@ -645,16 +663,19 @@ Each item has one difficulty rating only:
 - **Difficulty:** `C`.
 - **Difficulty rationale:** scope is procedural but evidence is broad.
 - **Acceptance criteria:** evidence map, valid browser fixtures, runnable
-  checklist and dated acceptance record.
+  checklist and acceptance results reported in the conversation or PR.
 - **Non-goals:** fixing defects discovered by the audit within this story.
 - **Story verification:** an independent reviewer repeats the documented run.
 
-| Subtask          | Purpose / primary boundary                                                    | Depends on                                              | Difficulty | Verification / done when                                                  |
-| ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `[ ] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence. | all Stage 4 implementation stories                      | `C`        | Each outcome links to evidence or a new narrow follow-up.                 |
-| `[ ] ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.       | `DS-4-06`, `DS-4-06a`, `DS-4-06b`, `DS-4-07`, `DS-4-08` | `C`        | Fixture-validation suite and browser typecheck pass.                      |
-| `[ ] ST-4-10-03` | Write the local simulator-only checklist and walkthrough.                     | `ST-4-10-01`                                            | `E`        | A clean local setup can follow the instructions without hidden knowledge. |
-| `[ ] ST-4-10-04` | Execute and record the dated local acceptance walkthrough.                    | `ST-4-10-02`, `ST-4-10-03`                              | `C`        | A reviewer can reproduce commands and observed results from the record.   |
+- **Final review difficulty rationale:** Review is procedural but spans the complete evidence audit, browser fixtures and reproducible walkthrough.
+
+| Subtask          | Purpose / primary boundary                                                                           | Depends on                                              | Difficulty | Verification / done when                                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[ ] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence.                        | all Stage 4 implementation stories                      | `C`        | Each outcome links to evidence or a new narrow follow-up.                                                                                     |
+| `[ ] ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.                              | `DS-4-06`, `DS-4-06a`, `DS-4-06b`, `DS-4-07`, `DS-4-08` | `C`        | Fixture-validation suite and browser typecheck pass.                                                                                          |
+| `[ ] ST-4-10-03` | Maintain the reusable simulator-only checklist and walkthrough in reliability/testing documentation. | `ST-4-10-01`                                            | `E`        | A clean local setup can follow the instructions without hidden knowledge.                                                                     |
+| `[ ] ST-4-10-04` | Execute the local acceptance walkthrough and report results in the conversation or PR.               | `ST-4-10-02`, `ST-4-10-03`                              | `C`        | A reviewer can reproduce the maintained instructions; this run produces no repository acceptance report.                                      |
+| `[ ] ST-4-10-05` | Review the complete story against all criteria, integration and documentation.                       | `ST-4-10-01`, `ST-4-10-02`, `ST-4-10-03`, `ST-4-10-04`  | `C`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 - **Recommended order:** `DS-4-01` → `DS-4-02` → `DS-4-03` → `DS-4-04` →
   `DS-4-08` → `DS-4-10`; complete `DS-4-05`, `DS-4-06`, `DS-4-07` and

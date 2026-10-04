@@ -45,22 +45,21 @@ closes the stream and releases its subscription. The client then reconnects
 for a fresh revision-0 baseline. This bounds BFF memory while avoiding a
 spurious reconnect for the normal, short burst of command lifecycle updates.
 
-### Stage 4 amendment
+### Storage and durability
 
 The accepted [User History Projection and Virtualized Feed ADR](adr-user-history-projection-and-virtualized-feed.md)
-defines the delivered DS-4-06a product payload: a BFF-mapped user-history
+defines the product payload: a BFF-mapped user-history
 snapshot and related deltas on this same stream, with older entries transformed
 from existing raw pages over HTTP. It replaces technical `recentEvents` only at
 the BFF presentation boundary, without changing platform messages or adding a
 second EventSource, replay or another watermark. Backpressure, revision
 continuity, atomic recovery publication and raw technical storage remain as
 defined here. The original feed payload described below remains platform/audit
-context; the current product wire uses `userHistory`, as covered by
-DS-4-06a verification.
+context; the product wire uses `userHistory`.
 
-The Stage 4 storage decision retains this one SSE connection, revision
-continuity, bounded backpressure handling and no-replay behavior. It extends the future
-validated message union with `platform.updated`, and permits existing device or
+The local storage decision retains this one SSE connection, revision
+continuity, bounded backpressure handling and no-replay behavior. The
+validated message union includes `platform.updated`, and permits existing device or
 command deltas to carry their related history records or telemetry sample.
 `platform.updated` carries the complete platform storage projection and may
 carry related platform history such as `storage.gap.recorded`. It never carries
@@ -80,8 +79,7 @@ collections themselves are unchanged. The next `platform.updated` carries the
 available status, watermark and gap. This is the only non-command use of that
 existing full-projection payload and does not add a new SSE type.
 
-This amendment promotes the post-snapshot message list and the related message
-semantics together with the Stage 4 storage decision.
+The post-snapshot message list and semantics follow the local storage decision.
 
 ## Consequences
 

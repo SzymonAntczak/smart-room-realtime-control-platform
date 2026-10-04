@@ -69,7 +69,7 @@ and becomes `stale` only when its age exceeds that boundary. The simulated
 desk temperature capability reports every 10 seconds (stale after 30 seconds);
 the window temperature capability reports every 20 seconds (stale after 60
 seconds). A capability without a freshness policy remains `unknown` after an
-accepted observation. LED power has no freshness policy in the current slice.
+accepted observation. LED power has no freshness policy in the agreed device model.
 
 Only accepted, time-valid reports may advance that capability's `lastObservedAt`.
 A future-dated report beyond the event contract's one-second clock-skew
@@ -78,7 +78,7 @@ report whose observation time is not newer than the projected capability
 timestamp remains visible in history but cannot regress reported state or
 advance freshness.
 
-Under the Stage 4 persistence model, normal startup restores
+Under the persistence model, normal startup restores
 `lastObservedAt` and reevaluates every configured freshness policy against the
 injected startup clock before exposing the first room snapshot. Downtime can
 therefore change a restored observation from `fresh` to `stale`; that change is
@@ -96,7 +96,7 @@ projection-only and preserves the durability of the underlying evidence.
 | `failed`     | Device or backend explicitly rejected the command.                                               |
 | `timed_out`  | No confirmation arrived within the allowed time.                                                 |
 
-The Stage 4 contract adds command durability independently of these
+The contract adds command durability independently of these
 lifecycle states. With platform storage `available`, `accepted` means the
 request and durable outbox intent committed before dispatch. With storage
 `degraded`, an accepted command is marked `volatile`, is dispatched directly,
@@ -104,7 +104,7 @@ is never automatically retried and may disappear on process restart. The API,
 command projection and Dashboard must not present a volatile command as
 durable. Storage `recovering` temporarily blocks new commands.
 
-The proposed command projection uses `durability` for the request/intent and
+The command projection uses `durability` for the request/intent and
 `lifecycleDurability` for its current lifecycle state. They can differ after an
 adapter handoff whose dispatch transition could not be persisted. Availability,
 health and each entry in `observationStatus` likewise carry their own evidence
@@ -117,7 +117,7 @@ an admitted policy or concurrency rejection creates a terminal command failure.
 Bootstrap `unknown` device evidence follows the containing projection's durability, while
 time-derived freshness changes preserve the durability of the last observation.
 
-The Stage 4 pending and terminal command shapes carry discriminated
+The pending and terminal command shapes carry discriminated
 delivery evidence. `handed_off` has `dispatchedAt` and `deadlineAt`; `uncertain`
 has `firstAttemptedAt` and `deadlineAt` and must not invent `dispatchedAt`. A
 later definite handoff changes the evidence variant but keeps the original
@@ -259,13 +259,13 @@ normal timeout expires; the availability change must not silently rewrite it.
 
 Platform storage availability is also independent of device availability,
 health and observation freshness. A database outage does not make a device
-offline and does not stale a fresh observation. In the Stage 4 model,
+offline and does not stale a fresh observation. In the model,
 it changes top-level platform status and the durability of new work. An active
 durable command blocks a new volatile command for the same device; recovery
 waits for any conflicting active volatile command to become terminal before it
 resumes durable outbox work.
 
-The Stage 4 checkpoint includes active commands, the newest 20 terminal
+The checkpoint includes active commands, the newest 20 terminal
 `recentCommands` and the bounded `recentEvents` projection cache. A checkpointed
 active volatile command is never redispatched after restart; before the first
 snapshot it becomes `failed` with reason `volatile_command_lost_on_restart`.

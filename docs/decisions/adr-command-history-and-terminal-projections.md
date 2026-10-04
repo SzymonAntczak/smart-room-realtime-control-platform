@@ -9,7 +9,7 @@ Accepted
 The command lifecycle distinguishes active work from terminal outcomes. The
 realtime UI must make confirmed, failed and timed-out commands understandable
 after they stop being active, without treating requested state as confirmed
-device state. The local reference runtime has no durable storage yet.
+device state. A bounded in-memory projection alone is not durable history.
 
 ## Options Considered
 
@@ -35,22 +35,23 @@ in both collections. Every projected command references a device in the same
 snapshot; an active command is reflected by that device's `activeCommandId`.
 
 The backend configuration owns the timeout for each supported device type and
-command type. A matching report can confirm only a still-pending command after
-dispatch. A late matching report updates observed device state and event
+command type. A matching report can confirm only a still-pending command with handed-off or
+uncertain delivery evidence within its fixed deadline. A late matching report updates observed device state and event
 history, but leaves a timed-out command terminal.
 
-It does not introduce persistence, a command endpoint or a command runtime.
+Projection ownership does not define the command endpoint or dispatch runtime;
+the related command and storage decisions own those responsibilities.
 
-### Stage 4 amendment
+### Storage and durability
 
-The Stage 4 checkpoint persists the newest 20 terminal
+The checkpoint persists the newest 20 terminal
 `recentCommands` together with active command projections. It preserves command
 intent durability and current lifecycle durability independently. A volatile
 command active in a committed checkpoint is never redispatched after restart;
 before the first snapshot it becomes terminal `failed` with reason
 `volatile_command_lost_on_restart`.
 
-Stage 4 also replaces the assumption that every `pending` or terminal command
+Persisted delivery evidence replaces the assumption that every `pending` or terminal command
 has `dispatchedAt`. Delivery evidence is discriminated: definite handoff carries
 `dispatchedAt` and `deadlineAt`, while uncertain handoff carries
 `firstAttemptedAt` and the fixed `deadlineAt` without claiming dispatch. A
@@ -62,11 +63,11 @@ The durable order is descending by the applicable terminal timestamp and then
 descending lexicographically by `commandId`. Live insertion, checkpoint
 selection and restoration apply the same 20-entry order.
 
-This amendment is accepted with the Stage 4 storage ADR.
+This amendment is accepted with the local storage ADR.
 
 ## Consequences
 
-### DS-4-06a user-history distinction
+### User-history distinction
 
 The accepted [User History Projection and Virtualized Feed ADR](adr-user-history-projection-and-virtualized-feed.md)
 adds a BFF presentation over existing snapshots, publications and paged facts;
@@ -76,14 +77,12 @@ durability rules. Progress remains at the control. A changed report produces one
 observed change, a confirmation without change produces none, and failure or
 timeout produces an unsuccessful-attempt entry. A later change cannot reopen
 timeout. Full lifecycle facts remain technical audit history. The product
-presentation is delivered and verified in DS-4-06a;
-it adds no persisted projection or migration.
+presentation adds no persisted projection or migration.
 
 The frontend receives a UI-oriented command history with the context needed to
-explain outcomes. A future dedicated history slice must define an audit-oriented
-fact feed separately.
-The in-memory limit is intentionally not a durability guarantee; a later
-storage decision must define retention and rebuilding semantics.
+explain outcomes. Audit-oriented significant facts remain separate from user-history presentation.
+The in-memory limit is not a durability guarantee; the storage decision defines
+retention and checkpoint recovery separately.
 
 ## Verification
 
@@ -92,7 +91,7 @@ storage decision must define retention and rebuilding semantics.
 - BFF and frontend boundary tests reject malformed snapshots.
 - Command-slice tests cover confirmation, explicit failure, timeout and late
   reports without moving a terminal command back to active state.
-- Stage 4 tests additionally cover checkpoint restoration of the
+- Storage tests additionally cover checkpoint restoration of the
   deterministic 20-entry bound, both delivery-evidence variants and
   failure-without-redispatch for an active volatile command.
 

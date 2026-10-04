@@ -27,12 +27,10 @@ The architecture is organized around the main domain concepts, not around implem
 
 ## Incremental Read Path
 
-The architecture is built in smaller slices before the full smart-room model
-exists. The completed temperature reference slice is a read-only realtime view of two
-simulated temperature sensors, implemented through backend transport, adapter
-translation, event processing and a derived room projection. The completed LED
-reference slice adds command handling, confirmation and bounded terminal-command
-projections; durable event storage remains a later responsibility.
+The temperature read path exposes two simulated sensors through backend
+transport, adapter translation, event processing and a derived room projection.
+The LED control path adds command handling, confirmation and bounded terminal
+command projections. Durable storage owns history and restart recovery.
 
 A minimal read path should show:
 
@@ -42,9 +40,8 @@ A minimal read path should show:
 - the last reading time
 - that the value is coming from simulated realtime updates
 
-The temperature slice does not define the long-term command topology. It already
-includes backend adapters, event processing and observation-freshness handling;
-the LED reference slice preserves that model for the current control loop.
+Read and command paths share backend adapters, event processing and
+observation-freshness handling.
 
 ## Target MVP Scope
 
@@ -113,13 +110,11 @@ Expected responsibilities:
 
 - validate event shape
 - reject malformed or unsupported events
-- route invalid events to a quarantine stream when the storage/quarantine slice
-  exists
+- route invalid events to a quarantine dataset
 - deduplicate events before they update derived state
 - apply command lifecycle and confirmation matching rules
 - update backend read model/projections from accepted events
-- append accepted and quarantined events to backend storage when those slices
-  exist
+- append accepted and quarantined events to backend storage
 
 ### Backend Read Model / Projections
 
@@ -130,19 +125,17 @@ Expected responsibilities:
 - keep the current room and device state used by realtime reads
 - expose active command state, requested state, confirmed reported state,
   availability, health and applicable freshness as derived projections
-- defer event-history storage and UI until a dedicated history slice defines
-  retention and access semantics
+- keep durable history distinct from current-state projections
 - provide UI-friendly read data to the realtime API/BFF without requiring the
   frontend to interpret raw events
-- remain rebuildable from accepted events when the storage slice supports that
+- restore the persisted checkpoint at restart without requiring full event sourcing
 
-The Stage 4 storage decision keeps a latest persisted projection for
+The local storage decision keeps a latest persisted projection for
 restart recovery rather than requiring full event sourcing. It separates
 significant facts, raw telemetry and quarantined inputs. It also separates a
 non-mutating processor prepare step from durable or volatile runtime commit.
 SQLite failure changes top-level platform storage status to `degraded`; live
-device projections continue in memory with explicit volatility. Implementation
-remains implementation work for this accepted ADR.
+device projections continue in memory with explicit volatility.
 
 Each valid backend database owns a stable `historyGenerationId`. Storage
 sequences and HTTP cursors are scoped to that generation, so explicit
@@ -160,16 +153,15 @@ Expected responsibilities:
 - show confirmed device state separately from requested state
 - show pending, failed and timed-out commands
 - surface availability, degraded health and applicable stale observations clearly
-- defer event-history troubleshooting views to a dedicated history slice
-- show Stage 4 `degraded` or `recovering` storage status persistently
+- expose bounded user history and selected-device telemetry details
+- show `degraded` or `recovering` storage status persistently
   and distinguish volatile observations and commands from durable ones
 
-### Stage 4 Telemetry Storage
+### Telemetry Storage
 
 Stores events and derived telemetry used for history, debugging and trend analysis.
 
-This is the logical storage responsibility for a backend-backed Stage 4 slice.
-It defines the accepted target behavior while implementation remains pending.
+This is the backend-owned durable history and recovery responsibility.
 
 Expected responsibilities:
 
@@ -184,9 +176,9 @@ inspection, and derived projections explain what the system currently believes.
 The first implementation does not need full event sourcing, but it should keep
 enough history to audit commands and debug state changes.
 
-A later local storage slice should preserve recent accepted events and derived
-state long enough for the realtime UI and local demo to explain what happened.
-The Stage 4 model uses explicit HTTP history reads for telemetry and
+Local storage preserves accepted facts and derived state within the agreed
+retention bounds so history and recovery can explain what happened.
+The model uses explicit HTTP history reads for telemetry and
 recent facts, while SSE remains the snapshot-baseline and live-update channel.
 Diagnostics are a technical API and structured-log surface, not a required
 Dashboard feature. Durable HTTP reads return service unavailable while storage
@@ -216,7 +208,7 @@ named, revision-linked `device.updated`, `commands.updated` and
 `platform.updated` messages. A device projection contains current device state,
 availability, health and applicable freshness; command updates atomically carry
 the complete current device collection plus the global active and terminal
-command projections. The Stage 4 history slice adds a bounded live feed,
+command projections. The history slice adds a bounded live feed,
 telemetry samples and a storage watermark on this same connection, while
 durable history pages and trends use HTTP. A client reconnects for a new
 snapshot when a delta is malformed or has a revision gap.
@@ -230,7 +222,7 @@ Unsupported message types and malformed payloads are not renderable frontend
 state. Accepted events and projection changes to availability, health or freshness reach
 connected clients through `device.updated`.
 
-The Stage 4 contract extends this one SSE connection rather than
+The contract extends this one SSE connection rather than
 adding a history stream: the BFF snapshot carries a bounded 20-entry `userHistory`
 feed (the internal platform projection retains `recentEvents`) and
 `platform.storage`, which solely owns the durable-history generation
@@ -245,8 +237,8 @@ When recovery restores projection data that a connected degraded client lacks,
 one full `commands.updated` reconciliation revision installs devices, commands
 and the bounded non-gap feed cache before the next gap-bearing
 `platform.updated(available)` revision.
-The shared schemas, backend BFF and frontend clients implement these Stage 4
-history and realtime synchronization rules.
+Shared schemas, the BFF and frontend clients must agree on these history and
+realtime synchronization rules.
 Older facts and telemetry ranges remain explicit HTTP reads; the client merges
 them with every buffered SSE-delivered record by stable `recordId` and a pinned
 history generation and storage watermark. Raw HTTP sessions are complete through
@@ -269,12 +261,10 @@ Translate external device protocols into the platform event and command model.
 
 Expected responsibilities:
 
-- translate simulator-native messages into platform events for the current
-  reference slices
-- translate platform commands into simulator-native commands for the current
-  LED reference slice
-- translate hardware-specific protocols into platform events in later stages
-- send platform commands to physical devices in later stages
+- translate simulator-native messages into platform events for configured simulator sources
+- translate platform commands into simulator-native commands for configured controllable devices
+- translate hardware-specific protocols into platform events at their source boundary
+- send platform commands through the owning physical-device adapter
 - report acknowledgements, failures and connection health
 
 Each adapter instance is bound to one configured native device ID and one
@@ -308,26 +298,9 @@ The platform should work on a local machine or local network first. Cloud servic
 
 This keeps the architecture easier to reason about and makes failures more explicit.
 
-## Current Implementation Status
+## Development Boundaries
 
-The completed Stage 2/2.5 backend-backed reference slice is the read-only
-telemetry path for two simulated temperature sensors. It includes simulator
-adapter, event processor with validation and deduplication, and a read-model
-projection for `telemetry.reading.recorded` events. The frontend receives
-an initial UI-oriented `room.snapshot` baseline followed by per-device deltas over SSE
-from the local backend BFF. The current projection exposes independent
-availability, health and per-capability observation status. Ignored
-duplicate and invalid events are exposed only through bounded development
-diagnostics.
-`GET /room` remains available as
-a debug/read snapshot endpoint, but it is not the frontend fallback path.
-
-The local development runtime also provides scenario controls for pause,
-resume, next-reading, replay, invalid-reading, future-dated-reading and reset actions. They operate
-the simulator through the normal adapter and event-processing path rather than
-mutating frontend state. They are not product controls and remain disabled
-unless the development scenario flag is set.
-
-Command lifecycle processing, confirmation matching and command projections are
-implemented for the simulated LED reference slice. Persistence and quarantine
-storage remain target responsibilities for later slices.
+`GET /room` is a debug/read snapshot endpoint, not the frontend fallback path.
+Development scenario controls operate the simulator through the normal adapter
+and event-processing path rather than mutating frontend state. They are not
+product controls and remain disabled unless the development scenario flag is set.

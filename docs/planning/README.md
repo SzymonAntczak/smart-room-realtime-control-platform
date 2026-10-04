@@ -10,7 +10,7 @@ architecture and decisions.
 
 The source of truth for the system is always:
 
-- the current architecture documentation in `docs/architecture`,
+- the agreed target architecture documentation in `docs/architecture`,
 - accepted decisions in `docs/decisions`.
 
 Tests and executable scenarios are verification assets. Application behavior is

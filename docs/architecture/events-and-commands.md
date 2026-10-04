@@ -77,15 +77,15 @@ The projection's bootstrap `unknown` timestamp is a baseline rather than a
 device fact. Its first availability or health fact may have the same timestamp;
 once evidence exists, equal or older transitions remain non-applying.
 
-The implemented Stage 4 processor preserves accepted non-applying transitions
+The processor preserves accepted non-applying transitions
 as auditable significant facts with diagnostics metadata. It also keeps raw
 telemetry separate from significant history. The projection carries a bounded
 recent-event cache, including the durable recovery gap; paged history and trend
 reads use the durable HTTP API. The classification is defined in
-[ADR: Stage 4 Storage and Observability](../decisions/adr-stage-4-storage-and-observability.md)
+[ADR: Storage and Observability](../decisions/adr-storage-and-observability.md)
 and governs the current storage-backed runtime.
 
-The Stage 4 processor has a non-mutating prepare result:
+The processor has a non-mutating prepare result:
 `accepted_applied`, `accepted_non_applying`, `derived_projection` or
 `quarantined`. The runtime then
 commits the result durably or, while storage is degraded, in memory as
@@ -102,17 +102,17 @@ watermark change. Command timeout remains a command lifecycle fact instead.
 The serialized coordinator captures an internal ingress time and FIFO sequence
 before queueing. Future-skew validation and quarantine time use that ingress
 time, so delayed preparation cannot change an input's validity. The internal
-sequence is neither a durable history sequence nor an SSE revision. The future
-automatic-recovery cutover will reuse this boundary while temporarily queueing
+sequence is neither a durable history sequence nor an SSE revision. The
+automatic-recovery cutover reuses this boundary while temporarily queueing
 raw inputs.
 
 The same ingress time decides command deadline eligibility. A matching state
 report confirms only when its captured `receivedAt` is strictly before the
-active command's `deadlineAt`; later dequeue, including during the future
+active command's `deadlineAt`; later dequeue, including during the
 recovery cutover, does not make an early report late, and a device timestamp
 cannot make a late arrival timely.
 
-The proposed durable outbox may also derive
+The durable outbox may also derive
 `command.delivery_uncertain`. It records that an adapter attempt may have
 reached the source without falsely claiming `command.dispatched`. The command
 becomes `pending`, may be confirmed by matching observed state and uses the
@@ -121,7 +121,7 @@ cannot extend that deadline and stops as soon as confirmation, explicit failure
 or timeout makes the lifecycle terminal. A definite no-handoff instead always
 creates `command.failed` without retry.
 
-That automatic retry is enabled only for durable-outbox commands. The Stage 4
+That automatic retry is enabled only for durable-outbox commands. The
 simulator persists their idempotency receipts through its source-owned receipt
 port before acceptance. A confirmed failure before acceptance is definite
 no-handoff; an inability to inspect possible prior acceptance remains uncertain;
@@ -132,7 +132,7 @@ storage internals to the simulator package. A volatile command uses
 process-local source idempotency only, is never automatically retried and does
 not require a durable receipt.
 
-The Stage 4 feed classification treats a report after timeout like any other
+The feed classification treats a report after timeout like any other
 state report: it enters the feed only when it changes `reportedState`.
 Lateness alone is not significant, and no late report can reopen or reconfirm a
 terminal command. Accepted non-applying availability/health facts and LED
@@ -149,20 +149,20 @@ volatile samples have no storage sequence. The client merges feed records by
 published first and `platform.updated` with the current watermark follows at
 the next revision. A durable non-applying fact needs only the watermark update.
 
-## DS-4-06a User History
+## User History
 
 The preceding `recentEvents` rules describe the platform projection and
 internal publications. They remain separate from the Dashboard presentation.
 The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
-supersedes that product presentation for DS-4-06a while preserving platform
+defines the product presentation while preserving platform
 event envelopes, full auditable significant facts, command lifecycle and
 confirmation matching.
 
 The BFF derives minimal user entries from existing snapshot before/after values, realtime publications and retained significant facts. No sidecar or new platform event is persisted. A changing report and its derived confirmation produce one user change, while intermediate lifecycle and confirmation-without-change produce none. Failure/timeout, applying availability/health value changes and room history gaps follow the new ADR's classification. Source-specific interpretation does not move into the frontend.
 
-The BFF user-history response preserves source identity, durability, generation/watermark and pinned retention. Clients merge HTTP/SSE entries by `recordId` rather than grouping raw event chains. Platform executable schemas remain unchanged. `ST-4-06a-01` supplies separate TypeBox BFF schemas and client validation adapters; `ST-4-06a-02` adds the snapshot/publication transformer and `ST-4-06a-04` connects it to the strict BFF room HTTP/SSE boundary. No dual-format compatibility is exposed.
+The BFF user-history response preserves source identity, durability, generation/watermark and pinned retention. Clients merge HTTP/SSE entries by `recordId` rather than grouping raw event chains. Platform executable schemas remain unchanged. Separate TypeBox BFF schemas and client validation adapters own the presentation contract. The BFF transforms snapshots and publications at its strict room HTTP/SSE boundary. No dual-format compatibility is exposed.
 
-`ST-4-06a-03` exposes `GET /room/history/user-history` with optional `pageSize`
+The BFF exposes `GET /room/history/user-history` with optional `pageSize`
 (1–100, default 50) and an optional opaque cursor. The effective size remains
 fixed for a cursor session, including when the parameter is omitted on later
 requests. Each response transforms one pinned raw page; it may be empty with a
@@ -175,7 +175,6 @@ SSE user entries in a bounded session (50 per page, 5,000 HTTP entries, 200 live
 entries). Same-generation recovery preserves the reading anchor and rebuilds
 up to 100 pages; changed generations reset it. The list uses measured virtual
 rendering with accessible entries and keyboard/focus preservation.
-Parent-story verification is complete.
 
 ## Initial Event Types
 
@@ -289,7 +288,8 @@ rejection only; device confirmation remains a later outcome derived from a
 matching `device.state.reported` event and delivered through the server-to-client
 realtime stream. The realtime SSE stream accepts no application command messages.
 
-For `led` `set.power`, the backend starts a 5000 ms timeout after dispatch. It
+For `led` `set.power`, the backend uses a fixed 5000 ms confirmation deadline
+from definite handoff or the first uncertain attempt. It
 retains at most 20 terminal command projections in `recentCommands`, newest
 first, evicting the oldest after the bound is exceeded. The `5000` value in the
 `command.timed_out` example above is therefore the initial LED default, not a
@@ -298,7 +298,7 @@ global command timeout.
 The full transport, retention and simulator-scenario decision is documented in
 [ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
 
-The Stage 4 command boundary distinguishes pre-admission HTTP errors
+The command boundary distinguishes pre-admission HTTP errors
 from admitted command rejection. Malformed input, an unknown device and
 `platform_recovering` create no command ID or lifecycle. Once a known-device
 attempt is admitted, policy or concurrency rejection creates an auditable
@@ -351,16 +351,16 @@ This bounds memory, but high event volume can shorten the effective retention
 window. The in-memory guarantee ends when the process restarts. Durable
 deduplication remains valid only while an accepted event identifier is retained
 with an active fact or telemetry record. See
-[ADR: Stage 4 Storage and Observability](../decisions/adr-stage-4-storage-and-observability.md).
+[ADR: Storage and Observability](../decisions/adr-storage-and-observability.md).
 
-The Stage 4 retention order uses `(occurredAt, storageSequence)` for
+The retention order uses `(occurredAt, storageSequence)` for
 accepted history and telemetry. An accepted input identity remains durable
 while any significant-fact or telemetry record derived from that `eventId`
 remains retained, and is removed atomically with its last record. Consequently,
 a very late record that falls outside retention immediately may still be
 processed but has no durable deduplication guarantee afterward.
 
-During Stage 4 degraded operation, only bounded in-memory deduplication is
+During degraded operation, only bounded in-memory deduplication is
 available. Automatic recovery does not backfill volatile observations and
 instead persists a current-state checkpoint plus one
 derived `storage.gap.recorded` fact for the outage interval.

@@ -5,11 +5,11 @@ not implementation diagrams and do not describe the repository's current
 runtime state. They show target behavior for backend-backed slices as the system
 grows beyond the smallest read path.
 
-## User-History Feed Examples (DS-4-06a)
+## User-History Feed Examples
 
 These examples apply to the accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
 The Dashboard uses these entry meanings in a paged, virtualized list;
-DS-4-06a verification is complete. Technical audit still
+Technical audit
 records every accepted lifecycle fact; device
 controls still show progress. The product feed has no diagnostic details.
 
@@ -28,9 +28,9 @@ Availability/health value changes use device titles. A storage-gap entry instead
 uses **Room history** and explains its interval. User items keep durability
 labels independently of whether the underlying command intent was durable.
 
-The Stage 4 diagrams below retain their technical fact/storage paths. References
+The storage diagrams below retain their technical fact/storage paths. References
 to multiple feed facts and the old raw-fact product HTTP path describe the
-original feed; for the DS-4-06a target, the BFF transforms existing projections
+technical platform layer; at the product boundary, the BFF transforms existing projections
 and significant-fact pages before returning user entries as defined in the new
 ADR. Technical command events are still stored, even when no user entry is
 generated.
@@ -56,7 +56,7 @@ flowchart LR
     backend -.->|platform commands| hwAdapter
 ```
 
-After Stage 5, the simulator behaves like a real device source through the
+For MQTT-backed runtime sources, the simulator behaves like a real device source through the
 local MQTT broker. It emits simulator-native MQTT messages, consumes
 simulator-native MQTT commands and exercises failure modes before hardware is
 introduced.
@@ -244,7 +244,7 @@ state aligned with the reliability rules: availability and stale data are
 separate, pending state is visible, failures are first-class and confirmed state
 is never faked from a request.
 
-## Stage 4 Storage, History and Realtime Delivery
+## Storage, History and Realtime Delivery
 
 ```mermaid
 flowchart TD
@@ -269,7 +269,7 @@ flowchart TD
     subgraph available["Available: durable path"]
         transaction["One short SQLite transaction<br/>record, deduplication, retention,<br/>projection or quarantine"]
         commandTxn["Command request transaction<br/>command.requested, projection,<br/>durable outbox intent"]
-        database[("Shared Stage 4 SQLite<br/>historyGenerationId<br/>WAL and FULL")]
+        database[("Shared local SQLite<br/>historyGenerationId<br/>WAL and FULL")]
         outbox["At-least-once outbox worker<br/>stable commandId"]
         source["Idempotent simulator/source<br/>same commandId = same logical command"]
         sourceReceipts["Simulator-owned receipt port<br/>separate receipt table"]
@@ -352,7 +352,7 @@ flowchart TD
     degraded --> unavailableHttp["Durable history and diagnostics HTTP<br/>503 service unavailable"]
 ```
 
-This target Stage 4 flow is not the current runtime. In the durable path, SSE is
+In the durable path, SSE is
 published only after SQLite commit. If that commit fails, the already prepared
 input is applied in memory as volatile after `platform.updated(degraded)`. Only
 availability failures enable automatic probes; corruption requires manual
@@ -382,7 +382,7 @@ merging reset sequences. Outbox retry is safe
 only because the receiving source treats a stable `commandId` as one logical
 command across source restart through its source-owned durable receipt, and
 uncertain-delivery retry stops at the original deadline or any earlier terminal
-lifecycle. In Stage 4 that source-owned port uses a separate table in the shared
+lifecycle. In the local persistence model that source-owned port uses a separate table in the shared
 SQLite database; future out-of-process sources own equivalent persistence on
 their side of the transport. Volatile commands bypass durable receipts and are
 never retried.

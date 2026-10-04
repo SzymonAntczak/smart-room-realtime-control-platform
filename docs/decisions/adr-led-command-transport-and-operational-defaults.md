@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Stage 3 adds the first controllable-device reference slice. It needs one
+The controllable-device reference path needs one
 unambiguous frontend-to-BFF command boundary, a bounded waiting policy, a
 bounded terminal-command projection and deterministic simulator scenarios.
 
@@ -30,22 +30,24 @@ validates the request at the HTTP boundary and returns the accepted or rejected
 command outcome synchronously; a successful response means only that the
 backend accepted the command. It is not confirmation that the LED changed.
 
-An accepted request returns `202 Accepted` with `{ commandId, status: "accepted" }`.
+An accepted request returns `202 Accepted` with `commandId`, `status: "accepted"`,
+intent `durability` and `lifecycleDurability`.
 Malformed transport input returns `400`; a structurally valid but unsupported
 device or command request returns `422`; and a request that conflicts with an
-active command returns `409`. Rejected outcomes contain `{ commandId, status:
-"rejected", reason, message }`. An active-command conflict creates a terminal
+active command returns `409`. Admitted known-device rejections contain
+`commandId`, `status: "rejected"`, `reason`, `message` and both durability axes.
+Unknown-device errors are pre-admission and carry no command identity or lifecycle. An active-command conflict creates a terminal
 `failed` command lifecycle fact and projection so it remains auditable; the
 response `commandId` correlates that outcome without implying device confirmation.
 
 `/room/realtime` remains server-to-client only. The BFF does not accept
 application command messages on that stream. Accepted, pending and terminal
 command projections reach the frontend through the existing validated realtime
-snapshot-plus-delta path. The completed
-[SSE BFF migration](adr-server-sent-events-realtime-bff.md) preserves this Stage
-3 decision.
+snapshot-plus-delta path defined by the
+[SSE BFF decision](adr-server-sent-events-realtime-bff.md).
 
-The backend timeout for `led` `set.power` commands is 5000 ms from dispatch.
+The backend timeout for `led` `set.power` is 5000 ms from definite handoff
+or the first uncertain attempt, as defined by the delivery evidence below.
 The backend retains at most 20 terminal command projections in
 `recentCommands`, newest first. After adding a terminal projection beyond the
 limit, it removes the oldest projection. This in-memory list is not durable
@@ -75,9 +77,9 @@ rejects selection while that device has an `accepted` or `pending` command with
 never cancelled. The scenario selection itself is dev-only, ephemeral runtime
 configuration and is not included in room projections.
 
-### Stage 4 amendment
+### Storage and durability
 
-The Stage 4 response extends accepted and rejected command outcomes
+The response extends accepted and rejected command outcomes
 with `durability` for the command intent and `lifecycleDurability` for the
 accepted or terminal-rejected admission outcome returned synchronously. It does
 not claim to be the later current projection; SSE remains authoritative after
@@ -89,13 +91,13 @@ pre-admission errors: they have no `commandId`, lifecycle or durability axes. A
 durable request whose adapter handoff could not be persisted may therefore be a
 durable intent with a volatile lifecycle.
 
-Stage 4 returns `202` after durable or volatile admission, before waiting for
+The BFF returns `202` after durable or volatile admission, before waiting for
 adapter handoff. The immediate dispatch task and its SSE lifecycle may be
 observed before or after the HTTP promise settles; clients correlate by
 `commandId` rather than arrival order.
 
-The Stage 3 rule "5000 ms from dispatch" becomes a fixed Stage 4 confirmation
-deadline over discriminated delivery evidence. A definite handoff anchors it at
+The 5000 ms confirmation timeout uses a fixed deadline over discriminated
+delivery evidence. A definite handoff anchors it at
 the adapter's actual `handedOffAt`; a first uncertain handoff anchors it at that
 attempt's `attemptedAt`, does not invent `dispatchedAt`, and later retry cannot
 move the deadline. Timeout remains 5000 ms in either case.

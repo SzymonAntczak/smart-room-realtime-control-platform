@@ -1,10 +1,9 @@
 # System Context
 
-The first context diagram describes the pre-persistence backend-backed shape of
-the Smart Room platform, including later MQTT sources. Its in-memory storage is
-the current architectural baseline, not the accepted Stage 4 storage target.
+These diagrams describe the agreed target responsibilities and transport
+boundaries, independently of implementation progress.
 
-## Pre-Stage 4 Logical Context
+## Logical Context
 
 ```mermaid
 flowchart LR
@@ -28,7 +27,7 @@ flowchart LR
         direction LR
         processor[Event Processor]
         readModel[Read Model / Projections]
-        storage[(In-Memory Storage)]
+        storage[(Durable Storage and Recovery)]
 
         processor --> readModel
         processor --> storage
@@ -69,7 +68,7 @@ flowchart LR
     processor -->|platform commands| standaloneAdapter
 ```
 
-## Stage 4 Storage Context
+## Storage and Recovery Context
 
 ```mermaid
 flowchart LR
@@ -108,12 +107,12 @@ flowchart LR
     bff -->|durable reads| storagePort
 ```
 
-This diagram is the accepted Stage 4 target. It adds SQLite without making it
-the source of current device truth:
+SQLite provides durable history and recovery without becoming the source of
+current device truth:
 the in-memory projection continues during availability failures and declares
 volatile evidence explicitly. Automatic outbox retry requires source-owned
 idempotency for the stable `commandId`, backed by a durable source receipt that
-survives restart of the simulator or later source. Stage 4 injects a
+survives restart of the simulator or later source. The local runtime injects a
 simulator-owned receipt port whose in-process implementation uses a logically
 separate table through the shared SQLite connection owner. A receipt failure
 maps to definite no-handoff only when non-acceptance is known; inability to
@@ -157,49 +156,25 @@ UI-oriented snapshots and updates. Backend platform code records and interprets
 command lifecycle facts, while adapters translate platform commands into
 simulator-native, hardware-native or external-system commands.
 
-When backend and simulator slices are introduced, the realtime API, event
+In the local runtime, the realtime API, event
 processor, read model/projections and in-memory storage belong to the local
 backend. The simulator remains a separate project responsible for simulated
 devices and scenarios. The simulator adapter belongs to the backend. The diagram
 shows responsibility boundaries, not required production deployment boundaries.
 
-## Current Implementation Status
+## Realtime and Durable History
 
-The current repository implementation does not yet include the full target
-context. The backend slice covers simulator temperature telemetry and the LED
-command reference path through adapters, event processing, read-model
-projections and a small realtime BFF.
+`GET /room` is a debug/read snapshot endpoint, not the frontend runtime fallback.
+`GET /diagnostics` provides bounded, metadata-only diagnostics for ignored inputs;
+durable quarantine and structured logs remain technical inspection surfaces.
 
-The current BFF exposes `http://localhost:4310/room/realtime` as the frontend
-runtime path. The backend sends an initial `room.snapshot` message when the
-frontend connects, then streams revision-linked `device.updated` and
-`commands.updated` messages after projection changes. The current implementation exposes the availability,
-operational-health and freshness projection defined in the device-availability ADR. Event history is
-deferred to a dedicated future slice. The backend periodically rereads the
-projection, but the target model emits time-derived freshness changes such as
-`stale` separately from explicit availability changes. The frontend does not
-interpret raw platform events.
-
-The BFF also keeps `GET /room` as a debug/read snapshot endpoint for the latest
-`RoomSnapshotProjection`; it is not the frontend runtime fallback. `GET
-/diagnostics` exposes recent ignored event-processing outcomes so the
-development runtime can explain rejected duplicate or invalid events. The
-diagnostics response is bounded in-memory, newest-first and metadata-only; it is
-not event history or durable quarantine storage. Command handling and command
-projections are implemented for the LED reference slice; persistence and
-quarantine storage remain future slices. The accepted Stage 4 storage ADR
-defines diagnostics as a technical API and structured-log surface rather than
-a required Dashboard feature; it does not change the current runtime until it
-is accepted and implemented.
-
-For the Stage 4 target, the same SSE connection keeps its snapshot
-baseline and revision-linked deltas. The snapshot contains the bounded recent
-event feed and `platform.storage`, which solely owns the durable history
+The same SSE connection keeps its snapshot
+baseline and revision-linked deltas. The BFF snapshot contains bounded `userHistory` and `platform.storage`, which solely owns the durable history
 generation and watermark. Existing
 projection deltas may include multiple related feed records or one telemetry
 sample. `platform.updated` reports `available`, `degraded` or `recovering`
 without requiring a device change, carries watermark-only durable progress and
-may deliver `storage.gap.recorded`. Older
+may deliver a `history_gap` entry derived from `storage.gap.recorded`. Older
 facts and telemetry are loaded through explicit HTTP reads and merged with every
 buffered SSE-delivered addition by `recordId` and a pinned history generation
 and watermark. The HTTP session is complete through that bound; non-feed facts committed above it
@@ -209,11 +184,15 @@ stream or replay missed data. The client retains its last known generation
 while degraded storage reports `null`; a different later non-null generation in
 a snapshot or `platform.updated` resets the old HTTP pages and overlay.
 
-The paragraph above describes the original significant-fact product feed. The
-accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
-defines its delivered DS-4-06a successor: the BFF transforms existing snapshots, realtime publications and retained significant facts into user-history responses over the current SSE connection and paged history boundary. The frontend merges by source identity, bounds loaded history and virtualizes the feed. Raw technical history remains a distinct audit surface. Existing fact retention and generation/watermark/cursor rules apply; platform facts and database records are unchanged. Story verification is complete.
+The internal platform keeps significant facts and `recentEvents`. The accepted
+[User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+defines the BFF transformation into user-history responses on the same SSE
+connection and pinned HTTP history boundary. The frontend merges by source
+identity, bounds loaded history and virtualizes the feed. Raw technical history
+remains a distinct audit surface; fact retention, generation, watermark and
+cursor rules remain unchanged.
 
-SQLite is a durable history and recovery dependency in that proposed model, not
+SQLite is a durable history and recovery dependency in this model, not
 a prerequisite for current device truth. During a storage outage, projections,
 freshness and commands continue in memory as explicitly volatile data; durable
 HTTP reads are unavailable and the Dashboard keeps the storage problem visible.

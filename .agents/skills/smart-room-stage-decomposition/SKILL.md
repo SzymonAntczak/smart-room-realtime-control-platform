@@ -27,6 +27,10 @@ requested; do not create a Goal, select work or start implementation.
   boundary and focused verification. Do not bundle contract, persistence/runtime,
   BFF and Dashboard changes into one subtask. Add an integration/acceptance
   subtask when local evidence cannot establish the story outcome.
+- End every new story with a distinct whole-story review Subtask depending on
+  all preceding Subtasks. Rate it independently and verify all story criteria,
+  integration, documentation and verification through the independent delivery
+  gate. Integration tests or individual Subtask reviews do not replace it.
 - Record dependencies and technical parallel candidates without approving work.
   Integration composes completed pieces without expanding their behavior.
 - Rate stories and subtasks independently using
@@ -34,7 +38,10 @@ requested; do not create a Goal, select work or start implementation.
   oversized work and decisions requiring resolution.
 - Produce the proposal using [output-contract.md](references/output-contract.md).
   Preserve Stage tokens, dependency IDs and independent completion markers.
-  A story is complete only when all subtasks and story-level criteria are complete.
+  A story is complete only when all preceding subtasks are complete, its final
+  whole-story review returns PASS and the human accepts the outcome. An unfinished
+  or BLOCKING review leaves the story open. Preserve the explicitly documented
+  historical migration exception; never infer retrospective PASS.
   Use `[ ]` by default; use `[x]` only for completion already recorded in the
   reviewed backlog or explicitly requested by the user. Partial subtasks do not
   establish parent completion.

@@ -294,7 +294,7 @@ Expected outcome:
 Stage 4 establishes bounded telemetry and recent-event views. Stage 3.5 tests
 only the command-outcome history already exposed by the command slice.
 
-The accepted [Stage 4 Storage and Observability ADR](../decisions/adr-stage-4-storage-and-observability.md)
+The accepted [Storage and Observability ADR](../decisions/adr-storage-and-observability.md)
 defines the local persistence, diagnostics and history-transport model for this
 stage.
 

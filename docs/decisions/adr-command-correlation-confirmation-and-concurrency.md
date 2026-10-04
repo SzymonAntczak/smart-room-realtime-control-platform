@@ -79,12 +79,12 @@ commands when there is a concrete workflow that needs them.
 Rejecting an overlapping command should still be recorded as an auditable
 command lifecycle fact so the user can understand why the request did not run.
 
-## Stage 4 amendment
+## Storage and durability
 
-The proposed durable outbox delivers at least once with the existing stable
+The durable outbox delivers at least once with the existing stable
 `commandId`. Its receiving simulator/source owns idempotency for at least the
 outbox retention horizon, including across source restart. Before scheduling a
-result, the Stage 4 simulator durably records the command identifier, canonical
+result, the simulator durably records the command identifier, canonical
 payload fingerprint, chosen scenario, original due times and stable native
 outcome identities. A repeat with the same fingerprint returns or resumes that
 stored logical plan without creating another scenario; reuse with different
@@ -92,7 +92,7 @@ intent fails as a source invariant. A source that cannot provide this invariant
 cannot use automatic outbox retry.
 
 The durable receipt requirement applies to deliveries from the durable outbox.
-The Stage 4 simulator owns a receipt port whose in-process implementation uses
+The simulator owns a receipt port whose in-process implementation uses
 a logically separate table in the shared SQLite database. Its failure is a
 definite no-handoff only when non-acceptance is known, while inability to inspect
 a possible prior acceptance remains uncertain; an indeterminate current receipt
@@ -108,13 +108,13 @@ the deadline, runs single-flight every 500 ms and stops on confirmation, failure
 or timeout. A definite no-handoff always creates `command.failed` and is not
 retried.
 
-For Stage 4 deadline eligibility, a matching report "arrives" at the backend
+For deadline eligibility, a matching report "arrives" at the backend
 `receivedAt` captured before recovery queueing. It may confirm only when that
 instant is strictly before `deadlineAt`; a report received at or after the
 deadline times out first and may update observed state only. Device
 `occurredAt` and delayed dequeue cannot extend or shorten that waiting window.
 
-This amendment is accepted with the Stage 4 storage ADR.
+This amendment is accepted with the local storage ADR.
 
 ## Links
 

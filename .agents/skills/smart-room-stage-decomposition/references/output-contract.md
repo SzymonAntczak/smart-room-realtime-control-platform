@@ -46,6 +46,13 @@ completion marker in the heading:
 - **Verification:** the narrowest credible check or test layer.
 - **Done when:** an observable stopping condition.
 
+The last Subtask must be a distinct whole-story review. Use the next available
+Subtask identifier, depend on every preceding Subtask and rate it against the
+whole-story verification breadth. Its stopping condition requires all earlier
+Subtasks and story criteria to pass, documentation alignment, an independent
+PASS and human acceptance. Follow the bounded two-pass delivery policy; report
+results in the conversation or PR, without creating repository evidence files.
+
 When adapting an existing compact backlog that uses a table for Subtasks, put
 the marker in the identifier cell, for example `[ ] ST-4-01-01`, rather than
 dropping the per-Subtask completion state.

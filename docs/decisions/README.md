@@ -2,16 +2,16 @@
 
 This directory stores durable decisions and trade-offs.
 
-Use this directory when the document answers "why did we choose this?" rather than "how does the system work today?"
+Use this directory when the document answers "why did we choose this?" rather than "how should the agreed system behave?"
 
 Good candidates:
 
 - boundaries that are expensive to change
 - trade-offs between competing options
 - decisions that future contributors may question
-- constraints that explain the current architecture
+- constraints that explain the agreed target architecture
 
-Keep current system behavior in [architecture](../architecture/). Promote a trade-off into a dedicated ADR when it becomes stable, controversial or expensive to reverse.
+Keep agreed target system behavior in [architecture](../architecture/). Promote a trade-off into a dedicated ADR when it becomes stable, controversial or expensive to reverse.
 
 ## Accepted ADRs
 
@@ -28,9 +28,8 @@ Keep current system behavior in [architecture](../architecture/). Promote a trad
 - [Device Availability, Health and Observation Freshness](adr-device-availability-and-observation-freshness.md)
 - [MQTT Source Parity Before Device Expansion](adr-mqtt-source-parity-before-device-expansion.md)
 - [Playwright for Frontend Integration Tests](adr-playwright-frontend-integration-tests.md)
-- [Stage 4 Storage and Observability](adr-stage-4-storage-and-observability.md)
+- [Storage and Observability](adr-storage-and-observability.md)
 - [User History Projection and Virtualized Feed](adr-user-history-projection-and-virtualized-feed.md)
-  — implemented and verified in `DS-4-06a`.
 
 ## Superseded ADRs
 

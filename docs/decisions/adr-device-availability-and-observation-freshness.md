@@ -119,9 +119,9 @@ They bootstrap with `availability: unknown` and `health: unknown`; a
 controllable device therefore exposes `block` with `availability_unknown` until
 availability evidence is accepted.
 
-### Stage 4 amendment
+### Storage and durability
 
-The Stage 4 storage decision adds an independent evidence
+The local storage decision adds an independent evidence
 `durability` discriminator to availability, health and every applicable
 `observationStatus` entry. A checkpoint may therefore restore a projection that
 mixes durable and volatile evidence without promoting outage facts into durable
@@ -135,7 +135,7 @@ projection-only checkpoint update: it creates no accepted fact, feed record,
 deduplication identity, storage sequence or watermark advance and preserves the
 underlying observation evidence durability.
 
-This amendment is accepted with the Stage 4 storage ADR.
+This amendment is accepted with the local storage ADR.
 
 An availability change affects only new command admission. An already accepted
 or pending command remains active until an explicit `command.failed` fact or its
@@ -169,7 +169,7 @@ superseded by this decision.
   while explicit availability evidence changes only `availability`; they cover
   bootstrap `unknown`, delayed transitions, equal timestamps and offline during
   an active command.
-- Stage 4 tests additionally prove independent evidence durability and
+- Storage tests additionally prove independent evidence durability and
   startup freshness reevaluation before the first snapshot without history or
   watermark creation.
 - Simulator scenarios cover a sparse-but-online sensor, an explicit offline
