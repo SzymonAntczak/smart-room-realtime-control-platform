@@ -1,70 +1,70 @@
-import type { UserHistoryItem } from '@smart-room/contracts/user-history';
+import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { formatTimestamp } from '../../i18n/time';
-import { getDeviceDisplayName } from '../shared/device-presentation';
 import type { RenderableDeviceProjection } from '../shared/room-rendering';
 
 import styles from './RecentEventsFeed.module.css';
-import { describeUserHistory } from './user-history-presentation';
+import { useUserHistoryVirtualizer } from './use-user-history-virtualizer';
+import type { UserHistoryReadingPosition, UserHistorySessionState } from './user-history-session';
+import { UserHistoryItemRow } from './UserHistoryItemRow';
 
 export function RecentEventsFeed({
-    events,
+    state,
     devices,
     realtimeUncertain,
-    registerEntry,
+    scrollRoot,
+    header,
+    updateReadingPosition,
+    loadOlder,
 }: {
-    events: readonly UserHistoryItem[];
+    state: UserHistorySessionState;
     devices: readonly RenderableDeviceProjection[];
     realtimeUncertain: boolean;
-    registerEntry?(recordId: string, element: HTMLElement | null): void;
+    scrollRoot: RefObject<HTMLElement | null>;
+    header: RefObject<HTMLDivElement | null>;
+    updateReadingPosition(position: UserHistoryReadingPosition | null): void;
+    loadOlder(): void;
 }) {
     const { t } = useTranslation('dashboard');
+    const history = useUserHistoryVirtualizer({
+        state,
+        scrollRoot,
+        header,
+        updateReadingPosition,
+        loadOlder,
+    });
 
     return (
         <section className={styles.feed} aria-labelledby="recent-events-heading">
             <h2 id="recent-events-heading">{t('feed.heading')}</h2>
             {realtimeUncertain ? <p className={styles.notice}>{t('feed.lastKnown')}</p> : null}
-            {events.length === 0 ? (
-                <p className={styles.empty}>{t('feed.empty')}</p>
-            ) : (
-                <ol className={styles.list}>
-                    {events.map((event) => {
-                        const device =
-                            'deviceId' in event
-                                ? devices.find((candidate) => candidate.deviceId === event.deviceId)
-                                : undefined;
-                        const deviceName =
-                            device !== undefined
-                                ? getDeviceDisplayName(device, (key) => t(key))
-                                : 'deviceId' in event
-                                  ? event.deviceName
-                                  : t('history.room');
+            {state.items.length === 0 ? <p className={styles.empty}>{t('feed.empty')}</p> : null}
+            <ol
+                className={styles.list}
+                ref={history.listRef}
+                style={{ blockSize: history.totalSize }}
+            >
+                {history.rows.map((row) => {
+                    const item = state.items[row.index];
 
-                        return (
-                            <li
-                                className={styles.entry}
-                                key={event.recordId}
-                                data-testid={`history-item-${event.recordId}`}
-                                ref={(element) => registerEntry?.(event.recordId, element)}
-                            >
-                                <strong>{deviceName}</strong>
-                                <p>{describeUserHistory(event, t)}</p>
-                                <div className={styles.context}>
-                                    <time dateTime={event.occurredAt}>
-                                        {formatTimestamp(event.occurredAt)}
-                                    </time>
-                                    {event.durability === 'volatile' ? (
-                                        <span className={styles.volatile}>
-                                            {t('feed.volatile')}
-                                        </span>
-                                    ) : null}
-                                </div>
-                            </li>
-                        );
-                    })}
-                </ol>
-            )}
+                    return item ? (
+                        <UserHistoryItemRow
+                            key={item.recordId}
+                            item={item}
+                            devices={devices}
+                            index={row.index}
+                            setSize={state.endReached ? state.items.length : -1}
+                            ref={history.measureElement}
+                            style={{
+                                position: 'absolute',
+                                insetBlockStart: 0,
+                                inlineSize: '100%',
+                                transform: `translateY(${row.start - history.scrollMargin}px)`,
+                            }}
+                        />
+                    ) : null;
+                })}
+            </ol>
         </section>
     );
 }

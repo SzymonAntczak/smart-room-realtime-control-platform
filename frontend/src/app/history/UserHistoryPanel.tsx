@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { type RefObject, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { RoomHistorySource } from '../realtime/room-history-source';
@@ -20,12 +20,18 @@ export function UserHistoryPanel({
     realtimeUncertain: boolean;
 }) {
     const { t } = useTranslation('dashboard');
-    const history = useUserHistory(source, scrollRoot);
+    const history = useUserHistory(source);
+    const header = useRef<HTMLDivElement | null>(null);
     const { state } = history;
 
     return (
         <div className={styles.panel}>
-            <div className={styles.header}>
+            <div
+                className={styles.header}
+                ref={header}
+                role="group"
+                aria-label={t('history.navigation')}
+            >
                 <p>{t('history.completeness')}</p>
                 {state.lastKnown ? <p role="status">{t('history.lastKnown')}</p> : null}
                 {state.notice ? <p role="status">{t(`history.${state.notice}`)}</p> : null}
@@ -37,10 +43,13 @@ export function UserHistoryPanel({
                 ) : null}
             </div>
             <RecentEventsFeed
-                events={state.items}
+                state={state}
                 devices={devices}
                 realtimeUncertain={realtimeUncertain}
-                registerEntry={history.registerEntry}
+                scrollRoot={scrollRoot}
+                header={header}
+                updateReadingPosition={history.updateReadingPosition}
+                loadOlder={history.loadOlder}
             />
             <div className={styles.status}>
                 {state.status === 'loading' || state.status === 'waiting_for_baseline' ? (

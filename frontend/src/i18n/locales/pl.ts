@@ -62,6 +62,7 @@ export const pl = {
             },
         },
         history: {
+            navigation: 'Nawigacja historii',
             room: 'Historia pokoju',
             completeness: 'Historia obejmuje tylko wpisy potwierdzone dostępnymi danymi.',
             lastKnown:

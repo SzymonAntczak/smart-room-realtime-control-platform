@@ -8,9 +8,9 @@ Implementation partial: `ST-4-06a-01` through `-03` supply executable BFF
 contracts, transformation and pinned HTTP pagination. `ST-4-06a-04` connects
 the transformer to `/room` and the existing SSE, and the Dashboard to a bounded
 user-history session with paging, live merge and reading-position recovery.
-The Dashboard presents a simple user-history list without technical details.
-Virtual rendering and final presentation remain in `ST-4-06a-05`; parent-story
-verification remains in `ST-4-06a-06`. This is not completion of `DS-4-06a`.
+`ST-4-06a-05` adds accessible user-history entries and measured virtual rendering
+without technical details. Parent-story verification remains in `ST-4-06a-06`.
+This is not completion of `DS-4-06a`.
 
 This ADR supersedes the Stage 4 storage ADR's product-feed presentation and
 total view bound for the DS-4-06a target. Significant-fact contracts, processor
@@ -288,8 +288,8 @@ HTTP generation. Every validated addition reaches the
 session directly; React snapshot batching cannot discard intermediate additions.
 The first HTTP page pins generation, watermark and retention time. Sparse pages
 with a cursor continue. Manual loading and automatic loading within one viewport
-of the end share the same operation. The simple list currently renders all
-loaded entries; virtualization is explicitly deferred to `ST-4-06a-05`.
+of the end share the same operation. `ST-4-06a-05` renders only a measured virtual
+range; virtual indexes never determine the HTTP cursor or change session limits.
 
 Reading position is `{ recordId, occurredAt, offsetPx }` relative to the scroll
 container and is restored before paint. Same-generation reconnect rebuilds
@@ -302,6 +302,34 @@ and live additions; availability recovery refetches before clearing the warning.
 Malformed responses and cursor-query mismatches do not start automatic loops.
 Returning to newest after overlay overflow refetches durable history without
 promising recovery of omitted historical changes or evicted volatile entries.
+
+### Measured virtual rendering delivered by ST-4-06a-05
+
+The frontend uses `@tanstack/react-virtual` 3.14.9 in the existing history scroll
+container. Rows have stable `recordId` keys, a 192 px initial height estimate
+and actual element measurements, with five overscan rows on each side. The
+rendered range may additionally retain one session reading anchor. Header/list
+origins and row gaps are measured so notices, wrapped descriptions and width
+changes do not require fixed row heights or a second scroll container.
+
+The geometry hook is the sole scroll-adjustment owner. It captures the first
+unobscured item before a scroll-driven range update, skips gaps rather than
+anchoring an obscured previous row, and restores identity and offset through
+range mounting and measurement. Programmatic corrections do not overwrite the
+session's reading position. Measurements are reset on width or generation
+changes, dropped item sizes are pruned, and detached DOM references/observers
+are released. Sparse-page advancement and the explicit older-history action
+still use the existing single-flight session operation.
+
+The list retains `ol`/`li` semantics, exposing each row's position. Its total
+size is unknown (`aria-setsize=-1`) until the session reaches the end; the final
+size describes available user entries, not raw facts or exhaustive history.
+The scroll container is focusable with a visible focus indicator and supports
+native keyboard scrolling. Static rows are not individual Tab stops. Navigation
+controls stay outside recycled rows. If a focused control disappears, or loses
+focus when disabled for loading, focus returns to the history container; moving
+focus outside history prevents a later update from reclaiming it. Closing the
+panel leaves focus at its toggle. No user-history wire contract changes.
 
 ## Consequences
 
@@ -342,7 +370,10 @@ runtime-bootstrap tests protect the unchanged internal contracts.
 `ST-4-06a-04` adds strict BFF transport tests, deterministic history session
 tests, actual HTTP/SSE integration and mocked-BFF desktop/mobile browser tests
 for paging, anchors, bounded overlay, recovery and panel cleanup.
-Virtual rendering and parent-story verification remain pending.
+`ST-4-06a-05` adds item presentation tests and desktop/mobile mocked-BFF browser
+coverage for 1,000 loaded entries with bounded DOM, mixed-height anchors through
+resize/reconnect, keyboard access, single-flight older loading and predictable
+focus. Parent-story verification remains in `ST-4-06a-06`.
 
 ## Links
 

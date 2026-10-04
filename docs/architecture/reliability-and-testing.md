@@ -313,7 +313,7 @@ Stage 4 UI focus areas:
 The LED scenario timing and transport defaults are defined in
 [ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
 
-### DS-4-06a user history (paging connected; virtual rendering pending)
+### DS-4-06a user history (virtual rendering connected; story verification pending)
 
 The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
 records the target product behavior and boundaries. `ST-4-06a-03` verifies the
@@ -329,8 +329,14 @@ restart, generation replacement, 503 recovery and cache bounds. Actual transport
 tests exercise user-history and telemetry against the BFF/runtime. Mocked-BFF
 browser tests protect desktop/mobile offsets (2 px tolerance), overlay overflow,
 reconnect, expiry, missing-anchor fallback, storage recovery, invalid payloads
-and closing a panel with an outstanding request. Final virtual rendering and
-parent-story verification remain pending.
+and closing a panel with an outstanding request. `ST-4-06a-05` adds component
+coverage for accessible user entries and mocked-BFF browser scenarios for 1,000
+loaded entries with bounded DOM, mixed-height anchors through width changes and
+reconnect, keyboard scrolling, single-flight older loading, and focus recovery
+when navigation controls disappear or become disabled. App composition tests
+replace geometry with a test-local rendering seam; only the real-browser suite
+establishes virtual range, measurements and the 2 px anchor tolerance.
+Parent-story verification remains in `ST-4-06a-06`.
 Existing no-replay, generation/watermark and source-fact retention rules remain
 binding; this target does not change platform processing or storage.
 

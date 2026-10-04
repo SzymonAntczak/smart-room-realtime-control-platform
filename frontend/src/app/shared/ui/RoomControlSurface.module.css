@@ -55,6 +55,11 @@
     padding: var(--space-8);
 }
 
+.sidebar:focus-visible {
+    outline: var(--border-width-thin) solid var(--color-info-text);
+    outline-offset: calc(-1 * var(--space-1));
+}
+
 .sidebarLoading h2 {
     margin-block: 0 var(--space-5);
     font-size: var(--font-size-heading-md);

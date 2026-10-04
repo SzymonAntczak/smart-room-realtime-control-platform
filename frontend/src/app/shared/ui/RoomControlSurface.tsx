@@ -39,6 +39,7 @@ export function RoomControlSurface({
                         ref={scrollRoot}
                         id="recent-events-sidebar"
                         aria-label={t('feed.heading')}
+                        tabIndex={0}
                         className={styles.sidebar}
                         aria-hidden={!feedSidebar.isOpen}
                         inert={!feedSidebar.isOpen}

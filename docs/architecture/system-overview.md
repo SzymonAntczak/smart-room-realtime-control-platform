@@ -254,8 +254,9 @@ their bound; user history explicitly marks `retained_evidence_only` because raw
 facts cannot prove every historical applied change. Non-feed facts committed
 above the bound require an explicit refetch. The Dashboard's user-history
 session caches at most 5,000 HTTP entries and 200 live entries, preserving its
-reading anchor across updates and same-generation recovery. It uses a simple
-list until virtual rendering in `ST-4-06a-05`. Retention tombstones preserve the pinned
+reading anchor across updates and same-generation recovery. Its measured virtual
+list renders the visible range, five overscan entries per side and at most one
+additional reading anchor. Retention tombstones preserve the pinned
 view for the cursor's fixed five-minute lifetime; an expired cursor begins a new
 session. A changed history generation invalidates the previous pages, cursor
 and overlay instead of merging unrelated databases. The client retains the last

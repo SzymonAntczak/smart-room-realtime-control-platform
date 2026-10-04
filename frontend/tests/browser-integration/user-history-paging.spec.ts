@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { mockBffUrls } from './browser-test-runtime';
 import {
@@ -14,11 +14,14 @@ import {
     createPlatformUpdatedMessage,
 } from './mock-bff/mock-bff-fixtures';
 import { createHistoryItems, createHistoryPage } from './mock-bff/recent-feed-fixtures';
-
-const heading = 'Ostatnie istotne zdarzenia';
-const item = (page: Page, id: string) => page.getByTestId(`history-item-${id}`);
-const panel = (page: Page) => page.getByRole('complementary', { name: heading });
-const entries = (page: Page) => page.getByRole('region', { name: heading }).getByRole('listitem');
+import {
+    historyEntries as entries,
+    historyEntry as item,
+    historyOffset as offset,
+    historyPanel as panel,
+    openHistory,
+    scrollToHistoryEntry,
+} from './page-objects/user-history';
 
 test.beforeEach(async ({ page }) => {
     await resetMockRoom(page.request);
@@ -48,25 +51,44 @@ for (const viewport of [
             ],
         });
         await openHistory(page);
-        await expect(entries(page)).toHaveCount(50);
-        const anchor = item(page, records[15]?.recordId ?? 'missing');
+        await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
+        const anchor = await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
         await expect(anchor).toHaveRole('listitem');
-        await anchor.scrollIntoViewIfNeeded();
+
         const before = await offset(anchor, panel(page));
         const live = createHistoryItems(1, 10001);
         await publishMockRoomUpdate(
             page.request,
             createCommandsUpdatedMessage(0, { userHistory: live }),
         );
-        await expect(entries(page)).toHaveCount(51);
+        await expect(anchor).toHaveAttribute('aria-posinset', '17');
         await expect
             .poll(async () => Math.abs((await offset(anchor, panel(page))) - before))
             .toBeLessThanOrEqual(2);
         await expect(
             page.getByRole('button', { name: 'Nowe zdarzenia', exact: true }),
         ).toBeVisible();
-        await item(page, records[49]?.recordId ?? 'missing').scrollIntoViewIfNeeded();
-        await expect(entries(page)).toHaveCount(71);
+        await configureMockHistory(page.request, { hold: true });
+        const pageAnchor = await scrollToHistoryEntry(page, records[49]?.recordId ?? 'missing');
+        await expect
+            .poll(
+                async () =>
+                    (
+                        (await (await page.request.get(mockBffUrls.historyControl)).json()) as {
+                            held: boolean;
+                        }
+                    ).held,
+            )
+            .toBe(true);
+        const beforePage = await offset(pageAnchor, panel(page));
+        await configureMockHistory(page.request, { release: true });
+        await expect(item(page, records[49]?.recordId ?? 'missing')).toHaveAttribute(
+            'aria-setsize',
+            '71',
+        );
+        await expect
+            .poll(async () => Math.abs((await offset(pageAnchor, panel(page))) - beforePage))
+            .toBeLessThanOrEqual(2);
         await page.getByRole('button', { name: 'Nowe zdarzenia', exact: true }).click();
         await expect.poll(() => panel(page).evaluate((element) => element.scrollTop)).toBe(0);
     });
@@ -78,9 +100,9 @@ test('retains the read page when live overlay overflows and refetches when retur
     const records = createHistoryItems(50);
     await configureMockHistory(page.request, { pages: [createHistoryPage(records)] });
     await openHistory(page);
-    await expect(entries(page)).toHaveCount(50);
-    const anchor = item(page, records[15]?.recordId ?? 'missing');
-    await anchor.scrollIntoViewIfNeeded();
+    await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
+    const anchor = await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
+
     await expect(page.getByRole('button', { name: 'Nowe zdarzenia', exact: true })).toBeVisible();
     const before = await offset(anchor, panel(page));
     const live = createHistoryItems(201, 10001);
@@ -92,7 +114,7 @@ test('retains the read page when live overlay overflows and refetches when retur
         );
     }
 
-    await expect(entries(page)).toHaveCount(250);
+    await expect(anchor).toHaveAttribute('aria-setsize', '250');
     await expect
         .poll(async () => Math.abs((await offset(anchor, panel(page))) - before))
         .toBeLessThanOrEqual(2);
@@ -116,9 +138,9 @@ test('rebuilds through the previous anchor on reconnect and on cursor expiry', a
     ];
     await configureMockHistory(page.request, { pages });
     await openHistory(page);
-    await expect(entries(page)).toHaveCount(50);
-    const anchor = item(page, records[15]?.recordId ?? 'missing');
-    await anchor.scrollIntoViewIfNeeded();
+    await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
+    const anchor = await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
+
     await expect(page.getByRole('button', { name: 'Nowe zdarzenia', exact: true })).toBeVisible();
     const before = await offset(anchor, panel(page));
     const rebuilt = page.waitForResponse(
@@ -138,13 +160,29 @@ test('rebuilds through the previous anchor on reconnect and on cursor expiry', a
     await configureMockHistory(page.request, {
         status: 400,
         error: { error: 'cursor_expired', message: 'Expired' },
+        hold: true,
     });
     const expiry = page.waitForResponse(
         (response) => response.url().includes('cursor=older') && response.status() === 400,
     );
-    await item(page, records[49]?.recordId ?? 'missing').scrollIntoViewIfNeeded();
+    const expiryAnchor = await scrollToHistoryEntry(page, records[49]?.recordId ?? 'missing');
+    await expect
+        .poll(
+            async () =>
+                (
+                    (await (await page.request.get(mockBffUrls.historyControl)).json()) as {
+                        held: boolean;
+                    }
+                ).held,
+        )
+        .toBe(true);
+    const beforeExpiry = await offset(expiryAnchor, panel(page));
+    await configureMockHistory(page.request, { release: true });
     await expiry;
-    await expect(entries(page)).toHaveCount(70);
+    await expect(entries(page).first()).toHaveAttribute('aria-setsize', '70');
+    await expect
+        .poll(async () => Math.abs((await offset(expiryAnchor, panel(page))) - beforeExpiry))
+        .toBeLessThanOrEqual(2);
     await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -154,8 +192,8 @@ test('explains an unavailable anchor and does not merge a replacement generation
     const records = createHistoryItems(50);
     await configureMockHistory(page.request, { pages: [createHistoryPage(records)] });
     await openHistory(page);
-    await expect(entries(page)).toHaveCount(50);
-    await item(page, records[15]?.recordId ?? 'missing').scrollIntoViewIfNeeded();
+    await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
+    await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
     await expect(page.getByRole('button', { name: 'Nowe zdarzenia', exact: true })).toBeVisible();
     await configureMockHistory(page.request, { pages: [createHistoryPage(records.slice(25))] });
     await disconnectMockRealtime(page.request);
@@ -163,6 +201,9 @@ test('explains an unavailable anchor and does not merge a replacement generation
         page.getByRole('status').filter({ hasText: 'Poprzedni wpis nie jest dostępny' }),
     ).toBeVisible();
     const replacement = createHistoryItems(1, 20000);
+    await page.getByRole('button', { name: 'Nowe zdarzenia', exact: true }).focus();
+    const toggle = page.getByRole('button', { name: 'Ukryj ostatnie zdarzenia', exact: true });
+    await toggle.focus();
     await configureMockHistory(page.request, {
         pages: [createHistoryPage(replacement, null, 20000, 'replacement')],
     });
@@ -176,6 +217,7 @@ test('explains an unavailable anchor and does not merge a replacement generation
     await publishMockRoomUpdate(page.request, update);
     await expect(entries(page)).toHaveCount(1);
     await expect(item(page, replacement[0]?.recordId ?? 'missing')).toBeVisible();
+    await expect(toggle).toBeFocused();
     await expect(item(page, records[25]?.recordId ?? 'missing')).toHaveCount(0);
 });
 
@@ -185,7 +227,7 @@ test('preserves last-known history on 503 and refetches after availability recov
     const records = createHistoryItems(50);
     await configureMockHistory(page.request, { pages: [createHistoryPage(records)] });
     await openHistory(page);
-    await expect(entries(page)).toHaveCount(50);
+    await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
     await configureMockHistory(page.request, {
         status: 503,
         error: { error: 'durable_history_unavailable', message: 'Unavailable' },
@@ -194,7 +236,7 @@ test('preserves last-known history on 503 and refetches after availability recov
     await expect(
         page.getByRole('alert').filter({ hasText: 'Trwała historia jest chwilowo niedostępna.' }),
     ).toBeVisible();
-    await expect(entries(page)).toHaveCount(50);
+    await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
     const live = createHistoryItems(1, 10001);
     const unavailable = createPlatformUpdatedMessage(0, 10000, '2026-09-29T10:00:00.000Z');
     unavailable.payload.storage = {
@@ -207,7 +249,10 @@ test('preserves last-known history on 503 and refetches after availability recov
         page.request,
         createCommandsUpdatedMessage(1, { userHistory: live }),
     );
-    await expect(entries(page)).toHaveCount(51);
+    await expect(item(page, records[0]?.recordId ?? 'missing')).toHaveAttribute(
+        'aria-posinset',
+        '2',
+    );
     const recovery = page.waitForResponse(
         (response) =>
             response.url().includes('/room/history/user-history') && response.status() === 200,
@@ -285,28 +330,6 @@ test('advances an empty page and keeps invalid data labeled until explicit retry
     await page.unroute('**/room/history/user-history?*');
     await page.getByRole('button', { name: 'Spróbuj ponownie', exact: true }).click();
     await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(panel(page)).toBeFocused();
     await expect(entries(page)).toHaveCount(3);
 });
-
-async function openHistory(page: Page) {
-    await page.goto('/');
-    const toggle = page.getByRole('button', { name: /ostatnie zdarzenia/i });
-    await expect(toggle).toBeVisible();
-
-    if ((await toggle.getAttribute('aria-expanded')) === 'false') {
-        await toggle.click();
-    }
-
-    await expect(page.getByRole('region', { name: heading })).toBeVisible();
-}
-
-async function offset(entry: Locator, root: Locator) {
-    const entryBox = await entry.boundingBox();
-    const rootBox = await root.boundingBox();
-
-    if (!entryBox || !rootBox) {
-        throw new Error('History geometry unavailable');
-    }
-
-    return entryBox.y - rootBox.y;
-}

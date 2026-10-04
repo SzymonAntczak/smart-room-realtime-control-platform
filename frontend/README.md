@@ -20,8 +20,11 @@ connection and `/room/history/user-history?pageSize=50`. One open session pins
 generation, watermark and retention time, caches up to 5,000 HTTP entries and
 200 live entries, and runs one fetch at a time. It preserves a reading anchor
 through live merge and bounded recovery, labels last-known/error/limited history,
-and releases its cache when closed. The list is not yet virtualized; that work
-belongs to ST-4-06a-05. Raw significant-fact sessions are not a frontend product
+and releases its cache when closed. ST-4-06a-05 adds measured virtual rendering
+with stable record keys, five overscan entries per side and keyboard-accessible
+scrolling and controls. Width changes preserve the first unobscured reading
+anchor; DOM rows and measurement observers are released as the range changes.
+Raw significant-fact sessions are not a frontend product
 path; the separate telemetry history session remains available and tested.
 
 ## Source Of Truth

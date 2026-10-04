@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppDev, updateScenarioRequestCounts } from './AppDev';
 
+vi.mock('../history/use-user-history-virtualizer', async () => ({
+    useUserHistoryVirtualizer: (await import('../history/history-rendering.test-support'))
+        .historyRenderingWithoutLayout,
+}));
+
 describe('AppDev', () => {
     beforeEach(() => {
         MockWebSocket.instances.length = 0;

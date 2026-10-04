@@ -1,15 +1,15 @@
-import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { RoomHistorySource } from '../realtime/room-history-source';
 
-import { createUserHistorySession, type UserHistorySession } from './user-history-session';
+import {
+    createUserHistorySession,
+    type UserHistoryReadingPosition,
+    type UserHistorySession,
+} from './user-history-session';
 
-export function useUserHistory(
-    source: RoomHistorySource,
-    scrollRoot: RefObject<HTMLElement | null>,
-) {
+export function useUserHistory(source: RoomHistorySource) {
     const sessionRef = useRef<UserHistorySession | null>(null);
-    const entries = useRef(new Map<string, HTMLElement>());
     const [state, setState] = useState(() => createUserHistorySession().getState());
     const loadOlder = useCallback(() => {
         void sessionRef.current?.loadNextPage();
@@ -46,83 +46,6 @@ export function useUserHistory(
         };
     }, [source]);
 
-    useLayoutEffect(() => {
-        const root = scrollRoot.current;
-
-        if (!root) {
-            return;
-        }
-
-        if (state.position === null) {
-            root.scrollTop = 0;
-        } else {
-            const entry = entries.current.get(state.position.recordId);
-
-            if (entry) {
-                root.scrollTop +=
-                    entry.getBoundingClientRect().top -
-                    root.getBoundingClientRect().top -
-                    state.position.offsetPx;
-            }
-        }
-    }, [state, scrollRoot]);
-
-    useEffect(() => {
-        const root = scrollRoot.current;
-
-        if (!root) {
-            return;
-        }
-
-        const onScroll = () => {
-            const session = sessionRef.current;
-
-            if (!session || session.getState().status === 'closed') {
-                return;
-            }
-
-            const top = root.getBoundingClientRect().top;
-            const first = state.items.find((item) => {
-                const entry = entries.current.get(item.recordId);
-
-                return entry && entry.getBoundingClientRect().bottom > top;
-            });
-            const entry = first ? entries.current.get(first.recordId) : undefined;
-            session.updateReadingPosition(
-                root.scrollTop <= 1 || !first || !entry
-                    ? null
-                    : {
-                          recordId: first.recordId,
-                          occurredAt: first.occurredAt,
-                          offsetPx: entry.getBoundingClientRect().top - top,
-                      },
-            );
-
-            if (root.scrollHeight - root.scrollTop - root.clientHeight <= root.clientHeight) {
-                loadOlder();
-            }
-        };
-
-        root.addEventListener('scroll', onScroll);
-
-        return () => root.removeEventListener('scroll', onScroll);
-    }, [state.items, scrollRoot, loadOlder]);
-
-    // Sparse pages and short initial lists must also advance without a scroll event.
-    useEffect(() => {
-        const root = scrollRoot.current;
-
-        if (
-            state.status === 'ready' &&
-            !state.endReached &&
-            root &&
-            root.clientHeight > 0 &&
-            root.scrollHeight - root.scrollTop - root.clientHeight <= root.clientHeight
-        ) {
-            loadOlder();
-        }
-    }, [state, scrollRoot, loadOlder]);
-
     return {
         state,
         loadOlder,
@@ -132,12 +55,8 @@ export function useUserHistory(
         showNewest: () => {
             void sessionRef.current?.refreshToNewest();
         },
-        registerEntry: (recordId: string, element: HTMLElement | null) => {
-            if (element) {
-                entries.current.set(recordId, element);
-            } else {
-                entries.current.delete(recordId);
-            }
-        },
+        updateReadingPosition: useCallback((position: UserHistoryReadingPosition | null) => {
+            sessionRef.current?.updateReadingPosition(position);
+        }, []),
     };
 }

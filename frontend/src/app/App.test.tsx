@@ -4,6 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
+vi.mock('./history/use-user-history-virtualizer', async () => ({
+    useUserHistoryVirtualizer: (await import('./history/history-rendering.test-support'))
+        .historyRenderingWithoutLayout,
+}));
 
 describe('App', () => {
     beforeEach(() => {
