@@ -313,7 +313,7 @@ Stage 4 UI focus areas:
 The LED scenario timing and transport defaults are defined in
 [ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
 
-### DS-4-06a user history (virtual rendering connected; story verification pending)
+### DS-4-06a user history (verified)
 
 The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
 records the target product behavior and boundaries. `ST-4-06a-03` verifies the
@@ -336,7 +336,11 @@ reconnect, keyboard scrolling, single-flight older loading, and focus recovery
 when navigation controls disappear or become disabled. App composition tests
 replace geometry with a test-local rendering seam; only the real-browser suite
 establishes virtual range, measurements and the 2 px anchor tolerance.
-Parent-story verification remains in `ST-4-06a-06`.
+`ST-4-06a-06` completed parent-story verification and independent delivery
+review with `PASS`. Contract, backend, frontend, actual HTTP/SSE and Chromium
+suites and workspace/browser/transport typechecks passed. Initial concurrent
+backend/frontend runs hit test/worker timeouts; fresh runs passed without
+changing tests or timeouts, with frontend workers limited to two.
 Existing no-replay, generation/watermark and source-fact retention rules remain
 binding; this target does not change platform processing or storage.
 

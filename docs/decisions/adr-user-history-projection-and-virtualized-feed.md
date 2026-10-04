@@ -4,13 +4,13 @@
 
 Accepted
 
-Implementation partial: `ST-4-06a-01` through `-03` supply executable BFF
+Implementation complete: `ST-4-06a-01` through `-03` supply executable BFF
 contracts, transformation and pinned HTTP pagination. `ST-4-06a-04` connects
 the transformer to `/room` and the existing SSE, and the Dashboard to a bounded
 user-history session with paging, live merge and reading-position recovery.
 `ST-4-06a-05` adds accessible user-history entries and measured virtual rendering
-without technical details. Parent-story verification remains in `ST-4-06a-06`.
-This is not completion of `DS-4-06a`.
+without technical details. `ST-4-06a-06` completed parent-story verification
+and independent delivery review with `PASS`; `DS-4-06a` is complete.
 
 This ADR supersedes the Stage 4 storage ADR's product-feed presentation and
 total view bound for the DS-4-06a target. Significant-fact contracts, processor
@@ -373,7 +373,9 @@ for paging, anchors, bounded overlay, recovery and panel cleanup.
 `ST-4-06a-05` adds item presentation tests and desktop/mobile mocked-BFF browser
 coverage for 1,000 loaded entries with bounded DOM, mixed-height anchors through
 resize/reconnect, keyboard access, single-flight older loading and predictable
-focus. Parent-story verification remains in `ST-4-06a-06`.
+focus. `ST-4-06a-06` reran the contract, backend, frontend, actual HTTP/SSE and
+Chromium suites plus workspace/browser/transport typechecks. The independent
+delivery gate returned `PASS` for the complete story.
 
 ## Links
 

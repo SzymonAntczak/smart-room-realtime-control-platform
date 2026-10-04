@@ -47,15 +47,15 @@ snapshot baseline.
 The feed details in this section describe the implemented pre-DS-4-06a contract.
 The accepted [User History Projection and Virtualized Feed ADR](adr-user-history-projection-and-virtualized-feed.md)
 supersedes its product-feed payload/classification and total view bound for the
-pending successor. DS-4-06a replaces technical `recentEvents` only at the BFF
+delivered successor. DS-4-06a replaces technical `recentEvents` only at the BFF
 presentation boundary: the platform snapshot and publication contracts remain
 unchanged, while the BFF maps them to its additive user-history response for the
 frontend. The snapshot's newest source cache remains 20; older entries are
 transformed from the existing pinned HTTP dataset and use a bounded page cache.
 Revision continuity, atomic batches, one SSE connection, generation/watermark,
-cursor scope and no replay remain unchanged. The new ADR owns the target
-overlay, refetch and reading-position behavior; this decision alone does not
-change the running contract.
+cursor scope and no replay remain unchanged. The user-history ADR owns the
+current overlay, refetch and reading-position behavior, implemented and verified
+in DS-4-06a.
 
 The Stage 4 storage ADR preserves the current recovery model while
 adding these explicit Stage 4 extensions:

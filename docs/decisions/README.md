@@ -30,7 +30,7 @@ Keep current system behavior in [architecture](../architecture/). Promote a trad
 - [Playwright for Frontend Integration Tests](adr-playwright-frontend-integration-tests.md)
 - [Stage 4 Storage and Observability](adr-stage-4-storage-and-observability.md)
 - [User History Projection and Virtualized Feed](adr-user-history-projection-and-virtualized-feed.md)
-  — accepted target; implementation pending in `DS-4-06a`.
+  — implemented and verified in `DS-4-06a`.
 
 ## Superseded ADRs
 

@@ -149,7 +149,7 @@ volatile samples have no storage sequence. The client merges feed records by
 published first and `platform.updated` with the current watermark follows at
 the next revision. A durable non-applying fact needs only the watermark update.
 
-## DS-4-06a User History (Paging Connected; Virtual Rendering Pending)
+## DS-4-06a User History
 
 The preceding `recentEvents` rules describe the platform projection and
 internal publications. They remain separate from the Dashboard presentation.
@@ -173,8 +173,9 @@ omitted because raw facts do not prove their applied before/after values;
 reads remain separate. The Dashboard uses these pages plus directly delivered
 SSE user entries in a bounded session (50 per page, 5,000 HTTP entries, 200 live
 entries). Same-generation recovery preserves the reading anchor and rebuilds
-up to 100 pages; changed generations reset it. The current list is intentionally
-not virtualized; final presentation and story verification remain pending.
+up to 100 pages; changed generations reset it. The list uses measured virtual
+rendering with accessible entries and keyboard/focus preservation.
+Parent-story verification is complete.
 
 ## Initial Event Types
 

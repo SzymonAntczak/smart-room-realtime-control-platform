@@ -454,7 +454,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-06-02` | Exclude no-change, non-applying and individual telemetry records. | `ST-4-06-01`               | `E`        | Negative UI tests prove excluded input adds no feed item.             |
 | `[x] ST-4-06-03` | Add browser coverage for explainable feed entries.                | `ST-4-06-01`, `ST-4-06-02` | `C`        | Playwright proves users identify representative facts and exclusions. |
 
-### [ ] `DS-4-06a` — User history with infinite scroll and virtualization
+### [x] `DS-4-06a` — User history with infinite scroll and virtualization
 
 - **Value / observable outcome:** users understand observed device changes and
   unsuccessful attempts, browse older retained history and keep their reading
@@ -465,7 +465,8 @@ Each item has one difficulty rating only:
   paging, live merge and reading-position recovery delivered. `ST-4-06a-05`
   adds accessible entries, measured virtual rendering and desktop/mobile
   verification for bounded DOM, reading anchors and keyboard focus.
-  Its independent delivery gate passed; story-level verification remains in `ST-4-06a-06`.
+  `ST-4-06a-06` completed story-level verification and the independent delivery
+  gate returned `PASS`.
 - **Sources / boundaries:** [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
 - **Depends on:** `DS-4-03`, `DS-4-04`, `DS-4-06`.
 - **Difficulty:** `B`.
@@ -486,7 +487,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-06a-03` | Build pinned, paged user history in the BFF from the existing significant-fact reader.                  | `ST-4-06a-01`, `ST-4-06a-02`    | `B`        |
 | `[x] ST-4-06a-04` | Implement frontend history paging, live merge, reading-position preservation and recovery.              | `ST-4-06a-02`, `ST-4-06a-03`    | `B`        |
 | `[x] ST-4-06a-05` | Present accessible user-history items and add virtual rendering.                                        | `ST-4-06a-04`                   | `C`        |
-| `[ ] ST-4-06a-06` | Complete story verification and delivery review.                                                        | `ST-4-06a-05`                   | `C`        |
+| `[x] ST-4-06a-06` | Complete story verification and delivery review.                                                        | `ST-4-06a-05`                   | `C`        |
 
 ### [ ] `DS-4-06b` — Historical event search by device and date
 

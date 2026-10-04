@@ -37,15 +37,13 @@ behavior:
 ## Rules To Preserve
 
 The accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
-defines a pending DS-4-06a target beyond the implemented DS-4-06 fact feed.
-The [backlog](../planning/backlog.md) records its story and subtask breakdown.
-Task-specific plans and verification criteria will be created during subtask
-planning. Documentation
-acceptance is not evidence that the new BFF response contract, HTTP/SSE
-transformation or virtual scrolling have been delivered. No data migration is
-part of this target. Architecture
-sections identifying the original feed describe current behavior; the new ADR
-owns the explicitly marked successor product-history rules.
+defines the delivered DS-4-06a user-history feed beyond the original DS-4-06
+fact presentation. The [backlog](../planning/backlog.md) records its completed
+subtasks, including verification of BFF contracts/transformation, HTTP/SSE
+paging/recovery, virtual rendering and independent delivery acceptance.
+No data migration was required. Sections
+identifying the original feed retain historical platform/audit context; the
+user-history ADR owns the current product-history rules.
 
 The completed Stage 2/2.5 temperature slice and Stage 3 LED reference slice
 use backend adapters, event processing, read-model projections and the realtime

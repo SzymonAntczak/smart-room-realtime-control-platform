@@ -5,11 +5,11 @@ not implementation diagrams and do not describe the repository's current
 runtime state. They show target behavior for backend-backed slices as the system
 grows beyond the smallest read path.
 
-## User-History Feed Examples (DS-4-06a, Virtual Rendering Pending)
+## User-History Feed Examples (DS-4-06a)
 
 These examples apply to the accepted [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
-The Dashboard now uses these entry meanings in a simple paged list; virtual
-rendering and final DS-4-06a verification remain pending. Technical audit still
+The Dashboard uses these entry meanings in a paged, virtualized list;
+DS-4-06a verification is complete. Technical audit still
 records every accepted lifecycle fact; device
 controls still show progress. The product feed has no diagnostic details.
 
