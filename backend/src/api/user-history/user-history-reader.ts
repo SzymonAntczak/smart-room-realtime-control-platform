@@ -6,8 +6,10 @@ import {
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 import {
+    isMatchingUserHistoryCursorQueryScope,
     isUserHistoryPage,
     type NormalizedUserHistoryPageQuery,
+    type UserHistoryCursorQueryScope,
     type UserHistoryPage,
 } from '@smart-room/contracts/user-history';
 
@@ -41,6 +43,14 @@ export function createUserHistoryReader({
     return {
         readPage(query) {
             const rawQuery: SignificantFactPageQuery = { pageSize: query.pageSize };
+            const scope: UserHistoryCursorQueryScope = {
+                dataset: 'user_history',
+                order: 'occurred_at_desc',
+                pageSize: query.pageSize,
+                ...(query.deviceId !== undefined ? { deviceId: query.deviceId } : {}),
+                ...(query.from !== undefined ? { from: query.from } : {}),
+                ...(query.to !== undefined ? { to: query.to } : {}),
+            };
 
             if (query.cursor !== undefined) {
                 const payload = cursorCodec.decode(query.cursor);
@@ -55,7 +65,7 @@ export function createUserHistoryReader({
                     };
                 }
 
-                if (payload.scope.pageSize !== query.pageSize) {
+                if (!isMatchingUserHistoryCursorQueryScope(payload.scope, scope)) {
                     return {
                         status: 'cursor_error',
                         error: {
@@ -120,8 +130,9 @@ export function createUserHistoryReader({
                 previous = page;
             }
 
+            const historicalItems = toHistoricalUserHistoryItems(main.items, deviceNames, evidence);
             const page = {
-                items: toHistoricalUserHistoryItems(main.items, deviceNames, evidence),
+                items: historicalItems.filter((item) => matchesUserHistoryFilters(item, query)),
                 historyGenerationId: main.historyGenerationId,
                 throughSequence: main.throughSequence,
                 retentionAsOf: main.retentionAsOf,
@@ -131,11 +142,7 @@ export function createUserHistoryReader({
                         ? null
                         : cursorCodec.encode({
                               version: 1,
-                              scope: {
-                                  dataset: 'user_history',
-                                  order: 'occurred_at_desc',
-                                  pageSize: query.pageSize,
-                              },
+                              scope,
                               rawCursor: main.nextCursor,
                           }),
                 completeness: 'retained_evidence_only',
@@ -146,6 +153,25 @@ export function createUserHistoryReader({
                 : { status: 'invalid_internal_data' };
         },
     };
+}
+
+function matchesUserHistoryFilters(
+    item: ReturnType<typeof toHistoricalUserHistoryItems>[number],
+    query: NormalizedUserHistoryPageQuery,
+): boolean {
+    if (
+        query.deviceId !== undefined &&
+        (!('deviceId' in item) || item.deviceId !== query.deviceId)
+    ) {
+        return false;
+    }
+
+    const occurredAt = Date.parse(item.occurredAt);
+
+    return (
+        (query.from === undefined || occurredAt >= Date.parse(query.from)) &&
+        (query.to === undefined || occurredAt < Date.parse(query.to))
+    );
 }
 
 function isFollowingPinnedPage(

@@ -195,7 +195,8 @@ export function createRoomBffServer({
                     query === null ||
                     Object.entries(query).some(
                         ([key, value]) =>
-                            (key !== 'pageSize' && key !== 'cursor') || typeof value !== 'string',
+                            !['pageSize', 'cursor', 'deviceId', 'from', 'to'].includes(key) ||
+                            typeof value !== 'string',
                     )
                 ) {
                     writeJson(response, 400, {

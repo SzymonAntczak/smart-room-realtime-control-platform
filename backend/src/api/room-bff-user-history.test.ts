@@ -46,6 +46,154 @@ describe('BFF user history endpoint', () => {
         }
     });
 
+    it('filters retained user entries by device and half-open event-time bounds', async () => {
+        const history = createHarness();
+
+        try {
+            history.append([gap(1), failure(2), failure(3, 'led-side'), failure(4)]);
+            const combined = await readPage(
+                history,
+                `pageSize=20&deviceId=led-main&from=${encodeURIComponent(gap(2).occurredAt)}&to=${encodeURIComponent(gap(4).occurredAt)}`,
+            );
+            expect(combined.items.map((item) => item.recordId)).toEqual([failure(2).recordId]);
+            expect(combined.completeness).toBe('retained_evidence_only');
+
+            const otherDevice = await readPage(
+                history,
+                `deviceId=led-side&from=${encodeURIComponent(gap(2).occurredAt)}&to=${encodeURIComponent(gap(4).occurredAt)}`,
+            );
+            expect(otherDevice.items.map((item) => item.recordId)).toEqual([
+                failure(3, 'led-side').recordId,
+            ]);
+
+            const lowerOnly = await readPage(
+                history,
+                `deviceId=led-main&from=${encodeURIComponent(gap(3).occurredAt)}`,
+            );
+            expect(lowerOnly.items.map((item) => item.recordId)).toEqual([failure(4).recordId]);
+
+            const upperOnly = await readPage(
+                history,
+                `deviceId=led-main&to=${encodeURIComponent(gap(3).occurredAt)}`,
+            );
+            expect(upperOnly.items.map((item) => item.recordId)).toEqual([failure(2).recordId]);
+
+            const deviceOnly = await readPage(history, 'deviceId=led-main');
+            expect(deviceOnly.items.map((item) => item.recordId)).toEqual([
+                failure(4).recordId,
+                failure(2).recordId,
+            ]);
+            expect(deviceOnly.completeness).toBe('retained_evidence_only');
+
+            const secondDevice = await readPage(history, 'deviceId=led-side');
+            expect(secondDevice.items.map((item) => item.recordId)).toEqual([
+                failure(3, 'led-side').recordId,
+            ]);
+
+            const noMatches = await readPage(history, 'deviceId=missing-device');
+            expect(noMatches.items).toEqual([]);
+            expect(noMatches.completeness).toBe('retained_evidence_only');
+        } finally {
+            await history.close();
+        }
+    });
+
+    it('pins normalized filters to the user cursor while retaining the same raw page bounds', async () => {
+        const history = createHarness();
+
+        try {
+            history.append([failure(1), failure(2), failure(3)]);
+            const first = await readPage(
+                history,
+                `pageSize=1&deviceId=led-main&from=${encodeURIComponent(gap(1).occurredAt)}`,
+            );
+            expect(first.items.map((item) => item.recordId)).toEqual([failure(3).recordId]);
+            expect(first.nextCursor).not.toBeNull();
+
+            const continuation = `pageSize=1&deviceId=led-main&from=${encodeURIComponent('2026-09-10T10:00:01+01:00')}&${cursorQuery(first)}`;
+            const second = await readPage(history, continuation);
+            expect(second.items.map((item) => item.recordId)).toEqual([failure(2).recordId]);
+            expect(second.historyGenerationId).toBe(first.historyGenerationId);
+            expect(second.throughSequence).toBe(first.throughSequence);
+            expect(second.retentionAsOf).toBe(first.retentionAsOf);
+
+            for (const changed of [
+                `pageSize=1&deviceId=other-device&from=${encodeURIComponent(gap(1).occurredAt)}&${cursorQuery(first)}`,
+                `pageSize=1&deviceId=led-main&${cursorQuery(first)}`,
+                `pageSize=2&deviceId=led-main&from=${encodeURIComponent(gap(1).occurredAt)}&${cursorQuery(first)}`,
+            ]) {
+                const response = await history.server.inject({
+                    url: `/room/history/user-history?${changed}`,
+                });
+                expect(response.statusCode).toBe(400);
+                expect(response.json()).toMatchObject({ error: 'cursor_query_mismatch' });
+            }
+        } finally {
+            await history.close();
+        }
+    });
+
+    it('keeps filtered empty SQLite pages sparse and preserves their pinned bounds after writes', async () => {
+        const history = createHarness();
+
+        try {
+            history.append([gap(1), failure(2), failure(3, 'led-side'), gap(4)]);
+            const first = await readPage(history, 'pageSize=1&deviceId=led-main');
+            expect(first.items).toEqual([]);
+            expect(first.nextCursor).not.toBeNull();
+
+            history.append([failure(5)]);
+            const second = await readPage(
+                history,
+                `pageSize=1&deviceId=led-main&${cursorQuery(first)}`,
+            );
+            expect(second.items).toEqual([]);
+            expect(second.nextCursor).not.toBeNull();
+            expect(second.historyGenerationId).toBe(first.historyGenerationId);
+            expect(second.throughSequence).toBe(first.throughSequence);
+            expect(second.retentionAsOf).toBe(first.retentionAsOf);
+
+            const third = await readPage(
+                history,
+                `pageSize=1&deviceId=led-main&${cursorQuery(second)}`,
+            );
+            expect(third.items.map((item) => item.recordId)).toEqual([failure(2).recordId]);
+            expect(third.nextCursor).not.toBeNull();
+            expect(third.throughSequence).toBe(first.throughSequence);
+
+            const fourth = await readPage(
+                history,
+                `pageSize=1&deviceId=led-main&${cursorQuery(third)}`,
+            );
+            expect(fourth.items).toEqual([]);
+            expect(fourth.nextCursor).toBeNull();
+        } finally {
+            await history.close();
+        }
+    });
+
+    it('uses an out-of-range HTTP request fact to prove a filtered timeout target', async () => {
+        const history = createHarness();
+
+        try {
+            history.append([request(1), gap(2), timeout(3)]);
+            const page = await readPage(
+                history,
+                `pageSize=1&deviceId=led-main&from=${encodeURIComponent(gap(3).occurredAt)}&to=${encodeURIComponent(gap(4).occurredAt)}`,
+            );
+            expect(page.items).toMatchObject([
+                {
+                    recordId: timeout(3).recordId,
+                    kind: 'confirmation_missing',
+                    requestedPower: 'off',
+                },
+            ]);
+            expect(history.read).toHaveBeenCalledTimes(3);
+        } finally {
+            await history.close();
+        }
+    });
+
     it.each([
         'pageSize=',
         'pageSize=no',
@@ -54,8 +202,13 @@ describe('BFF user history endpoint', () => {
         'pageSize=101',
         'pageSize=1&pageSize=2',
         'cursor=',
-        'deviceId=led-main',
+        'deviceId=',
+        'deviceId=led-main&deviceId=led-main',
+        'from=',
+        'to=',
         'from=2026-09-10',
+        'from=2026-09-10T10%3A00%3A00',
+        'from=2026-09-11T10%3A00%3A00Z&to=2026-09-10T10%3A00%3A00Z',
         'unexpected=true',
     ])('rejects invalid query %s before reading storage', async (query) => {
         const history = createHarness();
@@ -303,7 +456,7 @@ describe('BFF user history endpoint', () => {
                     )
                     .mockReturnValueOnce(result);
                 const response = await history.server.inject({
-                    url: '/room/history/user-history?pageSize=2',
+                    url: '/room/history/user-history?pageSize=2&deviceId=led-main',
                 });
                 expect(response.statusCode).toBe(code);
                 expect(response.json()).toMatchObject({ error });
@@ -321,7 +474,9 @@ describe('BFF user history endpoint', () => {
         try {
             expect((await readPage(history, '')).items).toEqual([]);
             history.read.mockReturnValueOnce({ status: 'unavailable' });
-            const unavailable = await history.server.inject({ url: '/room/history/user-history' });
+            const unavailable = await history.server.inject({
+                url: '/room/history/user-history?deviceId=led-main',
+            });
             expect(unavailable.statusCode).toBe(503);
             expect(unavailable.json()).toMatchObject({ error: 'durable_history_unavailable' });
             history.append([gap(1)]);
@@ -397,6 +552,49 @@ function gap(
     };
 }
 
+function failure(
+    sequence: number,
+    deviceId = 'led-main',
+): Extract<DurableSignificantFactProjection, { eventType: 'command.failed' }> {
+    const base = gap(sequence);
+
+    return {
+        ...base,
+        deviceId,
+        commandId: `cmd-${sequence}`,
+        eventType: 'command.failed',
+        payload: { reason: 'failed', message: 'Attempt failed.' },
+    };
+}
+
+function request(
+    sequence: number,
+): Extract<DurableSignificantFactProjection, { eventType: 'command.requested' }> {
+    return {
+        ...gap(sequence),
+        deviceId: 'led-main',
+        commandId: 'cmd-timeout',
+        eventType: 'command.requested',
+        payload: {
+            commandType: 'set.power',
+            requestedState: { power: 'off' },
+            requestedBy: 'user',
+        },
+    };
+}
+
+function timeout(
+    sequence: number,
+): Extract<DurableSignificantFactProjection, { eventType: 'command.timed_out' }> {
+    return {
+        ...gap(sequence),
+        deviceId: 'led-main',
+        commandId: 'cmd-timeout',
+        eventType: 'command.timed_out',
+        payload: { timeoutMs: 5000, reason: 'confirmation_not_received' },
+    };
+}
+
 function createHarness() {
     const directory = mkdtempSync(join(tmpdir(), 'smart-room-user-history-'));
     const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
@@ -407,10 +605,16 @@ function createHarness() {
     const codec = createHistoryCursorCodec({ secret: Buffer.alloc(32, 1) });
     let reader = createRoomHistoryReader({ storage, cursorCodec: codec, now: () => now });
     const projection = createUserHistoryFixtures().snapshot;
+    const mainDevice = projection.devices[0];
+
+    if (!mainDevice) {
+        throw new Error('Expected a configured main device.');
+    }
+
     const snapshot = {
         roomName: projection.roomName,
         updatedAt: projection.updatedAt,
-        devices: projection.devices,
+        devices: [...projection.devices, { ...mainDevice, deviceId: 'led-side', name: 'Side LED' }],
         activeCommands: projection.activeCommands,
         recentCommands: projection.recentCommands,
         platform: projection.platform,

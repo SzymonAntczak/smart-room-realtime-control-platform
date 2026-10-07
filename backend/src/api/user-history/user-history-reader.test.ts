@@ -158,6 +158,118 @@ describe('pinned user history reader', () => {
         expect(onePage.raw).toHaveBeenCalledTimes(1);
     });
 
+    it('applies device and half-open event-time filters after transforming the main raw page', () => {
+        const harness = createHarness([gap(1), failure(2), failure(3), failure(4)]);
+        const from = common(2).occurredAt;
+        const to = common(4).occurredAt;
+
+        expect(
+            available(
+                harness.reader.readPage({ pageSize: 10, deviceId: 'led-main', from, to }),
+            ).items.map((item) => item.recordId),
+        ).toEqual([failure(3).recordId, failure(2).recordId]);
+        expect(
+            available(harness.reader.readPage({ pageSize: 10, from: common(3).occurredAt })).items,
+        ).toEqual([
+            expect.objectContaining({ recordId: failure(4).recordId }),
+            expect.objectContaining({ recordId: failure(3).recordId }),
+        ]);
+        expect(
+            available(
+                harness.reader.readPage({ pageSize: 10, to: common(3).occurredAt }),
+            ).items.map((item) => item.recordId),
+        ).toEqual([failure(2).recordId, gap(1).recordId]);
+        expect(
+            available(harness.reader.readPage({ pageSize: 10, deviceId: 'missing-device' })).items,
+        ).toEqual([]);
+        expect(
+            available(harness.reader.readPage({ pageSize: 10, deviceId: 'led-main' })).items.every(
+                (item) => 'deviceId' in item && item.deviceId === 'led-main',
+            ),
+        ).toBe(true);
+    });
+
+    it('binds continuations to normalized filters and keeps timeout evidence outside the date range', () => {
+        const harness = createHarness([request(1), failure(2), timeout(3)]);
+        const from = common(3).occurredAt;
+        const first = available(
+            harness.reader.readPage({ pageSize: 1, deviceId: 'led-main', from }),
+        );
+        expect(first.items).toMatchObject([
+            { recordId: timeout(3).recordId, kind: 'confirmation_missing', requestedPower: 'on' },
+        ]);
+        expect(harness.raw).toHaveBeenCalledWith({ pageSize: 1, cursor: 'raw:1' });
+
+        const conflicting = createHarness([request(1, 'off'), request(2, 'on'), timeout(3)]);
+        expect(
+            available(
+                conflicting.reader.readPage({
+                    pageSize: 1,
+                    deviceId: 'led-main',
+                    from: common(3).occurredAt,
+                }),
+            ).items,
+        ).toEqual([]);
+        expect(conflicting.raw).toHaveBeenCalledTimes(3);
+
+        const equivalent = available(
+            harness.reader.readPage({
+                pageSize: 1,
+                cursor: continuation(first),
+                deviceId: 'led-main',
+                from: '2026-09-10T10:00:03+01:00',
+            }),
+        );
+        expect(equivalent.items).toEqual([]);
+        expect(equivalent.nextCursor).not.toBeNull();
+        const exhausted = available(
+            harness.reader.readPage({
+                pageSize: 1,
+                cursor: continuation(equivalent),
+                deviceId: 'led-main',
+                from: '2026-09-10T10:00:03+01:00',
+            }),
+        );
+        expect(exhausted.items).toEqual([]);
+        expect(exhausted.nextCursor).toBeNull();
+
+        for (const changed of [
+            { pageSize: 1, cursor: continuation(first), deviceId: 'other-device', from },
+            { pageSize: 1, cursor: continuation(first), deviceId: 'led-main' },
+            { pageSize: 2, cursor: continuation(first), deviceId: 'led-main', from },
+        ]) {
+            expect(harness.reader.readPage(changed)).toMatchObject({
+                status: 'cursor_error',
+                error: { error: 'cursor_query_mismatch' },
+            });
+        }
+    });
+
+    it('preserves empty intermediate pages when the selected device has no entry on a raw page', () => {
+        const harness = createHarness([failure(1), gap(2), gap(3)]);
+        const first = available(harness.reader.readPage({ pageSize: 1, deviceId: 'led-main' }));
+        expect(first.items).toEqual([]);
+        expect(first.nextCursor).not.toBeNull();
+        const second = available(
+            harness.reader.readPage({
+                pageSize: 1,
+                cursor: continuation(first),
+                deviceId: 'led-main',
+            }),
+        );
+        expect(second.items).toEqual([]);
+        expect(second.nextCursor).not.toBeNull();
+        const third = available(
+            harness.reader.readPage({
+                pageSize: 1,
+                cursor: continuation(second),
+                deviceId: 'led-main',
+            }),
+        );
+        expect(third.items.map((item) => item.recordId)).toEqual([failure(1).recordId]);
+        expect(third.nextCursor).toBeNull();
+    });
+
     it.each(['missing', 'conflicting', 'wrong-device', 'wrong-command'] as const)(
         'omits timeout when retained request evidence is %s',
         (kind) => {
