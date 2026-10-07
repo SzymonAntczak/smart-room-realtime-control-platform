@@ -39,6 +39,23 @@ describe('user history HTTP client', () => {
         expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
     });
 
+    it('sends optional search filters alongside continuation cursors', async () => {
+        const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(page)));
+        await createHistoryClient(fetcher).readPage({
+            pageSize: 50,
+            cursor: 'next/+?&=',
+            deviceId: 'led-main',
+            from: '2026-09-10T10:00:00.000Z',
+            to: '2026-09-11T00:00:00.000Z',
+        });
+        const url = new URL(String(fetcher.mock.calls[0]?.[0]));
+
+        expect(url.searchParams.get('deviceId')).toBe('led-main');
+        expect(url.searchParams.get('from')).toBe('2026-09-10T10:00:00.000Z');
+        expect(url.searchParams.get('to')).toBe('2026-09-11T00:00:00.000Z');
+        expect(url.searchParams.get('cursor')).toBe('next/+?&=');
+    });
+
     it.each([
         [400, { error: 'cursor_expired', message: 'Expired.' }, 'cursor_error'],
         [503, { error: 'durable_history_unavailable', message: 'Unavailable.' }, 'unavailable'],
