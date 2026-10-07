@@ -1,10 +1,11 @@
-import { ArrowUp, ListFilter, LoaderCircle } from 'lucide-react';
+import { ArrowUp, LoaderCircle, Search } from 'lucide-react';
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert } from '../../../../ui';
 import type { RenderableDeviceProjection } from '../../device-projection';
 import type { RoomHistorySource } from '../../room-history-source';
+import { HistorySearchModal } from '../history-search-modal/HistorySearchModal';
 
 import { HistoryFeed } from './history-feed/HistoryFeed';
 import styles from './HistorySidebarContent.module.css';
@@ -28,6 +29,7 @@ export function HistorySidebarContent({
     const [returningToTop, setReturningToTop] = useState(false);
     const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [topTooltip, setTopTooltip] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
     const { state } = history;
     const attachScrollRoot = useCallback((element: HTMLDivElement | null) => {
         scrollRoot.current = element;
@@ -214,10 +216,12 @@ export function HistorySidebarContent({
                 <button
                     type="button"
                     className={styles.filterButton}
-                    aria-label={t('history.filter')}
+                    aria-label={t('history.search')}
+                    aria-haspopup="dialog"
+                    onClick={() => setSearchOpen(true)}
                 >
-                    <ListFilter aria-hidden="true" size={18} />
-                    <span>{t('history.filter')}</span>
+                    <Search aria-hidden="true" size={18} />
+                    <span>{t('history.search')}</span>
                 </button>
                 <div className={styles.topAction}>
                     {topTooltip ? (
@@ -239,6 +243,11 @@ export function HistorySidebarContent({
                     </button>
                 </div>
             </footer>
+            <HistorySearchModal
+                open={searchOpen}
+                onClose={() => setSearchOpen(false)}
+                devices={devices}
+            />
         </div>
     );
 }

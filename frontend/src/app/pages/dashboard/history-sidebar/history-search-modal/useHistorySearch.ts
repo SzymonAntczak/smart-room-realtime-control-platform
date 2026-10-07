@@ -8,6 +8,7 @@ import {
 
 export function useHistorySearch() {
     const sessionRef = useRef<HistorySearchSession | null>(null);
+    const unsubscribeRef = useRef<(() => void) | null>(null);
     const listeners = useRef(new Set<() => void>());
     const [initialState] = useState(() => createHistorySearchSession().getState());
     const subscribe = useCallback((listener: () => void) => {
@@ -21,28 +22,40 @@ export function useHistorySearch() {
     );
     const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-    useEffect(() => {
+    const notify = useCallback(() => {
+        for (const listener of listeners.current) {
+            listener();
+        }
+    }, []);
+    const close = useCallback(() => {
+        const session = sessionRef.current;
+
+        if (!session) {
+            return;
+        }
+
+        unsubscribeRef.current?.();
+        unsubscribeRef.current = null;
+        sessionRef.current = null;
+        session.close();
+        notify();
+    }, [notify]);
+    const start = useCallback(() => {
+        if (sessionRef.current) {
+            return;
+        }
+
         const session = createHistorySearchSession();
         sessionRef.current = session;
-
-        const notify = () => {
-            for (const listener of listeners.current) {
-                listener();
-            }
-        };
-
-        const unsubscribe = session.subscribe(notify);
+        unsubscribeRef.current = session.subscribe(notify);
         notify();
+    }, [notify]);
 
-        return () => {
-            unsubscribe();
-            session.close();
+    useEffect(() => {
+        start();
 
-            if (sessionRef.current === session) {
-                sessionRef.current = null;
-            }
-        };
-    }, []);
+        return close;
+    }, [close, start]);
 
     const search = useCallback((criteria: HistorySearchCriteria) => {
         return sessionRef.current?.search(criteria) ?? Promise.resolve(false);
@@ -60,5 +73,5 @@ export function useHistorySearch() {
         sessionRef.current?.clear();
     }, []);
 
-    return { state, search, loadOlder, retry, refresh, clear };
+    return { state, search, loadOlder, retry, refresh, clear, start, close };
 }

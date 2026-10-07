@@ -526,14 +526,15 @@ Each item has one difficulty rating only:
   a device select, From/To date inputs, Search and a results area. All criteria
   are optional individually, but Search requires at least one. Device options
   come from the current validated room projection. Opening with no active
-  search shows an instruction to choose a filter and submit, without a history
-  GET. Valid submission keeps the modal open and displays results below the
+search shows an instruction to submit at least one criterion, without a history
+GET. Valid submission keeps the modal open and displays results below the
   form. Editing draft criteria does not fetch or change existing results;
   summarize the applied criteria beside those results. Refresh starts a new
   pinned session using the applied criteria, not unsaved draft values, and
   returns to the top. Clear filters removes drafts, results and the session,
   restoring the initial instruction without a GET. Closing releases the session
-  and ignores late responses; reopening starts with an empty form.
+  and ignores late responses; reopening restores the most recently applied
+  criteria in the form but not the result session, so the user submits again.
 - **Date semantics:** selected From/To days are inclusive in the browser time
   zone. Send UTC timestamps for the start of From and the start of the day after
   To, using an API interval of `[from, to)`. Either bound may be omitted. Account
@@ -573,7 +574,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-06b-01` | Document both history contexts and extend the shared BFF filter/query contract.              | `DS-4-06a`                                                                | `C`        | Date semantics and cursor scope need precision. | Binding docs align; contracts validate optional filters and reject malformed ranges.                                                                                               |
 | `[x] ST-4-06b-02` | Filter and paginate retained user history at the existing BFF GET boundary.                  | `ST-4-06b-01`                                                             | `B`        | Historical evidence and pinned pages interact.  | BFF tests cover combined/one-sided filters, sparse pages, cursor mismatch and storage errors.                                                                                      |
 | `[x] ST-4-06b-03` | Add an independent static frontend search session with paging and manual refresh.            | `ST-4-06b-02`                                                             | `B`        | Session replacement and request races matter.   | Deterministic tests prove no SSE merge, refresh isolation, stale-response rejection and cleanup.                                                                                   |
-| `[ ] ST-4-06b-04` | Present an accessible modal with the filter form and bounded virtualized historical results. | `ST-4-06b-03`                                                             | `C`        | Form, dates and virtual scrolling meet.         | UI tests cover submit/clear, applied vs draft values, local dates, focus and list states.                                                                                          |
+| `[x] ST-4-06b-04` | Present an accessible modal with the filter form and bounded virtualized historical results. | `ST-4-06b-03`                                                             | `C`        | Form, dates and virtual scrolling meet.         | UI tests cover submit/clear, applied vs draft values, local dates, focus and list states.                                                                                          |
 | `[ ] ST-4-06b-05` | Verify historical search and Dashboard independence through mocked-BFF browser integration.  | `ST-4-06b-04`                                                             | `C`        | Two views share contracts but not sessions.     | Playwright proves search, paging, refresh and live Dashboard updates with validated fixtures.                                                                                      |
 | `[ ] ST-4-06b-06` | Verify story acceptance and complete the bounded delivery review.                            | `ST-4-06b-01`, `ST-4-06b-02`, `ST-4-06b-03`, `ST-4-06b-04`, `ST-4-06b-05` | `C`        | Evidence spans BFF and frontend boundaries.     | All preceding subtasks and approved story criteria pass; integration and docs align; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 

@@ -276,8 +276,8 @@ transformed on read from currently retained raw facts.
 The Dashboard feed's Filter control opens an accessible modal containing a
 single-device select, From/To date inputs, Search, Clear filters, and a results
 area below the form. Device options come from the current validated room
-projection. Opening without an active search shows an instruction to choose at
-least one criterion and submit; it performs no history GET. Criteria are optional
+projection. Opening without an active search shows an instruction to submit at
+least one criterion; it performs no history GET. Criteria are optional
 individually, but Search requires at least one. A valid submission keeps the
 modal open and starts a new pinned search session.
 
@@ -286,9 +286,11 @@ and does not change displayed results. Results show a summary of their applied
 criteria. Refresh starts a new pinned session using the applied criteria, not
 unsaved drafts, and returns to the top. Clear filters removes drafts, results
 and the session, restores the initial instruction and performs no GET. Closing
-releases the session and returns focus to the invoking control; reopening starts
-with an empty form. The modal supports keyboard operation and contains focus
-while open.
+releases the session and returns focus to the invoking control. Reopening restores
+the most recently applied criteria in the form but does not restore its results
+or session; the user submits again to start a new pinned search. Clear filters
+also forgets the restored criteria. The modal supports keyboard operation and
+contains focus while open.
 
 From/To selections include the chosen days in the browser's time zone. Convert
 From to its local start of day, and To to the local start of the following

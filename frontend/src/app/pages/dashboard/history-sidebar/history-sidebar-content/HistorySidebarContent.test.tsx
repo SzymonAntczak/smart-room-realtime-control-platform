@@ -12,6 +12,10 @@ const source = {
     getBaseline: () => undefined,
     requestBaseline: () => undefined,
 };
+const nativeDialog = {
+    showModal: HTMLDialogElement.prototype.showModal,
+    close: HTMLDialogElement.prototype.close,
+};
 
 vi.mock('./history-feed/HistoryFeed', () => ({ HistoryFeed: () => null }));
 vi.mock('./useHistory', () => ({
@@ -42,16 +46,28 @@ import { HistorySidebarContent } from './HistorySidebarContent';
 
 describe('HistorySidebarContent controls', () => {
     beforeEach(() => {
+        HTMLDialogElement.prototype.showModal = function showModal() {
+            this.setAttribute('open', '');
+        };
+
+        HTMLDialogElement.prototype.close = function close() {
+            this.removeAttribute('open');
+            this.dispatchEvent(new Event('close'));
+        };
+
         vi.useRealTimers();
+
         vi.clearAllMocks();
     });
 
     afterEach(() => {
+        HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
+        HTMLDialogElement.prototype.close = nativeDialog.close;
         vi.useRealTimers();
         vi.unstubAllGlobals();
     });
 
-    it('keeps filter inactive and returns to newest when away from the top', () => {
+    it('opens the search dialog without affecting history and returns to newest when away from the top', () => {
         render(
             <HistorySidebarContent
                 source={source}
@@ -61,7 +77,8 @@ describe('HistorySidebarContent controls', () => {
             />,
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Filtruj' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Szukaj' }));
+        expect(screen.getByRole('dialog', { name: 'Wyszukaj historię' })).toHaveAttribute('open');
         expect(mocks.showNewest).not.toHaveBeenCalled();
         expect(mocks.loadOlder).not.toHaveBeenCalled();
 
