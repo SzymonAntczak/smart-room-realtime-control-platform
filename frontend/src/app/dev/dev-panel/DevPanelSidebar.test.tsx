@@ -3,16 +3,73 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createPendingCommand } from '../../../test/room/room-realtime-fixtures';
 import { ledScenarioDefinition, temperatureScenarioDefinition } from '../scenarios';
 
-import { DevPanel } from './DevPanel';
+import { DevPanel } from './index';
 
 const formatTimestamp = vi.hoisted(() => vi.fn(() => 'formatted local timestamp'));
 
-vi.mock('../../../i18n/time', () => ({ formatTimestamp }));
+vi.mock('../../features/date-time', () => ({ formatTimestamp }));
 
 describe('DevPanel.Sidebar', () => {
     afterEach(() => vi.unstubAllGlobals());
+
+    it('clears the selected LED scenario when a command becomes active and keeps it cleared afterwards', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            deviceId: 'led-main',
+                            scenarios: [{ action: 'confirm_delayed' }],
+                        }),
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({ action: 'confirm_delayed', status: 'completed' }),
+                    ),
+                ),
+        );
+        const target = { definition: ledScenarioDefinition, deviceId: 'led-main' };
+        const onRequestChange = vi.fn();
+        const { rerender } = render(
+            <DevPanel.Sidebar
+                target={target}
+                snapshot={createSnapshot()}
+                onClose={() => undefined}
+                onRequestChange={onRequestChange}
+            />,
+        );
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Potwierdź po 2 sekundach' }));
+        expect(await screen.findByRole('status')).toHaveTextContent(
+            'wybrano dla następnego polecenia LED',
+        );
+
+        rerender(
+            <DevPanel.Sidebar
+                target={target}
+                snapshot={{ ...createSnapshot(), activeCommands: [createPendingCommand()] }}
+                onClose={() => undefined}
+                onRequestChange={onRequestChange}
+            />,
+        );
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        rerender(
+            <DevPanel.Sidebar
+                target={target}
+                snapshot={createSnapshot()}
+                onClose={() => undefined}
+                onRequestChange={onRequestChange}
+            />,
+        );
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
 
     it('replaces one device definition with another in the same sidebar', async () => {
         vi.stubGlobal(

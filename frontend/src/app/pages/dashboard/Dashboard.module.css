@@ -1,0 +1,50 @@
+.shell {
+    display: grid;
+    grid-template-columns: clamp(19rem, 27vw, 24rem) minmax(0, 1fr);
+    gap: var(--space-8);
+    min-block-size: 100dvh;
+    transition:
+        grid-template-columns 340ms cubic-bezier(0.22, 1, 0.36, 1),
+        gap 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.shell:has(> [data-history-sidebar-open='false']) {
+    grid-template-columns: 0 minmax(0, 1fr);
+    gap: 0;
+}
+
+.controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+    align-content: start;
+    gap: var(--space-5);
+    min-inline-size: 0;
+    padding: var(--space-12) var(--space-8);
+}
+
+.shell:has(> [data-history-sidebar-open='false']) .controls {
+    padding-block-start: calc(var(--space-12) + var(--space-12));
+}
+
+@media (max-width: 48rem) {
+    .shell,
+    .shell:has(> [data-history-sidebar-open='false']) {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+    }
+
+    .controls {
+        padding: var(--space-8) var(--space-5);
+    }
+
+    .shell:has(> [data-history-sidebar-open='false']) .controls {
+        padding-block-start: var(--space-8);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .shell {
+        transition-duration: 0.01ms;
+        transition-delay: 0ms;
+    }
+}

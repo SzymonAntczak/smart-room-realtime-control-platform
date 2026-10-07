@@ -3,9 +3,22 @@ import { describe, expect, it } from 'vitest';
 
 import { ledScenarioDefinition, temperatureScenarioDefinition } from '../scenarios';
 
-import { DevPanel } from './DevPanel';
+import { DevPanel } from './index';
 
 describe('DevPanel.Content', () => {
+    it('keeps the root transparent while exposing the compound component API', () => {
+        render(
+            <DevPanel>
+                <span>Panel contents</span>
+            </DevPanel>,
+        );
+
+        expect(screen.getByText('Panel contents')).toBeInTheDocument();
+        expect(DevPanel.Content).toBeDefined();
+        expect(DevPanel.Sidebar).toBeDefined();
+        expect(DevPanel.Trigger).toBeDefined();
+    });
+
     it('renders only actions discovered for the selected device', () => {
         render(
             <DevPanel.Content

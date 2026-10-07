@@ -1,8 +1,0 @@
-{
-    "extends": "./tsconfig.base.json",
-    "compilerOptions": {
-        "lib": ["DOM", "ES2022"],
-        "types": ["node", "vitest/globals", "vite/client"]
-    },
-    "include": ["tests/transport-integration", "frontend/src/vite-env.d.ts"]
-}

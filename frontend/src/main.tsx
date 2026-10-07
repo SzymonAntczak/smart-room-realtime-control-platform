@@ -4,7 +4,7 @@ import { type ComponentType, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './app/App';
-import { i18nReady, loadDevelopmentTranslations } from './i18n';
+import { i18nReady, loadDevelopmentTranslations } from './app/i18n';
 
 async function bootstrap(): Promise<void> {
     await i18nReady;

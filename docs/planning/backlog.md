@@ -409,15 +409,16 @@ Each item has one difficulty rating only:
 - **Acceptance criteria:** revision-linked feed/telemetry baselines and deltas,
   non-interleaving batches, bounded overlay and generation-safe rebuild.
 - **Non-goals:** `Last-Event-ID`, replay or a second history stream.
-- **Story verification:** deterministic runtime, BFF and client transport scenarios.
+- **Story verification:** backend native-source-mocked HTTP/SSE integration plus
+  deterministic frontend session tests and mocked-BFF browser scenarios.
 
-| Subtask          | Purpose / primary boundary                                                     | Depends on                 | Difficulty | Verification / done when                                                  |
-| ---------------- | ------------------------------------------------------------------------------ | -------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `[x] ST-4-04-01` | Publish history baseline/deltas, telemetry samples, gap and watermark updates. | `DS-4-01`, `ST-4-03-01`    | `B`        | SSE tests prove snapshot, outcome, watermark-only and recovery sequences. |
-| `[x] ST-4-04-02` | Publish each multi-revision result as an atomic, non-interleaving batch.       | `ST-4-04-01`               | `B`        | Concurrent connection sees final revision-0, never a partial batch.       |
-| `[x] ST-4-04-03` | Keep bounded live overlay from before first request through all pages.         | `ST-4-03-01`, `ST-4-04-01` | `B`        | Additions before, during and between pages survive merge by `recordId`.   |
-| `[x] ST-4-04-04` | Rebuild open history after reconnect, expiry or generation change.             | `ST-4-03-02`, `ST-4-04-03` | `B`        | Tests cover same-generation recovery, expiry, `503` and replacement.      |
-| `[x] ST-4-04-05` | Verify complete no-loss behavior across actual HTTP/SSE ordering.              | `ST-4-04-02`, `ST-4-04-04` | `B`        | Controlled transport integration proves the story guarantee.              |
+| Subtask          | Purpose / primary boundary                                                           | Depends on                 | Difficulty | Verification / done when                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------ | -------------------------- | ---------- | -------------------------------------------------------------------------------------------------- |
+| `[x] ST-4-04-01` | Publish history baseline/deltas, telemetry samples, gap and watermark updates.       | `DS-4-01`, `ST-4-03-01`    | `B`        | SSE tests prove snapshot, outcome, watermark-only and recovery sequences.                          |
+| `[x] ST-4-04-02` | Publish each multi-revision result as an atomic, non-interleaving batch.             | `ST-4-04-01`               | `B`        | Concurrent connection sees final revision-0, never a partial batch.                                |
+| `[x] ST-4-04-03` | Keep bounded live overlay from before first request through all pages.               | `ST-4-03-01`, `ST-4-04-01` | `B`        | Additions before, during and between pages survive merge by `recordId`.                            |
+| `[x] ST-4-04-04` | Rebuild open history after reconnect, expiry or generation change.                   | `ST-4-03-02`, `ST-4-04-03` | `B`        | Tests cover same-generation recovery, expiry, `503` and replacement.                               |
+| `[x] ST-4-04-05` | Verify backend HTTP/SSE ordering and client no-loss behavior in their owning suites. | `ST-4-04-02`, `ST-4-04-04` | `B`        | Native-source-mocked backend integration and frontend session/browser tests protect the guarantee. |
 
 ### [x] `DS-4-05` — Freshness derived from device cadence
 
@@ -641,7 +642,8 @@ Each item has one difficulty rating only:
 - **Acceptance criteria:** bounded persisted diagnostics; malformed/future inputs
   through normal path; all ignored classes remain non-applying.
 - **Non-goals:** product Dashboard quarantine feed.
-- **Story verification:** focused end-to-end ignored-input scenarios.
+- **Story verification:** native-source-mocked backend integration verifies
+  ignored inputs through processing, persistence, diagnostics API and logs.
 
 - **Final review difficulty rationale:** Review must establish non-applying semantics across simulator, processor, persistence, diagnostics and logs.
 

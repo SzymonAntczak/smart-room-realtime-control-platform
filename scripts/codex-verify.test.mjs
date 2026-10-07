@@ -199,6 +199,15 @@ test('still verifies hooks when instructions change alongside their configuratio
     );
 });
 
+test('verifies hook implementation and test changes without unrelated workspace checks', () => {
+    for (const path of ['scripts/codex-verify.mjs', 'scripts/codex-verify.test.mjs']) {
+        assert.deepEqual(
+            buildVerificationPlan([path]).map((command) => command.key),
+            ['format:files', 'lint:files', 'test:codex-hooks'],
+        );
+    }
+});
+
 test('keeps the safe suite for unknown files outside the recognized instruction paths', () => {
     const keys = buildVerificationPlan(['another-package/AGENTS.md']).map((command) => command.key);
 
@@ -208,6 +217,50 @@ test('keeps the safe suite for unknown files outside the recognized instruction 
     assert.ok(keys.includes('test:backend'));
     assert.ok(keys.includes('test:frontend'));
     assert.ok(keys.includes('test:simulator'));
+});
+
+test('routes backend integration and runner configuration through backend checks', () => {
+    for (const path of [
+        'backend/src/testing/integration/room-history.integration.test.ts',
+        'backend/src/testing/integration/native-source-doubles.ts',
+        'backend/vitest.config.ts',
+    ]) {
+        const keys = buildVerificationPlan([path]).map((command) => command.key);
+        assert.ok(keys.includes('typecheck:@smart-room/backend'));
+        assert.ok(keys.includes('test:backend'));
+        assert.ok(!keys.includes('test:frontend'));
+        assert.ok(!keys.includes('test:browser'));
+    }
+});
+
+test('checks both compiler configurations and runs the compiler browser suite', () => {
+    for (const path of ['frontend/vite.compiler.config.ts', 'playwright.compiler.config.ts']) {
+        const keys = buildVerificationPlan([path]).map((command) => command.key);
+        assert.ok(keys.includes('typecheck:frontend'));
+        assert.ok(keys.includes('typecheck:browser'));
+        assert.ok(keys.includes('test:browser:compiler'));
+    }
+});
+
+test('verifies shared Playwright configuration with both browser suites', () => {
+    const keys = buildVerificationPlan(['playwright.shared.config.ts']).map(
+        (command) => command.key,
+    );
+
+    assert.ok(keys.includes('typecheck:browser'));
+    assert.ok(keys.includes('test:browser'));
+    assert.ok(keys.includes('test:browser:compiler'));
+    assert.ok(!keys.includes('test:backend'));
+});
+
+test('runs the compiler evidence spec in the suite that discovers it', () => {
+    const keys = buildVerificationPlan([
+        'frontend/tests/browser-integration/react-compiler-evidence.spec.ts',
+    ]).map((command) => command.key);
+
+    assert.ok(keys.includes('typecheck:browser'));
+    assert.ok(keys.includes('test:browser:compiler'));
+    assert.ok(!keys.includes('test:browser'));
 });
 
 test('runs npm commands without spawning npm.cmd directly on Windows', async () => {

@@ -79,7 +79,7 @@ end-to-end path. All runtime device sources use MQTT through the local broker:
 the MQTT simulator, ESP32/ESPHome and standalone MQTT-capable devices. Their
 native topics and payloads need not match; backend-owned adapters translate
 each source into the shared platform contract. Direct invocation is retained
-only as an isolated test seam for domain logic and adapter translation.
+as a native-source/transport seam in backend unit and integration tests.
 
 At the roadmap level, "production ready" means reliability-first for a local
 project slice: clear contracts, explicit uncertainty and failure states,
@@ -350,8 +350,8 @@ relevant architectural decisions are complete.
 ## Stage 5 - MQTT-Backed Simulator Runtime
 
 Stage 5 makes MQTT the normal local simulator transport boundary. It builds on
-the LAN security foundation established in Stage 4.5. Direct calls remain only
-isolated test seams, not an alternate simulator runtime.
+the LAN security foundation established in Stage 4.5. Native-source/transport doubles remain test seams for backend unit and
+integration suites, not an alternate simulator runtime.
 
 Expected outcome:
 
@@ -368,10 +368,15 @@ Expected outcome:
   until new trustworthy device availability evidence arrives,
 - development scenario controls invoke simulator behavior through a dev-only
   backend boundary, while every resulting observation returns through MQTT;
-- direct calls remain available only for isolated domain and adapter tests.
+- backend unit/integration tests use native-source or transport doubles for
+  deterministic failure cases; real broker security and infrastructure acceptance
+  retain their required evidence.
 - a root-level full-runtime end-to-end suite exercises the frontend, real BFF,
   local Mosquitto broker and MQTT simulator together without a mocked BFF or an
-  alternate transport path.
+  alternate transport path. Its smoke scenarios cover live temperature updates,
+  an LED command with confirmation and history, paged history with live additions,
+  and recovery after broker loss. Detailed failure matrices remain in backend
+  unit/integration and mocked-BFF frontend tests.
 
 Stage 5 is complete when the MQTT simulator provides the supported sensor and
 on/off behavior through the ordinary local runtime, transport-specific failure

@@ -1,0 +1,11 @@
+.feed {
+    inline-size: 100%;
+}
+.feed h2 {
+    margin-block: 0 var(--space-5);
+    font-size: var(--font-size-heading-md);
+}
+.notice,
+.empty {
+    color: var(--color-text-muted);
+}

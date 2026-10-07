@@ -49,8 +49,9 @@ the development controls to verify the normal simulator-to-diagnostics path.
 MQTT-backed slices additionally cover broker unavailable and reconnect,
 subscription recovery, malformed native payloads, duplicate delivery and
 retained-message bootstrap. These scenarios run through the normal local
-simulator runtime. Isolated domain and adapter tests may use direct test seams
-without maintaining a second end-to-end route.
+simulator runtime and full-system smoke tests. Backend unit/integration tests
+may use native-source transport doubles for the detailed failure matrix without
+maintaining a second application or end-to-end route.
 
 ## Observability
 
@@ -95,7 +96,15 @@ probes. The UI and correlated logs expose which category applies.
 
 ## Testing Strategy
 
-The testing strategy should follow the risk in the system: state derivation, command lifecycle and realtime UI behavior matter more than superficial coverage.
+The testing strategy follows the risk in the system: state derivation, command
+lifecycle and realtime UI behavior matter more than superficial coverage.
+[ADR: Test Suite Boundaries](../decisions/adr-test-suite-boundaries.md) defines
+ownership. Frontend unit/component/hook tests protect client behavior; Playwright
+uses a mocked BFF. Backend unit tests protect modules and backend integration
+uses mocked native sources or transport clients with real adapters, runtime,
+processing, SQLite where applicable, and HTTP/SSE APIs. Root-level E2E smoke
+tests use the real frontend, backend and required source infrastructure. Shared
+contracts and simulator behavior retain their package-owned tests.
 
 ### Contract Tests
 
@@ -261,8 +270,11 @@ Initial scenarios:
 
 ### MQTT Runtime And Transport Tests
 
-For MQTT-backed runtime sources, run the real local broker for every simulator runtime or
-end-to-end test. Direct seams are limited to isolated domain and adapter tests.
+For MQTT-backed sources, the normal simulator runtime and full-system E2E use
+the real local broker. Backend unit and integration tests may replace the native
+source transport client; integration still uses the real backend path to API.
+These test doubles do not demonstrate actual broker interoperability or replace
+broker security and infrastructure acceptance.
 In addition to normal command and observation flows, verify:
 
 - the MQTT simulator, ESP32/ESPHome and standalone-device adapters translate their own
@@ -325,13 +337,15 @@ with clock regression, generation replacement and main/auxiliary read failures.
 Verify strict BFF HTTP/SSE user entries and Dashboard paging.
 Session tests protect identity merge, durability preference, sparse pages,
 single-flight fetch, pinned parameters, cursor cycles, one automatic cursor
-restart, generation replacement, 503 recovery and cache bounds. Actual transport
-tests exercise user-history and telemetry against the BFF/runtime. Mocked-BFF
+restart, generation replacement, 503 recovery and cache bounds. Backend integration
+with native-source doubles exercises user-history and telemetry over real BFF
+HTTP/SSE with SQLite. Client merge, refetch and reading-position behavior belongs
+to frontend tests; root E2E smoke protects the actual system composition. Mocked-BFF
 browser tests protect desktop/mobile offsets (2 px tolerance), overlay overflow,
 reconnect, expiry, missing-anchor fallback, storage recovery, invalid payloads
 and closing a panel with an outstanding request. Component tests must cover accessible user entries and mocked-BFF browser scenarios for 1,000
 loaded entries with bounded DOM, mixed-height anchors through width changes and
-reconnect, keyboard scrolling, single-flight observer loading, a persistent
+reconnect, keyboard scrolling, single-flight Virtuoso paging, a persistent
 navigation footer, and focus recovery when retry controls disappear or become
 disabled. App composition tests
 replace geometry with a test-local rendering seam; only the real-browser suite

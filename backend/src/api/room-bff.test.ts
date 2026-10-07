@@ -15,8 +15,6 @@ import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-proce
 import { createHistoryCursorCodec } from '../platform/history/room-history-cursor';
 import { createRoomHistoryReader } from '../platform/history/room-history-reader';
 import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
-import { StorageAvailabilityError } from '../platform/storage/storage-errors';
-import { createTemperatureRoomRuntime } from '../runtime/temperature-room-runtime';
 
 import { createRoomBffServer } from './room-bff';
 import { toRoomBffSnapshot } from './user-history/user-history-projection';
@@ -394,92 +392,6 @@ describe('createRoomBffServer', () => {
             });
         } finally {
             await Promise.all([originalHistory.close(), replacementHistory.close()]);
-        }
-    });
-
-    it('returns 503 and degrades runtime storage after a continuation read availability failure', async () => {
-        const directory = mkdtempSync(join(tmpdir(), 'smart-room-bff-history-failure-'));
-        const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
-        const runtime = createTemperatureRoomRuntime({ storage, intervalMs: 60_000 });
-        const server = createRoomBffServer({
-            getRoomSnapshot: runtime.getRoomSnapshot,
-            getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
-            readSignificantFactPage: runtime.readSignificantFactPage,
-            readRawTelemetryPage: runtime.readRawTelemetryPage,
-            readTrend: runtime.readTrend,
-            subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
-        });
-
-        try {
-            const retentionAsOf = new Date().toISOString();
-            const firstOccurredAt = new Date(Date.parse(retentionAsOf) - 60_000).toISOString();
-            const secondOccurredAt = new Date(Date.parse(retentionAsOf) - 30_000).toISOString();
-            const outageStartedAt = new Date(Date.parse(retentionAsOf) - 120_000).toISOString();
-            const seeded = storage.transact(
-                (transaction) => {
-                    transaction.appendSignificantFact({
-                        recordId: recordId('a'),
-                        eventType: 'storage.gap.recorded',
-                        source: 'backend',
-                        occurredAt: firstOccurredAt,
-                        payload: {
-                            ...storageGapPayload(firstOccurredAt),
-                            outageStartedAt,
-                        },
-                    });
-                    transaction.appendSignificantFact({
-                        recordId: recordId('b'),
-                        eventType: 'storage.gap.recorded',
-                        source: 'backend',
-                        occurredAt: secondOccurredAt,
-                        payload: {
-                            ...storageGapPayload(secondOccurredAt),
-                            outageStartedAt,
-                        },
-                    });
-                },
-                { retentionAsOf },
-            );
-
-            if (seeded.status !== 'committed') {
-                throw seeded.error;
-            }
-
-            runtime.start();
-
-            const firstPage = await server.inject({
-                method: 'GET',
-                url: '/room/history/significant-facts?pageSize=1',
-            });
-            expect(firstPage.statusCode).toBe(200);
-            const cursor = firstPage.json<{ nextCursor: string }>().nextCursor;
-
-            storage.readPinnedSignificantFacts = () => {
-                throw new StorageAvailabilityError('Injected durable history read failure.', null);
-            };
-
-            const failedContinuation = await server.inject({
-                method: 'GET',
-                url: `/room/history/significant-facts?pageSize=1&cursor=${encodeURIComponent(cursor)}`,
-            });
-
-            expect(failedContinuation.statusCode).toBe(503);
-            expect(failedContinuation.json()).toEqual({
-                error: 'durable_history_unavailable',
-                message: 'Durable history is currently unavailable.',
-            });
-            expect(runtime.getRoomSnapshot().platform.storage.status).toBe('degraded');
-
-            const laterRead = await server.inject({
-                method: 'GET',
-                url: '/room/history/significant-facts?pageSize=1',
-            });
-            expect(laterRead.statusCode).toBe(503);
-        } finally {
-            await server.close();
-            runtime.stop();
-            storage.close();
-            rmSync(directory, { recursive: true, force: true });
         }
     });
 
@@ -894,44 +806,6 @@ describe('createRoomBffServer', () => {
         expect(actions).toEqual([{ deviceId: 'temp-desk', action: 'pause_telemetry' }]);
     });
 
-    it('routes a development scenario through the real runtime and room projection', async () => {
-        const runtime = createTemperatureRoomRuntime({
-            intervalMs: 10_000,
-        });
-        runtime.start();
-        const server = await listen(
-            createRoomBffServer({
-                getRoomSnapshot: runtime.getRoomSnapshot,
-                getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
-                subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
-                runDeviceScenario: runtime.runDeviceScenario,
-                getDeviceScenarios: runtime.getDeviceScenarios,
-            }),
-        );
-        openServers.push(server);
-
-        try {
-            const actionResponse = await fetch(
-                `${serverUrl(server)}/dev/devices/temp-desk/scenarios`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'emit_next_reading' }),
-                },
-            );
-            const roomResponse = await fetch(`${serverUrl(server)}/room`);
-
-            expect(actionResponse.status).toBe(200);
-            await expect(roomResponse.json()).resolves.toMatchObject({
-                devices: expect.arrayContaining([
-                    expect.objectContaining({ deviceId: 'temp-desk' }),
-                ]),
-            });
-        } finally {
-            runtime.stop();
-        }
-    });
-
     it('keeps development scenarios unavailable when no control handler is configured', async () => {
         const server = await listen(createRoomBffServer(createRoomBffConfig()));
         openServers.push(server);
@@ -1211,47 +1085,6 @@ describe('createRoomBffServer', () => {
                 ]),
             },
         });
-    });
-
-    it('streams only the changed device delta from the two-sensor runtime', async () => {
-        const runtime = createTemperatureRoomRuntime({ intervalMs: 10_000 });
-        runtime.start();
-        const server = await listen(
-            createRoomBffServer({
-                getRoomSnapshot: runtime.getRoomSnapshot,
-                getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
-                subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,
-            }),
-        );
-        openServers.push(server);
-        const stream = await connectSse(server);
-        openStreams.push(stream);
-
-        try {
-            await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
-                messageType: 'room.snapshot',
-                payload: {
-                    devices: expect.arrayContaining([
-                        expect.objectContaining({ deviceId: 'temp-desk' }),
-                        expect.objectContaining({ deviceId: 'temp-window' }),
-                    ]),
-                },
-            });
-
-            runtime.runDeviceScenario('temp-window', 'emit_next_reading');
-
-            await expect(readRealtimeMessage(stream)).resolves.toMatchObject({
-                messageType: 'device.updated',
-                previousRevision: 0,
-                revision: 1,
-                payload: {
-                    deviceId: 'temp-window',
-                    reportedState: { temperature: 20.2, temperatureUnit: 'celsius' },
-                },
-            });
-        } finally {
-            runtime.stop();
-        }
     });
 
     it('removes realtime snapshot subscriptions when the SSE client closes', async () => {

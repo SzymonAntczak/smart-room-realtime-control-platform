@@ -7,7 +7,9 @@
         "dev": "tsx src/server.ts",
         "lint": "eslint ../backend --config ../eslint.config.js",
         "test": "vitest run",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "test:unit": "vitest run --project unit",
+        "test:integration": "vitest run --project integration"
     },
     "devDependencies": {
         "@types/node": "^24.10.4",

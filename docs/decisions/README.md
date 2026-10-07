@@ -30,6 +30,7 @@ Keep agreed target system behavior in [architecture](../architecture/). Promote 
 - [Playwright for Frontend Integration Tests](adr-playwright-frontend-integration-tests.md)
 - [Storage and Observability](adr-storage-and-observability.md)
 - [User History Projection and Virtualized Feed](adr-user-history-projection-and-virtualized-feed.md)
+- [Test Suite Boundaries](adr-test-suite-boundaries.md)
 
 ## Superseded ADRs
 

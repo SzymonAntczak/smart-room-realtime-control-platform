@@ -1,0 +1,4 @@
+.active:disabled {
+    border-color: var(--color-action-primary);
+    color: var(--color-text);
+}

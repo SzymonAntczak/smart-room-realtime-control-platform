@@ -30,9 +30,11 @@ they are test tooling, not a device protocol. Every observable result of a
 scenario, including telemetry, availability and reported state, must still
 travel from the simulator through MQTT before it affects the platform.
 
-Direct adapter or simulator calls may be used only as isolated test seams for
-domain logic and adapter translation. They must not form an alternate local
-application runtime, Dashboard source or end-to-end test route.
+Backend unit and integration tests may replace a native source or transport
+client with a deterministic test double, according to
+[Test Suite Boundaries](adr-test-suite-boundaries.md). Integration retains the
+real adapter-to-API backend path. These test seams must not form an alternate
+local application runtime, Dashboard source or end-to-end test route.
 
 Source-specific backend adapters validate their native topics and payloads and
 translate them to the shared platform contracts; sources are not required to
@@ -90,8 +92,10 @@ and MQTT delivery guarantees do not replace platform deduplication.
 
 - Unit tests cover platform-domain rules and adapter translation through
   explicit direct test seams.
-- MQTT integration tests cover broker loss, reconnect, retained bootstrap,
-  malformed payload and duplicate delivery.
+- Backend unit/integration tests use controlled native transport inputs to cover
+  broker loss, reconnect, retained bootstrap, malformed payload and duplicate
+  delivery. Full-system E2E smoke verifies the real broker path and its recovery;
+  broker security and infrastructure acceptance retain their required evidence.
 - A manual source-parity acceptance run shows the MQTT simulator,
   ESP32/ESPHome and a standalone MQTT-capable device together,
   including applicable telemetry or reported state, logs, events and on/off

@@ -1,0 +1,25 @@
+.drawer {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-end: 0;
+    z-index: 2;
+    display: grid;
+    align-content: start;
+    gap: var(--space-5);
+    inline-size: min(100%, 28rem);
+    overflow-y: auto;
+    border-inline-start: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-panel);
+    padding: var(--space-6);
+}
+
+.close {
+    justify-self: end;
+}
+
+@media (max-width: 32.5rem) {
+    .drawer {
+        padding: var(--space-5);
+    }
+}

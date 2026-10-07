@@ -74,14 +74,23 @@ report what was run. If no relevant commands exist yet, say so explicitly.
   harness/configuration, read the Browser Integration Tests section of
   [frontend guidelines](frontend-guidelines.md) and
   [the Playwright ADR](../decisions/adr-playwright-frontend-integration-tests.md).
-- Root-level full-runtime transport/end-to-end tests use the real BFF and the
-  documented runtime transport. They do not inherit the frontend suite's
-  requirement to avoid backend or simulator.
-- Before changing either suite, read the relevant architecture and accepted ADRs,
-  including [reliability and testing](../architecture/reliability-and-testing.md).
+- Backend integration lives in `backend/src/testing/integration` and replaces
+  only native sources or their transport clients. Use real adapters, runtime,
+  processing, SQLite for persistence scenarios, and API HTTP/SSE. These tests
+  must not import frontend code or replace native input with prepared projections.
+- Backend unit tests stay near the module owning their behavior. Backend Vitest
+  projects `unit` and `integration` must have disjoint discovery.
+- Root-level `tests/` is reserved for full-system E2E smoke using the real BFF,
+  frontend and required source infrastructure. Detailed failure matrices belong
+  to the owning unit or integration suite.
+- Before changing a suite, read [Test Suite Boundaries](../decisions/adr-test-suite-boundaries.md)
+  and [reliability and testing](../architecture/reliability-and-testing.md).
 
 ## Test Quality
 
+- Every source module that implements executable logic must have a corresponding
+  test module. This includes React component and hook modules; test the behavior
+  owned by each module using the applicable package naming convention.
 - Colocate tests with the module that owns the behavior, except where a suite's
   documented boundary requires a separate integration harness.
 - Treat tests as protection for system behavior, not as coverage decoration.

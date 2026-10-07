@@ -226,15 +226,13 @@ describe('mock BFF shared-contract boundary', () => {
             ),
         );
 
-        const userHistory = scenario.snapshotMessage().payload.userHistory;
-        expect(userHistory).toHaveLength(20);
-        expect(userHistory[0]?.recordId).toBe(newest.recordId);
-        expect(userHistory.some((event) => event.recordId === initialEvents.at(-1)?.recordId)).toBe(
+        const history = scenario.snapshotMessage().payload.userHistory;
+        expect(history).toHaveLength(20);
+        expect(history[0]?.recordId).toBe(newest.recordId);
+        expect(history.some((event) => event.recordId === initialEvents.at(-1)?.recordId)).toBe(
             false,
         );
-        expect(userHistory.filter((event) => event.recordId === duplicate.recordId)).toHaveLength(
-            1,
-        );
+        expect(history.filter((event) => event.recordId === duplicate.recordId)).toHaveLength(1);
     });
 
     it('accepts only a documented set.power command request', () => {

@@ -79,8 +79,10 @@ through a local MQTT broker: the MQTT-backed simulator, ESP32/ESPHome and
 standalone MQTT-capable devices. This is the normal local development and
 end-to-end route, not only a deployment-like option. Backend-owned source
 adapters may use different native topics and payloads, but must produce the
-same platform contracts. Direct simulator or adapter invocation is limited to
-isolated domain and adapter test seams; it is not an application runtime.
+same platform contracts. Native-source and transport doubles are allowed in
+backend unit/integration tests as defined by
+[Test Suite Boundaries](../decisions/adr-test-suite-boundaries.md); they do not
+form an application runtime.
 
 ## Main Components
 

@@ -53,12 +53,16 @@ cutover queue is bounded by `SMART_ROOM_STORAGE_RECOVERY_QUEUE_LIMIT` (default
   sources.
 - `src/adapters/` contains source-specific translators for simulators, hardware
   or external systems.
-- `src/testing/` contains backend tests that span multiple backend boundaries.
+- `src/testing/integration/` contains native-source-mocked integration through
+  the real backend, SQLite where applicable, and HTTP/SSE API. Colocated tests
+  belong to the unit project. Neither group imports frontend code.
 
 ## Commands
 
 - `npm --prefix backend run dev`
-- `npm --prefix backend run test`
+- `npm --prefix backend run test` (unit and integration projects)
+- `npm --prefix backend run test:unit`
+- `npm --prefix backend run test:integration`
 - `npm --prefix backend run typecheck`
 - `npm --prefix backend run lint`
 

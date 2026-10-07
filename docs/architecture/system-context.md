@@ -133,8 +133,8 @@ Development scenario requests are a separate dev-only BFF-to-simulator control
 boundary. They may bypass MQTT because they configure test behavior rather than
 representing a device command. Any observation caused by a scenario still
 returns from the simulator through MQTT. Direct calls to adapters or simulator
-models are limited to isolated unit-test seams and are not shown as runtime
-sources.
+models and native-source transport doubles are permitted in backend unit and
+integration test seams and are not shown as runtime sources.
 
 The broker is a required transport dependency for MQTT-backed devices. On a
 backend-to-broker disconnect, devices available only through that dependency

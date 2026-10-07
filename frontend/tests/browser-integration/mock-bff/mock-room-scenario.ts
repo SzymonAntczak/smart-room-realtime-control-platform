@@ -8,7 +8,7 @@ import {
 import { assertMockRoomSnapshot, assertMockSseMessage } from './mock-bff-contracts';
 import { createOnlineLedRoomSnapshot } from './mock-bff-fixtures';
 
-const userHistoryLimit = 20;
+const historyLimit = 20;
 type RoomSnapshotMessage = Extract<RoomBffRealtimeServerMessage, { messageType: 'room.snapshot' }>;
 
 export class MockRoomScenario {
@@ -74,7 +74,7 @@ function applyUpdateToSnapshot(
                 update.payload.storage.historyGenerationId !==
                     snapshot.platform.storage.historyGenerationId
                     ? (update.payload.userHistory ?? [])
-                    : mergeUserHistory(snapshot.userHistory, update.payload.userHistory),
+                    : mergeHistory(snapshot.userHistory, update.payload.userHistory),
         };
     }
 
@@ -87,7 +87,7 @@ function applyUpdateToSnapshot(
         ...snapshot,
         updatedAt: update.sentAt,
         devices,
-        userHistory: mergeUserHistory(
+        userHistory: mergeHistory(
             snapshot.userHistory,
             update.messageType === 'device.updated'
                 ? 'userHistory' in update
@@ -104,7 +104,7 @@ function applyUpdateToSnapshot(
     };
 }
 
-function mergeUserHistory(
+function mergeHistory(
     current: UserHistoryItem[],
     updates: UserHistoryItem[] | undefined,
 ): UserHistoryItem[] {
@@ -122,7 +122,7 @@ function mergeUserHistory(
         }
     }
 
-    return [...byRecordId.values()].sort(compareUserHistoryDescending).slice(0, userHistoryLimit);
+    return [...byRecordId.values()].sort(compareUserHistoryDescending).slice(0, historyLimit);
 }
 
 function replaceDevice(

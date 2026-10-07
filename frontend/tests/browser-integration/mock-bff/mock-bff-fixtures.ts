@@ -107,7 +107,7 @@ export function createOnlineTemperatureDeviceProjection(): DeviceProjection {
     };
 }
 
-export function createOnlineWindowTemperatureDeviceProjection(): DeviceProjection {
+function createOnlineWindowTemperatureDeviceProjection(): DeviceProjection {
     return {
         ...createOnlineTemperatureDeviceProjection(),
         deviceId: 'temp-window',

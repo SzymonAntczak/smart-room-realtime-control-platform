@@ -3,5 +3,9 @@
     "compilerOptions": {
         "types": ["node", "@playwright/test"]
     },
-    "include": ["tests/browser-integration", "../playwright.config.ts"]
+    "include": [
+        "tests/browser-integration",
+        "../playwright.config.ts",
+        "../playwright.compiler.config.ts"
+    ]
 }

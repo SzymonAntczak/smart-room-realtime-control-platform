@@ -23,14 +23,15 @@
         "lint:files": "eslint",
         "test:backend": "npm run test --workspace @smart-room/backend",
         "test:browser": "playwright test",
-        "test:transport": "vitest run --config vitest.transport.config.ts",
         "test:frontend": "npm run test --workspace @smart-room/frontend",
         "test:contracts": "npm run test --workspace @smart-room/contracts",
         "test:codex-hooks": "node --test scripts/codex-verify.test.mjs",
         "test:simulator": "npm run test --workspace @smart-room/simulator",
         "typecheck:browser": "npm run typecheck:browser --workspace @smart-room/frontend",
-        "typecheck:transport": "tsc --project tsconfig.transport.json --noEmit",
-        "typecheck": "npm run typecheck --workspace @smart-room/contracts && npm run typecheck --workspace @smart-room/backend && npm run typecheck --workspace @smart-room/frontend && npm run typecheck --workspace @smart-room/simulator"
+        "typecheck": "npm run typecheck --workspace @smart-room/contracts && npm run typecheck --workspace @smart-room/backend && npm run typecheck --workspace @smart-room/frontend && npm run typecheck --workspace @smart-room/simulator",
+        "test:browser:compiler": "playwright test --config playwright.compiler.config.ts",
+        "test:backend:unit": "npm run test:unit --workspace @smart-room/backend",
+        "test:backend:integration": "npm run test:integration --workspace @smart-room/backend"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

@@ -13,13 +13,13 @@ import {
     createPendingLedCommand,
     createPendingLedDeviceProjection,
 } from './mock-bff-fixtures';
+import { MockHistory } from './mock-history';
 import { MockRoomScenario } from './mock-room-scenario';
-import { MockUserHistory } from './mock-user-history';
 import { createHistoryPage } from './recent-feed-fixtures';
 
 const realtimeStreams = new Set<ServerResponse>();
 const roomScenario = new MockRoomScenario();
-const history = new MockUserHistory();
+const history = new MockHistory();
 let nextCommandId = 1;
 let rejectNextCommand = false;
 let publishAcceptedBeforeResponse = false;

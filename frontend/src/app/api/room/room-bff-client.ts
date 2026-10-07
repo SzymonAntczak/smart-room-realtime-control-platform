@@ -1,0 +1,26 @@
+import {
+    isRoomBffRealtimeServerMessage,
+    isRoomBffSnapshot,
+    type RoomBffRealtimeServerMessage,
+    type RoomBffSnapshot,
+} from '@smart-room/contracts/room-bff';
+
+type RoomBffSnapshotResult =
+    | { kind: 'snapshot'; snapshot: RoomBffSnapshot }
+    | { kind: 'invalid_response' };
+type RoomBffRealtimeResult =
+    | { kind: 'message'; message: RoomBffRealtimeServerMessage }
+    | { kind: 'invalid_response' };
+
+export function validateRoomBffSnapshot(value: unknown): RoomBffSnapshotResult {
+    return isRoomBffSnapshot(value)
+        ? { kind: 'snapshot', snapshot: value }
+        : { kind: 'invalid_response' };
+}
+
+/** Validates the single current BFF contract before applying realtime updates. */
+export function validateRoomBffRealtimeMessage(value: unknown): RoomBffRealtimeResult {
+    return isRoomBffRealtimeServerMessage(value)
+        ? { kind: 'message', message: value }
+        : { kind: 'invalid_response' };
+}

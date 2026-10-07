@@ -131,11 +131,22 @@ export function buildVerificationPlan(paths, isFilePresent = () => true) {
     const frontendChanged = runtimePaths.some(
         (path) => hasPrefix(path, 'frontend/src/') || path === 'frontend/vite.config.ts',
     );
+    const compilerEvidencePath =
+        'frontend/tests/browser-integration/react-compiler-evidence.spec.ts';
     const browserChanged = normalizedPaths.some(
         (path) =>
-            hasPrefix(path, 'frontend/tests/browser-integration/') ||
+            (hasPrefix(path, 'frontend/tests/browser-integration/') &&
+                path !== compilerEvidencePath) ||
             path === 'playwright.config.ts' ||
+            path === 'playwright.shared.config.ts' ||
             path === 'frontend/tsconfig.browser-tests.json',
+    );
+    const compilerChanged = normalizedPaths.some(
+        (path) =>
+            path === 'frontend/vite.compiler.config.ts' ||
+            path === 'playwright.compiler.config.ts' ||
+            path === 'playwright.shared.config.ts' ||
+            path === compilerEvidencePath,
     );
     const mockBffUnitTestChanged = normalizedPaths.some(
         (path) =>
@@ -170,6 +181,8 @@ export function buildVerificationPlan(paths, isFilePresent = () => true) {
             hasPrefix(path, '.agents/') ||
             hasPrefix(path, '.codex/') ||
             hasPrefix(path, 'scripts/') ||
+            path === 'playwright.compiler.config.ts' ||
+            path === 'playwright.shared.config.ts' ||
             instructionPaths.has(path) ||
             rootVerificationPaths.has(path) ||
             path === 'playwright.config.ts',
@@ -216,6 +229,29 @@ export function buildVerificationPlan(paths, isFilePresent = () => true) {
 
     if (mockBffUnitTestChanged) {
         addWorkspaceChecks(commands, '@smart-room/frontend', 'test:frontend');
+    }
+
+    if (compilerChanged) {
+        addCommand(
+            commands,
+            npmCommand('typecheck:frontend', 'typecheck frontend compiler configuration', [
+                'run',
+                'typecheck',
+                '--workspace',
+                '@smart-room/frontend',
+            ]),
+        );
+        addCommand(
+            commands,
+            npmCommand('typecheck:browser', 'typecheck:browser', ['run', 'typecheck:browser']),
+        );
+        addCommand(
+            commands,
+            npmCommand('test:browser:compiler', 'test:browser:compiler', [
+                'run',
+                'test:browser:compiler',
+            ]),
+        );
     }
 
     if (rootVerificationChanged || !knownPathChanged) {

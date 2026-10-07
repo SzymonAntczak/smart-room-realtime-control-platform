@@ -231,12 +231,15 @@ pages. Merge by `recordId`, preferring durable evidence; display newest first
 using the existing `(occurredAt, recordId)` presentation order. HTTP cursor
 position remains based on storage order, never the DOM index or SSE revision.
 
-Load another page when a sentinel after the virtualized list enters an
-`IntersectionObserver` whose root is the history content scroller and whose
-bottom `rootMargin` equals one viewport height. Use one request in flight.
-Expose a loading state, explicit retry after errors and the end of retained
-history. Invalid payloads remain an error rather than triggering an automatic
-retry loop. Keep the history title and footer controls outside the scrollable
+Load another page through the pinned Virtuoso list's `endReached` callback,
+with `increaseViewportBy.bottom` equal to the current height of the history
+content scroller. This starts paging approximately one viewport before the
+physical end; the exact threshold follows Virtuoso's measured rendered range,
+overscan and variable item heights. A list whose end is initially within that
+range may page immediately when opened. Use one request in flight. Expose a
+loading state, explicit retry after errors and the end of retained history.
+Invalid payloads remain an error rather than triggering an automatic retry loop.
+Keep the history title and footer controls outside the scrollable
 content; scrolling applies only to the entries and their loading/end states.
 The footer provides an inactive Filter control and a persistent Return to top
 control. Activating Return to top while already at the top gives a temporary
@@ -283,10 +286,12 @@ known non-null generation alongside the current storage metadata, so opening
 during an unknown degraded state cannot merge old live entries into a replacement
 HTTP generation. Every validated addition reaches the
 session directly; React snapshot batching cannot discard intermediate additions.
-The first HTTP page pins generation, watermark and retention time. Sparse pages
-with a cursor continue as the observer reattaches after each completed page.
-The observer and explicit retry share the same single-flight session operation.
-The frontend renders only a measured virtual range; virtual indexes never
+The first HTTP page pins generation, watermark and retention time. Paging
+continues when Virtuoso reports the final loaded item in its extended rendered
+range. Empty pages with a cursor continue directly because no item exists to
+trigger `endReached`. The Virtuoso paging callbacks and explicit retry share
+the same single-flight session operation. The frontend renders only a measured
+virtual range; virtual indexes never
 determine the HTTP cursor or change session limits.
 
 Reading position is `{ recordId, occurredAt, offsetPx }` relative to the scroll
@@ -303,23 +308,22 @@ promising recovery of omitted historical changes or evicted volatile entries.
 
 ### Measured virtual rendering
 
-The frontend uses `@tanstack/react-virtual` 3.14.9 in the existing history scroll
-container. Rows have stable `recordId` keys, a 192 px initial height estimate
-and actual element measurements, with five overscan rows on each side. The
-rendered range may additionally retain one session reading anchor. Header/list
-origins and row gaps are measured so notices, wrapped descriptions and width
-changes do not require fixed row heights or a second scroll container.
+The frontend uses the pinned `react-virtuoso` 4.18.16 component in the existing
+history scroll container through `customScrollParent`. Entries are passed as
+data and keyed by `recordId`; the initial item-size estimate is 192 px and at
+least five items are overscanned on either side. Its measured list retains the
+`ol`/`li` structure, item positions, and the existing accessible item IDs.
 
-The geometry hook is the sole scroll-adjustment owner. It captures the first
-unobscured item before a scroll-driven range update, skips gaps rather than
-anchoring an obscured previous row, and restores identity and offset through
-range mounting and measurement. Programmatic corrections do not overwrite the
-session's reading position. Measurements are reset on width or generation
-changes, dropped item sizes are pruned, and detached DOM references/observers
-are released. Sparse-page advancement through the intersection observer and
-explicit retry still use the existing single-flight session operation.
-Pagination is triggered by the content-rooted observer rather than by virtual
-range geometry.
+Virtuoso owns visible-range calculation, element measurements, variable row
+heights, and scroll corrections after content or width changes. The history
+position controller owns the durable reading identity `{ recordId, occurredAt,
+offsetPx }`, restores it through public Virtuoso methods, handles return to the
+newest entries and preserves the existing focus-recovery behavior. It does not
+read or mutate a virtualizer geometry cache. Paging uses Virtuoso's
+`endReached` callback with a bottom `increaseViewportBy` equal to the current
+scroll viewport height. The history paging hook tracks Virtuoso's rendered
+range to continue after sparse pages, updates the pixel buffer after viewport
+resizes, and delegates single-flight request behavior to the session.
 
 The list retains `ol`/`li` semantics, exposing each row's position. Its total
 size is unknown (`aria-setsize=-1`) until the session reaches the end; the final
@@ -365,14 +369,18 @@ evidence, sparse pages, signed dataset/scope separation, fixed expiry, pinned
 retention/generation and whole-response errors. Platform/raw API and runtime
 bootstrap tests must protect the unchanged internal contracts.
 
-Strict BFF transport tests, deterministic history-session tests, actual HTTP/SSE
-integration and mocked-BFF desktop/mobile browser tests must cover paging,
-anchors, bounded overlay, recovery and panel cleanup. Item presentation and
+Backend integration with mocked native sources and real SQLite/HTTP/SSE protects
+BFF history identities, pinned pages, cursor errors and storage recovery.
+Deterministic frontend history-session tests and mocked-BFF desktop/mobile browser
+tests protect client merge, paging, anchors, bounded overlay, recovery and panel
+cleanup. Root-level E2E smoke protects their actual system composition according
+to [Test Suite Boundaries](adr-test-suite-boundaries.md). Item presentation and
 browser scenarios must verify 1,000 loaded entries with bounded DOM, mixed-height
-anchors through resize/reconnect, keyboard access, single-flight observer paging
+anchors through resize/reconnect, keyboard access, single-flight Virtuoso paging
 and predictable focus. The sidebar title and footer remain visible while only
-history content scrolls; intersection-triggered paging starts one viewport
-before the sentinel reaches the visible edge. The persistent Return to top
+history content scrolls; Virtuoso begins paging when its final loaded item
+enters the rendered range, extended by one current viewport height. The
+persistent Return to top
 control shows a temporary accessible tooltip when activated at the top.
 
 ## Links

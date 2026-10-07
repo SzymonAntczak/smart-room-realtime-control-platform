@@ -7,8 +7,16 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import tseslint from 'typescript-eslint';
 
-const frontendSourceFiles = ['frontend/**/*.{ts,tsx}'];
+const frontendSourceFiles = [
+    'frontend/**/*.{ts,tsx}',
+    'src/**/*.{ts,tsx}',
+    'tests/browser-integration/**/*.{ts,tsx}',
+];
 const frontendAppComponents = ['frontend/src/app/**/*.tsx', '**/src/app/**/*.tsx'];
+const frontendHookFiles = ['frontend/src/**/use*.{ts,tsx}', 'src/**/use*.{ts,tsx}'];
+const frontendTestSupportBlocklist = {
+    '**/*.test-support.{ts,tsx}': '**/src/test/**/*.ts',
+};
 const browserIntegrationSpecFiles = ['**/tests/browser-integration/**/*.spec.ts'];
 const mockBffSourceFiles = ['**/tests/browser-integration/mock-bff/**/*.ts'];
 const nodeSourceFiles = ['backend/**/*.ts', 'simulator/**/*.ts'];
@@ -95,6 +103,35 @@ export default tseslint.config(
                 },
                 {
                     ignoreMiddleExtensions: true,
+                },
+            ],
+        },
+    },
+    {
+        files: frontendHookFiles,
+        rules: {
+            'check-file/filename-naming-convention': [
+                'error',
+                { '**/*.{ts,tsx}': 'CAMEL_CASE' },
+                { ignoreMiddleExtensions: true },
+            ],
+        },
+    },
+    {
+        files: ['frontend/src/app/**/*.{ts,tsx}', 'src/app/**/*.{ts,tsx}'],
+        rules: {
+            'check-file/filename-blocklist': ['error', frontendTestSupportBlocklist],
+        },
+    },
+    {
+        files: ['frontend/src/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}'],
+        rules: {
+            'check-file/filename-blocklist': [
+                'error',
+                {
+                    ...frontendTestSupportBlocklist,
+                    '**/use-*.{ts,tsx}': '**/use[A-Z]*.ts',
+                    '**/Use[A-Z]*.test.{ts,tsx}': '**/use[A-Z]*.test.tsx',
                 },
             ],
         },

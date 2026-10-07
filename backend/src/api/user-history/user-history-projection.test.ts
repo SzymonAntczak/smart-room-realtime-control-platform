@@ -1,16 +1,11 @@
 import type { TerminalCommandProjection } from '@smart-room/contracts/commands';
 import type { RecentEventProjection } from '@smart-room/contracts/history';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
-import {
-    isRoomSnapshotProjection,
-    type RoomPublicationBatch,
-} from '@smart-room/contracts/realtime';
+import { type RoomPublicationBatch } from '@smart-room/contracts/realtime';
 import { isRoomBffRealtimeServerMessage, isRoomBffSnapshot } from '@smart-room/contracts/room-bff';
 import { isUserHistoryProjection } from '@smart-room/contracts/user-history';
 import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
 import { describe, expect, it } from 'vitest';
-
-import { createTemperatureRoomRuntime } from '../../runtime/temperature-room-runtime';
 
 import { toRoomBffPublicationDeltas, toRoomBffSnapshot } from './user-history-projection';
 
@@ -678,44 +673,5 @@ describe('BFF user-history projection', () => {
                 ] as unknown as RecentEventProjection[],
             }),
         ).toThrow(/Invalid snapshot/);
-    });
-
-    it('transforms a batch captured from the runtime public subscription', () => {
-        const runtime = createTemperatureRoomRuntime({ intervalMs: 60_000 });
-        const batches: RoomPublicationBatch[] = [];
-        const unsubscribe = runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
-
-        try {
-            runtime.start();
-            const previous = runtime.getRoomSnapshot();
-            expect(isRoomSnapshotProjection(previous)).toBe(true);
-            batches.length = 0;
-
-            runtime.runDeviceScenario('led-main', 'disconnect_device');
-
-            const batch = batches[0];
-
-            if (!batch) {
-                throw new Error('Expected the runtime scenario to publish a batch.');
-            }
-
-            const deltas = toRoomBffPublicationDeltas(previous, batch);
-            expect(deltas).toEqual(
-                expect.arrayContaining([
-                    expect.objectContaining({
-                        messageType: 'device.updated',
-                        userHistory: [
-                            expect.objectContaining({
-                                kind: 'availability_changed',
-                                current: 'offline',
-                            }),
-                        ],
-                    }),
-                ]),
-            );
-        } finally {
-            unsubscribe();
-            runtime.stop();
-        }
     });
 });

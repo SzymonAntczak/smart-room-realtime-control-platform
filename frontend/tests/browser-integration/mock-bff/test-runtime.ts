@@ -1,10 +1,15 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 
+import type { FullConfig } from '@playwright/test';
+
 import { browserTestRuntime, browserTestUrls, mockBffUrls } from '../browser-test-runtime';
 
 const readinessTimeoutMs = 30_000;
 
-export default async function startBrowserTestRuntime(): Promise<() => Promise<void>> {
+export default async function startBrowserTestRuntime(
+    config: FullConfig,
+): Promise<() => Promise<void>> {
+    const compilerEnabled = config.metadata['reactCompiler'] === true;
     const mockBff = startProcess([
         './node_modules/tsx/dist/cli.mjs',
         'frontend/tests/browser-integration/mock-bff/mock-bff.ts',
@@ -19,7 +24,7 @@ export default async function startBrowserTestRuntime(): Promise<() => Promise<v
                 './node_modules/vite/bin/vite.js',
                 'frontend',
                 '--config',
-                'frontend/vite.config.ts',
+                compilerEnabled ? 'frontend/vite.compiler.config.ts' : 'frontend/vite.config.ts',
                 '--host',
                 browserTestRuntime.host,
                 '--port',

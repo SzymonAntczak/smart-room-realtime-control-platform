@@ -10,8 +10,8 @@ export type ScenarioIcon =
     | 'timer'
     | 'wifi';
 
-export type ScenarioActionBlockCondition = 'active-command' | 'offline';
-export type ScenarioActionOutcome = 'completed' | 'none' | 'selected';
+type ScenarioActionBlockCondition = 'active-command' | 'offline';
+type ScenarioActionOutcome = 'completed' | 'none' | 'selected';
 
 export interface ScenarioActionDefinition {
     readonly action: DeviceScenarioAction;
@@ -21,7 +21,7 @@ export interface ScenarioActionDefinition {
     readonly outcome: ScenarioActionOutcome;
 }
 
-export interface ScenarioSectionDefinition {
+interface ScenarioSectionDefinition {
     readonly actions: readonly ScenarioActionDefinition[];
     readonly titleKey: string;
 }

@@ -16,22 +16,26 @@
     },
     "dependencies": {
         "@smart-room/contracts": "^0.1.0",
-        "@tanstack/react-virtual": "3.14.9",
         "i18next": "^26.3.6",
         "lucide-react": "^1.28.0",
         "react": "^19.2.7",
         "react-dom": "^19.2.7",
-        "react-i18next": "^17.0.11"
+        "react-i18next": "^17.0.11",
+        "react-virtuoso": "4.18.16"
     },
     "devDependencies": {
+        "@babel/core": "^7.29.7",
         "@eslint/js": "^10.0.1",
+        "@rolldown/plugin-babel": "^0.2.3",
         "@testing-library/jest-dom": "^6.9.1",
         "@testing-library/react": "^16.3.2",
         "@testing-library/user-event": "^14.6.1",
+        "@types/babel__core": "^7.20.5",
         "@types/node": "^24.10.4",
         "@types/react": "^19.2.16",
         "@types/react-dom": "^19.2.3",
         "@vitejs/plugin-react": "^6.0.2",
+        "babel-plugin-react-compiler": "^1.0.0",
         "eslint": "^10.4.1",
         "eslint-plugin-check-file": "^3.3.1",
         "eslint-plugin-react-hooks": "^7.1.1",

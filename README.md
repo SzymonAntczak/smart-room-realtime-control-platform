@@ -39,6 +39,13 @@ runtime dependencies used by platform contracts, such as TypeBox.
 
 ## Tests
 
+Backend tests run by group with `npm run test:backend:unit` and
+`npm run test:backend:integration`; `npm run test:backend` runs both. Integration
+uses native-source/transport doubles with the real backend and temporary SQLite.
+Frontend unit/component/hook tests run with `npm run test:frontend`. Shared
+contracts and simulator tests stay in their workspaces. See
+[Test Suite Boundaries](docs/decisions/adr-test-suite-boundaries.md).
+
 Run the deterministic frontend browser-integration reference suite from the
 repository root:
 

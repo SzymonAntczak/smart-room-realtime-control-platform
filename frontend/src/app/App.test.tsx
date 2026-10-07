@@ -1,18 +1,76 @@
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
-import { act, render, screen, within } from '@testing-library/react';
+import type { RoomBffRealtimeServerMessage } from '@smart-room/contracts/room-bff';
+import type { UserHistoryItem } from '@smart-room/contracts/user-history';
+import { isUserHistoryPage } from '@smart-room/contracts/user-history';
+import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ComponentType } from 'react';
+import type { Components, ContextProp, ItemProps, ListProps } from 'react-virtuoso';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from './App';
-vi.mock('./history/use-user-history-virtualizer', async () => ({
-    useUserHistoryVirtualizer: (await import('./history/history-rendering.test-support'))
-        .historyRenderingWithoutLayout,
-}));
+import { MockEventSource } from '../test/room/mock-event-source';
 
+import { App } from './App';
+interface HistoryFeedContext {
+    devices: [];
+    endReached: boolean;
+    totalItems: number;
+}
+
+vi.mock('react-virtuoso', async () => {
+    const { createElement } = await import('react');
+
+    return {
+        Virtuoso: ({
+            data = [],
+            components,
+            context,
+        }: {
+            data?: readonly UserHistoryItem[];
+            components: Components<UserHistoryItem, HistoryFeedContext, HTMLUListElement>;
+            context: HistoryFeedContext;
+        }) => {
+            const List = components.List as ComponentType<ListProps<HTMLUListElement>>;
+            const Item = components.Item as ComponentType<
+                ItemProps<UserHistoryItem> & ContextProp<HistoryFeedContext>
+            >;
+
+            return createElement(
+                List,
+                { 'data-testid': 'history-list', style: { height: data.length * 192 } },
+                ...data.map((item, index) =>
+                    createElement(Item, {
+                        key: item.recordId,
+                        item,
+                        'data-index': index,
+                        'data-item-index': index,
+                        'data-known-size': 192,
+                        style: { transform: `translateY(${index * 192}px)` },
+                        context,
+                    }),
+                ),
+            );
+        },
+    };
+});
+
+vi.mock(
+    './pages/dashboard/history-sidebar/history-sidebar-content/history-feed/useHistoryVirtualizer',
+    async () => {
+        const { createRef } = await import('react');
+
+        return {
+            useHistoryVirtualizer: () => ({
+                virtuosoRef: createRef(),
+            }),
+        };
+    },
+);
 describe('App', () => {
     beforeEach(() => {
-        MockWebSocket.instances.length = 0;
-        vi.stubGlobal('EventSource', MockWebSocket);
+        MockEventSource.instances.length = 0;
+        vi.stubGlobal('EventSource', MockEventSource);
         vi.stubGlobal(
             'fetch',
             vi.fn(() => new Promise(() => undefined)),
@@ -29,6 +87,66 @@ describe('App', () => {
         ).toBeInTheDocument();
     });
 
+    it('requests a fresh baseline without merging replacement history when the sidebar opens during unknown storage', async () => {
+        const fixtures = createUserHistoryFixtures();
+        const replacementPage = {
+            ...fixtures.page,
+            pageSize: 50,
+            historyGenerationId: 'replacement',
+        };
+        expect(isUserHistoryPage(replacementPage)).toBe(true);
+
+        const user = userEvent.setup();
+        const { unmount } = render(<App />);
+        await user.click(screen.getByRole('button', { name: 'Ukryj ostatnie zdarzenia' }));
+        act(() =>
+            MockEventSource.latest().emitMessage(
+                createRoomSnapshotMessage({ userHistory: [fixtures.gap] }),
+            ),
+        );
+        act(() =>
+            MockEventSource.latest().emitMessage({
+                messageType: 'platform.updated',
+                previousRevision: 0,
+                revision: 1,
+                sentAt: '2026-06-08T09:30:02Z',
+                payload: {
+                    storage: {
+                        status: 'degraded',
+                        changedAt: '2026-06-08T09:30:02Z',
+                        reason: 'storage_write_failed',
+                        historyGenerationId: null,
+                        storedThroughSequence: null,
+                    },
+                },
+            } satisfies RoomBffRealtimeServerMessage),
+        );
+        const originalSource = MockEventSource.latest();
+        const close = vi.spyOn(originalSource, 'close');
+        const fetcher = vi
+            .fn<typeof fetch>()
+            .mockResolvedValue(new Response(JSON.stringify(replacementPage)));
+        vi.stubGlobal('fetch', fetcher);
+
+        await user.click(screen.getByRole('button', { name: 'Pokaż ostatnie zdarzenia' }));
+        await waitFor(() => expect(close).toHaveBeenCalledOnce());
+
+        const history = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
+        expect(fetcher).toHaveBeenCalledOnce();
+        expect(within(history).getByText('Ładowanie historii…')).toBeInTheDocument();
+        expect(
+            within(history).getByTestId(`history-item-${fixtures.gap.recordId}`),
+        ).toBeInTheDocument();
+
+        for (const item of replacementPage.items) {
+            expect(
+                within(history).queryByTestId(`history-item-${item.recordId}`),
+            ).not.toBeInTheDocument();
+        }
+
+        unmount();
+    });
+
     it('does not render development scenario controls', () => {
         render(<App />);
 
@@ -37,7 +155,7 @@ describe('App', () => {
 
     it('renders supported device cards from one room snapshot and maps LED commands by device', () => {
         render(<App />);
-        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Temperatura okna' })).toBeInTheDocument();
@@ -49,11 +167,11 @@ describe('App', () => {
     it('keeps the temperature view visible and marks it uncertain while reconnecting', () => {
         render(<App />);
         act(() =>
-            MockWebSocket.latest().emitMessage(
+            MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ devices: [temperatureDevice()], activeCommands: [] }),
             ),
         );
-        act(() => MockWebSocket.latest().emitError());
+        act(() => MockEventSource.latest().emitError());
 
         expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
         expect(
@@ -66,7 +184,7 @@ describe('App', () => {
     it('renders the bounded snapshot feed and marks it last known while reconnecting', () => {
         render(<App />);
         act(() =>
-            MockWebSocket.latest().emitMessage(
+            MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({
                     userHistory: [
                         {
@@ -86,19 +204,19 @@ describe('App', () => {
         expect(
             screen.getByRole('region', { name: 'Przewijana historia zdarzeń' }),
         ).toHaveTextContent('Próba sterowania nie powiodła się.');
-        act(() => MockWebSocket.latest().emitError());
+        act(() => MockEventSource.latest().emitError());
         expect(screen.getByText(/Wyświetlane są ostatnio znane zdarzenia/)).toBeInTheDocument();
     });
 
     it('adds a feed fact from a contiguous device update', () => {
         render(<App />);
-        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
         expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
 
         act(() =>
-            MockWebSocket.latest().emitMessage({
+            MockEventSource.latest().emitMessage({
                 messageType: 'device.updated',
                 previousRevision: 0,
                 revision: 1,
@@ -125,13 +243,13 @@ describe('App', () => {
     it('keeps live telemetry out of the significant-events feed', () => {
         const { telemetrySample } = createHistoryIdentityFixtures();
         render(<App />);
-        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
         expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
 
         act(() =>
-            MockWebSocket.latest().emitMessage({
+            MockEventSource.latest().emitMessage({
                 messageType: 'device.updated',
                 previousRevision: 0,
                 revision: 1,
@@ -150,11 +268,11 @@ describe('App', () => {
 
     it('keeps accepted non-applying facts out of the feed when only the watermark advances', () => {
         render(<App />);
-        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
         act(() =>
-            MockWebSocket.latest().emitMessage({
+            MockEventSource.latest().emitMessage({
                 messageType: 'platform.updated',
                 previousRevision: 0,
                 revision: 1,
@@ -176,7 +294,7 @@ describe('App', () => {
         const timedOutLed = { ...ledDevice(), activeCommandId: undefined };
         render(<App />);
         act(() =>
-            MockWebSocket.latest().emitMessage(
+            MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({
                     devices: [temperatureDevice(), windowTemperatureDevice(), timedOutLed],
                     activeCommands: [],
@@ -205,7 +323,7 @@ describe('App', () => {
         ).not.toBeInTheDocument();
 
         act(() =>
-            MockWebSocket.latest().emitMessage({
+            MockEventSource.latest().emitMessage({
                 messageType: 'device.updated',
                 previousRevision: 0,
                 revision: 1,
@@ -230,7 +348,7 @@ describe('App', () => {
         expect(screen.getByText('Ładowanie ostatnich zdarzeń…')).toBeInTheDocument();
         expect(screen.queryByText('Brak istotnych zdarzeń.')).not.toBeInTheDocument();
 
-        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
         expect(screen.getByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeVisible();
 
         await user.click(toggle);
@@ -252,7 +370,7 @@ describe('App', () => {
         vi.stubGlobal('matchMedia', media.matchMedia);
         const user = userEvent.setup();
         render(<App />);
-        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const toggle = screen.getByRole('button', { name: 'Pokaż ostatnie zdarzenia' });
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -269,7 +387,7 @@ describe('App', () => {
     it('rejects a snapshot with a role outside the current platform contract', () => {
         render(<App />);
         act(() =>
-            MockWebSocket.latest().emitMessage(
+            MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ devices: [unsupportedDevice()], activeCommands: [] }),
             ),
         );
@@ -280,41 +398,6 @@ describe('App', () => {
         ).toBeInTheDocument();
     });
 });
-
-class MockWebSocket extends EventTarget {
-    static instances: MockWebSocket[] = [];
-
-    constructor() {
-        super();
-        MockWebSocket.instances.push(this);
-    }
-
-    static latest(): MockWebSocket {
-        const instance = MockWebSocket.instances.at(-1);
-
-        if (!instance) {
-            throw new Error('No mock websocket instance was created.');
-        }
-
-        return instance;
-    }
-
-    close(): void {
-        this.dispatchEvent(new Event('close'));
-    }
-
-    emitClose(): void {
-        this.dispatchEvent(new Event('close'));
-    }
-
-    emitError(): void {
-        this.dispatchEvent(new Event('error'));
-    }
-
-    emitMessage(data: unknown, eventType = getRealtimeEventType(data)): void {
-        this.dispatchEvent(new MessageEvent(eventType, { data: JSON.stringify(data) }));
-    }
-}
 
 function createMockMediaQuery(initialNarrow: boolean) {
     let narrow = initialNarrow;
@@ -336,18 +419,6 @@ function createMockMediaQuery(initialNarrow: boolean) {
             listeners.forEach((listener) => listener({ matches: value } as MediaQueryListEvent));
         },
     };
-}
-
-function getRealtimeEventType(data: unknown): string {
-    if (typeof data === 'object' && data !== null && 'messageType' in data) {
-        const messageType = data.messageType;
-
-        if (typeof messageType === 'string') {
-            return messageType;
-        }
-    }
-
-    return 'room.snapshot';
 }
 
 function createRoomSnapshotMessage({

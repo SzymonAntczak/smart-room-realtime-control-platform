@@ -2,17 +2,26 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AppDev, updateScenarioRequestCounts } from './AppDev';
+import { MockEventSource } from '../../test/room/mock-event-source';
 
-vi.mock('../history/use-user-history-virtualizer', async () => ({
-    useUserHistoryVirtualizer: (await import('../history/history-rendering.test-support'))
-        .historyRenderingWithoutLayout,
-}));
+import { AppDev } from './AppDev';
 
+vi.mock(
+    '../pages/dashboard/history-sidebar/history-sidebar-content/history-feed/useHistoryVirtualizer',
+    async () => {
+        const { createRef } = await import('react');
+
+        return {
+            useHistoryVirtualizer: () => ({
+                virtuosoRef: createRef(),
+            }),
+        };
+    },
+);
 describe('AppDev', () => {
     beforeEach(() => {
-        MockWebSocket.instances.length = 0;
-        vi.stubGlobal('EventSource', MockWebSocket);
+        MockEventSource.instances.length = 0;
+        vi.stubGlobal('EventSource', MockEventSource);
         vi.stubGlobal(
             'fetch',
             vi.fn().mockResolvedValue(
@@ -32,7 +41,7 @@ describe('AppDev', () => {
         const user = userEvent.setup();
         deferHistoryRequests();
         render(<AppDev />);
-        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const trigger = screen.getByRole('button', { name: 'Scenariusze programistyczne' });
         await user.click(trigger);
@@ -57,7 +66,7 @@ describe('AppDev', () => {
         const user = userEvent.setup();
         deferHistoryRequests();
         render(<AppDev />);
-        act(() => MockWebSocket.latest().emitMessage(createRoomSnapshotMessage()));
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const trigger = screen.getByRole('button', { name: 'Scenariusze programistyczne' });
         await user.click(trigger);
@@ -69,16 +78,6 @@ describe('AppDev', () => {
         ).not.toBeInTheDocument();
         await Promise.resolve();
         expect(trigger).toHaveFocus();
-    });
-
-    it('keeps a device locked until every outstanding scenario request finishes', () => {
-        const firstRequest = updateScenarioRequestCounts(new Map(), 'led-main', true);
-        const secondRequest = updateScenarioRequestCounts(firstRequest, 'led-main', true);
-        const firstCompletion = updateScenarioRequestCounts(secondRequest, 'led-main', false);
-        const secondCompletion = updateScenarioRequestCounts(firstCompletion, 'led-main', false);
-
-        expect(firstCompletion.get('led-main')).toBe(1);
-        expect(secondCompletion.has('led-main')).toBe(false);
     });
 
     it('locks the LED control while its scenario request is pending', async () => {
@@ -114,7 +113,7 @@ describe('AppDev', () => {
         deferHistoryRequests();
         render(<AppDev />);
         act(() =>
-            MockWebSocket.latest().emitMessage(createRoomSnapshotMessage([createLedDevice()])),
+            MockEventSource.latest().emitMessage(createRoomSnapshotMessage([createLedDevice()])),
         );
 
         await user.click(screen.getByRole('button', { name: 'Scenariusze programistyczne' }));
@@ -127,45 +126,6 @@ describe('AppDev', () => {
         expect(await screen.findByRole('button', { name: 'Włącz' })).toBeEnabled();
     });
 });
-
-class MockWebSocket extends EventTarget {
-    static instances: MockWebSocket[] = [];
-
-    constructor() {
-        super();
-        MockWebSocket.instances.push(this);
-    }
-
-    static latest(): MockWebSocket {
-        const instance = MockWebSocket.instances.at(-1);
-
-        if (!instance) {
-            throw new Error('No mock websocket instance was created.');
-        }
-
-        return instance;
-    }
-
-    emitMessage(data: unknown, eventType = getRealtimeEventType(data)): void {
-        this.dispatchEvent(new MessageEvent(eventType, { data: JSON.stringify(data) }));
-    }
-
-    close(): void {
-        this.dispatchEvent(new Event('close'));
-    }
-}
-
-function getRealtimeEventType(data: unknown): string {
-    if (typeof data === 'object' && data !== null && 'messageType' in data) {
-        const messageType = data.messageType;
-
-        if (typeof messageType === 'string') {
-            return messageType;
-        }
-    }
-
-    return 'room.snapshot';
-}
 
 function createRoomSnapshotMessage(devices: unknown[] = [createTemperatureDevice()]) {
     return {

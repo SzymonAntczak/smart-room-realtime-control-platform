@@ -64,8 +64,9 @@ Hardware validation should check whether the simulator-taught event contracts,
 state derivation, command lifecycle and UI expectations still hold under real
 device timing and connectivity.
 
-Direct simulator or adapter invocation retains value only as an isolated seam
-for deterministic domain and adapter tests. Once MQTT is introduced, local
+Native-source and transport doubles are allowed in deterministic backend unit
+and integration tests, with the boundaries in
+[Test Suite Boundaries](adr-test-suite-boundaries.md). Once MQTT is introduced, local
 development and end-to-end simulator behavior use the real local broker, so
 transport failures are discovered in the ordinary feedback loop.
 
