@@ -241,7 +241,7 @@ and the bounded non-gap feed cache before the next gap-bearing
 `platform.updated(available)` revision.
 Shared schemas, the BFF and frontend clients must agree on these history and
 realtime synchronization rules.
-Older facts and telemetry ranges remain explicit HTTP reads; the client merges
+Older facts and telemetry ranges remain explicit HTTP reads; live views merge
 them with every buffered SSE-delivered record by stable `recordId` and a pinned
 history generation and storage watermark. Raw HTTP sessions are complete through
 their bound; user history explicitly marks `retained_evidence_only` because raw
@@ -256,6 +256,21 @@ session. A changed history generation invalidates the previous pages, cursor
 and overlay instead of merging unrelated databases. The client retains the last
 known generation through a temporarily unknown degraded state and compares it
 with a later snapshot or `platform.updated`. SSE has no replay semantics.
+
+The Dashboard history feed remains unfiltered. Its Filter control opens an
+independent modal for static historical search by one device and/or local From/To
+days. Both contexts use `GET /room/history/user-history` and the same user-entry
+contract; search has its own criteria, pinned pages, cursor and scroll position.
+Device/date filters combine with AND over event time. Browser-local inclusive
+days become UTC half-open bounds `[from, to)`, with either bound optional.
+Unfiltered API queries remain valid for the Dashboard; only the modal requires at least
+one criterion before Search. Draft edits do not fetch or change results, Refresh
+uses applied criteria, and Clear/close release the search session. Search results
+do not merge SSE or automatically rebuild on reconnect, recovery or cursor expiry;
+invalidation requires explicit refresh. Read errors preserve a labeled last-known
+result view. Search actions never alter the Dashboard session. The
+[User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
+owns both contexts and their detailed lifecycle, filter and accessibility rules.
 
 ### Device Adapters
 

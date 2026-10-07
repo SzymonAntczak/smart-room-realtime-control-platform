@@ -33,12 +33,41 @@ describe('BFF user-history cursor encoding and validation', () => {
         { ...payload, extra: true },
         { ...payload, scope: { ...payload.scope, dataset: 'significant_facts' } },
         { ...payload, scope: { ...payload.scope, pageSize: 101 } },
-        { ...payload, scope: { ...payload.scope, deviceId: 'led-main' } },
+        { ...payload, scope: { ...payload.scope, deviceId: '' } },
+        { ...payload, scope: { ...payload.scope, unexpected: true } },
+        { ...payload, scope: { ...payload.scope, from: '2026-09-10' } },
+        {
+            ...payload,
+            scope: {
+                ...payload.scope,
+                from: '2026-09-11T10:00:00Z',
+                to: '2026-09-10T10:00:00Z',
+            },
+        },
     ])('rejects unsupported payload even when signed with the correct key', (invalid) => {
         const encoded = Buffer.from(JSON.stringify(invalid)).toString('base64url');
         const signature = createHmac('sha256', secret).update(encoded).digest('base64url');
         expect(
             createUserHistoryCursorCodec({ secret }).decode(`${encoded}.${signature}`),
         ).toBeUndefined();
+    });
+
+    it('round-trips a signed filtered scope without changing the underlying raw cursor', () => {
+        const filtered: UserHistoryCursorPayload = {
+            ...payload,
+            scope: {
+                ...payload.scope,
+                deviceId: 'led-main',
+                from: '2026-09-10T10:00:00Z',
+                to: '2026-09-11T10:00:00Z',
+            },
+        };
+        const codec = createUserHistoryCursorCodec({ secret });
+        const cursor = codec.encode(filtered);
+        expect(codec.decode(cursor)).toEqual(filtered);
+        const changed = { ...filtered, scope: { ...filtered.scope, deviceId: 'led-other' } };
+        const encoded = Buffer.from(JSON.stringify(changed)).toString('base64url');
+        const signature = cursor.split('.')[1];
+        expect(codec.decode(`${encoded}.${signature}`)).toBeUndefined();
     });
 });

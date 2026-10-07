@@ -305,7 +305,7 @@ Storage-aware UI focus areas:
   command updates continue
 - degraded controls remain usable with a volatility warning; recovering
   controls are disabled and a racing 503 creates no phantom command
-- HTTP history is complete through its pinned generation and watermark;
+- Raw HTTP history is complete through its pinned generation and watermark;
   buffered SSE additions merge by `recordId` without loss or revision/cursor
   confusion, while non-feed facts committed above the bound appear after an
   explicit refetch
@@ -335,7 +335,7 @@ cross-page timeout evidence/conflicts, sparse-page continuation, signed cursor
 scope separation, writes/count retirement under pinned bounds, fixed expiry
 with clock regression, generation replacement and main/auxiliary read failures.
 Verify strict BFF HTTP/SSE user entries and Dashboard paging.
-Session tests protect identity merge, durability preference, sparse pages,
+Dashboard session tests protect identity merge, durability preference, sparse pages,
 single-flight fetch, pinned parameters, cursor cycles, one automatic cursor
 restart, generation replacement, 503 recovery and cache bounds. Backend integration
 with native-source doubles exercises user-history and telemetry over real BFF
@@ -352,6 +352,30 @@ replace geometry with a test-local rendering seam; only the real-browser suite
 establishes virtual range, measurements and the 2 px anchor tolerance.
 Existing no-replay, generation/watermark and source-fact retention rules remain
 binding; this target does not change platform processing or storage.
+
+Historical search uses a separate static session through the same BFF endpoint.
+Shared contract tests protect optional `deviceId`, `from` and `to`, combinations,
+one-sided ranges, RFC 3339 offset-to-UTC normalization, malformed/empty/reversed
+ranges and complete normalized cursor-scope matching. Unfiltered queries retain
+the existing page-size defaults, response shapes and error contracts.
+Backend reader/HTTP tests protect AND filtering over event time with `[from, to)`
+bounds, evidence outside the selected range, device-filtered room-entry exclusion
+with the completeness notice intact, sparse-page continuation and typed
+cursor/storage errors. Main or auxiliary read failures cannot produce partial
+success, and filters cannot reinterpret a pinned generation/retention session.
+
+Deterministic frontend tests protect applied versus draft criteria, single-flight
+paging, explicit refresh, stale-response rejection and cleanup. Search results
+never merge SSE or automatically refresh on reconnect, recovery or cursor expiry.
+Mocked-BFF browser tests protect inclusive browser-local days (including equal
+days and daylight-saving changes), reversed-range errors, accessible modal focus,
+Search/Refresh/Clear, bounded virtual rendering and Load older. Opening without
+a search, draft edits, Clear and empty reopening perform no history GET. Search
+actions must not change Dashboard pages, cursor or reading position; live
+Dashboard updates must not change the static search results. Read errors retain
+a labeled last-known result view, and session invalidation asks for explicit
+refresh. These browser scenarios validate shared HTTP/SSE fixtures and do not
+replace production BFF filtering tests.
 
 ## Manual Acceptance Checklist
 

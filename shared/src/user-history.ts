@@ -9,7 +9,13 @@ import {
     storageSequenceSchema,
     storedThroughSequenceSchema,
 } from './storage';
-import { canonicalUtcTimestampSchema, isSchema, nonEmptyStringSchema } from './validation';
+import {
+    canonicalUtcTimestampSchema,
+    isoTimestampSchema,
+    isSchema,
+    nonEmptyStringSchema,
+    normalizeIsoTimestamp,
+} from './validation';
 
 const powerSchema = Type.Union([Type.Literal('on'), Type.Literal('off')]);
 const availabilitySchema = Type.Union(deviceAvailabilityStates.map((state) => Type.Literal(state)));
@@ -112,12 +118,21 @@ export const userHistoryDeltaSchema = Type.Array(userHistoryItemSchema, {
 
 export const defaultUserHistoryPageSize = 50;
 const pageSizeSchema = Type.Integer({ minimum: 1, maximum: historyPageSizeLimit });
+const filterFields = {
+    deviceId: Type.Optional(nonEmptyStringSchema),
+    from: Type.Optional(isoTimestampSchema),
+    to: Type.Optional(isoTimestampSchema),
+};
 export const userHistoryFirstPageQuerySchema = Type.Object(
-    { pageSize: Type.Optional(pageSizeSchema) },
+    { pageSize: Type.Optional(pageSizeSchema), ...filterFields },
     { additionalProperties: false },
 );
 export const userHistoryPageQuerySchema = Type.Object(
-    { pageSize: Type.Optional(pageSizeSchema), cursor: Type.Optional(nonEmptyStringSchema) },
+    {
+        pageSize: Type.Optional(pageSizeSchema),
+        cursor: Type.Optional(nonEmptyStringSchema),
+        ...filterFields,
+    },
     { additionalProperties: false },
 );
 export type UserHistoryFirstPageQuery = Static<typeof userHistoryFirstPageQuerySchema>;
@@ -125,6 +140,27 @@ export type UserHistoryPageQuery = Static<typeof userHistoryPageQuerySchema>;
 export type NormalizedUserHistoryPageQuery = Omit<UserHistoryPageQuery, 'pageSize'> & {
     pageSize: number;
 };
+type UserHistoryFilters = Pick<UserHistoryFirstPageQuery, 'deviceId' | 'from' | 'to'>;
+
+/** Validates optional half-open bounds after structural validation by the caller. */
+function normalizeUserHistoryFilters(value: UserHistoryFilters): UserHistoryFilters | undefined {
+    const from = value.from === undefined ? undefined : normalizeIsoTimestamp(value.from);
+    const to = value.to === undefined ? undefined : normalizeIsoTimestamp(value.to);
+
+    if (
+        (value.from !== undefined && from === undefined) ||
+        (value.to !== undefined && to === undefined) ||
+        (from !== undefined && to !== undefined && Date.parse(from) >= Date.parse(to))
+    ) {
+        return undefined;
+    }
+
+    return {
+        ...(value.deviceId !== undefined ? { deviceId: value.deviceId } : {}),
+        ...(from !== undefined ? { from } : {}),
+        ...(to !== undefined ? { to } : {}),
+    };
+}
 
 /** Applies the default after validation; never coerces invalid input to a default. */
 export function normalizeUserHistoryPageQuery(
@@ -134,9 +170,16 @@ export function normalizeUserHistoryPageQuery(
         return undefined;
     }
 
+    const filters = normalizeUserHistoryFilters(value);
+
+    if (filters === undefined) {
+        return undefined;
+    }
+
     return {
         pageSize: value.pageSize ?? defaultUserHistoryPageSize,
         ...(value.cursor !== undefined ? { cursor: value.cursor } : {}),
+        ...filters,
     };
 }
 
@@ -146,6 +189,7 @@ export const userHistoryCursorQueryScopeSchema = Type.Object(
         dataset: Type.Literal('user_history'),
         order: Type.Literal('occurred_at_desc'),
         pageSize: pageSizeSchema,
+        ...filterFields,
     },
     { additionalProperties: false },
 );
@@ -158,7 +202,33 @@ export function normalizeUserHistoryCursorQueryScope(
         return undefined;
     }
 
-    return { dataset: value.dataset, order: value.order, pageSize: value.pageSize };
+    const filters = normalizeUserHistoryFilters(value);
+
+    if (filters === undefined) {
+        return undefined;
+    }
+
+    return { dataset: value.dataset, order: value.order, pageSize: value.pageSize, ...filters };
+}
+
+/** Rejects reinterpretation of a pinned user-history session under different filters. */
+export function isMatchingUserHistoryCursorQueryScope(
+    capturedScope: unknown,
+    candidateScope: unknown,
+): boolean {
+    const captured = normalizeUserHistoryCursorQueryScope(capturedScope);
+    const candidate = normalizeUserHistoryCursorQueryScope(candidateScope);
+
+    return (
+        captured !== undefined &&
+        candidate !== undefined &&
+        captured.dataset === candidate.dataset &&
+        captured.order === candidate.order &&
+        captured.pageSize === candidate.pageSize &&
+        captured.deviceId === candidate.deviceId &&
+        captured.from === candidate.from &&
+        captured.to === candidate.to
+    );
 }
 
 export const userHistoryPageSchema = Type.Object(

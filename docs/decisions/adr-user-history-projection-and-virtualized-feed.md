@@ -5,7 +5,9 @@
 Accepted
 
 This ADR supersedes the local storage ADR's product-feed presentation and
-total view bound. Significant-fact contracts, processor
+total view bound and owns product-history session behavior. Its live HTTP/SSE
+overlay and automatic recovery rules apply to the Dashboard, while historical
+search uses a separate static session. Significant-fact contracts, processor
 classification, database rows/schema, lifecycle, durability, retention and raw
 history cursors remain unchanged.
 
@@ -32,6 +34,21 @@ rendered DOM, and must not interrupt a user reading older history.
 - Change significant facts or persist a second database projection.
 
 ## Decision
+
+### Two history contexts
+
+One `GET /room/history/user-history` endpoint serves two independent contexts:
+
+| Context           | Query and updates                                                            | Session ownership                                                        |
+| ----------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Dashboard history | Unfiltered HTTP pages merged with the existing SSE connection.               | The Dashboard owns its pages, live overlay, cursor and reading position. |
+| Historical search | Optional device/date filters, with static HTTP results and explicit refresh. | The modal owns separate criteria, pages, cursor and scroll position.     |
+
+Search actions never replace, filter, reset or move the Dashboard session.
+Both contexts reuse the user-item contract and appropriate rendering/pagination
+primitives; the frontend never interprets raw facts. The live-session rules below
+apply to Dashboard history, not to historical search. The search adds neither a
+new endpoint nor another SSE connection.
 
 ### Product presentation and classification
 
@@ -137,14 +154,33 @@ Pages have at most `pageSize` items (1–100), unique IDs and storage sequences,
 and source order `(occurredAt, storageSequence)` descending. Each item sequence
 is at or below the pinned watermark. Filtering permits short or empty pages
 with a non-null next cursor, rather than falsely declaring the raw session ended.
-The query accepts optional `pageSize` (integer 1–100, default 50) and an optional
-nonempty `cursor`. The default applies to both first and continuation requests.
+The query accepts optional `pageSize` (integer 1–100, default 50), an optional
+nonempty `cursor`, and optional `deviceId`, `from` and `to` filters. The first-page schema
+excludes `cursor`; the page schema supports both first and continuation requests.
+The default size applies to both first and continuation requests.
 An omitted size therefore matches a cursor issued for 50; a cursor issued for
 another size requires that same explicit size or returns `cursor_query_mismatch`.
 The response and cursor scope always carry the effective size. The separate
-BFF scope is `{ dataset: user_history, order: occurred_at_desc, pageSize }`;
-it does not extend the storage port's raw cursor scope. Device/date filtering
-is outside this decision.
+BFF scope is `{ dataset: user_history, order: occurred_at_desc, pageSize,
+deviceId?, from?, to? }`; it does not extend the storage port's raw cursor scope.
+`deviceId` is a nonempty string. Each provided time bound is an RFC 3339 timestamp
+with UTC or an explicit offset, normalized to canonical UTC by the shared
+normalizer. Date-only and timezone-free values are invalid. If both bounds are
+present, `from` must be strictly earlier than `to`; either bound may be absent.
+The filters combine with AND and apply to event `occurredAt` through a half-open
+interval `[from, to)`, omitting the comparison for an absent bound. No filters is
+a valid API query; the modal's minimum-one-filter rule is not an API constraint.
+Schemas reject extra properties and malformed values; semantic normalizers
+reject empty/reversed ranges without mutating input or filling absent filters.
+
+`normalizeUserHistoryPageQuery` preserves optional filters and applies the size
+default. `normalizeUserHistoryCursorQueryScope` canonicalizes the same filters
+with a required effective size. `isMatchingUserHistoryCursorQueryScope` compares
+the complete normalized scope: equivalent timestamp representations match, but
+changed, added or omitted filters do not. Continuations repeat the original
+filters and effective size; the cursor does not supply missing query criteria.
+Any scope mismatch returns the existing `cursor_query_mismatch` failure instead
+of reinterpreting the pinned session.
 Existing typed cursor failures are reused; the shared unavailable response is
 `{ error: durable_history_unavailable, message }`, matching current HTTP 503.
 
@@ -193,6 +229,17 @@ the user scope and unchanged raw cursor with a process-local random key. The
 raw cursor remains the owner of pinned bounds, private retention revision and
 fixed expiry; no database or storage-port change is needed.
 
+Device/date filters shape the returned user entries within that pinned raw
+session. They do not narrow the retained evidence needed to transform facts
+truthfully: a request outside the selected period may still prove the target of
+a timeout inside it. Auxiliary reads retain their existing bounds and do not
+advance the main cursor. A main raw page without matches can return an empty
+user page with a non-null cursor; only exhaustion of the raw session ends
+pagination. Device-filtered results omit room-level entries such as
+`history_gap`, while `completeness: retained_evidence_only` remains visible.
+Filtering does not reconstruct unproven historical transitions or hide read
+failures through partial success.
+
 Historical rows do not retain before/after projection evidence or the applied
 classification. This endpoint therefore omits historical power, availability
 and health changes. It returns failed attempts using only their own payload
@@ -224,7 +271,52 @@ significant-facts API and its stored data remain intact for audit and other
 technical consumers. Add no database migration: historical presentation is
 transformed on read from currently retained raw facts.
 
-### Infinite scroll, bounded memory and virtual rendering
+### Historical search interaction and lifecycle
+
+The Dashboard feed's Filter control opens an accessible modal containing a
+single-device select, From/To date inputs, Search, Clear filters, and a results
+area below the form. Device options come from the current validated room
+projection. Opening without an active search shows an instruction to choose at
+least one criterion and submit; it performs no history GET. Criteria are optional
+individually, but Search requires at least one. A valid submission keeps the
+modal open and starts a new pinned search session.
+
+Draft criteria and applied criteria are separate. Editing drafts performs no GET
+and does not change displayed results. Results show a summary of their applied
+criteria. Refresh starts a new pinned session using the applied criteria, not
+unsaved drafts, and returns to the top. Clear filters removes drafts, results
+and the session, restores the initial instruction and performs no GET. Closing
+releases the session and returns focus to the invoking control; reopening starts
+with an empty form. The modal supports keyboard operation and contains focus
+while open.
+
+From/To selections include the chosen days in the browser's time zone. Convert
+From to its local start of day, and To to the local start of the following
+calendar day, then send UTC bounds for `[from, to)`. A missing day omits that
+bound. Equal selected dates are valid; reversed selected dates block submission
+and show a field error. Construct the next calendar day in the browser time zone
+rather than adding a fixed 24 hours, so daylight-saving changes are respected.
+The BFF does not interpret calendar dates or infer the browser's zone.
+
+Search results are static. SSE additions, reconnect and storage recovery do not
+merge results or automatically refresh the search. Infinite scroll and an
+accessible Load older control fetch older pages from the same pinned search,
+with one request in flight, bounded memory and virtual rendering. Sparse pages
+with a cursor continue pagination. Show loading, no matches, retry and
+end-of-history states; an empty intermediate page is not proof of no matches or
+end of history. Read errors preserve a labeled last-known result view.
+
+A new search, Refresh, Clear or close invalidates earlier requests/pages and
+ignores late responses. Detected cursor expiry or session invalidation requires
+explicit refresh rather than automatic rebuilding. Never merge unrelated
+generations. Results and their scroll position remain independent of the
+Dashboard throughout these operations.
+
+Dashboard filtering, live search-result merging, multi-device selection, saved
+searches, telemetry/technical-audit filtering, retention changes and database
+migration are outside this decision.
+
+### Dashboard infinite scroll, bounded memory and virtual rendering
 
 Create the live overlay before the first HTTP request and retain it across
 pages. Merge by `recordId`, preferring durable evidence; display newest first
@@ -241,8 +333,8 @@ loading state, explicit retry after errors and the end of retained history.
 Invalid payloads remain an error rather than triggering an automatic retry loop.
 Keep the history title and footer controls outside the scrollable
 content; scrolling applies only to the entries and their loading/end states.
-The footer provides an inactive Filter control and a persistent Return to top
-control. Activating Return to top while already at the top gives a temporary
+The footer provides the Filter control that opens historical search and a
+persistent Return to top control. Activating Return to top while already at the top gives a temporary
 tooltip without refreshing history; returning from an older position retains
 the existing newest-entry behavior, including a refetch after live-overlay
 overflow.
@@ -271,7 +363,7 @@ before claiming completeness. Closing the panel stops pagination, releases its
 loaded pages and ignores late responses. Reopening uses the current validated
 room baseline and the existing SSE connection.
 
-### Connected session limits and recovery
+### Dashboard connected session limits and recovery
 
 The frontend history session uses HTTP pages of 50, at most 5,000
 cached HTTP entries and a separate 200-entry live overlay, with one active
@@ -306,7 +398,7 @@ Malformed responses and cursor-query mismatches do not start automatic loops.
 Returning to newest after overlay overflow refetches durable history without
 promising recovery of omitted historical changes or evicted volatile entries.
 
-### Measured virtual rendering
+### Dashboard measured virtual rendering
 
 The frontend uses the pinned `react-virtuoso` 4.18.16 component in the existing
 history scroll container through `customScrollParent`. Entries are passed as
@@ -368,6 +460,24 @@ optional page size/default, conservative classification, cross-page timeout
 evidence, sparse pages, signed dataset/scope separation, fixed expiry, pinned
 retention/generation and whole-response errors. Platform/raw API and runtime
 bootstrap tests must protect the unchanged internal contracts.
+
+Filter contract tests must protect optional and combined criteria on first and
+continuation queries, UTC/offset normalization, one-sided ranges, empty/reversed
+ranges, strict unknown-field rejection and complete canonical cursor-scope
+matching. BFF reader/HTTP tests must protect AND filtering by event time,
+inclusive lower/exclusive upper bounds, retained evidence outside the requested
+range, room-entry exclusion for device filters and sparse-page continuation.
+Changed or omitted filters must produce typed cursor mismatch; storage and
+main/auxiliary read errors must preserve whole-response failure.
+
+Deterministic search-session tests must protect static results, applied versus
+draft criteria, single-flight paging, explicit refresh after invalidation,
+request replacement and cleanup. Mocked-BFF browser scenarios must protect
+keyboard/focus behavior, same-day and one-sided dates, daylight-saving boundaries,
+Search/Refresh/Clear, bounded virtual results and independence from the live
+Dashboard. Opening, editing drafts, clearing and reopening without submission
+must make no history GET. SSE updates must change only Dashboard history while
+search results retain their pinned view.
 
 Backend integration with mocked native sources and real SQLite/HTTP/SSE protects
 BFF history identities, pinned pages, cursor errors and storage recovery.

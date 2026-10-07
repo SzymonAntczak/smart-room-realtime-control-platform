@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    isMatchingUserHistoryCursorQueryScope,
     isUserHistoryItem,
     isUserHistoryPage,
     isUserHistoryProjection,
     normalizeUserHistoryCursorQueryScope,
     normalizeUserHistoryPageQuery,
+    type UserHistoryCursorQueryScope,
     userHistoryFirstPageQuerySchema,
     userHistoryPageQuerySchema,
 } from './user-history';
@@ -31,8 +33,108 @@ describe('user history page contracts', () => {
         }
 
         expect(normalizeUserHistoryPageQuery({ cursor: '' })).toBeUndefined();
-        expect(normalizeUserHistoryPageQuery({ deviceId: 'led-main' })).toBeUndefined();
+        expect(normalizeUserHistoryPageQuery({ unexpected: true })).toBeUndefined();
         expect(normalizeUserHistoryPageQuery(null)).toBeUndefined();
+    });
+
+    it.each([
+        {},
+        { deviceId: 'led-main' },
+        { from: '2026-09-10T10:00:00Z' },
+        { to: '2026-09-11T10:00:00Z' },
+        { deviceId: 'led-main', from: '2026-09-10T10:00:00Z' },
+        { deviceId: 'led-main', to: '2026-09-11T10:00:00Z' },
+        { from: '2026-09-10T10:00:00Z', to: '2026-09-11T10:00:00Z' },
+        {
+            deviceId: 'led-main',
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-11T10:00:00Z',
+        },
+    ])('accepts optional filters on first and continuation queries: %j', (filters) => {
+        expect(isSchema(userHistoryFirstPageQuerySchema, filters)).toBe(true);
+        expect(isSchema(userHistoryFirstPageQuerySchema, { ...filters, cursor: 'opaque' })).toBe(
+            false,
+        );
+        expect(normalizeUserHistoryPageQuery(filters)).toEqual({ ...filters, pageSize: 50 });
+        expect(
+            normalizeUserHistoryPageQuery({ ...filters, pageSize: 20, cursor: 'opaque' }),
+        ).toEqual({ ...filters, pageSize: 20, cursor: 'opaque' });
+    });
+
+    it('canonicalizes each provided date bound without mutating the query or filling absent filters', () => {
+        const query = {
+            deviceId: 'led-main',
+            from: '2026-09-10T12:00:00+02:00',
+            to: '2026-09-10T12:30:00.125+01:00',
+            cursor: 'opaque',
+        };
+        const original = { ...query };
+        expect(normalizeUserHistoryPageQuery(query)).toEqual({
+            pageSize: 50,
+            deviceId: 'led-main',
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-10T11:30:00.125Z',
+            cursor: 'opaque',
+        });
+        expect(query).toEqual(original);
+        expect(normalizeUserHistoryPageQuery({ from: query.from })).toEqual({
+            pageSize: 50,
+            from: '2026-09-10T10:00:00Z',
+        });
+        expect(normalizeUserHistoryPageQuery({ to: query.to })).toEqual({
+            pageSize: 50,
+            to: '2026-09-10T11:30:00.125Z',
+        });
+    });
+
+    it.each([
+        { deviceId: '' },
+        { deviceId: null },
+        { deviceId: ['led-main'] },
+        { from: '' },
+        { from: 'not-a-date' },
+        { from: '2026-09-10' },
+        { from: '2026-09-10T10:00:00' },
+        { from: '2026-02-30T10:00:00Z' },
+        { from: 0 },
+        { to: null },
+        { to: '' },
+        { to: '2026-09-10' },
+        { to: '2026-09-10T10:00:00' },
+        { to: ['2026-09-10T10:00:00Z'] },
+        { unexpected: true },
+    ])('rejects malformed filters in queries and cursor scopes without mutation: %j', (filters) => {
+        const original = JSON.stringify(filters);
+        expect(isSchema(userHistoryFirstPageQuerySchema, filters)).toBe(false);
+        expect(normalizeUserHistoryPageQuery(filters)).toBeUndefined();
+        expect(
+            normalizeUserHistoryCursorQueryScope({
+                dataset: 'user_history',
+                order: 'occurred_at_desc',
+                pageSize: 50,
+                ...filters,
+            }),
+        ).toBeUndefined();
+        expect(JSON.stringify(filters)).toBe(original);
+    });
+
+    it.each([
+        { from: '2026-09-11T10:00:00Z', to: '2026-09-10T10:00:00Z' },
+        { from: '2026-09-10T10:00:00Z', to: '2026-09-10T10:00:00Z' },
+        { from: '2026-09-10T12:00:00+02:00', to: '2026-09-10T10:00:00.000Z' },
+        { from: '2026-09-10T12:00:00+01:00', to: '2026-09-10T12:30:00+02:00' },
+    ])('rejects empty or reversed intervals by instant without mutating input: %j', (range) => {
+        const original = { ...range };
+        expect(normalizeUserHistoryPageQuery(range)).toBeUndefined();
+        expect(
+            normalizeUserHistoryCursorQueryScope({
+                dataset: 'user_history',
+                order: 'occurred_at_desc',
+                pageSize: 50,
+                ...range,
+            }),
+        ).toBeUndefined();
+        expect(range).toEqual(original);
     });
     it('accepts every user meaning, including unknown prior state and missing failure target', () => {
         for (const item of fixtures.items) {
@@ -171,7 +273,7 @@ describe('user history page contracts', () => {
         expect(isUserHistoryPage({ ...fixtures.page, historyGenerationId: null })).toBe(false);
     });
 
-    it('keeps user cursors separate and accepts only bounded, unfiltered query shapes', () => {
+    it('keeps user cursors separate and accepts only bounded query shapes', () => {
         expect(
             normalizeUserHistoryCursorQueryScope({
                 dataset: 'user_history',
@@ -195,7 +297,77 @@ describe('user history page contracts', () => {
         expect(isSchema(userHistoryPageQuerySchema, { pageSize: 100 })).toBe(true);
         expect(isSchema(userHistoryPageQuerySchema, { pageSize: 20, cursor: '' })).toBe(false);
         expect(isSchema(userHistoryPageQuerySchema, { pageSize: 20, deviceId: 'led-main' })).toBe(
-            false,
+            true,
         );
+    });
+
+    it('normalizes complete cursor scopes and matches equivalent instants without mutation', () => {
+        const scope: UserHistoryCursorQueryScope = {
+            dataset: 'user_history',
+            order: 'occurred_at_desc',
+            pageSize: 50,
+            deviceId: 'led-main',
+            from: '2026-09-10T12:00:00+02:00',
+            to: '2026-09-11T12:00:00+02:00',
+        };
+        const normalized = {
+            ...scope,
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-11T10:00:00Z',
+        };
+        const original = { ...scope };
+        expect(normalizeUserHistoryCursorQueryScope(scope)).toEqual(normalized);
+        expect(isMatchingUserHistoryCursorQueryScope(scope, normalized)).toBe(true);
+        expect(isMatchingUserHistoryCursorQueryScope(normalized, scope)).toBe(true);
+        expect(
+            isMatchingUserHistoryCursorQueryScope(scope, {
+                ...normalized,
+                from: '2026-09-10T10:00:00.000Z',
+            }),
+        ).toBe(true);
+        expect(scope).toEqual(original);
+    });
+
+    it('rejects any reinterpretation, addition or omission of a captured cursor filter', () => {
+        const scope = {
+            dataset: 'user_history',
+            order: 'occurred_at_desc',
+            pageSize: 50,
+            deviceId: 'led-main',
+            from: '2026-09-10T10:00:00Z',
+            to: '2026-09-11T10:00:00Z',
+        };
+
+        for (const changed of [
+            { ...scope, dataset: 'significant_facts' },
+            { ...scope, order: 'occurred_at_asc' },
+            { ...scope, pageSize: 20 },
+            { ...scope, deviceId: 'led-other' },
+            { ...scope, from: '2026-09-10T10:00:00.001Z' },
+            { ...scope, to: '2026-09-11T10:00:00.001Z' },
+        ]) {
+            expect(isMatchingUserHistoryCursorQueryScope(scope, changed)).toBe(false);
+        }
+
+        for (const field of ['deviceId', 'from', 'to'] as const) {
+            const omitted = { ...scope };
+            Reflect.deleteProperty(omitted, field);
+            expect(isMatchingUserHistoryCursorQueryScope(scope, omitted)).toBe(false);
+            expect(isMatchingUserHistoryCursorQueryScope(omitted, scope)).toBe(false);
+            expect(isMatchingUserHistoryCursorQueryScope(omitted, omitted)).toBe(true);
+        }
+
+        const unfiltered = { dataset: 'user_history', order: 'occurred_at_desc', pageSize: 50 };
+        expect(isMatchingUserHistoryCursorQueryScope(unfiltered, unfiltered)).toBe(true);
+
+        for (const invalid of [
+            null,
+            {},
+            { ...unfiltered, pageSize: '50' },
+            { ...unfiltered, extra: true },
+        ]) {
+            expect(isMatchingUserHistoryCursorQueryScope(scope, invalid)).toBe(false);
+            expect(isMatchingUserHistoryCursorQueryScope(invalid, scope)).toBe(false);
+        }
     });
 });

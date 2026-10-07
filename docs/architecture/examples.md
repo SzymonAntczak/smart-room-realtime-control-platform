@@ -35,6 +35,37 @@ and significant-fact pages before returning user entries as defined in the new
 ADR. Technical command events are still stored, even when no user entry is
 generated.
 
+## Historical Search Examples
+
+The same BFF user-history endpoint supports the unfiltered live Dashboard and a
+separate static search modal. Date examples below use `Europe/Warsaw`; the actual
+browser time zone determines the bounds. From and To refer to inclusive local
+calendar days, while the API accepts UTC `[from, to)` timestamps.
+
+| Selected days                | API bounds                                             | Meaning                                                 |
+| ---------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| From = To = 2026-09-10       | `from=2026-09-09T22:00:00Z`, `to=2026-09-10T22:00:00Z` | One full local day; equal day selections are valid.     |
+| From = 2026-09-10; To absent | `from=2026-09-09T22:00:00Z`; `to` omitted              | Events at or after the local start of From.             |
+| From absent; To = 2026-09-10 | `from` omitted; `to=2026-09-10T22:00:00Z`              | Events before the local start of the day after To.      |
+| From = To = 2026-03-29       | `from=2026-03-28T23:00:00Z`, `to=2026-03-29T22:00:00Z` | Spring daylight-saving transition: a 23-hour local day. |
+| From = To = 2026-10-25       | `from=2026-10-24T22:00:00Z`, `to=2026-10-25T23:00:00Z` | Autumn daylight-saving transition: a 25-hour local day. |
+
+Reversed selected days show a field error without submitting. Equal API
+timestamps, unlike equal selected days, define an empty range and are rejected.
+An event exactly at `from` is included; one exactly at `to` is excluded.
+Equivalent RFC 3339 UTC/offset timestamps normalize to the same cursor scope.
+
+| Scenario                                     | Expected behavior                                                                                                                                                                    |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Device and date combined                     | Search returns only that device's eligible entries within the event-time bounds. Room-level gap entries are excluded, but the retained-evidence completeness notice remains visible. |
+| Timeout inside the period, request before it | The BFF can use the retained earlier request as evidence for the timeout target without returning that request as a search entry.                                                    |
+| No matching entries on one raw page          | An empty user page with a non-null cursor continues toward older raw pages; it is not an end-of-history result.                                                                      |
+| Draft differs from applied criteria          | Editing drafts leaves existing results unchanged. Refresh uses the applied criteria and returns to the top.                                                                          |
+| Live event during search                     | Dashboard history receives the SSE entry. Search remains on its pinned static results until an explicit new search or Refresh.                                                       |
+| Cursor used with a changed or omitted filter | The BFF rejects the changed scope through `cursor_query_mismatch`; it does not reinterpret the session.                                                                              |
+| Clear or close while a read is in flight     | Release the search session and ignore the late response. Clear makes no GET; reopening starts with an empty form and instructions.                                                   |
+| Expired cursor or read error                 | Expiry requests explicit refresh. A read error preserves a labeled last-known result view without changing Dashboard history.                                                        |
+
 ## Local-First System Slice
 
 ```mermaid
