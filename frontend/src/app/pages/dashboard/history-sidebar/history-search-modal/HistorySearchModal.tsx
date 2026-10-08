@@ -1,5 +1,13 @@
 import { X } from 'lucide-react';
-import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+    type FormEvent,
+    type MouseEvent,
+    useCallback,
+    useEffect,
+    useId,
+    useRef,
+    useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getDeviceDisplayName } from '../../device-display-name';
@@ -44,7 +52,8 @@ export function HistorySearchModal({
     const formId = useId();
     const [form, setForm] = useState<SearchForm>(emptyForm);
     const [appliedForm, setAppliedForm] = useState<SearchForm | null>(null);
-    const [formError, setFormError] = useState<'required' | 'range' | null>(null);
+    const [formError, setFormError] = useState<'range' | null>(null);
+    const [reloadTooltip, setReloadTooltip] = useState(false);
     const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
     const attachScrollParent = useCallback((element: HTMLDivElement | null) => {
         setScrollParent(element);
@@ -66,69 +75,129 @@ export function HistorySearchModal({
         }
     }, [open, start]);
 
+    useEffect(() => {
+        if (!reloadTooltip) {
+            return;
+        }
+
+        const hideTooltip = () => setReloadTooltip(false);
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                hideTooltip();
+            }
+        };
+
+        const timer = setTimeout(hideTooltip, 3000);
+
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            clearTimeout(timer);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [reloadTooltip]);
+
     function handleClose() {
-        setForm(appliedFormRef.current);
+        setReloadTooltip(false);
+        appliedFormRef.current = emptyForm;
+        setForm(emptyForm);
+        setAppliedForm(null);
+        setFormError(null);
         close();
         onClose();
     }
 
-    function handleSubmit(event: FormEvent<HTMLFormElement>) {
-        event.preventDefault();
-
-        if (form.from && form.to && form.from > form.to) {
+    function applyForm(nextForm: SearchForm) {
+        if (nextForm.from && nextForm.to && nextForm.from > nextForm.to) {
             setFormError('range');
 
             return;
         }
 
-        const criteria = toSearchCriteria(form);
+        const criteria = toSearchCriteria(nextForm);
 
         if (!criteria) {
-            setFormError('required');
+            setFormError(null);
 
             return;
         }
 
         setFormError(null);
 
-        const nextAppliedForm = { ...form };
+        const nextAppliedForm = { ...nextForm };
         appliedFormRef.current = nextAppliedForm;
         setAppliedForm(nextAppliedForm);
 
         void runSearch(criteria);
     }
 
+    function handleSubmit(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        applyForm(form);
+    }
+
+    function handleReload() {
+        const criteria = toSearchCriteria(appliedFormRef.current);
+
+        if (!criteria) {
+            setReloadTooltip(true);
+
+            return;
+        }
+
+        setReloadTooltip(false);
+        void refresh();
+
+        scrollParent?.scrollTo?.({ top: 0, behavior: 'auto' });
+    }
+
+    function handleDialogClick(event: MouseEvent<HTMLDialogElement>) {
+        if (event.target !== event.currentTarget) {
+            return;
+        }
+
+        const bounds = event.currentTarget.getBoundingClientRect();
+
+        if (
+            event.clientX < bounds.left ||
+            event.clientX > bounds.right ||
+            event.clientY < bounds.top ||
+            event.clientY > bounds.bottom
+        ) {
+            event.currentTarget.close();
+        }
+    }
+
     function handleClear() {
+        setReloadTooltip(false);
         appliedFormRef.current = emptyForm;
-        setAppliedForm(null);
         setForm(emptyForm);
+        setAppliedForm(null);
         setFormError(null);
 
         clear();
     }
-
-    const summaryForm =
-        searchState.lastKnown && searchState.displayedCriteria
-            ? formFromCriteria(searchState.displayedCriteria)
-            : appliedForm;
 
     return (
         <dialog
             ref={dialogRef}
             className={styles.dialog}
             aria-labelledby={`${formId}-title`}
-            aria-describedby={`${formId}-description`}
             onClose={handleClose}
+            onClick={handleDialogClick}
         >
             <header className={styles.header}>
                 <div>
                     <h2 id={`${formId}-title`}>{t('history.searchTitle')}</h2>
-                    <p id={`${formId}-description`}>{t('history.searchDescription')}</p>
                 </div>
                 <button
                     ref={closeButtonRef}
                     type="button"
                     className={styles.iconButton}
+                    data-search-action
                     aria-label={t('history.closeSearch')}
                     onClick={() => dialogRef.current?.close()}
                 >
@@ -137,73 +206,116 @@ export function HistorySearchModal({
             </header>
 
             <form className={styles.form} onSubmit={handleSubmit} noValidate>
-                <div className={styles.filters}>
-                    <label>
-                        <span>{t('history.device')}</span>
-                        <select
-                            value={form.deviceId}
-                            onChange={(event) => {
-                                setForm((current) => ({
-                                    ...current,
-                                    deviceId: event.target.value,
-                                }));
-                                setFormError(null);
-                            }}
+                <div className={styles.controlLayout}>
+                    <div className={styles.filters}>
+                        <label className={styles.deviceFilter}>
+                            <span>{t('history.device')}</span>
+                            <select
+                                value={form.deviceId}
+                                onChange={(event) => {
+                                    setForm((current) => ({
+                                        ...current,
+                                        deviceId: event.target.value,
+                                    }));
+                                    setFormError(null);
+                                }}
+                            >
+                                <option value="">{t('history.anyDevice')}</option>
+                                {devices.map((device) => (
+                                    <option key={device.deviceId} value={device.deviceId}>
+                                        {getDeviceDisplayName(device, (key) => t(key))}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className={styles.fromFilter}>
+                            <span>{t('history.from')}</span>
+                            <input
+                                type="date"
+                                value={form.from}
+                                max={form.to || undefined}
+                                aria-invalid={formError !== null}
+                                aria-describedby={
+                                    formError ? `${formId}-criteria-error` : undefined
+                                }
+                                onChange={(event) => {
+                                    setForm((current) => ({
+                                        ...current,
+                                        from: event.target.value,
+                                    }));
+                                    setFormError(null);
+                                }}
+                            />
+                        </label>
+                        <label className={styles.toFilter}>
+                            <span>{t('history.to')}</span>
+                            <input
+                                type="date"
+                                value={form.to}
+                                min={form.from || undefined}
+                                aria-invalid={formError !== null}
+                                aria-describedby={
+                                    formError ? `${formId}-criteria-error` : undefined
+                                }
+                                onChange={(event) => {
+                                    setForm((current) => ({ ...current, to: event.target.value }));
+                                    setFormError(null);
+                                }}
+                            />
+                        </label>
+                    </div>
+                    <div className={styles.actions}>
+                        <button
+                            type="button"
+                            className={styles.clearAction}
+                            data-search-action
+                            onClick={handleClear}
                         >
-                            <option value="">{t('history.anyDevice')}</option>
-                            {devices.map((device) => (
-                                <option key={device.deviceId} value={device.deviceId}>
-                                    {getDeviceDisplayName(device, (key) => t(key))}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label>
-                        <span>{t('history.from')}</span>
-                        <input
-                            type="date"
-                            value={form.from}
-                            max={form.to || undefined}
-                            aria-invalid={formError !== null}
-                            aria-describedby={formError ? `${formId}-criteria-error` : undefined}
-                            onChange={(event) => {
-                                setForm((current) => ({ ...current, from: event.target.value }));
-                                setFormError(null);
-                            }}
-                        />
-                    </label>
-                    <label>
-                        <span>{t('history.to')}</span>
-                        <input
-                            type="date"
-                            value={form.to}
-                            min={form.from || undefined}
-                            aria-invalid={formError !== null}
-                            aria-describedby={formError ? `${formId}-criteria-error` : undefined}
-                            onChange={(event) => {
-                                setForm((current) => ({ ...current, to: event.target.value }));
-                                setFormError(null);
-                            }}
-                        />
-                    </label>
+                            {t('history.clearFilters')}
+                        </button>
+                        <div className={styles.reloadAction}>
+                            <button
+                                type="button"
+                                className={styles.reloadButton}
+                                data-search-action
+                                aria-describedby={
+                                    reloadTooltip ? `${formId}-reload-tooltip` : undefined
+                                }
+                                onBlur={() => setReloadTooltip(false)}
+                                onClick={handleReload}
+                            >
+                                {t('history.refresh')}
+                            </button>
+                            {reloadTooltip ? (
+                                <span
+                                    id={`${formId}-reload-tooltip`}
+                                    role="tooltip"
+                                    className={styles.tooltip}
+                                >
+                                    {t('history.searchFilterRequired')}
+                                </span>
+                            ) : null}
+                        </div>
+                        <button type="submit" className={styles.submitAction}>
+                            {t('history.search')}
+                        </button>
+                    </div>
                 </div>
-                {formError ? (
-                    <p id={`${formId}-criteria-error`} className={styles.validation} role="alert">
-                        {t(
-                            formError === 'range'
-                                ? 'history.invalidDateRange'
-                                : 'history.searchRequired',
+                {appliedForm ? (
+                    <p className={styles.summary}>
+                        {describeCriteria(
+                            appliedForm,
+                            devices,
+                            (key) => t(key),
+                            (key) => t(`history.${key}`),
                         )}
                     </p>
                 ) : null}
-                <div className={styles.actions}>
-                    <button type="submit" className={styles.primaryButton}>
-                        {t('history.search')}
-                    </button>
-                    <button type="button" onClick={handleClear}>
-                        {t('history.clearFilters')}
-                    </button>
-                </div>
+                {formError ? (
+                    <p id={`${formId}-criteria-error`} className={styles.validation} role="alert">
+                        {t('history.invalidDateRange')}
+                    </p>
+                ) : null}
             </form>
 
             <div
@@ -213,16 +325,6 @@ export function HistorySearchModal({
                 aria-label={t('history.searchResults')}
                 tabIndex={0}
             >
-                {summaryForm ? (
-                    <p className={styles.summary} role="status">
-                        {describeCriteria(
-                            summaryForm,
-                            devices,
-                            (key) => t(key),
-                            (key) => t(`history.${key}`),
-                        )}
-                    </p>
-                ) : null}
                 <HistorySearchResults
                     state={searchState}
                     devices={devices}
@@ -234,46 +336,6 @@ export function HistorySearchModal({
             </div>
         </dialog>
     );
-}
-
-function toSearchCriteria(form: SearchForm): HistorySearchCriteria | null {
-    if (!form.deviceId && !form.from && !form.to) {
-        return null;
-    }
-
-    return {
-        ...(form.deviceId ? { deviceId: form.deviceId } : {}),
-        ...(form.from ? { from: localDayStart(form.from) } : {}),
-        ...(form.to ? { to: nextLocalDayStart(form.to) } : {}),
-    };
-}
-
-function localDayStart(day: string): string {
-    const [year, month, date] = day.split('-').map(Number);
-
-    return new Date(year, month - 1, date).toISOString();
-}
-
-function nextLocalDayStart(day: string): string {
-    const [year, month, date] = day.split('-').map(Number);
-
-    return new Date(year, month - 1, date + 1).toISOString();
-}
-
-function formFromCriteria(criteria: HistorySearchCriteria): SearchForm {
-    return {
-        deviceId: criteria.deviceId ?? '',
-        from: criteria.from ? localDate(new Date(criteria.from)) : '',
-        to: criteria.to ? localDate(new Date(new Date(criteria.to).getTime() - 1)) : '',
-    };
-}
-
-function localDate(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-
-    return `${year}-${month}-${day}`;
 }
 
 function describeCriteria(
@@ -300,4 +362,28 @@ function describeCriteria(
     }
 
     return `${historyTranslate('appliedCriteria')}: ${parts.join(' · ')}`;
+}
+
+function toSearchCriteria(form: SearchForm): HistorySearchCriteria | null {
+    if (!form.deviceId && !form.from && !form.to) {
+        return null;
+    }
+
+    return {
+        ...(form.deviceId ? { deviceId: form.deviceId } : {}),
+        ...(form.from ? { from: localDayStart(form.from) } : {}),
+        ...(form.to ? { to: nextLocalDayStart(form.to) } : {}),
+    };
+}
+
+function localDayStart(day: string): string {
+    const [year, month, date] = day.split('-').map(Number);
+
+    return new Date(year, month - 1, date).toISOString();
+}
+
+function nextLocalDayStart(day: string): string {
+    const [year, month, date] = day.split('-').map(Number);
+
+    return new Date(year, month - 1, date + 1).toISOString();
 }

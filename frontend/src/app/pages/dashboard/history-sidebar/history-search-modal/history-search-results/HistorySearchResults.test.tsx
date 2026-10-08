@@ -69,9 +69,67 @@ describe('HistorySearchResults', () => {
         expect(screen.getByText('Brak zdarzeń spełniających te kryteria.')).toBeInTheDocument();
     });
 
-    it('exposes explicit older-page and refresh actions for the applied session', () => {
+    it('does not display a completeness notice for retained-evidence results', () => {
+        render(
+            <HistorySearchResults
+                state={{ ...idleState, status: 'ready', completeness: 'retained_evidence_only' }}
+                devices={[]}
+                scrollParent={null}
+                loadOlder={vi.fn()}
+                retry={vi.fn()}
+                refresh={vi.fn()}
+            />,
+        );
+
+        expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('shows only loading feedback when a refresh retains earlier results', () => {
+        const items = [{ ...fixtures.powerChange, recordId: 'retained-record' }];
+        render(
+            <HistorySearchResults
+                state={{
+                    ...idleState,
+                    status: 'loading',
+                    items,
+                    endReached: true,
+                    lastKnown: true,
+                }}
+                devices={[]}
+                scrollParent={document.createElement('div')}
+                loadOlder={vi.fn()}
+                retry={vi.fn()}
+                refresh={vi.fn()}
+            />,
+        );
+
+        expect(screen.getByRole('status')).toHaveTextContent('Ładowanie historii');
+        expect(screen.getAllByRole('status')).toHaveLength(1);
+        expect(screen.queryByTestId('virtual-history')).toBeNull();
+    });
+
+    it('does not show a disabled load action when the page limit is reached', () => {
+        render(
+            <HistorySearchResults
+                state={{
+                    ...idleState,
+                    status: 'ready',
+                    nextCursor: 'older',
+                    limitReached: true,
+                }}
+                devices={[]}
+                scrollParent={null}
+                loadOlder={vi.fn()}
+                retry={vi.fn()}
+                refresh={vi.fn()}
+            />,
+        );
+
+        expect(screen.queryByRole('button', { name: 'Wczytaj starsze' })).toBeNull();
+    });
+
+    it('exposes the explicit older-page action for the applied session', () => {
         const loadOlder = vi.fn().mockResolvedValue(undefined);
-        const refresh = vi.fn().mockResolvedValue(undefined);
         render(
             <HistorySearchResults
                 state={{
@@ -84,14 +142,13 @@ describe('HistorySearchResults', () => {
                 scrollParent={null}
                 loadOlder={loadOlder}
                 retry={vi.fn().mockResolvedValue(undefined)}
-                refresh={refresh}
+                refresh={vi.fn().mockResolvedValue(undefined)}
             />,
         );
 
         fireEvent.click(screen.getByRole('button', { name: 'Wczytaj starsze' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Odśwież wyniki' }));
         expect(loadOlder).toHaveBeenCalledOnce();
-        expect(refresh).toHaveBeenCalledOnce();
+        expect(screen.queryByRole('button', { name: 'Odśwież wyniki' })).toBeNull();
     });
 
     it('requests a fresh session after cursor invalidation', () => {
@@ -210,7 +267,13 @@ describe('HistorySearchResults', () => {
         const refresh = vi.fn().mockResolvedValue(undefined);
         render(
             <HistorySearchResults
-                state={{ ...idleState, status: 'ready', appliedCriteria: { deviceId: 'led-main' } }}
+                state={{
+                    ...idleState,
+                    status: 'error',
+                    appliedCriteria: { deviceId: 'led-main' },
+                    error: 'cursor_expired',
+                    refreshRequired: true,
+                }}
                 devices={[]}
                 scrollParent={scrollParent}
                 loadOlder={vi.fn()}

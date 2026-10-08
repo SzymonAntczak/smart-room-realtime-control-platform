@@ -67,9 +67,12 @@ code. Technical facts and correlated operational logs remain available for
 diagnostics; this decision adds no administrator screen.
 
 The room-level history-gap exception uses the title "Room history" and explains
-the missing interval. Volatile entries and unavailable or last-known history
-remain honestly labeled in user language; removing diagnostics must not hide
-uncertainty or imply restart-safe data.
+the missing interval. Dashboard history labels volatile entries and
+unavailable or last-known data in user language. A new historical search or
+Refresh may retain prior data in session state while loading, but the UI shows
+only loading feedback until new results are ready. A read error may retain prior
+data in session state, while search shows only its error state until results are
+ready.
 
 | Backend result                                                              | User-history entry                                                                           |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -148,8 +151,8 @@ since its update follows at a later revision.
 
 `UserHistoryPage` carries durable-only `items`, `historyGenerationId`,
 `throughSequence`, `retentionAsOf`, `pageSize`, opaque `nextCursor` or `null`,
-and `completeness: retained_evidence_only`. The completeness label warns that
-unproven transitions may be omitted; it does not assert exhaustive user history.
+and `completeness: retained_evidence_only`. This value marks that unproven
+transitions may be omitted; it does not assert exhaustive user history.
 Pages have at most `pageSize` items (1–100), unique IDs and storage sequences,
 and source order `(occurredAt, storageSequence)` descending. Each item sequence
 is at or below the pinned watermark. Filtering permits short or empty pages
@@ -236,7 +239,8 @@ a timeout inside it. Auxiliary reads retain their existing bounds and do not
 advance the main cursor. A main raw page without matches can return an empty
 user page with a non-null cursor; only exhaustion of the raw session ends
 pagination. Device-filtered results omit room-level entries such as
-`history_gap`, while `completeness: retained_evidence_only` remains visible.
+`history_gap`. The response retains `completeness: retained_evidence_only`, but
+the historical-search UI does not render a separate completeness notice.
 Filtering does not reconstruct unproven historical transitions or hide read
 failures through partial success.
 
@@ -274,28 +278,32 @@ transformed on read from currently retained raw facts.
 ### Historical search interaction and lifecycle
 
 The Dashboard feed's Filter control opens an accessible modal containing a
-single-device select, From/To date inputs, Search, Clear filters, and a results
+single-device select, From/To date inputs, Search, Clear filters, Refresh and a results
 area below the form. Device options come from the current validated room
-projection. Opening without an active search shows an instruction to submit at
+projection. Opening without an active search shows an instruction to choose at
 least one criterion; it performs no history GET. Criteria are optional
-individually, but Search requires at least one. A valid submission keeps the
-modal open and starts a new pinned search session.
+individually. Submitting Search starts a new pinned search session with the
+current criteria. Changing a filter or leaving that control performs no GET
+and does not change displayed results. An empty form performs no GET, and
+reversed selected dates show a field error without searching.
 
-Draft criteria and applied criteria are separate. Editing drafts performs no GET
-and does not change displayed results. Results show a summary of their applied
-criteria. Refresh starts a new pinned session using the applied criteria, not
-unsaved drafts, and returns to the top. Clear filters removes drafts, results
-and the session, restores the initial instruction and performs no GET. Closing
-releases the session and returns focus to the invoking control. Reopening restores
-the most recently applied criteria in the form but does not restore its results
-or session; the user submits again to start a new pinned search. Clear filters
-also forgets the restored criteria. The modal supports keyboard operation and
-contains focus while open.
+Draft criteria and applied criteria are separate. Editing drafts does not fetch
+or change displayed results. Results show a small summary of their applied
+criteria below the controls. Refresh is always available. Without submitted
+criteria, it shows a temporary tooltip explaining that a filter must be selected
+and submitted before refreshing; it performs no GET. Otherwise it starts a new
+pinned session using the last submitted criteria and returns to the top; unsaved
+drafts do not change the refresh scope. Clear filters removes drafts, results and the session, restores
+the initial instruction and performs no GET.
+Closing releases the session, clears the form and returns focus to the invoking
+control. Each reopening starts with an empty form, no results or session, and
+the initial instruction. The modal supports keyboard operation and contains
+focus while open.
 
 From/To selections include the chosen days in the browser's time zone. Convert
 From to its local start of day, and To to the local start of the following
 calendar day, then send UTC bounds for `[from, to)`. A missing day omits that
-bound. Equal selected dates are valid; reversed selected dates block submission
+bound. Equal selected dates are valid; reversed selected dates block a search
 and show a field error. Construct the next calendar day in the browser time zone
 rather than adding a fixed 24 hours, so daylight-saving changes are respected.
 The BFF does not interpret calendar dates or infer the browser's zone.
@@ -306,7 +314,10 @@ accessible Load older control fetch older pages from the same pinned search,
 with one request in flight, bounded memory and virtual rendering. Sparse pages
 with a cursor continue pagination. Show loading, no matches, retry and
 end-of-history states; an empty intermediate page is not proof of no matches or
-end of history. Read errors preserve a labeled last-known result view.
+end of history. A new search or Refresh may retain prior results in session
+state, but shows only loading feedback until the new results are ready. Read
+errors may also preserve prior results in session state, but the search UI shows
+only the error state until results are ready.
 
 A new search, Refresh, Clear or close invalidates earlier requests/pages and
 ignores late responses. Detected cursor expiry or session invalidation requires

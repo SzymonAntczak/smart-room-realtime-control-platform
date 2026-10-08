@@ -264,11 +264,15 @@ contract; search has its own criteria, pinned pages, cursor and scroll position.
 Device/date filters combine with AND over event time. Browser-local inclusive
 days become UTC half-open bounds `[from, to)`, with either bound optional.
 Unfiltered API queries remain valid for the Dashboard; only the modal requires at least
-one criterion before Search. Draft edits do not fetch or change results, Refresh
-uses applied criteria, and Clear/close release the search session. Search results
+one criterion before Search. Search submits the current criteria; draft edits
+do not fetch or change results. A summary identifies the criteria used for the
+displayed results. Refresh repeats submitted criteria and ignores drafts;
+Clear/close release the search session. Each
+reopening starts with empty filters and no retained session. Search results
 do not merge SSE or automatically rebuild on reconnect, recovery or cursor expiry;
-invalidation requires explicit refresh. Read errors preserve a labeled last-known
-result view. Search actions never alter the Dashboard session. The
+invalidation requires explicit refresh. Read errors may preserve prior results
+in session state, while search shows only its error state until results are ready.
+Search actions never alter the Dashboard session. The
 [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
 owns both contexts and their detailed lifecycle, filter and accessibility rules.
 

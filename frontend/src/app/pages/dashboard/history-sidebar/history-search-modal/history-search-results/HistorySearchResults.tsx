@@ -1,5 +1,5 @@
 import type { UserHistoryItem } from '@smart-room/contracts/user-history';
-import { LoaderCircle, RefreshCw } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { type Components, Virtuoso } from 'react-virtuoso';
 
@@ -51,7 +51,7 @@ export function HistorySearchResults({
     return (
         <div className={styles.results}>
             {state.status === 'idle' ? (
-                <p className={styles.status} role="status">
+                <p className={`${styles.status} ${styles.instruction}`} role="status">
                     {t('history.searchInstruction')}
                 </p>
             ) : null}
@@ -61,22 +61,12 @@ export function HistorySearchResults({
                     <span>{t('history.loading')}</span>
                 </p>
             ) : null}
-            {state.lastKnown ? (
-                <p className={styles.notice} role="status">
-                    {t('history.lastKnown')}
-                </p>
-            ) : null}
-            {state.completeness === 'retained_evidence_only' ? (
-                <p className={styles.notice} role="status">
-                    {t('history.searchIncomplete')}
-                </p>
-            ) : null}
             {state.status === 'ready' && state.items.length === 0 && state.endReached ? (
                 <p className={styles.status} role="status">
                     {t('history.noMatches')}
                 </p>
             ) : null}
-            {state.items.length > 0 && scrollParent ? (
+            {state.items.length > 0 && scrollParent && !state.lastKnown ? (
                 <Virtuoso
                     data={state.items}
                     customScrollParent={scrollParent}
@@ -108,31 +98,15 @@ export function HistorySearchResults({
                     </button>
                 </div>
             ) : null}
-            {state.status === 'ready' && state.nextCursor !== null ? (
-                <button
-                    type="button"
-                    className={styles.action}
-                    disabled={state.limitReached}
-                    onClick={() => void loadOlder()}
-                >
-                    {state.limitReached ? t('history.searchLimit') : t('history.loadOlder')}
+            {state.status === 'ready' && state.nextCursor !== null && !state.limitReached ? (
+                <button type="button" className={styles.action} onClick={() => void loadOlder()}>
+                    {t('history.loadOlder')}
                 </button>
             ) : null}
-            {state.endReached && state.items.length > 0 ? (
+            {state.status === 'ready' && state.endReached && state.items.length > 0 ? (
                 <p className={styles.status} role="status">
                     {t('history.end')}
                 </p>
-            ) : null}
-            {state.appliedCriteria && state.status !== 'error' ? (
-                <button
-                    type="button"
-                    className={styles.action}
-                    disabled={state.status === 'loading'}
-                    onClick={refreshFromTop}
-                >
-                    <RefreshCw aria-hidden="true" size={16} />
-                    {t('history.refresh')}
-                </button>
             ) : null}
         </div>
     );

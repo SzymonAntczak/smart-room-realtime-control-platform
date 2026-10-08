@@ -360,20 +360,24 @@ ranges and complete normalized cursor-scope matching. Unfiltered queries retain
 the existing page-size defaults, response shapes and error contracts.
 Backend reader/HTTP tests protect AND filtering over event time with `[from, to)`
 bounds, evidence outside the selected range, device-filtered room-entry exclusion
-with the completeness notice intact, sparse-page continuation and typed
+with completeness metadata intact, sparse-page continuation and typed
 cursor/storage errors. Main or auxiliary read failures cannot produce partial
 success, and filters cannot reinterpret a pinned generation/retention session.
 
-Deterministic frontend tests protect applied versus draft criteria, single-flight
-paging, explicit refresh, stale-response rejection and cleanup. Search results
-never merge SSE or automatically refresh on reconnect, recovery or cursor expiry.
+Deterministic frontend tests protect applied versus draft criteria, submit-only
+search, refresh using only applied criteria, the applied-criteria summary, the always-available refresh action and
+its tooltip when no criteria have been submitted, an empty modal on reopen, single-flight paging,
+stale-response rejection and cleanup. Search results never merge SSE or automatically refresh on reconnect,
+recovery or cursor expiry.
 Mocked-BFF browser tests protect inclusive browser-local days (including equal
 days and daylight-saving changes), reversed-range errors, accessible modal focus,
-Search/Refresh/Clear, bounded virtual rendering and Load older. Opening without
-a search, draft edits, Clear and empty reopening perform no history GET. Search
+Search/Refresh/Clear, bounded virtual rendering and Load older. Opening,
+editing drafts, Clear, Refresh without submitted criteria and empty reopening perform no
+history GET. Search
 actions must not change Dashboard pages, cursor or reading position; live
-Dashboard updates must not change the static search results. Read errors retain
-a labeled last-known result view, and session invalidation asks for explicit
+Dashboard updates must not change the static search results. Read errors may
+retain previously loaded results in session state, while search shows only the
+error state until results are ready; session invalidation asks for explicit
 refresh. These browser scenarios validate shared HTTP/SSE fixtures and do not
 replace production BFF filtering tests.
 

@@ -27,22 +27,14 @@
     gap: var(--space-4);
 }
 
-.header h2,
-.header p {
-    margin: 0;
-}
-
 .header h2 {
+    margin: 0;
     font-size: var(--font-size-heading-md);
 }
 
-.header p {
-    margin-block-start: var(--space-1);
-    color: var(--color-text-muted);
-}
-
 .iconButton,
-.actions button {
+.actions button,
+.submitAction {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -63,8 +55,8 @@
     padding: var(--space-2);
 }
 
-.actions .primaryButton {
-    font-weight: 700;
+.submitAction {
+    inline-size: 100%;
 }
 
 .form {
@@ -72,10 +64,37 @@
     gap: var(--space-3);
 }
 
-.filters {
+.summary {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.controlLayout {
     display: grid;
-    grid-template-columns: minmax(12rem, 1.5fr) repeat(2, minmax(10rem, 1fr));
-    gap: var(--space-3);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: var(--space-3);
+    row-gap: var(--space-3);
+}
+
+.filters,
+.actions {
+    display: contents;
+}
+
+.deviceFilter {
+    grid-column: 1 / 3;
+    grid-row: 1;
+}
+
+.fromFilter {
+    grid-column: 3;
+    grid-row: 1;
+}
+
+.toFilter {
+    grid-column: 4;
+    grid-row: 1;
 }
 
 .filters label {
@@ -101,6 +120,7 @@
 .filters select:focus-visible,
 .iconButton:focus-visible,
 .actions button:focus-visible,
+.submitAction:focus-visible,
 .results:focus-visible {
     outline: var(--border-width-thin) solid var(--color-info-text);
     outline-offset: var(--space-1);
@@ -110,10 +130,41 @@
     border-color: var(--color-warning-text);
 }
 
-.actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
+.clearAction {
+    grid-column: 1;
+    grid-row: 2;
+    inline-size: 100%;
+    align-self: end;
+}
+
+.reloadAction {
+    position: relative;
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.reloadButton {
+    inline-size: 100%;
+}
+
+.submitAction {
+    grid-column: 3 / 5;
+    grid-row: 2;
+}
+
+.tooltip {
+    position: absolute;
+    inset-block-end: calc(100% + var(--space-2));
+    inset-inline-end: 0;
+    z-index: 1;
+    inline-size: max-content;
+    max-inline-size: min(18rem, 70vw);
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 18%);
 }
 
 .validation {
@@ -123,18 +174,12 @@
 
 .results {
     min-block-size: 10rem;
-    max-block-size: 45dvh;
+    block-size: min(45dvh, 32rem);
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
     border-block-start: var(--border-width-thin) solid var(--color-border);
     padding-block-start: var(--space-3);
-}
-
-.summary,
-.instruction {
-    margin: 0 0 var(--space-3);
-    color: var(--color-text-muted);
 }
 
 @media (max-width: 48rem) {
@@ -144,11 +189,46 @@
         padding: var(--space-4);
     }
 
-    .filters {
+    .controlLayout {
         grid-template-columns: minmax(0, 1fr);
+        column-gap: var(--space-2);
+        row-gap: var(--space-2);
+    }
+
+    .deviceFilter,
+    .fromFilter,
+    .toFilter,
+    .clearAction,
+    .reloadAction,
+    .submitAction {
+        grid-column: 1;
+    }
+
+    .deviceFilter {
+        grid-row: 1;
+    }
+
+    .fromFilter {
+        grid-row: 2;
+    }
+
+    .toFilter {
+        grid-row: 3;
+    }
+
+    .clearAction {
+        grid-row: 4;
+    }
+
+    .reloadAction {
+        grid-row: 5;
+    }
+
+    .submitAction {
+        grid-row: 6;
     }
 
     .results {
-        max-block-size: 42dvh;
+        block-size: min(42dvh, 32rem);
     }
 }

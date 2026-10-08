@@ -1,11 +1,13 @@
 .results {
     display: grid;
+    align-content: start;
+    block-size: 100%;
     gap: var(--space-3);
+    min-block-size: 100%;
     inline-size: 100%;
 }
 
 .status,
-.notice,
 .error p {
     margin: 0;
     color: var(--color-text-muted);
@@ -17,15 +19,16 @@
     gap: var(--space-2);
 }
 
+.instruction {
+    display: block;
+    inline-size: 100%;
+    margin-block-start: var(--space-4);
+    text-align: center;
+}
+
 .status svg {
     flex: none;
     animation: spin 1s linear infinite;
-}
-
-.notice {
-    padding: var(--space-2) var(--space-3);
-    border-inline-start: var(--border-width-thin) solid var(--color-warning-text);
-    background: var(--color-warning-surface);
 }
 
 .error {
