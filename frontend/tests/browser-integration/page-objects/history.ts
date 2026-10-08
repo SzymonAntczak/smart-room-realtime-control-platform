@@ -7,6 +7,10 @@ export const historyEntries = (page: Page) => historyPanel(page).getByRole('list
 
 export async function openHistory(page: Page) {
     await page.goto('/');
+    await expandHistory(page);
+}
+
+export async function expandHistory(page: Page) {
     const toggle = page.getByRole('button', { name: /ostatnie zdarzenia/i });
     await expect(toggle).toBeVisible();
 

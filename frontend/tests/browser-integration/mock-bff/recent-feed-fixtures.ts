@@ -1,5 +1,20 @@
 import type { DurableUserHistoryItem, UserHistoryPage } from '@smart-room/contracts/user-history';
 
+export function createAvailabilityHistoryItem(
+    id: number,
+    current: 'online' | 'offline',
+): DurableUserHistoryItem {
+    return {
+        ...identity(id, new Date(Date.parse('2026-09-20T10:00:00Z') + id * 1000).toISOString(), id),
+        kind: 'availability_changed',
+        previous: current === 'online' ? 'offline' : 'online',
+        current,
+        source: 'simulator-adapter',
+        deviceId: 'temp-desk',
+        deviceName: 'Desk Temperature',
+    };
+}
+
 export function createHealthHistoryItem(
     id: number,
     previous: 'healthy' | 'degraded',

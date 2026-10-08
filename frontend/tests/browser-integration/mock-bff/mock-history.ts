@@ -60,12 +60,19 @@ export class MockHistory {
         const query = normalizeUserHistoryPageQuery({
             pageSize: Number(url.searchParams.get('pageSize')),
             ...(url.searchParams.has('cursor') ? { cursor: url.searchParams.get('cursor') } : {}),
+            ...Object.fromEntries(
+                ['deviceId', 'from', 'to']
+                    .filter((key) => url.searchParams.has(key))
+                    .map((key) => [key, url.searchParams.get(key)]),
+            ),
         });
 
         if (
             !query ||
             query.pageSize !== 50 ||
-            [...url.searchParams.keys()].some((key) => key !== 'pageSize' && key !== 'cursor')
+            [...url.searchParams.keys()].some(
+                (key) => !['pageSize', 'cursor', 'deviceId', 'from', 'to'].includes(key),
+            )
         ) {
             throw new Error('Invalid mock history query');
         }
@@ -89,7 +96,16 @@ export class MockHistory {
                 throw new Error('Missing mock page');
             }
 
-            result = { status: 200, body: structuredClone(page) };
+            const captured = structuredClone(page);
+            captured.items = captured.items.filter(
+                (item) =>
+                    (query.deviceId === undefined ||
+                        ('deviceId' in item && item.deviceId === query.deviceId)) &&
+                    (query.from === undefined ||
+                        Date.parse(item.occurredAt) >= Date.parse(query.from)) &&
+                    (query.to === undefined || Date.parse(item.occurredAt) < Date.parse(query.to)),
+            );
+            result = { status: 200, body: captured };
         }
 
         if (!this.#holdNext) {

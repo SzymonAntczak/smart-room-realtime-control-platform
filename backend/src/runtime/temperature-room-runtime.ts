@@ -84,6 +84,7 @@ import {
     type DeviceDefinition,
     type EventIngress,
     type EventProcessingResult,
+    type PreparedEventProcessingResult,
     type PreparedRecord,
 } from '../platform/event-processing/event-processor';
 import { createHistoryCursorCodec } from '../platform/history/room-history-cursor';
@@ -202,6 +203,12 @@ const volatileCommandLostOnRestartMessage =
 interface PendingStartupVolatileCommandFailure {
     event: CommandFailedEvent;
     acceptedAt: string;
+    processingEvidence: Extract<
+        NonNullable<
+            Extract<PreparedRecord, { kind: 'input_significant_fact' }>['processingEvidence']
+        >,
+        { kind: 'command_intent' }
+    >;
 }
 
 function isTemperatureScenarioAction(
@@ -1001,10 +1008,13 @@ export function createTemperatureRoomRuntime({
                   .activeCommands.find((command) => command.deviceId === event.deviceId)?.commandId
             : undefined;
         reconcileExpiredDurableIdentity(event, receivedAt);
-        const prepared = processor.prepareEvent(
-            event,
-            ingress,
-            storageState.status === 'available' ? 'available' : 'degraded',
+        const prepared = preserveOriginalProcessingEvidence(
+            processor.prepareEvent(
+                event,
+                ingress,
+                storageState.status === 'available' ? 'available' : 'degraded',
+            ),
+            recentEvents,
         );
         const durablePreparedState = processor.materializePreparedState(prepared, 'durable');
         let result: EventProcessingResult;
@@ -1554,6 +1564,7 @@ export function createTemperatureRoomRuntime({
                     const record: PreparedRecord = {
                         kind: 'input_significant_fact',
                         event: failure.event,
+                        processingEvidence: failure.processingEvidence,
                     };
                     const storageSequence = appendPreparedRecord(transaction, record);
                     const recentEvent = recentEventForRecord(record, 'durable', storageSequence);
@@ -1727,6 +1738,7 @@ export function createTemperatureRoomRuntime({
                     identity.eventId,
                     identity.fingerprint as `fp:v1:sha256:${string}`,
                     identity.acceptedAt,
+                    identity.processingEvidence,
                 );
             }
 
@@ -1986,6 +1998,9 @@ export function createTemperatureRoomRuntime({
                     source: event.source,
                     occurredAt: event.occurredAt,
                     payload: event.payload,
+                    ...(record.processingEvidence === undefined
+                        ? {}
+                        : { processingEvidence: record.processingEvidence }),
                 }).storageSequence;
             }
 
@@ -2020,7 +2035,15 @@ export function createTemperatureRoomRuntime({
         acceptedAt: string,
     ): void {
         if (prepared.eventId && prepared.fingerprint && prepared.kind !== 'quarantined') {
-            processor.rememberVolatileIdentity(prepared.eventId, prepared.fingerprint, acceptedAt);
+            const input = prepared.records.find(
+                (record) => record.kind === 'input_significant_fact',
+            );
+            processor.rememberVolatileIdentity(
+                prepared.eventId,
+                prepared.fingerprint,
+                acceptedAt,
+                input?.processingEvidence,
+            );
         }
     }
 
@@ -2100,7 +2123,18 @@ export function createTemperatureRoomRuntime({
             }
 
             if (storageState.status !== 'available') {
-                pendingStartupVolatileCommandFailures.push({ event, acceptedAt: occurredAt });
+                pendingStartupVolatileCommandFailures.push({
+                    event,
+                    acceptedAt: occurredAt,
+                    processingEvidence: {
+                        version: 1,
+                        kind: 'command_intent',
+                        intent: {
+                            commandType: 'set.power',
+                            requestedState: { ...command.requestedState },
+                        },
+                    },
+                });
             }
         }
     }
@@ -2963,6 +2997,43 @@ function hasObservationStatusChange(
     });
 }
 
+function preserveOriginalProcessingEvidence(
+    prepared: PreparedEventProcessingResult,
+    recentEvents: readonly RecentEventProjection[],
+): PreparedEventProcessingResult {
+    if (prepared.identityDisposition !== 'volatile_reconciliation') {
+        return prepared;
+    }
+
+    const replacements = new Map<PreparedRecord, PreparedRecord>();
+    const existingById = new Map(recentEvents.map((event) => [event.recordId, event]));
+
+    for (const record of prepared.records) {
+        if (record.kind !== 'input_significant_fact') {
+            continue;
+        }
+
+        const existing = existingById.get(logicalRecordId(record.event, 'input_fact'));
+
+        if (
+            existing?.durability === 'volatile' &&
+            'processingEvidence' in existing &&
+            existing.processingEvidence !== undefined
+        ) {
+            replacements.set(record, {
+                ...record,
+                processingEvidence: existing.processingEvidence,
+            });
+        }
+    }
+
+    return {
+        ...prepared,
+        records: prepared.records.map((record) => replacements.get(record) ?? record),
+        feedRecords: prepared.feedRecords.map((record) => replacements.get(record) ?? record),
+    };
+}
+
 function recentEventsForRecords(
     records: readonly PreparedRecord[],
     durability: 'durable' | 'volatile',
@@ -3046,6 +3117,9 @@ function recentEventForRecord(
         ...(event.commandId === undefined ? {} : { commandId: event.commandId }),
         source: event.source,
         payload: event.payload,
+        ...(record.processingEvidence === undefined
+            ? {}
+            : { processingEvidence: record.processingEvidence }),
     } as RecentEventProjection;
 }
 

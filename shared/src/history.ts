@@ -1,5 +1,6 @@
 import { type Static, type TProperties, Type } from '@sinclair/typebox';
 
+import { deviceAvailabilityStates, deviceOperationalHealthStates } from './devices';
 import {
     commandDeliveryUncertainPayloadSchema,
     commandDispatchedPayloadSchema,
@@ -58,6 +59,75 @@ const commandEventFields = {
     ...deviceEventFields,
     commandId: nonEmptyStringSchema,
 };
+const evidenceVersion = { version: Type.Literal(1) };
+const reportedStateEvidenceSchema = Type.Object(
+    {
+        ...evidenceVersion,
+        kind: Type.Literal('reported_state'),
+        applied: Type.Boolean(),
+        before: deviceStateReportedPayloadSchema.properties.reportedState,
+        after: deviceStateReportedPayloadSchema.properties.reportedState,
+    },
+    { additionalProperties: false },
+);
+const availabilityValueSchema = Type.Union(
+    deviceAvailabilityStates.map((value) => Type.Literal(value)),
+);
+const healthValueSchema = Type.Union(
+    deviceOperationalHealthStates.map((value) => Type.Literal(value)),
+);
+const availabilityEvidenceSchema = Type.Object(
+    {
+        ...evidenceVersion,
+        kind: Type.Literal('availability'),
+        applied: Type.Boolean(),
+        before: availabilityValueSchema,
+        after: availabilityValueSchema,
+    },
+    { additionalProperties: false },
+);
+const healthEvidenceSchema = Type.Object(
+    {
+        ...evidenceVersion,
+        kind: Type.Literal('health'),
+        applied: Type.Boolean(),
+        before: healthValueSchema,
+        after: healthValueSchema,
+    },
+    { additionalProperties: false },
+);
+const commandIntentEvidenceSchema = Type.Object(
+    {
+        ...evidenceVersion,
+        kind: Type.Literal('command_intent'),
+        intent: Type.Union([
+            Type.Object(
+                {
+                    commandType: Type.Literal('set.power'),
+                    requestedState: Type.Object(
+                        { power: Type.Union([Type.Literal('on'), Type.Literal('off')]) },
+                        { additionalProperties: false },
+                    ),
+                },
+                { additionalProperties: false },
+            ),
+            Type.Null(),
+        ]),
+    },
+    { additionalProperties: false },
+);
+export const factProcessingEvidenceSchema = Type.Union([
+    reportedStateEvidenceSchema,
+    availabilityEvidenceSchema,
+    healthEvidenceSchema,
+    commandIntentEvidenceSchema,
+]);
+export type FactProcessingEvidence = Static<typeof factProcessingEvidenceSchema>;
+
+export function isFactProcessingEvidence(value: unknown): value is FactProcessingEvidence {
+    return isSchema(factProcessingEvidenceSchema, value) && hasValidProcessingEvidence(value);
+}
+
 const confirmedPayloadSchema = Type.Object(
     {
         sourceEventId: nonEmptyStringSchema,
@@ -93,18 +163,21 @@ export const recentEventProjectionSchema = Type.Union([
         ...deviceEventFields,
         eventType: Type.Literal('device.state.reported'),
         payload: deviceStateReportedPayloadSchema,
+        processingEvidence: Type.Optional(reportedStateEvidenceSchema),
     }),
     withDurability({
         ...commonFields,
         ...deviceEventFields,
         eventType: Type.Literal('device.availability.changed'),
         payload: deviceAvailabilityChangedPayloadSchema,
+        processingEvidence: Type.Optional(availabilityEvidenceSchema),
     }),
     withDurability({
         ...commonFields,
         ...deviceEventFields,
         eventType: Type.Literal('device.health.changed'),
         payload: deviceHealthChangedPayloadSchema,
+        processingEvidence: Type.Optional(healthEvidenceSchema),
     }),
     withDurability({
         ...commonFields,
@@ -129,12 +202,14 @@ export const recentEventProjectionSchema = Type.Union([
         ...commandEventFields,
         eventType: Type.Literal('command.failed'),
         payload: commandFailedPayloadSchema,
+        processingEvidence: Type.Optional(commandIntentEvidenceSchema),
     }),
     withDurability({
         ...commonFields,
         ...commandEventFields,
         eventType: Type.Literal('command.timed_out'),
         payload: commandTimedOutPayloadSchema,
+        processingEvidence: Type.Optional(commandIntentEvidenceSchema),
     }),
     withDurability({
         ...commonFields,
@@ -171,18 +246,21 @@ export const durableSignificantFactProjectionSchema = Type.Union([
         ...deviceEventFields,
         eventType: Type.Literal('device.state.reported'),
         payload: deviceStateReportedPayloadSchema,
+        processingEvidence: Type.Optional(reportedStateEvidenceSchema),
     }),
     withDurableStorage({
         ...commonFields,
         ...deviceEventFields,
         eventType: Type.Literal('device.availability.changed'),
         payload: deviceAvailabilityChangedPayloadSchema,
+        processingEvidence: Type.Optional(availabilityEvidenceSchema),
     }),
     withDurableStorage({
         ...commonFields,
         ...deviceEventFields,
         eventType: Type.Literal('device.health.changed'),
         payload: deviceHealthChangedPayloadSchema,
+        processingEvidence: Type.Optional(healthEvidenceSchema),
     }),
     withDurableStorage({
         ...commonFields,
@@ -207,12 +285,14 @@ export const durableSignificantFactProjectionSchema = Type.Union([
         ...commandEventFields,
         eventType: Type.Literal('command.failed'),
         payload: commandFailedPayloadSchema,
+        processingEvidence: Type.Optional(commandIntentEvidenceSchema),
     }),
     withDurableStorage({
         ...commonFields,
         ...commandEventFields,
         eventType: Type.Literal('command.timed_out'),
         payload: commandTimedOutPayloadSchema,
+        processingEvidence: Type.Optional(commandIntentEvidenceSchema),
     }),
     withDurableStorage({
         ...commonFields,
@@ -819,7 +899,25 @@ function isDurableHistoryOrdered(
 }
 
 function hasConsistentRecentEventTiming(event: RecentEventProjection): boolean {
+    if (
+        'processingEvidence' in event &&
+        event.processingEvidence &&
+        !hasValidProcessingEvidence(event.processingEvidence)
+    ) {
+        return false;
+    }
+
     switch (event.eventType) {
+        case 'device.availability.changed':
+            return (
+                !event.processingEvidence?.applied ||
+                event.processingEvidence.after === event.payload.availability
+            );
+        case 'device.health.changed':
+            return (
+                !event.processingEvidence?.applied ||
+                event.processingEvidence.after === event.payload.health
+            );
         case 'command.confirmed':
             return event.payload.confirmedAt === event.occurredAt;
         case 'storage.gap.recorded':
@@ -837,4 +935,21 @@ function hasConsistentRecentEventTiming(event: RecentEventProjection): boolean {
         default:
             return true;
     }
+}
+
+function hasValidProcessingEvidence(evidence: FactProcessingEvidence): boolean {
+    if (evidence.kind === 'command_intent' || evidence.applied) {
+        return true;
+    }
+
+    if (evidence.kind !== 'reported_state') {
+        return evidence.before === evidence.after;
+    }
+
+    const keys = Object.keys(evidence.before);
+
+    return (
+        keys.length === Object.keys(evidence.after).length &&
+        keys.every((key) => evidence.before[key] === evidence.after[key])
+    );
 }

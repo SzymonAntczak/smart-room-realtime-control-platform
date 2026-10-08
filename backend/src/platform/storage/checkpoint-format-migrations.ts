@@ -5,11 +5,12 @@ import {
     selectRecentCommands,
     type TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
+import { isFactProcessingEvidence } from '@smart-room/contracts/history';
 import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 
 import { StorageMigrationError } from './storage-errors';
 
-const latestCheckpointVersion = 4;
+const latestCheckpointVersion = 5;
 
 /** Migrates the JSON document stored in the singleton room-projection row. */
 export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): void {
@@ -28,15 +29,17 @@ export function migrateLatestRoomProjectionCheckpoint(database: DatabaseSync): v
     const migratedBeforeRecordIdentity =
         checkpoint.checkpointVersion === latestCheckpointVersion
             ? checkpoint
-            : checkpoint.checkpointVersion === 3
-              ? migrateVersionThreeCheckpoint(checkpoint)
-              : checkpoint.checkpointVersion === 2
-                ? migrateVersionTwoCheckpoint(checkpoint)
-                : checkpoint.checkpointVersion === 1
-                  ? migrateVersionOneCheckpoint(checkpoint)
-                  : 'checkpointVersion' in checkpoint
-                    ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
-                    : migrateVersionZeroCheckpoint(checkpoint);
+            : checkpoint.checkpointVersion === 4
+              ? { ...checkpoint, checkpointVersion: latestCheckpointVersion }
+              : checkpoint.checkpointVersion === 3
+                ? migrateVersionThreeCheckpoint(checkpoint)
+                : checkpoint.checkpointVersion === 2
+                  ? migrateVersionTwoCheckpoint(checkpoint)
+                  : checkpoint.checkpointVersion === 1
+                    ? migrateVersionOneCheckpoint(checkpoint)
+                    : 'checkpointVersion' in checkpoint
+                      ? unsupportedCheckpointVersion(checkpoint.checkpointVersion)
+                      : migrateVersionZeroCheckpoint(checkpoint);
     const migrated = rewriteLegacyRecentEventRecordIds(migratedBeforeRecordIdentity);
 
     assertMigratedCheckpointIsValid(migrated);
@@ -361,7 +364,9 @@ function isVolatileGuards(value: unknown): boolean {
                 typeof guard.eventId === 'string' &&
                 typeof guard.fingerprint === 'string' &&
                 guard.durability === 'volatile' &&
-                typeof guard.acceptedAt === 'string',
+                typeof guard.acceptedAt === 'string' &&
+                (guard.processingEvidence === undefined ||
+                    isFactProcessingEvidence(guard.processingEvidence)),
         )
     );
 }

@@ -5,6 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { createRoomProjector } from '../read-model/room-projection';
+
 import { migrateSqliteDatabase, roomStorageMigrations } from './sqlite-migrations';
 import { createSqliteRoomStorage, executeStorageTransaction } from './sqlite-room-storage';
 import { createSqliteRoomStorageLifecycle } from './sqlite-room-storage-lifecycle';
@@ -27,6 +29,175 @@ afterEach(() => {
 });
 
 describe('SQLite room storage', () => {
+    it('AC-6 migrates SQLite 7/checkpoint 4 without inventing evidence and round-trips new evidence in rows and checkpoint 5', () => {
+        const databasePath = temporaryDatabasePath();
+        const generation = 'evidence-migration-generation';
+        const recordId = 'rec:v1:sha256:' + 'a'.repeat(64);
+        const occurredAt = '2026-09-01T00:00:00.000Z';
+        const projection = createRoomProjector({
+            devices: [
+                {
+                    deviceId: 'temp-desk',
+                    name: 'Desk Temperature',
+                    role: 'temperature-sensor',
+                    expectedIntervalMsByCapability: { temperature: 1000 },
+                },
+            ],
+            initialUpdatedAt: occurredAt,
+        }).getProjection();
+        const payload = {
+            previousAvailability: 'unknown',
+            availability: 'offline',
+            reason: 'reported',
+        } as const;
+        const legacy = new DatabaseSync(databasePath);
+
+        try {
+            migrateSqliteDatabase(legacy, generation, roomStorageMigrations.slice(0, 7));
+            legacy
+                .prepare(
+                    'INSERT INTO significant_facts (history_generation_id, storage_sequence, record_id, event_type, device_id, source, occurred_at, payload_json) VALUES (?, 1, ?, ?, ?, ?, ?, ?)',
+                )
+                .run(
+                    generation,
+                    recordId,
+                    'device.availability.changed',
+                    'temp-desk',
+                    'simulator-adapter',
+                    occurredAt,
+                    JSON.stringify(payload),
+                );
+            legacy
+                .prepare('UPDATE storage_metadata SET last_storage_sequence = 1 WHERE id = 1')
+                .run();
+            legacy
+                .prepare(
+                    'INSERT INTO latest_room_projection (id, updated_at, projection_json) VALUES (1, ?, ?)',
+                )
+                .run(
+                    occurredAt,
+                    JSON.stringify({
+                        checkpointVersion: 4,
+                        updatedAt: occurredAt,
+                        projection,
+                        projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                        volatileGuards: [],
+                        recentEvents: [
+                            {
+                                recordId,
+                                eventType: 'device.availability.changed',
+                                deviceId: 'temp-desk',
+                                source: 'simulator-adapter',
+                                occurredAt,
+                                payload,
+                                durability: 'durable',
+                                storageSequence: 1,
+                            },
+                        ],
+                    }),
+                );
+        } finally {
+            legacy.close();
+        }
+
+        const storage = createSqliteRoomStorage({ databasePath });
+        const processingEvidence = {
+            version: 1,
+            kind: 'availability',
+            applied: true,
+            before: 'online',
+            after: 'offline',
+        } as const;
+        const newId = 'rec:v1:sha256:' + 'b'.repeat(64);
+
+        try {
+            expect(storage.getMetadata()).toMatchObject({
+                historyGenerationId: generation,
+                lastStorageSequence: 1,
+                schemaVersion: 8,
+            });
+            expect(storage.listSignificantFacts()[0]).toMatchObject({
+                recordId,
+                storageSequence: 1,
+                payload,
+            });
+            expect(storage.listSignificantFacts()[0]).not.toHaveProperty('processingEvidence');
+            expect(storage.getLatestRoomProjection()?.recentEvents[0]).not.toHaveProperty(
+                'processingEvidence',
+            );
+            const outcome = storage.transact((transaction) => {
+                const sequence = transaction.appendSignificantFact({
+                    recordId: newId,
+                    eventType: 'device.availability.changed',
+                    deviceId: 'temp-desk',
+                    source: 'simulator-adapter',
+                    occurredAt,
+                    payload,
+                    processingEvidence,
+                });
+                transaction.saveLatestRoomProjection({
+                    updatedAt: occurredAt,
+                    projection,
+                    projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
+                    volatileGuards: [],
+                    recentEvents: [
+                        {
+                            recordId: newId,
+                            eventType: 'device.availability.changed',
+                            deviceId: 'temp-desk',
+                            source: 'simulator-adapter',
+                            occurredAt,
+                            payload,
+                            processingEvidence,
+                            durability: 'durable',
+                            storageSequence: sequence.storageSequence,
+                        },
+                    ],
+                });
+            }, retention());
+            expect(outcome.status).toBe('committed');
+        } finally {
+            storage.close();
+        }
+
+        const reopened = createSqliteRoomStorage({ databasePath });
+
+        try {
+            expect(
+                reopened.listSignificantFacts().find((fact) => fact.recordId === newId)
+                    ?.processingEvidence,
+            ).toEqual(processingEvidence);
+            expect(reopened.getLatestRoomProjection()?.recentEvents[0]).toMatchObject({
+                recordId: newId,
+                processingEvidence,
+                storageSequence: 2,
+            });
+            expect(reopened.getMetadata()).toMatchObject({
+                historyGenerationId: generation,
+                lastStorageSequence: 2,
+            });
+        } finally {
+            reopened.close();
+        }
+
+        const current = new DatabaseSync(databasePath);
+
+        try {
+            expect(
+                JSON.parse(
+                    (
+                        current
+                            .prepare(
+                                'SELECT projection_json FROM latest_room_projection WHERE id = 1',
+                            )
+                            .get() as { projection_json: string }
+                    ).projection_json,
+                ).checkpointVersion,
+            ).toBe(5);
+        } finally {
+            current.close();
+        }
+    });
     it('lists open runtime sessions and never moves their durable commit timestamp backwards', () => {
         const storage = createSqliteRoomStorage({ databasePath: temporaryDatabasePath() });
 
@@ -364,7 +535,7 @@ describe('SQLite room storage', () => {
         expect(
             after.prepare('SELECT MAX(version) AS version FROM schema_migrations').get(),
         ).toEqual({
-            version: 7,
+            version: 8,
         });
         after.close();
     });
@@ -381,7 +552,7 @@ describe('SQLite room storage', () => {
             historyGenerationId: expect.stringMatching(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             ),
-            schemaVersion: 7,
+            schemaVersion: 8,
             lastStorageSequence: 0,
             lastRetentionRevision: 0,
         });
@@ -408,7 +579,7 @@ describe('SQLite room storage', () => {
         if (startup.kind === 'available') {
             expect(startup.metadata).toMatchObject({
                 historyGenerationId: '11111111-1111-4111-8111-111111111111',
-                schemaVersion: 7,
+                schemaVersion: 8,
                 lastRetentionRevision: 0,
             });
             startup.storage.close();
@@ -449,7 +620,7 @@ describe('SQLite room storage', () => {
             .run(
                 '2026-09-10T10:00:00.000Z',
                 JSON.stringify({
-                    checkpointVersion: 4,
+                    checkpointVersion: 5,
                     updatedAt: '2026-09-10T10:00:00.000Z',
                     projection: emptyRoomProjection('2026-09-10T10:00:00.000Z'),
                     projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
@@ -480,7 +651,7 @@ describe('SQLite room storage', () => {
 
         expect(storage.getMetadata()).toMatchObject({
             historyGenerationId: generation,
-            schemaVersion: 7,
+            schemaVersion: 8,
             lastStorageSequence: 2,
         });
         expect(storage.listSignificantFacts()).toEqual([
@@ -1828,7 +1999,7 @@ describe('SQLite room storage', () => {
             .get() as { projection_json: string };
         database.close();
 
-        expect(JSON.parse(row.projection_json)).toMatchObject({ checkpointVersion: 4 });
+        expect(JSON.parse(row.projection_json)).toMatchObject({ checkpointVersion: 5 });
     });
 
     it('migrates a known version 0 checkpoint and remains idempotent on reopen', () => {
@@ -1883,7 +2054,7 @@ describe('SQLite room storage', () => {
         ).projection_json;
         reopenedDatabase.close();
 
-        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 4 });
+        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 5 });
         expect(afterSecondOpen).toBe(afterFirstOpen);
     });
 
@@ -1921,7 +2092,7 @@ describe('SQLite room storage', () => {
         );
         migratedDatabase.close();
 
-        expect(migratedCheckpoint).toMatchObject({ checkpointVersion: 4 });
+        expect(migratedCheckpoint).toMatchObject({ checkpointVersion: 5 });
     });
 
     it('migrates a version 3 checkpoint to canonical recent-command ordering', () => {
@@ -1984,7 +2155,7 @@ describe('SQLite room storage', () => {
         ).projection_json;
         reopenedDatabase.close();
 
-        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 4 });
+        expect(JSON.parse(afterFirstOpen)).toMatchObject({ checkpointVersion: 5 });
         expect(afterSecondOpen).toBe(afterFirstOpen);
     });
 
@@ -2115,7 +2286,7 @@ describe('SQLite room storage', () => {
         const futureDatabase = new DatabaseSync(databasePath);
         futureDatabase
             .prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1')
-            .run(JSON.stringify({ ...legacyCheckpoint(), checkpointVersion: 5 }));
+            .run(JSON.stringify({ ...legacyCheckpoint(), checkpointVersion: 6 }));
         futureDatabase.close();
 
         expect(() => createSqliteRoomStorage({ databasePath })).toThrow(StorageMigrationError);
@@ -2138,7 +2309,7 @@ describe('SQLite room storage', () => {
         const database = new DatabaseSync(databasePath);
         database.prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1').run(
             JSON.stringify({
-                checkpointVersion: 4,
+                checkpointVersion: 5,
                 projection: null,
                 projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
                 volatileGuards: [],
@@ -2186,7 +2357,7 @@ describe('SQLite room storage', () => {
         const database = new DatabaseSync(databasePath);
         database.prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1').run(
             JSON.stringify({
-                checkpointVersion: 4,
+                checkpointVersion: 5,
                 projection: emptyRoomProjection(duplicateGap.occurredAt),
                 projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
                 volatileGuards: [],
@@ -2215,7 +2386,7 @@ describe('SQLite room storage', () => {
             .prepare('UPDATE latest_room_projection SET projection_json = ? WHERE id = 1')
             .run(
                 JSON.stringify({
-                    checkpointVersion: 4,
+                    checkpointVersion: 5,
                     projection: emptyRoomProjection(duplicateGap.occurredAt),
                     projectionEvidence: { availabilityDeviceIds: [], healthDeviceIds: [] },
                     volatileGuards: [],
@@ -2437,7 +2608,7 @@ describe('SQLite room storage', () => {
         newerStorage.close();
         const newerDatabase = new DatabaseSync(newerDatabasePath);
         newerDatabase
-            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (8, ?, ?)')
+            .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (9, ?, ?)')
             .run('future', 'future');
         newerDatabase.close();
 

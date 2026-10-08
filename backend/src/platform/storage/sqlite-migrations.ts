@@ -287,6 +287,8 @@ function platformRecordId(operationKey: string): string {
     return `rec:v1:sha256:${createHash('sha256').update(canonicalIdentity).digest('hex')}`;
 }
 
+const migrationEightSql = 'ALTER TABLE significant_facts ADD COLUMN processing_evidence_json TEXT;';
+
 export const roomStorageMigrations: readonly Migration[] = [
     {
         version: 1,
@@ -359,6 +361,14 @@ export const roomStorageMigrations: readonly Migration[] = [
         checksum: checksum(migrationSevenSql),
         apply(database) {
             database.exec(migrationSevenSql);
+        },
+    },
+    {
+        version: 8,
+        name: 'significant-fact-processing-evidence',
+        checksum: checksum(migrationEightSql),
+        apply(database) {
+            database.exec(migrationEightSql);
         },
     },
 ];

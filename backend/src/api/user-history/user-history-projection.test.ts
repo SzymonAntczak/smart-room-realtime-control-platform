@@ -205,6 +205,51 @@ function confirmationFact(index: number, occurredAt = later): RecentEventProject
 }
 
 describe('BFF user-history projection', () => {
+    it('reconstructs evidenced device changes from the cache independently of the current projection', () => {
+        const event = stateFact(1, 'on');
+
+        if (event.eventType !== 'device.state.reported') {
+            throw new Error('Expected state fact');
+        }
+
+        const fact = {
+            ...event,
+            processingEvidence: {
+                version: 1 as const,
+                kind: 'reported_state' as const,
+                applied: true,
+                before: { power: 'off' },
+                after: { power: 'on' },
+            },
+        };
+        const snapshot = { ...withReportedPower(rawSnapshot(), 'off'), recentEvents: [fact] };
+        const item = toRoomBffSnapshot(snapshot).userHistory[0];
+        expect(item).toMatchObject({
+            recordId: fact.recordId,
+            storageSequence: 1,
+            kind: 'power_changed',
+            previous: 'off',
+            current: 'on',
+        });
+        const delta = toRoomBffPublicationDeltas(snapshot, commandDelta(snapshot, [fact]))[0];
+        expect(delta).toMatchObject({ payload: { userHistory: [item] } });
+        expect(
+            toRoomBffSnapshot({
+                ...snapshot,
+                recentEvents: [
+                    {
+                        ...fact,
+                        processingEvidence: {
+                            ...fact.processingEvidence,
+                            applied: false,
+                            after: { power: 'off' },
+                        },
+                    },
+                ],
+            }).userHistory,
+        ).toEqual([]);
+    });
+
     it('maps only proven live power, availability and health changes using actual projections', () => {
         const previous = withReportedPower(rawSnapshot(), 'off');
         const power = stateFact(1, 'on', later);
@@ -305,7 +350,7 @@ describe('BFF user-history projection', () => {
         expect(JSON.stringify(userHistory)).not.toContain('private');
     });
 
-    it('omits no-change reports and snapshot device transitions without before evidence', () => {
+    it('omits no-change reports and legacy snapshot device transitions without before evidence', () => {
         const snapshot = rawSnapshot();
         const samePower = stateFact(4, 'on', later);
         const next = updatedPowerSnapshot(snapshot, samePower, 'on');

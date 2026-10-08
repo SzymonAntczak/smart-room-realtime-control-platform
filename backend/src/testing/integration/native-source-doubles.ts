@@ -128,6 +128,7 @@ export function createTemperatureDouble(config: TemperatureSensorConfig) {
 
     return {
         scenario,
+        emitAvailability: availability.emit,
         emitReading(reading: TemperatureReadingMessage) {
             last = reading;
             readings.emit(reading);

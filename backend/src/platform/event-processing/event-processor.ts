@@ -21,6 +21,7 @@ import {
     type TelemetryReadingRecordedEvent,
     telemetryReadingRecordedEventSchema,
 } from '@smart-room/contracts/events';
+import type { FactProcessingEvidence } from '@smart-room/contracts/history';
 import { isSchema, normalizeIsoTimestamp } from '@smart-room/contracts/validation';
 
 import {
@@ -65,6 +66,7 @@ export type PreparedRecord =
     | {
           kind: 'input_significant_fact';
           event: Exclude<PlatformEvent, TelemetryReadingRecordedEvent>;
+          processingEvidence?: FactProcessingEvidence;
       }
     | {
           kind: 'derived_command_confirmed';
@@ -152,6 +154,7 @@ export interface EventProcessor {
         eventId: string,
         fingerprint: InputFingerprint,
         acceptedAt: string,
+        processingEvidence?: FactProcessingEvidence,
     ): void;
     hasDurableIdentity(eventId: string): boolean;
     forgetDurableIdentities(eventIds: readonly string[]): void;
@@ -536,6 +539,9 @@ export function createEventProcessor({
                           result,
                           originalProjector.getProjection(),
                           reconciledCommandIds,
+                          identityDisposition === 'volatile_reconciliation'
+                              ? existingIdentity?.processingEvidence
+                              : undefined,
                       )
                     : [];
             const feedRecords =
@@ -630,13 +636,14 @@ export function createEventProcessor({
                 acceptedAt,
             });
         },
-        rememberVolatileIdentity(eventId, fingerprint, acceptedAt) {
+        rememberVolatileIdentity(eventId, fingerprint, acceptedAt, processingEvidence) {
             pruneVolatileIdentities(acceptedAt);
             identities.set(eventId, {
                 eventId,
                 fingerprint,
                 durability: 'volatile',
                 acceptedAt,
+                ...(processingEvidence === undefined ? {} : { processingEvidence }),
             });
             pruneVolatileIdentities(acceptedAt);
         },
@@ -720,6 +727,7 @@ function prepareRecords(
     result: EventProcessingResult,
     previousState: EventProcessorState,
     reconciledCommandIds: readonly string[],
+    originalProcessingEvidence?: FactProcessingEvidence,
 ): readonly PreparedRecord[] {
     if (result.status !== 'accepted' && result.reason !== 'stale_device_transition') {
         return [];
@@ -728,7 +736,13 @@ function prepareRecords(
     const inputRecord: PreparedRecord =
         event.eventType === 'telemetry.reading.recorded'
             ? { kind: 'telemetry', event }
-            : { kind: 'input_significant_fact', event };
+            : {
+                  kind: 'input_significant_fact',
+                  event,
+                  processingEvidence:
+                      originalProcessingEvidence ??
+                      processingEvidenceFor(event, result, previousState),
+              };
     const priorTerminalCommandIds = new Set(
         previousState.recentCommands.map((command) => command.commandId),
     );
@@ -759,6 +773,87 @@ function prepareRecords(
     );
 
     return [inputRecord, ...derivedConfirmations];
+}
+
+function processingEvidenceFor(
+    event: PlatformEvent,
+    result: EventProcessingResult,
+    previousState: EventProcessorState,
+): FactProcessingEvidence | undefined {
+    const previous = previousState.devices.find((device) => device.deviceId === event.deviceId);
+    const current = result.state.devices.find((device) => device.deviceId === event.deviceId);
+
+    if (previous && current) {
+        switch (event.eventType) {
+            case 'device.state.reported': {
+                const applied =
+                    result.status === 'accepted' &&
+                    (JSON.stringify(previous.reportedState) !==
+                        JSON.stringify(current.reportedState) ||
+                        Object.entries(current.observationStatus).some(
+                            ([capability, status]) =>
+                                status.lastObservedAt !==
+                                previous.observationStatus[capability]?.lastObservedAt,
+                        ));
+
+                return {
+                    version: 1,
+                    kind: 'reported_state',
+                    applied,
+                    before: { ...previous.reportedState },
+                    after: { ...current.reportedState },
+                };
+            }
+
+            case 'device.availability.changed':
+                return {
+                    version: 1,
+                    kind: 'availability',
+                    applied: result.status === 'accepted',
+                    before: previous.availability,
+                    after: current.availability,
+                };
+            case 'device.health.changed':
+                return {
+                    version: 1,
+                    kind: 'health',
+                    applied: result.status === 'accepted',
+                    before: previous.health,
+                    after: current.health,
+                };
+        }
+    }
+
+    if (event.eventType === 'command.failed' || event.eventType === 'command.timed_out') {
+        const command = [
+            ...result.state.recentCommands,
+            ...previousState.activeCommands,
+            ...previousState.recentCommands,
+        ].find(
+            (candidate) =>
+                candidate.commandId === event.commandId && candidate.deviceId === event.deviceId,
+        );
+        const fromPayload =
+            event.eventType === 'command.failed' && event.payload.commandType === 'set.power'
+                ? event.payload.requestedState?.power
+                : undefined;
+        const fromCommand = command?.requestedState.power;
+        const power =
+            fromPayload && fromCommand && fromPayload !== fromCommand
+                ? undefined
+                : (fromPayload ?? fromCommand);
+
+        return {
+            version: 1,
+            kind: 'command_intent',
+            intent:
+                power === undefined
+                    ? null
+                    : { commandType: 'set.power', requestedState: { power } },
+        };
+    }
+
+    return undefined;
 }
 
 function prepareFeedRecords(

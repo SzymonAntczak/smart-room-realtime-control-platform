@@ -350,8 +350,22 @@ navigation footer, and focus recovery when retry controls disappear or become
 disabled. App composition tests
 replace geometry with a test-local rendering seam; only the real-browser suite
 establishes virtual range, measurements and the 2 px anchor tolerance.
-Existing no-replay, generation/watermark and source-fact retention rules remain
-binding; this target does not change platform processing or storage.
+Existing applicability, generation/watermark, source-fact retention and no
+automatic outage-backfill rules remain binding. Platform preparation captures
+versioned domain processing evidence with actual before/after values and
+application status, or known command intent for failures and timeouts. SQLite
+migration 8 persists it with the significant fact; checkpoint format 5 retains
+it in recent events and bounded volatile reconciliation guards. The BFF uses
+one mapper for evidenced live updates, snapshots and historical pages. Legacy
+records retain missing evidence rather than guessing prior device changes.
+
+Native-source integration with real SQLite must verify retained durable entry
+identity and values across live SSE, HTTP and SSE snapshots, device-filtered
+search, cache eviction and restart. Processor and contract tests protect
+no-change, stale/equal reports, duplicates and misleading producer previous
+values. Storage tests protect legacy migration without fabricated evidence and
+reconciliation with the original effect; invalid present evidence fails the
+whole read. Retained outcome intent must survive retirement of its request.
 
 Historical search uses a separate static session through the same BFF endpoint.
 Shared contract tests protect optional `deviceId`, `from` and `to`, combinations,

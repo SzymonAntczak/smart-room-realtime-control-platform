@@ -19,6 +19,61 @@ import {
 import { createHistoryIdentityFixtures } from './history-fixtures';
 
 describe('durable history contracts', () => {
+    it('validates event-specific processing evidence in live and durable views without inferring legacy evidence', () => {
+        const fixtures = createHistoryIdentityFixtures();
+        const event = {
+            ...fixtures.recentEvent,
+            eventType: 'device.availability.changed',
+            deviceId: 'temp-desk',
+            source: 'simulator-adapter',
+            payload: {
+                previousAvailability: 'unknown',
+                availability: 'offline',
+                reason: 'reported',
+            },
+            processingEvidence: {
+                version: 1,
+                kind: 'availability',
+                applied: true,
+                before: 'online',
+                after: 'offline',
+            },
+        };
+        const page = { ...fixtures.significantFactPage, items: [event] };
+
+        expect(isRecentEventsProjection([event])).toBe(true);
+        expect(isSignificantFactPage(page)).toBe(true);
+
+        for (const processingEvidence of [
+            { ...event.processingEvidence, version: 2 },
+            { ...event.processingEvidence, kind: 'health' },
+            { ...event.processingEvidence, applied: false },
+            { ...event.processingEvidence, after: 'online' },
+            { ...event.processingEvidence, before: 'unreachable' },
+            { ...event.processingEvidence, extra: true },
+            null,
+        ]) {
+            expect(isRecentEventsProjection([{ ...event, processingEvidence }])).toBe(false);
+            expect(
+                isSignificantFactPage({ ...page, items: [{ ...event, processingEvidence }] }),
+            ).toBe(false);
+        }
+
+        expect(
+            isRecentEventsProjection([
+                {
+                    ...event,
+                    processingEvidence: {
+                        ...event.processingEvidence,
+                        applied: false,
+                        before: 'offline',
+                    },
+                },
+            ]),
+        ).toBe(true);
+        expect(isRecentEventsProjection(fixtures.recentEvents)).toBe(true);
+    });
+
     it('normalizes first-page telemetry ranges and rejects invalid bounds', () => {
         expect(
             normalizeRawTelemetryFirstPageQuery({

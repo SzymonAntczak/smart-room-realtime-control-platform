@@ -27,9 +27,14 @@ afterEach(async () => {
 export async function createBackendIntegrationRuntime({
     start = '2026-09-26T10:00:00.000Z',
     intervalMs = 1000,
-}: { start?: string; intervalMs?: number } = {}) {
-    const directory = mkdtempSync(join(tmpdir(), 'smart-room-backend-integration-'));
-    const disposers: Array<() => unknown> = [() => removeIntegrationDirectory(directory)];
+    databasePath,
+}: { start?: string; intervalMs?: number; databasePath?: string } = {}) {
+    const directory = databasePath
+        ? dirname(databasePath)
+        : mkdtempSync(join(tmpdir(), 'smart-room-backend-integration-'));
+    const disposers: Array<() => unknown> = databasePath
+        ? []
+        : [() => removeIntegrationDirectory(directory)];
     let closed = false;
 
     const close = async () => {
@@ -56,7 +61,9 @@ export async function createBackendIntegrationRuntime({
     runtimes.push({ close });
 
     try {
-        const storage = createSqliteRoomStorage({ databasePath: join(directory, 'room.sqlite') });
+        const storage = createSqliteRoomStorage({
+            databasePath: databasePath ?? join(directory, 'room.sqlite'),
+        });
         disposers.push(() => storage.close());
         let storageFailing = false;
         let readsFailing = false;

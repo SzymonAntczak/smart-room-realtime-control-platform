@@ -1,6 +1,14 @@
 import type { PowerState } from '@smart-room/contracts/devices';
-import type { DurableSignificantFactProjection } from '@smart-room/contracts/history';
-import type { DurableUserHistoryItem } from '@smart-room/contracts/user-history';
+import {
+    type DurableSignificantFactProjection,
+    isRecentEventsProjection,
+    type RecentEventProjection,
+} from '@smart-room/contracts/history';
+import {
+    type DurableUserHistoryItem,
+    isUserHistoryItem,
+    type UserHistoryItem,
+} from '@smart-room/contracts/user-history';
 
 type RequestEvidence =
     | { kind: 'missing' }
@@ -17,7 +25,11 @@ export function createTimeoutEvidence(
     const evidence: TimeoutEvidence = new Map();
 
     for (const fact of facts) {
-        if (fact.eventType !== 'command.timed_out' || !deviceNames.has(fact.deviceId)) {
+        if (
+            fact.eventType !== 'command.timed_out' ||
+            fact.processingEvidence !== undefined ||
+            !deviceNames.has(fact.deviceId)
+        ) {
             continue;
         }
 
@@ -61,66 +73,127 @@ export function toHistoricalUserHistoryItems(
     evidence: TimeoutEvidence,
 ): DurableUserHistoryItem[] {
     return facts.flatMap((fact): DurableUserHistoryItem[] => {
-        const identity = {
-            recordId: fact.recordId,
-            occurredAt: fact.occurredAt,
-            source: fact.source,
-            durability: fact.durability,
-            storageSequence: fact.storageSequence,
-        };
+        const request =
+            fact.eventType === 'command.timed_out'
+                ? evidence.get(fact.deviceId)?.get(fact.commandId)
+                : undefined;
+        const legacyPower =
+            fact.eventType === 'command.failed' && fact.payload.commandType === 'set.power'
+                ? fact.payload.requestedState?.power
+                : request?.kind === 'known'
+                  ? request.power
+                  : undefined;
+        const item = toUserHistoryItem(
+            fact,
+            'deviceId' in fact ? deviceNames.get(fact.deviceId) : undefined,
+            legacyPower,
+        );
 
-        if (fact.eventType === 'storage.gap.recorded') {
-            return [
-                {
-                    ...identity,
-                    source: 'backend',
-                    kind: 'history_gap',
-                    outageStartedAt: fact.payload.outageStartedAt,
-                    outageEndedAt: fact.payload.outageEndedAt,
-                },
-            ];
-        }
-
-        const deviceName = deviceNames.get(fact.deviceId);
-
-        if (!deviceName) {
-            return [];
-        }
-
-        const device = { deviceId: fact.deviceId, deviceName };
-
-        if (fact.eventType === 'command.failed') {
-            const requestedPower =
-                fact.payload.commandType === 'set.power'
-                    ? fact.payload.requestedState?.power
-                    : undefined;
-
-            return [
-                {
-                    ...identity,
-                    ...device,
-                    kind: 'attempt_failed',
-                    ...(requestedPower ? { requestedPower } : {}),
-                },
-            ];
-        }
-
-        if (fact.eventType === 'command.timed_out') {
-            const request = evidence.get(fact.deviceId)?.get(fact.commandId);
-
-            return request?.kind === 'known'
-                ? [
-                      {
-                          ...identity,
-                          ...device,
-                          kind: 'confirmation_missing',
-                          requestedPower: request.power,
-                      },
-                  ]
-                : [];
-        }
-
-        // Raw device payloads have no retained applied/before evidence.
-        return [];
+        return item?.durability === 'durable' ? [item] : [];
     });
+}
+
+/** One evidence-based presentation mapping for snapshots, live deltas and pages. */
+export function toUserHistoryItem(
+    fact: RecentEventProjection,
+    deviceName?: string,
+    legacyRequestedPower?: PowerState,
+): UserHistoryItem | undefined {
+    if (!isRecentEventsProjection([fact])) {
+        throw new Error(`Invalid processing evidence or fact ${fact.recordId}.`);
+    }
+
+    const identity = {
+        recordId: fact.recordId,
+        occurredAt: new Date(fact.occurredAt).toISOString(),
+        source: fact.source,
+        durability: fact.durability,
+        ...(fact.durability === 'durable' ? { storageSequence: fact.storageSequence } : {}),
+    };
+
+    const make = (fields: Record<string, unknown>): UserHistoryItem => {
+        const item = { ...identity, ...fields };
+
+        if (!isUserHistoryItem(item)) {
+            throw new Error(
+                `Transformed record ${fact.recordId} failed the user-history contract.`,
+            );
+        }
+
+        return item;
+    };
+
+    if (fact.eventType === 'storage.gap.recorded') {
+        return make({
+            kind: 'history_gap',
+            outageStartedAt: new Date(fact.payload.outageStartedAt).toISOString(),
+            outageEndedAt: new Date(fact.payload.outageEndedAt).toISOString(),
+        });
+    }
+
+    if (!deviceName) {
+        return undefined;
+    }
+
+    const device = { deviceId: fact.deviceId, deviceName };
+
+    switch (fact.eventType) {
+        case 'device.state.reported': {
+            const effect = fact.processingEvidence;
+            const before = effect?.before.power;
+            const after = effect?.after.power;
+
+            return effect?.applied && (after === 'on' || after === 'off') && before !== after
+                ? make({
+                      ...device,
+                      kind: 'power_changed',
+                      previous: before === 'on' || before === 'off' ? before : null,
+                      current: after,
+                  })
+                : undefined;
+        }
+
+        case 'device.availability.changed':
+
+        // falls through: availability and health share the effective trait mapping.
+        case 'device.health.changed': {
+            const effect = fact.processingEvidence;
+
+            return effect?.applied && effect.before !== effect.after
+                ? make({
+                      ...device,
+                      kind:
+                          fact.eventType === 'device.availability.changed'
+                              ? 'availability_changed'
+                              : 'health_changed',
+                      previous: effect.before,
+                      current: effect.after,
+                  })
+                : undefined;
+        }
+
+        case 'command.failed':
+
+        // falls through: failures and timeouts share retained command intent.
+        case 'command.timed_out': {
+            const power =
+                fact.processingEvidence === undefined
+                    ? legacyRequestedPower
+                    : fact.processingEvidence.intent?.requestedState.power;
+
+            if (fact.eventType === 'command.timed_out' && power === undefined) {
+                return undefined;
+            }
+
+            return make({
+                ...device,
+                kind:
+                    fact.eventType === 'command.failed' ? 'attempt_failed' : 'confirmation_missing',
+                ...(power === undefined ? {} : { requestedPower: power }),
+            });
+        }
+
+        default:
+            return undefined;
+    }
 }

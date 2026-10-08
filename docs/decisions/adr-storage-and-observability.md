@@ -12,19 +12,19 @@ supersedes this ADR's technical fact-to-product-feed classification,
 original classification below remains technical platform/storage context where
 superseded at the product boundary.
 
-The BFF transforms existing platform snapshots, realtime
-publications and significant-fact pages into user-facing entries. The platform
-facts, contracts, processor, database, retention and raw-history API remain
-unchanged. The frontend receives the BFF presentation contract; the new ADR owns
-the transformation and scrolling rules. References below to technical feed
+The BFF transforms platform snapshots, realtime publications and significant-fact
+pages into user-facing entries. Significant facts and cached records carry
+versioned domain processing evidence, captured by the processor and persisted
+with SQLite migration 8 and checkpoint format 5. Input event shapes, applicability
+rules, retention and raw-history pagination remain binding. The frontend receives
+the BFF presentation contract; the history ADR owns transformation and scrolling. References below to technical feed
 eligibility or the old total view limit describe the superseded product model, not competing target rules.
 
 Audit facts, telemetry, deduplication, command lifecycle, failure taxonomy,
 atomic publication, generation/watermark, retention and pinned cursor rules
 remain binding. User-facing entries retain the source fact identity and are
 bounded by its existing sequence and retention; no new event stream or second
-SSE connection is introduced. Only the additive BFF response contract and its
-frontend consumer differ from the raw platform contract.
+SSE connection is introduced. Presentation belongs to the BFF; the platform evidence contains only domain data.
 
 ## Context
 
@@ -83,6 +83,23 @@ or if Node changes the API's stability or semantics. A replacement must
 preserve the port's transaction, ordering and recovery guarantees.
 
 ### Processing outcomes and storage classification
+
+Significant facts and cached technical feed records retain versioned domain
+`processingEvidence`: actual device state before/after with application status,
+or known command intent for failures and timeouts. Preparation captures this
+evidence from the effective projection, not producer-declared previous values.
+It is committed with the fact and checkpoint before durable publication. The
+BFF owns conversion to user-history entries. SQLite migration 8 adds a nullable
+evidence JSON column; checkpoint version 5 preserves cached evidence. Existing
+rows retain missing evidence and are not reconstructed by migration. Malformed
+present evidence is an invalid-data failure, not a legacy fallback.
+
+Bounded volatile identity guards carry the original processing evidence through
+cache eviction and checkpoint recovery for as long as reconciliation is allowed.
+Permitted volatile-to-durable source redelivery reuses that evidence, identity
+and values. Retention retires evidence with its
+fact. No additional presentation table or backfill of outage observations is
+introduced.
 
 The event processor exposes a non-mutating **prepare** boundary. Preparation
 validates the input and returns exactly one result:

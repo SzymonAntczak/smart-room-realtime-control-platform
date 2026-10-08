@@ -3,6 +3,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
 import { selectRecentCommands } from '@smart-room/contracts/commands';
 import {
+    isFactProcessingEvidence,
     isRecentEventsOrdered,
     type RecentEventProjection,
     recentEventsProjectionSchema,
@@ -106,7 +107,7 @@ export function createSqliteRoomStorage({
                     database
                         .prepare(
                             `SELECT history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
-                                    source, occurred_at, payload_json
+                                    source, occurred_at, payload_json, processing_evidence_json
                              FROM significant_facts
                              WHERE retired_at IS NULL
                              ORDER BY storage_sequence ASC`,
@@ -1072,7 +1073,7 @@ function listPinnedSignificantFacts(
     return database
         .prepare(
             `SELECT history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
-                    source, occurred_at, payload_json
+                    source, occurred_at, payload_json, processing_evidence_json
              FROM significant_facts
               WHERE history_generation_id = ?
                  AND storage_sequence <= ?
@@ -1227,8 +1228,8 @@ function insertSignificantFact(
         .prepare(
             `INSERT INTO significant_facts (
                 history_generation_id, storage_sequence, record_id, event_id, event_type, device_id, command_id,
-                source, occurred_at, payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                source, occurred_at, payload_json, processing_evidence_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
             historyGenerationId,
@@ -1241,6 +1242,7 @@ function insertSignificantFact(
             input.source ?? null,
             occurredAt,
             stringifyJson(input.payload),
+            input.processingEvidence === undefined ? null : stringifyJson(input.processingEvidence),
         );
 
     return { ...input, occurredAt, historyGenerationId, storageSequence };
@@ -1383,6 +1385,7 @@ function toStoredTelemetrySample(row: unknown): StoredTelemetrySample {
 
 function toStoredSignificantFact(row: unknown): StoredSignificantFact {
     const value = record(row, 'significant fact');
+    const serializedEvidence = optionalStringField(value, 'processing_evidence_json');
 
     return {
         historyGenerationId: stringField(value, 'history_generation_id'),
@@ -1395,6 +1398,9 @@ function toStoredSignificantFact(row: unknown): StoredSignificantFact {
         source: optionalStringField(value, 'source'),
         occurredAt: stringField(value, 'occurred_at'),
         payload: parseJson(stringField(value, 'payload_json')),
+        ...(serializedEvidence === undefined
+            ? {}
+            : { processingEvidence: parseJson(serializedEvidence) }),
     };
 }
 
@@ -1498,7 +1504,7 @@ function toStoredCheckpoint(input: LatestRoomProjectionInput): Pick<
     LatestRoomProjectionInput,
     'projection' | 'projectionEvidence' | 'volatileGuards' | 'recentEvents'
 > & {
-    checkpointVersion: 4;
+    checkpointVersion: 5;
 } {
     const projection = input.projection as Pick<
         RoomSnapshotProjection,
@@ -1506,7 +1512,7 @@ function toStoredCheckpoint(input: LatestRoomProjectionInput): Pick<
     >;
 
     return {
-        checkpointVersion: 4,
+        checkpointVersion: 5,
         projection: {
             ...projection,
             recentCommands: selectRecentCommands(projection.recentCommands),
@@ -1525,7 +1531,7 @@ function fromStoredCheckpoint(
 > {
     if (
         !isRecord(value) ||
-        value.checkpointVersion !== 4 ||
+        value.checkpointVersion !== 5 ||
         !isStoredRoomProjection(value.projection) ||
         !isProjectionEvidence(value.projectionEvidence) ||
         !Array.isArray(value.volatileGuards) ||
@@ -1609,11 +1615,18 @@ function toCheckpointIdentity(value: unknown): AcceptedInputIdentity {
         throw new StorageSchemaError('Checkpoint identity must be volatile.', value);
     }
 
+    const processingEvidence = identity.processingEvidence;
+
+    if (processingEvidence !== undefined && !isFactProcessingEvidence(processingEvidence)) {
+        throw new StorageSchemaError('Checkpoint guard has invalid processing evidence.', value);
+    }
+
     return {
         eventId: stringField(identity, 'eventId'),
         fingerprint: stringField(identity, 'fingerprint'),
         durability,
         acceptedAt: stringField(identity, 'acceptedAt'),
+        ...(processingEvidence === undefined ? {} : { processingEvidence }),
     };
 }
 
@@ -1675,6 +1688,7 @@ const expectedTableColumns = {
         'payload_json',
         'retired_at',
         'retired_revision',
+        'processing_evidence_json',
     ],
     telemetry_samples: [
         'history_generation_id',
@@ -1752,6 +1766,7 @@ const expectedTableSqlFragments = {
         'payload_json text not null',
         'retired_at text',
         'retired_revision integer',
+        'processing_evidence_json text',
         'primary key (history_generation_id, storage_sequence)',
     ],
     telemetry_samples: [

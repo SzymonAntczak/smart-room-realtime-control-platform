@@ -414,6 +414,9 @@ function toDurableSignificantFact(record: StoredSignificantFact) {
         ...(record.commandId === undefined ? {} : { commandId: record.commandId }),
         ...(record.source === undefined ? {} : { source: record.source }),
         payload: record.payload,
+        ...(record.processingEvidence === undefined
+            ? {}
+            : { processingEvidence: record.processingEvidence }),
     };
 
     return isSchema(durableSignificantFactProjectionSchema, candidate) ? candidate : undefined;

@@ -707,3 +707,180 @@ describe('createEventProcessor', () => {
         });
     });
 });
+
+describe('processing evidence acceptance AC-3', () => {
+    for (const trait of ['availability', 'health'] as const) {
+        it(
+            'records effective ' +
+                trait +
+                ' values and non-applying stale/equal facts independently of producer previous values',
+            () => {
+                const room = processor();
+                const event = (
+                    eventId: string,
+                    occurredAt: string,
+                    next: 'initial' | 'changed',
+                ) => ({
+                    eventId,
+                    occurredAt,
+                    source: 'simulator-adapter',
+                    deviceId: 'temp-desk',
+                    ...(trait === 'availability'
+                        ? {
+                              eventType: 'device.availability.changed',
+                              payload: {
+                                  previousAvailability: 'offline',
+                                  availability: next === 'initial' ? 'online' : 'offline',
+                                  reason: 'reported',
+                              },
+                          }
+                        : {
+                              eventType: 'device.health.changed',
+                              payload: {
+                                  previousHealth: 'degraded',
+                                  health: next === 'initial' ? 'healthy' : 'degraded',
+                                  reason: 'reported',
+                              },
+                          }),
+                });
+                const initial = room.prepareEvent(
+                    event('initial', '2026-06-08T09:30:00Z', 'initial'),
+                    { receivedAt: '2026-06-08T09:30:00Z', ingestSequence: 1 },
+                );
+                room.commitPrepared(initial);
+                const before = trait === 'availability' ? 'online' : 'healthy';
+                const after = trait === 'availability' ? 'offline' : 'degraded';
+
+                for (const occurredAt of ['2026-06-08T09:29:59Z', '2026-06-08T09:30:00Z']) {
+                    const stale = room.prepareEvent(
+                        event('stale-' + occurredAt, occurredAt, 'changed'),
+                        { receivedAt: '2026-06-08T09:30:00Z', ingestSequence: 2 },
+                    );
+                    expect(stale.records).toMatchObject([
+                        {
+                            processingEvidence: {
+                                version: 1,
+                                kind: trait,
+                                applied: false,
+                                before,
+                                after: before,
+                            },
+                        },
+                    ]);
+                    expect(stale.feedRecords).toEqual([]);
+                }
+
+                const noChange = room.prepareEvent(
+                    event('no-change', '2026-06-08T09:30:01Z', 'initial'),
+                    { receivedAt: '2026-06-08T09:30:01Z', ingestSequence: 3 },
+                );
+                expect(noChange.records).toMatchObject([
+                    { processingEvidence: { applied: true, before, after: before } },
+                ]);
+                room.commitPrepared(noChange);
+                const changed = room.prepareEvent(
+                    event('changed', '2026-06-08T09:30:02Z', 'changed'),
+                    { receivedAt: '2026-06-08T09:30:02Z', ingestSequence: 4 },
+                );
+                expect(changed.records).toMatchObject([
+                    {
+                        processingEvidence: {
+                            version: 1,
+                            kind: trait,
+                            applied: true,
+                            before,
+                            after,
+                        },
+                    },
+                ]);
+                room.commitPrepared(changed);
+                expect(
+                    room.prepareEvent(event('changed', '2026-06-08T09:30:02Z', 'changed'), {
+                        receivedAt: '2026-06-08T09:30:02Z',
+                        ingestSequence: 5,
+                    }).records,
+                ).toEqual([]);
+            },
+        );
+    }
+
+    it('captures actual reportedState for changed, no-change, equal and older power reports', () => {
+        const room = ledProcessor();
+        const report = (eventId: string, occurredAt: string, power: 'on' | 'off') => ({
+            eventId,
+            eventType: 'device.state.reported',
+            occurredAt,
+            source: 'simulator-adapter',
+            deviceId: 'led-main',
+            payload: { reportedState: { power } },
+        });
+        const first = room.prepareEvent(report('first', '2026-06-08T09:30:00Z', 'off'), {
+            receivedAt: '2026-06-08T09:30:00Z',
+            ingestSequence: 1,
+        });
+        expect(first.records).toMatchObject([
+            {
+                processingEvidence: {
+                    kind: 'reported_state',
+                    applied: true,
+                    before: {},
+                    after: { power: 'off' },
+                },
+            },
+        ]);
+        room.commitPrepared(first);
+
+        for (const occurredAt of ['2026-06-08T09:29:59Z', '2026-06-08T09:30:00Z']) {
+            const stale = room.prepareEvent(report('stale-' + occurredAt, occurredAt, 'on'), {
+                receivedAt: '2026-06-08T09:30:00Z',
+                ingestSequence: 2,
+            });
+            expect(stale.records).toMatchObject([
+                {
+                    processingEvidence: {
+                        applied: false,
+                        before: { power: 'off' },
+                        after: { power: 'off' },
+                    },
+                },
+            ]);
+            expect(stale.feedRecords).toEqual([]);
+        }
+
+        const same = room.prepareEvent(report('same', '2026-06-08T09:30:01Z', 'off'), {
+            receivedAt: '2026-06-08T09:30:01Z',
+            ingestSequence: 3,
+        });
+        expect(same.records).toMatchObject([
+            {
+                processingEvidence: {
+                    applied: true,
+                    before: { power: 'off' },
+                    after: { power: 'off' },
+                },
+            },
+        ]);
+        expect(same.feedRecords).toEqual([]);
+        room.commitPrepared(same);
+        const changed = room.prepareEvent(report('changed', '2026-06-08T09:30:02Z', 'on'), {
+            receivedAt: '2026-06-08T09:30:02Z',
+            ingestSequence: 4,
+        });
+        expect(changed.records).toMatchObject([
+            {
+                processingEvidence: {
+                    applied: true,
+                    before: { power: 'off' },
+                    after: { power: 'on' },
+                },
+            },
+        ]);
+        room.commitPrepared(changed);
+        expect(
+            room.prepareEvent(report('changed', '2026-06-08T09:30:02Z', 'on'), {
+                receivedAt: '2026-06-08T09:30:02Z',
+                ingestSequence: 5,
+            }).records,
+        ).toEqual([]);
+    });
+});

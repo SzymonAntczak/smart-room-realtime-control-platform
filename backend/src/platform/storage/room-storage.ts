@@ -1,6 +1,6 @@
 import type { PowerState } from '@smart-room/contracts/devices';
 import type { PlatformEventSource } from '@smart-room/contracts/events';
-import type { RecentEventProjection } from '@smart-room/contracts/history';
+import type { FactProcessingEvidence, RecentEventProjection } from '@smart-room/contracts/history';
 import type {
     HistoryGenerationId,
     RecordDurability,
@@ -51,6 +51,8 @@ export interface AcceptedInputIdentity {
     fingerprint: string;
     durability: RecordDurability;
     acceptedAt: string;
+    /** Original domain effect retained only by bounded volatile reconciliation guards. */
+    processingEvidence?: FactProcessingEvidence;
 }
 
 export interface RoomStorageCheckpoint {
@@ -146,6 +148,7 @@ export interface SignificantFactInput {
     source?: string;
     occurredAt: string;
     payload: unknown;
+    processingEvidence?: unknown;
 }
 
 export interface StoredSignificantFact extends SignificantFactInput {

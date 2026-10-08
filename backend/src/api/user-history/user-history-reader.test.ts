@@ -17,7 +17,7 @@ import { createUserHistoryReader } from './user-history-reader';
 type RawRead = (query: SignificantFactPageQuery) => RoomHistoryReadResult<SignificantFactPage>;
 
 describe('pinned user history reader', () => {
-    it('derives failures and gaps only from durable facts, omitting device state and command progress', () => {
+    it('derives legacy failures and gaps from durable facts, omitting unevidenced device state and command progress', () => {
         const facts: DurableSignificantFactProjection[] = [
             {
                 ...common(1),

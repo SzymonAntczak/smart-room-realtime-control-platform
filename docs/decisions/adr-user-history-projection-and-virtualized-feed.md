@@ -7,9 +7,10 @@ Accepted
 This ADR supersedes the local storage ADR's product-feed presentation and
 total view bound and owns product-history session behavior. Its live HTTP/SSE
 overlay and automatic recovery rules apply to the Dashboard, while historical
-search uses a separate static session. Significant-fact contracts, processor
-classification, database rows/schema, lifecycle, durability, retention and raw
-history cursors remain unchanged.
+search uses a separate static session. Significant facts carry versioned domain
+processing evidence so retained durable entries can be reproduced after reload
+and restart. Lifecycle, applicability, durability, retention and raw-history
+cursor rules remain unchanged.
 
 ## Context
 
@@ -54,9 +55,10 @@ new endpoint nor another SSE connection.
 
 The BFF is the sole owner of transforming existing platform projections and
 significant facts into user-history responses. It derives the presentation at
-the HTTP/SSE boundary and emits no new domain event. The event processor,
-read-model projection, significant-fact contracts and stored fact rows remain
-at the platform boundary. The frontend validates and renders BFF user-history
+the HTTP/SSE boundary and emits no new domain event. The platform records the
+actual domain state before and after processing and the known command intent;
+the BFF applies one presentation mapper to that evidence for live updates,
+snapshots and historical pages. The frontend validates and renders BFF user-history
 items; it never interprets or aggregates raw command sequences.
 
 An entry's title is the localized device display name. Its description explains
@@ -87,7 +89,7 @@ ready.
 | Storage gap                                                                 | One room-level missing-history interval.                                                     |
 | No-change or non-applying report, telemetry, duplicate or quarantined input | None.                                                                                        |
 
-Classification uses existing BFF-boundary facts and before/after device
+Classification uses domain processing evidence and, for legacy live facts, before/after device
 projections when available. It compares observed domain values, not
 timestamp/durability-only updates. A previously unknown value must not be
 rendered as a known prior value or as proof of physical actuation. Matching
@@ -105,9 +107,11 @@ The BFF returns a user-facing history response for current and paged history.
 Its presentation data uses source identity and event time, with existing
 durability bounds where known. It excludes translated sentences in platform
 records, raw payloads, command IDs and diagnostic reason strings. The response
-contract has separate executable schemas; it does not alter platform
-`RecentEventProjection`, durable significant facts, processor results,
-checkpoints or stored database records.
+contract has separate executable schemas. Platform `RecentEventProjection` and
+durable significant facts carry optional versioned `processingEvidence`, with
+event-specific actual before/after values and application status, or known
+command intent. New relevant records require this evidence; its absence
+identifies legacy records. It carries no presentation kinds or localized text.
 
 #### Executable contract
 
@@ -194,23 +198,26 @@ or session/UI update. Production EventSource, history sessions and mocked-BFF fi
 schemas are not a runtime compatibility union or a second SSE connection.
 
 The BFF transforms data as it crosses its existing API boundary. For live
-updates it uses the existing raw history additions and before/after room
-projection already available to the BFF subscriber. For older history it reads
+updates it uses the raw history additions with their captured domain processing
+evidence. Legacy live classification uses the subscriber's before/after room
+projection. For historical reads it consumes
 the existing pinned significant-fact pages, aggregates and filters them inside
 the BFF, and only then returns user-history pages. It consumes and advances the
 existing raw cursor internally; the browser receives an opaque cursor scoped to
-the same pinned generation, watermark, retention view and expiry. The raw page
-schema and rows are never rewritten. When retained evidence cannot prove an
+the same pinned generation, watermark, retention view and expiry. The raw page carries the evidence stored with each new relevant fact; migration
+preserves existing rows without inventing missing evidence. When retained evidence cannot prove an
 older state change, the BFF omits that change and preserves an honest history
 completeness label rather than guessing.
 
-The BFF keeps no durable user-history copy. Durable facts continue to be written
-and retired exclusively under the existing significant-fact transaction,
-deduplication and retention rules. User item identity is derived from its
-source record identity, making HTTP/SSE copies merge without a second event,
-sequence, database table/column, checkpoint field, or migration. No changes to
-the storage port or platform event-processing semantics are part of this
-decision.
+The BFF keeps no durable user-history copy. Domain processing evidence is saved
+with its significant fact and cached technical feed entry in the existing
+transaction, deduplication and retention lifecycle. User item identity remains
+the source record identity, so HTTP/SSE copies merge as one logical entry.
+Evidence is committed before durable publication. A permitted promotion of a
+volatile record preserves its original processing evidence rather than
+reinterpreting the original change against the current device state. Bounded
+volatile identity guards carry that domain evidence through cache eviction and
+checkpoint recovery for as long as reconciliation remains allowed.
 
 ### HTTP and realtime boundary
 
@@ -244,15 +251,24 @@ the historical-search UI does not render a separate completeness notice.
 Filtering does not reconstruct unproven historical transitions or hide read
 failures through partial success.
 
-Historical rows do not retain before/after projection evidence or the applied
-classification. This endpoint therefore omits historical power, availability
-and health changes. It returns failed attempts using only their own payload
-for the optional target, history gaps, and timeouts whose matching retained
-command request proves one consistent target. Current device names are display
-fallbacks; current device state and terminal-command caches are not historical
-proof. Entries for devices absent from the current configuration are omitted.
+For records with processing evidence, snapshots, live updates and history pages
+use the same mapper. Only applied value changes produce power, availability or
+health entries; no-change, stale and equal-timestamp non-applying reports remain
+audit facts. Known command intent is retained with failures and timeouts, so
+their descriptions do not depend on a surviving request or command cache.
+Malformed present evidence fails the response rather than falling back to a
+guess. Current device names remain display fallbacks; devices absent from the
+current configuration are omitted.
 
-For timeouts on the main page, the BFF scans that page and older pages of the
+Legacy records retain the prior safe rules: unproven device changes are omitted,
+failed-attempt targets use their own payload, and timeouts require one consistent
+retained request target. Migration preserves legacy records without inventing
+missing evidence. Every newly evidenced durable user entry remains reproducible
+while its source fact is retained in the same history generation, including
+after browser reload, cache eviction and backend restart. Volatile entries retain
+their existing bounded guarantee.
+
+For legacy timeouts on the main page, the BFF scans that page and older pages of the
 same pinned session through its end, retaining only the relevant request
 evidence. Missing or conflicting targets omit the timeout. Auxiliary reads
 never advance the returned cursor: it wraps the main raw page's `nextCursor`.
@@ -270,10 +286,12 @@ and watermark semantics remain unchanged.
 
 The frontend uses BFF-provided user-history entries in place of technical
 `recentEvents`; the BFF continues to consume the existing platform contract.
-Do not change platform event shapes or add a second SSE stream. The raw
-significant-facts API and its stored data remain intact for audit and other
-technical consumers. Add no database migration: historical presentation is
-transformed on read from currently retained raw facts.
+Platform input event shapes remain unchanged. The raw significant-facts API
+exposes domain processing evidence alongside each evidenced fact. SQLite adds a
+nullable evidence JSON column, and checkpoint version 5 preserves evidence in
+recent technical records. Legacy data is retained. Historical presentation is
+transformed on read; no additional SSE stream or durable user-history table is
+created.
 
 ### Historical search interaction and lifecycle
 
@@ -326,8 +344,9 @@ generations. Results and their scroll position remain independent of the
 Dashboard throughout these operations.
 
 Dashboard filtering, live search-result merging, multi-device selection, saved
-searches, telemetry/technical-audit filtering, retention changes and database
-migration are outside this decision.
+searches, telemetry/technical-audit filtering and retention changes are outside
+this decision. The domain-evidence SQLite and checkpoint migrations described
+above are part of this decision.
 
 ### Dashboard infinite scroll, bounded memory and virtual rendering
 

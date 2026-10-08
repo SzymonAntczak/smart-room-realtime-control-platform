@@ -22,6 +22,8 @@ import {
     type UserHistoryItem,
 } from '@smart-room/contracts/user-history';
 
+import { toUserHistoryItem } from './user-history-facts';
+
 type RoomBffPublicationDelta =
     Exclude<RoomBffRealtimeServerMessage, { messageType: 'room.snapshot' }> extends infer Message
         ? Message extends { previousRevision: number; revision: number; sentAt: string }
@@ -39,15 +41,7 @@ export function toRoomBffSnapshot(snapshot: RoomSnapshotProjection): RoomBffSnap
 
     const userHistory = collectItems(
         snapshot.recentEvents.flatMap((event) => {
-            if (
-                event.eventType === 'device.state.reported' ||
-                event.eventType === 'device.availability.changed' ||
-                event.eventType === 'device.health.changed'
-            ) {
-                return [];
-            }
-
-            return transformNonDeviceChange(event, snapshot, snapshot.recentEvents);
+            return transformFact(event, snapshot, snapshot.recentEvents);
         }),
     );
     const projection = omitRecentEvents(snapshot);
@@ -141,9 +135,7 @@ export function toRoomBffPublicationDeltas(
             case 'platform.updated': {
                 const events = message.payload.recentEvents ?? [];
                 const userHistory = collectItems(
-                    events.flatMap((event) =>
-                        transformNonDeviceChange(event, batch.snapshot, events),
-                    ),
+                    events.flatMap((event) => transformFact(event, batch.snapshot, events)),
                 );
                 const payload = omitRecentEvents(message.payload);
 
@@ -229,6 +221,10 @@ function classifyLiveEvents(
     );
 
     return events.flatMap((event) => {
+        if ('processingEvidence' in event && event.processingEvidence !== undefined) {
+            return transformFact(event, nextSnapshot, allBatchEvents);
+        }
+
         if (event.eventType === 'device.state.reported') {
             if (previousRecordIds.has(event.recordId) || hasRecoveryGap) {
                 return [];
@@ -268,10 +264,7 @@ function classifyLiveEvents(
             );
         }
 
-        return transformNonDeviceChange(event, nextSnapshot, [
-            ...previousSnapshot.recentEvents,
-            ...events,
-        ]);
+        return transformFact(event, nextSnapshot, [...previousSnapshot.recentEvents, ...events]);
     });
 }
 
@@ -403,67 +396,24 @@ function transformAppliedDeviceChange(
     }
 }
 
-function transformNonDeviceChange(
+function transformFact(
     event: RecentEventProjection,
     snapshot: RoomSnapshotProjection,
     evidence: readonly RecentEventProjection[],
 ): UserHistoryItem[] {
-    if (event.eventType === 'storage.gap.recorded') {
-        return [
-            itemFromEvent(event, {
-                recordId: event.recordId,
-                occurredAt: event.occurredAt,
-                source: 'backend',
-                kind: 'history_gap',
-                outageStartedAt: event.payload.outageStartedAt,
-                outageEndedAt: event.payload.outageEndedAt,
-            }),
-        ];
-    }
+    const device =
+        'deviceId' in event
+            ? snapshot.devices.find((candidate) => candidate.deviceId === event.deviceId)
+            : undefined;
+    const legacyPower =
+        event.eventType === 'command.failed' && event.processingEvidence === undefined
+            ? knownFailedPower(event, snapshot.recentCommands)
+            : event.eventType === 'command.timed_out' && event.processingEvidence === undefined
+              ? knownTimedOutPower(event, snapshot.recentCommands, evidence)
+              : undefined;
+    const item = toUserHistoryItem(event, device?.name, legacyPower);
 
-    if (event.eventType === 'command.failed') {
-        const device = snapshot.devices.find((candidate) => candidate.deviceId === event.deviceId);
-
-        if (!device) {
-            return [];
-        }
-
-        const requestedPower = knownFailedPower(event, snapshot.recentCommands);
-        const item = itemFromEvent(event, {
-            recordId: event.recordId,
-            occurredAt: event.occurredAt,
-            source: event.source,
-            deviceId: event.deviceId,
-            deviceName: device.name,
-            kind: 'attempt_failed',
-            ...(requestedPower ? { requestedPower } : {}),
-        });
-
-        return [item];
-    }
-
-    if (event.eventType === 'command.timed_out') {
-        const device = snapshot.devices.find((candidate) => candidate.deviceId === event.deviceId);
-        const requestedPower = knownTimedOutPower(event, snapshot.recentCommands, evidence);
-
-        if (!device || !requestedPower) {
-            return [];
-        }
-
-        return [
-            itemFromEvent(event, {
-                recordId: event.recordId,
-                occurredAt: event.occurredAt,
-                source: event.source,
-                deviceId: event.deviceId,
-                deviceName: device.name,
-                kind: 'confirmation_missing',
-                requestedPower,
-            }),
-        ];
-    }
-
-    return [];
+    return item === undefined ? [] : [item];
 }
 
 function itemFromEvent(
