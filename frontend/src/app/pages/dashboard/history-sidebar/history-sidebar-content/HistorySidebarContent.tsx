@@ -2,7 +2,7 @@ import { ArrowUp, LoaderCircle, Search } from 'lucide-react';
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Alert } from '../../../../ui';
+import { Alert, Button } from '../../../../ui';
 import type { RenderableDeviceProjection } from '../../device-projection';
 import type { RoomHistorySource } from '../../room-history-source';
 import { HistorySearchModal } from '../history-search-modal/HistorySearchModal';
@@ -199,9 +199,9 @@ export function HistorySidebarContent({
                         {state.error ? (
                             <div className={styles.status} role="alert">
                                 <p>{t(`history.errors.${state.error}`)}</p>
-                                <button type="button" onClick={history.retry}>
+                                <Button variant="outlined" type="button" onClick={history.retry}>
                                     {t('history.retry')}
-                                </button>
+                                </Button>
                             </div>
                         ) : null}
                         {state.endReached ? (
@@ -213,7 +213,8 @@ export function HistorySidebarContent({
                 )}
             </div>
             <footer className={styles.footer}>
-                <button
+                <Button
+                    variant="outlined"
                     type="button"
                     className={styles.filterButton}
                     aria-label={t('history.search')}
@@ -222,14 +223,15 @@ export function HistorySidebarContent({
                 >
                     <Search aria-hidden="true" size={18} />
                     <span>{t('history.search')}</span>
-                </button>
+                </Button>
                 <div className={styles.topAction}>
                     {topTooltip ? (
                         <span id="history-top-tooltip" role="tooltip" className={styles.tooltip}>
                             {t('history.alreadyAtTop')}
                         </span>
                     ) : null}
-                    <button
+                    <Button
+                        variant="outlined"
                         type="button"
                         className={styles.topButton}
                         aria-label={t('history.returnToTop')}
@@ -240,7 +242,7 @@ export function HistorySidebarContent({
                     >
                         <ArrowUp aria-hidden="true" size={18} />
                         <span>{t('history.returnToTop')}</span>
-                    </button>
+                    </Button>
                 </div>
             </footer>
             <HistorySearchModal

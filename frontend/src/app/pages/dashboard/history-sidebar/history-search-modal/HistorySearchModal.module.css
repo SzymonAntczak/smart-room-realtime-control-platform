@@ -10,6 +10,18 @@
     border-radius: var(--radius-sm);
     background: var(--color-surface);
     color: var(--color-text);
+    opacity: 0;
+    transform: translateY(var(--space-2)) scale(0.99);
+    transition:
+        opacity 180ms ease,
+        transform 180ms ease,
+        display 180ms allow-discrete,
+        overlay 180ms allow-discrete;
+}
+
+.dialog[open] {
+    opacity: 1;
+    transform: translateY(0) scale(1);
 }
 
 .dialog:not([open]) {
@@ -18,6 +30,26 @@
 
 .dialog::backdrop {
     background: rgb(0 0 0 / 55%);
+    opacity: 1;
+    transition:
+        opacity 180ms ease,
+        display 180ms allow-discrete,
+        overlay 180ms allow-discrete;
+}
+
+.dialog:not([open])::backdrop {
+    opacity: 0;
+}
+
+@starting-style {
+    .dialog[open] {
+        opacity: 0;
+        transform: translateY(var(--space-2)) scale(0.99);
+    }
+
+    .dialog[open]::backdrop {
+        opacity: 0;
+    }
 }
 
 .header {
@@ -35,18 +67,8 @@
 .iconButton,
 .actions button,
 .submitAction {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
     min-block-size: 2.75rem;
     padding: var(--space-2) var(--space-4);
-    border: var(--border-width-thin) solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font: inherit;
-    cursor: pointer;
 }
 
 .iconButton {
@@ -118,12 +140,16 @@
 
 .filters input:focus-visible,
 .filters select:focus-visible,
-.iconButton:focus-visible,
-.actions button:focus-visible,
-.submitAction:focus-visible,
 .results:focus-visible {
     outline: var(--border-width-thin) solid var(--color-info-text);
     outline-offset: var(--space-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dialog,
+    .dialog::backdrop {
+        transition: none;
+    }
 }
 
 .filters [aria-invalid='true'] {

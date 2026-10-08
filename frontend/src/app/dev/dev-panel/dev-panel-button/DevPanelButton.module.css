@@ -1,22 +1,3 @@
-.button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-    border: var(--border-width-thin) solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
-    font-weight: var(--font-weight-bold);
-}
-
-.close,
-.action,
-.trigger {
-    composes: button;
-}
-
 .close {
     justify-self: end;
     padding: var(--space-2) var(--space-3);
@@ -29,23 +10,10 @@
 .trigger {
     inline-size: 2rem;
     block-size: 2rem;
+    min-block-size: 2rem;
     padding: 0;
 }
 
-.close:hover,
-.action:hover:not(:disabled),
-.trigger:hover {
-    border-color: var(--color-action-primary);
-}
-
-.close:focus-visible,
-.action:focus-visible,
-.trigger:focus-visible {
-    outline: 0.1875rem solid var(--color-info-text);
-    outline-offset: 0.125rem;
-}
-
 .action:disabled {
-    color: var(--color-text-subtle);
     cursor: wait;
 }

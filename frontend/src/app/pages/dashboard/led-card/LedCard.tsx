@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../features/date-time';
-import { Alert, DeviceCard } from '../../../ui';
+import { Alert, Button, DeviceCard } from '../../../ui';
 import { getDeviceDisplayName } from '../device-display-name';
 
 import { type LedCardAlert, toLedCardViewModel } from './led-card-view-model';
@@ -92,7 +92,8 @@ export function LedCard({
                 </span>
             </div>
             <div className={styles.actions} aria-label={t('led.controls', { ns: 'dashboard' })}>
-                <button
+                <Button
+                    variant={viewModel.isOn ? 'filled' : 'outlined'}
                     type="button"
                     data-testid={`${device.deviceId}-power-toggle`}
                     aria-label={
@@ -106,7 +107,7 @@ export function LedCard({
                     onClick={() => void requestPower(viewModel.isOn ? 'off' : 'on')}
                 >
                     <Power aria-hidden="true" size={20} />
-                </button>
+                </Button>
             </div>
         </DeviceCard>
     );

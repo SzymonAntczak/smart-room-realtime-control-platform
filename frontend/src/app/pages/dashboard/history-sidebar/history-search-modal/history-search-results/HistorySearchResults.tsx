@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { type Components, Virtuoso } from 'react-virtuoso';
 
 import type { RenderableDeviceProjection } from '../../../device-projection';
+import { Button } from '../../../../../ui';
 import type { HistoryFeedContext } from '../../history-sidebar-content/history-feed/history-feed-context';
 import { HistoryFeedList } from '../../history-sidebar-content/history-feed/history-feed-list/HistoryFeedList';
 import { HistoryFeedRow } from '../../history-sidebar-content/history-feed/history-feed-row/HistoryFeedRow';
@@ -90,18 +91,24 @@ export function HistorySearchResults({
                             ? t('history.searchLimit')
                             : t(`history.errors.${state.error}`)}
                     </p>
-                    <button
+                    <Button
+                        variant="outlined"
                         type="button"
                         onClick={() => void (state.refreshRequired ? refreshFromTop() : retry())}
                     >
                         {state.refreshRequired ? t('history.refresh') : t('history.retry')}
-                    </button>
+                    </Button>
                 </div>
             ) : null}
             {state.status === 'ready' && state.nextCursor !== null && !state.limitReached ? (
-                <button type="button" className={styles.action} onClick={() => void loadOlder()}>
+                <Button
+                    variant="outlined"
+                    type="button"
+                    className={styles.action}
+                    onClick={() => void loadOlder()}
+                >
                     {t('history.loadOlder')}
-                </button>
+                </Button>
             ) : null}
             {state.status === 'ready' && state.endReached && state.items.length > 0 ? (
                 <p className={styles.status} role="status">

@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '../../../../ui';
 import { getDeviceDisplayName } from '../../device-display-name';
 import type { RenderableDeviceProjection } from '../../device-projection';
 
@@ -193,7 +194,8 @@ export function HistorySearchModal({
                 <div>
                     <h2 id={`${formId}-title`}>{t('history.searchTitle')}</h2>
                 </div>
-                <button
+                <Button
+                    variant="outlined"
                     ref={closeButtonRef}
                     type="button"
                     className={styles.iconButton}
@@ -202,7 +204,7 @@ export function HistorySearchModal({
                     onClick={() => dialogRef.current?.close()}
                 >
                     <X aria-hidden="true" size={20} />
-                </button>
+                </Button>
             </header>
 
             <form className={styles.form} onSubmit={handleSubmit} noValidate>
@@ -265,16 +267,18 @@ export function HistorySearchModal({
                         </label>
                     </div>
                     <div className={styles.actions}>
-                        <button
+                        <Button
+                            variant="text"
                             type="button"
                             className={styles.clearAction}
                             data-search-action
                             onClick={handleClear}
                         >
                             {t('history.clearFilters')}
-                        </button>
+                        </Button>
                         <div className={styles.reloadAction}>
-                            <button
+                            <Button
+                                variant="outlined"
                                 type="button"
                                 className={styles.reloadButton}
                                 data-search-action
@@ -285,7 +289,7 @@ export function HistorySearchModal({
                                 onClick={handleReload}
                             >
                                 {t('history.refresh')}
-                            </button>
+                            </Button>
                             {reloadTooltip ? (
                                 <span
                                     id={`${formId}-reload-tooltip`}
@@ -296,9 +300,9 @@ export function HistorySearchModal({
                                 </span>
                             ) : null}
                         </div>
-                        <button type="submit" className={styles.submitAction}>
+                        <Button variant="filled" type="submit" className={styles.submitAction}>
                             {t('history.search')}
-                        </button>
+                        </Button>
                     </div>
                 </div>
                 {appliedForm ? (

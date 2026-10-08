@@ -56,22 +56,14 @@
 }
 
 .actions button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     min-inline-size: 2.75rem;
     min-block-size: 2.75rem;
     padding-block: var(--space-2);
     padding-inline: var(--space-2);
-    border: var(--border-width-thin) solid transparent;
-    border-radius: var(--radius-sm);
-    color: var(--color-on-accent);
-    background: var(--color-action-primary);
-    font-weight: var(--font-weight-bold);
-    cursor: pointer;
 }
 
 .actions button.toggleOn {
+    border-color: var(--color-action-primary);
     color: var(--color-on-accent);
     background: var(--color-action-primary);
 }
@@ -80,16 +72,6 @@
     border-color: var(--color-action-primary);
     color: var(--color-action-primary);
     background: transparent;
-}
-
-.actions button:focus-visible {
-    outline: var(--border-width-thin) solid var(--color-action-primary);
-    outline-offset: var(--space-1);
-}
-
-.actions button:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
 }
 
 .actions button.toggleOn:disabled {

@@ -1,6 +1,8 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '../../../ui';
+
 import type { RenderableDeviceProjection } from '../device-projection';
 import type { RoomHistorySource } from '../room-history-source';
 
@@ -45,7 +47,8 @@ export function HistorySidebar({
                     )}
                 </aside>
             </div>
-            <button
+            <Button
+                variant="outlined"
                 type="button"
                 className={styles.sidebarToggle}
                 aria-controls="history-sidebar"
@@ -54,7 +57,7 @@ export function HistorySidebar({
                 onClick={sidebar.toggle}
             >
                 <SidebarToggleIcon aria-hidden="true" size={22} strokeWidth={1.75} />
-            </button>
+            </Button>
         </div>
     );
 }
