@@ -35,6 +35,70 @@ test.beforeEach(async ({ page }) => {
     await setMockRoomSnapshot(page.request, snapshot);
 });
 
+test('loads exactly one older page per user approach to the end', async ({ page }) => {
+    const records = createHistoryItems(150);
+    await configureMockHistory(page.request, {
+        pages: [
+            createHistoryPage(records.slice(0, 50), 'older-one'),
+            createHistoryPage(records.slice(50, 100), 'older-two'),
+            createHistoryPage(records.slice(100)),
+        ],
+    });
+    const cursors: (string | null)[] = [];
+    page.on('request', (request) => {
+        const url = new URL(request.url());
+
+        if (url.pathname === '/room/history/user-history') {
+            cursors.push(url.searchParams.get('cursor'));
+        }
+    });
+
+    await openHistory(page);
+    await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
+    const root = panel(page);
+    await expect
+        .poll(() => root.evaluate((element) => element.scrollHeight - element.clientHeight))
+        .toBeGreaterThan(320);
+    expect(cursors).toEqual([null]);
+
+    await configureMockHistory(page.request, { hold: true });
+    await root.press('End');
+    await expect
+        .poll(async () => {
+            const response = await page.request.get(mockBffUrls.historyControl);
+
+            return ((await response.json()) as { held: boolean }).held;
+        })
+        .toBe(true);
+    expect(cursors).toEqual([null, 'older-one']);
+
+    const oldHeight = await root.evaluate((element) => element.scrollHeight);
+    const secondPage = page.waitForResponse((response) =>
+        response.url().includes('cursor=older-one'),
+    );
+    await configureMockHistory(page.request, { release: true, hold: true });
+    await secondPage;
+    await expect
+        .poll(() => root.evaluate((element) => element.scrollHeight))
+        .toBeGreaterThan(oldHeight + 1000);
+    expect(cursors).toEqual([null, 'older-one']);
+
+    await root.press('End');
+    await expect
+        .poll(async () => {
+            const response = await page.request.get(mockBffUrls.historyControl);
+
+            return ((await response.json()) as { held: boolean }).held;
+        })
+        .toBe(true);
+    expect(cursors).toEqual([null, 'older-one', 'older-two']);
+    await configureMockHistory(page.request, { release: true });
+    await expect(item(page, records[99]?.recordId ?? 'missing')).toHaveAttribute(
+        'aria-setsize',
+        '150',
+    );
+});
+
 for (const viewport of [
     { width: 1440, height: 900 },
     { width: 390, height: 844 },
@@ -85,6 +149,7 @@ for (const viewport of [
         );
         await configureMockHistory(page.request, { hold: true });
         const pageAnchor = await scrollToHistoryEntry(page, records[49]?.recordId ?? 'missing');
+        await panel(page).press('End');
         await expect
             .poll(
                 async () =>
@@ -225,6 +290,7 @@ test('rebuilds through the previous anchor on reconnect and on cursor expiry', a
         (response) => response.url().includes('cursor=older') && response.status() === 400,
     );
     const expiryAnchor = await scrollToHistoryEntry(page, records[49]?.recordId ?? 'missing');
+    await panel(page).press('End');
     await expect
         .poll(
             async () =>
@@ -236,13 +302,22 @@ test('rebuilds through the previous anchor on reconnect and on cursor expiry', a
         )
         .toBe(true);
     const beforeExpiry = await offset(expiryAnchor, panel(page));
+    const rebuiltAfterExpiry = page.waitForResponse(
+        (response) =>
+            response.url().includes('/room/history/user-history') &&
+            !new URL(response.url()).searchParams.has('cursor') &&
+            response.status() === 200,
+    );
     await configureMockHistory(page.request, { release: true });
     await expiry;
-    await expect(entries(page).first()).toHaveAttribute('aria-setsize', '70');
+    await rebuiltAfterExpiry;
+    await expect(page.getByRole('status').filter({ hasText: 'Ładowanie historii' })).toHaveCount(0);
     await expect
         .poll(async () => Math.abs((await offset(expiryAnchor, panel(page))) - beforeExpiry))
         .toBeLessThanOrEqual(2);
     await expect(page.getByRole('alert')).toHaveCount(0);
+    await panel(page).press('End');
+    await expect(entries(page).first()).toHaveAttribute('aria-setsize', '70');
 });
 
 test('explains an unavailable anchor and does not merge a replacement generation', async ({
@@ -383,7 +458,7 @@ test('releases a closed panel and ignores its held response when reopened', asyn
     await expect(item(page, old[0]?.recordId ?? 'missing')).toHaveCount(0);
 });
 
-test('advances an empty page and keeps invalid data labeled until explicit retry', async ({
+test('advances empty pages on user input and keeps invalid data labeled until explicit retry', async ({
     page,
 }) => {
     const records = createHistoryItems(2);
@@ -395,7 +470,16 @@ test('advances an empty page and keeps invalid data labeled until explicit retry
         ],
     });
     await openHistory(page);
+    await expect(page.getByText('Brak istotnych zdarzeń.')).toBeVisible();
+    const sparsePage = page.waitForResponse((response) => response.url().includes('cursor=sparse'));
+    await panel(page).press('End');
+    await sparsePage;
     await expect(entries(page)).toHaveCount(2);
+    const duplicatePage = page.waitForResponse((response) =>
+        response.url().includes('cursor=duplicate'),
+    );
+    await panel(page).press('End');
+    await duplicatePage;
     await expect(
         page.getByRole('status').filter({ hasText: 'Koniec dostępnego zakresu historii.' }),
     ).toBeVisible();
@@ -422,5 +506,7 @@ test('advances an empty page and keeps invalid data labeled until explicit retry
     await page.getByRole('button', { name: 'Spróbuj ponownie', exact: true }).click();
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(panel(page)).toBeFocused();
+    await expect(entries(page)).toHaveCount(1);
+    await panel(page).press('End');
     await expect(entries(page)).toHaveCount(3);
 });

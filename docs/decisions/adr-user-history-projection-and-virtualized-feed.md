@@ -355,14 +355,15 @@ pages. Merge by `recordId`, preferring durable evidence; display newest first
 using the existing `(occurredAt, recordId)` presentation order. HTTP cursor
 position remains based on storage order, never the DOM index or SSE revision.
 
-Load another page through the pinned Virtuoso list's `endReached` callback,
-with `increaseViewportBy.bottom` equal to the current height of the history
-content scroller. This starts paging approximately one viewport before the
-physical end; the exact threshold follows Virtuoso's measured rendered range,
-overscan and variable item heights. A list whose end is initially within that
-range may page immediately when opened. Use one request in flight. Expose a
-loading state, explicit retry after errors and the end of retained history.
-Invalid payloads remain an error rather than triggering an automatic retry loop.
+Load the first page when the history session opens. Load another page only after
+the user scrolls to within 320 pixels of the content scroller's end. Rendered
+range and overscan do not start paging on their own, so opening a short list
+does not fetch a second page. Each approach loads one page. Receiving that page,
+changing the cursor or measuring the new content does not start another read.
+Further paging requires new user scroll input after the request completes,
+including after a sparse or empty page. Use one request in flight. Expose a loading state,
+explicit retry after errors and the end of retained history. Invalid payloads
+remain an error rather than triggering an automatic retry loop.
 Keep the history title and footer controls outside the scrollable
 content; scrolling applies only to the entries and their loading/end states.
 The footer provides the Filter control that opens historical search and a
@@ -410,12 +411,13 @@ known non-null generation alongside the current storage metadata, so opening
 during an unknown degraded state cannot merge old live entries into a replacement
 HTTP generation. Every validated addition reaches the
 session directly; React snapshot batching cannot discard intermediate additions.
-The first HTTP page pins generation, watermark and retention time. Paging
-continues when Virtuoso reports the final loaded item in its extended rendered
-range. Empty pages with a cursor continue directly because no item exists to
-trigger `endReached`. The Virtuoso paging callbacks and explicit retry share
-the same single-flight session operation. The frontend renders only a measured
-virtual range; virtual indexes never
+The first HTTP page pins generation, watermark and retention time. After the
+user scrolls within 320 pixels of the content scroller's end, paging reads one
+page through the cursor. The request consumes that scroll intent; input during
+loading and programmatic scroll adjustments cannot queue a further read.
+A new user scroll after completion can continue through an empty page's cursor.
+Paging and explicit retry share the same single-flight session operation. The
+frontend renders only a measured virtual range; virtual indexes never
 determine the HTTP cursor or change session limits.
 
 Reading position is `{ recordId, occurredAt, offsetPx }` relative to the scroll
@@ -443,11 +445,11 @@ heights, and scroll corrections after content or width changes. The history
 position controller owns the durable reading identity `{ recordId, occurredAt,
 offsetPx }`, restores it through public Virtuoso methods, handles return to the
 newest entries and preserves the existing focus-recovery behavior. It does not
-read or mutate a virtualizer geometry cache. Paging uses Virtuoso's
-`endReached` callback with a bottom `increaseViewportBy` equal to the current
-scroll viewport height. The history paging hook tracks Virtuoso's rendered
-range to continue after sparse pages, updates the pixel buffer after viewport
-resizes, and delegates single-flight request behavior to the session.
+read or mutate a virtualizer geometry cache. The history paging hook observes
+user scroll input on the content scroller and its distance from the physical
+end. Within 320 pixels it requests one page and consumes that scroll intent,
+delegating single-flight request behavior to the session. A new cursor or
+Virtuoso's rendered range cannot start another read without new user input.
 
 The list retains `ol`/`li` semantics, exposing each row's position. Its total
 size is unknown (`aria-setsize=-1`) until the session reaches the end; the final
@@ -518,10 +520,12 @@ tests protect client merge, paging, anchors, bounded overlay, recovery and panel
 cleanup. Root-level E2E smoke protects their actual system composition according
 to [Test Suite Boundaries](adr-test-suite-boundaries.md). Item presentation and
 browser scenarios must verify 1,000 loaded entries with bounded DOM, mixed-height
-anchors through resize/reconnect, keyboard access, single-flight Virtuoso paging
+anchors through resize/reconnect, keyboard access, single-flight scroll paging
 and predictable focus. The sidebar title and footer remain visible while only
-history content scrolls; Virtuoso begins paging when its final loaded item
-enters the rendered range, extended by one current viewport height. The
+history content scrolls; paging begins when the user scrolls within 320 pixels
+of its end. Opening the sidebar fetches only the first page. One approach must
+request only one further page, including while Virtuoso still reports the old
+content height after that page arrives. The
 persistent Return to top
 control shows a temporary accessible tooltip when activated at the top.
 

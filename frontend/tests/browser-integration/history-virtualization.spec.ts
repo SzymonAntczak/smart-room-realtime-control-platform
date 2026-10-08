@@ -69,20 +69,25 @@ for (const viewport of [
         await root.focus();
 
         for (let index = 1; index < 20; index += 1) {
-            await scrollToHistoryEntry(page, records[index * 50 - 1]?.recordId ?? 'missing');
-            await root.evaluate((element) => {
-                element.scrollTop = element.scrollHeight;
-            });
+            await configureMockHistory(page.request, { hold: true });
+            const loadedPage = page.waitForResponse(
+                (response) =>
+                    new URL(response.url()).searchParams.get('cursor') === `range-${index}`,
+            );
+            await root.press('End');
             await expect.poll(() => olderCursors.has(`range-${index}`)).toBe(true);
+            await expect(
+                page.getByRole('status').filter({ hasText: 'Ładowanie historii' }),
+            ).toBeVisible();
+            await configureMockHistory(page.request, { release: true });
+            await loadedPage;
             await expect(
                 page.getByRole('status').filter({ hasText: 'Ładowanie historii' }),
             ).toHaveCount(0);
             await assertBoundedRows(page);
         }
 
-        await root.evaluate((element) => {
-            element.scrollTop = element.scrollHeight;
-        });
+        await root.press('End');
         const oldest = historyEntry(page, records[999]?.recordId ?? 'missing');
         await expect(oldest).toBeVisible();
         await expect(oldest).toHaveAttribute('aria-posinset', '1000');
@@ -178,7 +183,7 @@ for (const viewport of [
     { width: 1440, height: 900 },
     { width: 390, height: 844 },
 ]) {
-    test(`keeps keyboard focus through automatic paging and retains the footer controls at ${viewport.width}px`, async ({
+    test(`keeps keyboard focus through scroll paging and retains the footer controls at ${viewport.width}px`, async ({
         page,
     }) => {
         await page.setViewportSize(viewport);
@@ -204,21 +209,25 @@ for (const viewport of [
         await expect(root).toBeFocused();
         await root.press('PageUp');
         await expect(root).toBeFocused();
+        await scrollToHistoryEntry(page, records[49]?.recordId ?? 'missing');
         await configureMockHistory(page.request, { hold: true });
         await root.evaluate((element) => {
-            element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight * 3);
+            element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight - 400);
         });
+        await expect
+            .poll(() =>
+                root.evaluate(
+                    (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+                ),
+            )
+            .toBeCloseTo(400, 0);
+        await root.hover();
+        await page.mouse.wheel(0, 160);
         await expect
             .poll(async () => {
                 const control = (await (
                     await page.request.get(mockBffUrls.historyControl)
                 ).json()) as { held: boolean };
-
-                if (!control.held) {
-                    await root.evaluate((element) => {
-                        element.scrollTop += element.clientHeight / 8;
-                    });
-                }
 
                 return control.held;
             })

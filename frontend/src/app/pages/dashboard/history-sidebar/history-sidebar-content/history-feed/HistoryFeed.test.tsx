@@ -31,9 +31,9 @@ vi.mock('react-virtuoso', () => ({
         data?: readonly UserHistoryItem[];
         components: Components<UserHistoryItem, TestContext>;
         context: TestContext;
-        endReached: (index: number) => void;
-        increaseViewportBy: { top: number; bottom: number };
-        rangeChanged: (range: { startIndex: number; endIndex: number }) => void;
+        endReached?: (index: number) => void;
+        increaseViewportBy?: { top: number; bottom: number };
+        rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
     }) => {
         hooks.virtuosoProps({ endReached, increaseViewportBy, rangeChanged });
         const List = components.List as ComponentType<ListProps<HTMLUListElement>>;
@@ -87,11 +87,6 @@ describe('HistoryFeed Virtuoso integration', () => {
         hooks.virtualize.mockReturnValue({
             virtuosoRef: createRef(),
         });
-        hooks.paging.mockReturnValue({
-            endReached: vi.fn(),
-            increaseViewportBy: { top: 0, bottom: 480 },
-            rangeChanged: vi.fn(),
-        });
     });
 
     it('passes the full keyed data set and preserves list semantics and accessible row positions', () => {
@@ -114,7 +109,7 @@ describe('HistoryFeed Virtuoso integration', () => {
         expect(screen.getAllByRole('listitem')[0]).toHaveAttribute('aria-setsize', '3');
     });
 
-    it('connects Virtuoso paging to the custom scroll parent and session loader', () => {
+    it('connects scroll paging to the session loader without rendered-range paging callbacks', () => {
         render(<HistoryFeed {...props} />);
         expect(hooks.paging).toHaveBeenLastCalledWith(
             expect.objectContaining({
@@ -123,9 +118,9 @@ describe('HistoryFeed Virtuoso integration', () => {
             }),
         );
         expect(hooks.virtuosoProps).toHaveBeenLastCalledWith({
-            endReached: expect.any(Function),
-            increaseViewportBy: { top: 0, bottom: 480 },
-            rangeChanged: expect.any(Function),
+            endReached: undefined,
+            increaseViewportBy: undefined,
+            rangeChanged: undefined,
         });
     });
 

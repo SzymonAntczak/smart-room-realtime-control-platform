@@ -1,31 +1,13 @@
-import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createHistorySession, type HistorySessionState } from '../history-session';
 
 import { useHistoryPaging } from './useHistoryPaging';
 
-class TestResizeObserver {
-    static instances: TestResizeObserver[] = [];
-    disconnected = false;
-
-    constructor(private readonly callback: ResizeObserverCallback) {
-        TestResizeObserver.instances.push(this);
-    }
-
-    observe() {}
-
-    disconnect() {
-        this.disconnected = true;
-    }
-
-    trigger() {
-        this.callback([], this as unknown as ResizeObserver);
-    }
-}
-
 describe('history paging', () => {
+    afterEach(() => vi.restoreAllMocks());
+
     const root = document.createElement('div');
     const readyState: HistorySessionState = {
         ...createHistorySession().getState(),
@@ -36,64 +18,52 @@ describe('history paging', () => {
         error: null,
     };
 
-    beforeEach(() => {
-        TestResizeObserver.instances = [];
-        Object.defineProperty(root, 'clientHeight', { configurable: true, value: 320 });
-        vi.stubGlobal('ResizeObserver', TestResizeObserver);
-    });
-
-    afterEach(() => {
-        vi.unstubAllGlobals();
-    });
-
-    it('uses the measured viewport as the bottom prefetch buffer and updates it on resize', () => {
-        const { result, unmount } = renderHook(() =>
+    it('loads the next page only after scrolling within the prefetch offset', () => {
+        const loadOlder = vi.fn();
+        Object.defineProperties(root, {
+            clientHeight: { configurable: true, value: 320 },
+            scrollHeight: { configurable: true, value: 1200 },
+            scrollTop: { configurable: true, writable: true, value: 0 },
+        });
+        const { unmount } = renderHook(() =>
             useHistoryPaging({
                 returningToTop: false,
                 state: readyState,
                 scrollViewport: root,
-                loadOlder: vi.fn(),
+                loadOlder,
             }),
         );
 
-        expect(result.current.increaseViewportBy).toEqual({ top: 0, bottom: 320 });
-
-        Object.defineProperty(root, 'clientHeight', { configurable: true, value: 640 });
-        act(() => TestResizeObserver.instances[0]?.trigger());
-
-        expect(result.current.increaseViewportBy).toEqual({ top: 0, bottom: 640 });
-
-        unmount();
-        expect(TestResizeObserver.instances[0]?.disconnected).toBe(true);
-    });
-
-    it('loads when Virtuoso reports the end of the rendered range and waits when it leaves it', () => {
-        const loadOlder = vi.fn();
-        const state = { ...readyState, items: [createHistoryItem()] };
-        const { result, rerender } = renderHook(
-            ({ currentState }: { currentState: HistorySessionState }) =>
-                useHistoryPaging({
-                    returningToTop: false,
-                    state: currentState,
-                    scrollViewport: root,
-                    loadOlder,
-                }),
-            { initialProps: { currentState: state } },
-        );
-
-        act(() => result.current.rangeChanged({ startIndex: 0, endIndex: 0 }));
-        rerender({ currentState: { ...state, nextCursor: 'next' } });
-        expect(loadOlder).toHaveBeenCalledTimes(1);
-
-        loadOlder.mockClear();
-        act(() => result.current.rangeChanged({ startIndex: 0, endIndex: -1 }));
-        rerender({ currentState: { ...state, nextCursor: 'after-scroll-away' } });
         expect(loadOlder).not.toHaveBeenCalled();
+        act(() => {
+            root.scrollTop = 600;
+            root.dispatchEvent(new Event('scroll'));
+        });
+        expect(loadOlder).not.toHaveBeenCalled();
+
+        act(() => {
+            root.scrollTop = 500;
+            root.dispatchEvent(new Event('pointerdown'));
+            root.dispatchEvent(new Event('scroll'));
+        });
+        expect(loadOlder).not.toHaveBeenCalled();
+
+        act(() => {
+            root.scrollTop = 600;
+            root.dispatchEvent(new Event('scroll'));
+        });
+        expect(loadOlder).toHaveBeenCalledOnce();
+        unmount();
     });
 
-    it('continues through empty and duplicate pages when each cursor completes', () => {
+    it('waits for another user scroll before continuing through an empty page', () => {
         const loadOlder = vi.fn();
-        const { result, rerender } = renderHook(
+        Object.defineProperties(root, {
+            clientHeight: { configurable: true, value: 320 },
+            scrollHeight: { configurable: true, value: 1200 },
+            scrollTop: { configurable: true, writable: true, value: 600 },
+        });
+        const { rerender } = renderHook(
             ({ currentState }: { currentState: HistorySessionState }) =>
                 useHistoryPaging({
                     returningToTop: false,
@@ -104,24 +74,85 @@ describe('history paging', () => {
             { initialProps: { currentState: readyState } },
         );
 
-        expect(loadOlder).toHaveBeenCalledTimes(1);
+        expect(loadOlder).not.toHaveBeenCalled();
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
+        expect(loadOlder).toHaveBeenCalledOnce();
 
+        rerender({ currentState: { ...readyState, status: 'loading' } });
         rerender({ currentState: { ...readyState, nextCursor: 'sparse-next' } });
+        expect(loadOlder).toHaveBeenCalledOnce();
+
+        act(() => root.dispatchEvent(new Event('scroll')));
+        expect(loadOlder).toHaveBeenCalledOnce();
+
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
         expect(loadOlder).toHaveBeenCalledTimes(2);
-
-        const item = createHistoryItem();
-        const populated = { ...readyState, items: [item], nextCursor: 'duplicate-next' };
-        rerender({ currentState: populated });
-        act(() => result.current.endReached(0));
-        expect(loadOlder).toHaveBeenCalledTimes(3);
-
-        rerender({ currentState: { ...populated, nextCursor: 'after-duplicate' } });
-        expect(loadOlder).toHaveBeenCalledTimes(4);
     });
 
-    it('does not load while an error is shown, a request is active, or history has ended', () => {
+    it('requests one page per approach even before the virtual list measures the added page', () => {
         const loadOlder = vi.fn();
-        const { result, rerender } = renderHook(
+        Object.defineProperties(root, {
+            clientHeight: { configurable: true, value: 320 },
+            scrollHeight: { configurable: true, value: 1200 },
+            scrollTop: { configurable: true, writable: true, value: 600 },
+        });
+        const { rerender } = renderHook(
+            ({ currentState }: { currentState: HistorySessionState }) =>
+                useHistoryPaging({
+                    returningToTop: false,
+                    state: currentState,
+                    scrollViewport: root,
+                    loadOlder,
+                }),
+            { initialProps: { currentState: readyState } },
+        );
+
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
+        expect(loadOlder).toHaveBeenCalledOnce();
+
+        rerender({ currentState: { ...readyState, status: 'loading' } });
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
+        rerender({ currentState: { ...readyState, nextCursor: 'next-page' } });
+        act(() => root.dispatchEvent(new Event('scroll')));
+        expect(loadOlder).toHaveBeenCalledOnce();
+
+        Object.defineProperty(root, 'scrollHeight', { configurable: true, value: 2200 });
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
+        expect(loadOlder).toHaveBeenCalledOnce();
+
+        act(() => {
+            root.scrollTop = 1600;
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
+        expect(loadOlder).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not load when history has an error or has ended', () => {
+        const loadOlder = vi.fn();
+        Object.defineProperties(root, {
+            clientHeight: { configurable: true, value: 320 },
+            scrollHeight: { configurable: true, value: 1200 },
+            scrollTop: { configurable: true, writable: true, value: 600 },
+        });
+        const { rerender } = renderHook(
             ({ currentState }: { currentState: HistorySessionState }) =>
                 useHistoryPaging({
                     returningToTop: false,
@@ -132,43 +163,85 @@ describe('history paging', () => {
             { initialProps: { currentState: { ...readyState, status: 'loading' } } },
         );
 
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
         rerender({ currentState: { ...readyState, status: 'error', error: 'request_failed' } });
-        act(() => result.current.endReached(-1));
-        rerender({ currentState: { ...readyState, nextCursor: null } });
+        rerender({ currentState: { ...readyState, nextCursor: null, endReached: true } });
         expect(loadOlder).not.toHaveBeenCalled();
     });
 
-    it('does not fetch older pages while returning to newest and resumes at the current rendered boundary', () => {
+    it('allows an explicit scroll attempt to advance an empty page without a scrollbar', () => {
         const loadOlder = vi.fn();
-        const state = { ...readyState, items: [createHistoryItem()] };
-        const { result, rerender } = renderHook(
-            ({ returningToTop, currentState }) =>
+        let boundaryCheck: FrameRequestCallback | undefined;
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+            boundaryCheck = callback;
+
+            return 1;
+        });
+        Object.defineProperties(root, {
+            clientHeight: { configurable: true, value: 320 },
+            scrollHeight: { configurable: true, value: 320 },
+            scrollTop: { configurable: true, writable: true, value: 0 },
+        });
+        const { rerender } = renderHook(
+            ({ currentState }: { currentState: HistorySessionState }) =>
                 useHistoryPaging({
                     state: currentState,
                     scrollViewport: root,
                     loadOlder,
+                    returningToTop: false,
+                }),
+            { initialProps: { currentState: readyState } },
+        );
+
+        expect(loadOlder).not.toHaveBeenCalled();
+        act(() => root.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' })));
+        expect(loadOlder).not.toHaveBeenCalled();
+        act(() => boundaryCheck?.(0));
+        expect(loadOlder).toHaveBeenCalledOnce();
+        rerender({ currentState: { ...readyState, status: 'loading' } });
+        rerender({ currentState: { ...readyState, nextCursor: 'next-page' } });
+        expect(loadOlder).toHaveBeenCalledOnce();
+
+        act(() => root.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 })));
+        expect(loadOlder).toHaveBeenCalledOnce();
+        act(() => boundaryCheck?.(0));
+        expect(loadOlder).toHaveBeenCalledTimes(2);
+    });
+
+    it('waits for a new near-end scroll after returning to newest', () => {
+        const loadOlder = vi.fn();
+        Object.defineProperties(root, {
+            clientHeight: { configurable: true, value: 320 },
+            scrollHeight: { configurable: true, value: 1200 },
+            scrollTop: { configurable: true, writable: true, value: 600 },
+        });
+        const { rerender } = renderHook(
+            ({ returningToTop }: { returningToTop: boolean }) =>
+                useHistoryPaging({
+                    state: readyState,
+                    scrollViewport: root,
+                    loadOlder,
                     returningToTop,
                 }),
-            { initialProps: { currentState: state, returningToTop: true } },
+            { initialProps: { returningToTop: true } },
         );
-        act(() => result.current.endReached(0));
-        rerender({
-            currentState: { ...state, nextCursor: 'refetched-page' },
-            returningToTop: true,
+
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
         });
         expect(loadOlder).not.toHaveBeenCalled();
 
-        act(() => result.current.rangeChanged({ startIndex: 0, endIndex: -1 }));
-        rerender({ currentState: state, returningToTop: false });
+        rerender({ returningToTop: false });
         expect(loadOlder).not.toHaveBeenCalled();
-        act(() => result.current.endReached(0));
+
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
         expect(loadOlder).toHaveBeenCalledOnce();
     });
 });
-
-function createHistoryItem() {
-    return {
-        ...createUserHistoryFixtures().gap,
-        recordId: `rec:v1:sha256:${'1'.repeat(64)}`,
-    };
-}

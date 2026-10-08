@@ -44,7 +44,7 @@ export function HistoryFeed({
         returningToTop,
         updateReadingPosition,
     });
-    const paging = useHistoryPaging({
+    useHistoryPaging({
         state,
         scrollViewport: customScrollParent,
         loadOlder,
@@ -70,9 +70,6 @@ export function HistoryFeed({
                 computeItemKey={(_index, item) => item.recordId}
                 defaultItemHeight={192}
                 minOverscanItemCount={{ top: 5, bottom: 5 }}
-                endReached={paging.endReached}
-                rangeChanged={paging.rangeChanged}
-                increaseViewportBy={paging.increaseViewportBy}
                 itemContent={() => null}
             />
         </div>
