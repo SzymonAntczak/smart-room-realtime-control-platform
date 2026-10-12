@@ -1,6 +1,6 @@
 import type { PlatformEvent } from '@smart-room/contracts/events';
 
-import type { EventIngress } from '../platform/event-processing/event-processor';
+import type { EventIngress } from '../event-processing/event-processor';
 
 export interface CoordinatedRoomInput<Context = undefined> {
     event: PlatformEvent;

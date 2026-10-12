@@ -52,7 +52,8 @@ describe('createTemperatureRoomRuntime', () => {
         try {
             runtime.start();
 
-            expect(timer.intervals).toEqual([1000, 10_000, 20_000]);
+            expect(timer.intervals).toEqual(expect.arrayContaining([1000, 10_000, 20_000]));
+            expect(timer.intervals).toHaveLength(3);
             expect(device(runtime, 'led-main')).toMatchObject({
                 role: 'led-output',
                 reportedState: { power: 'off' },
@@ -60,7 +61,7 @@ describe('createTemperatureRoomRuntime', () => {
             });
 
             clock.advanceBy(10_000);
-            timer.run(2);
+            timer.runInterval(10_000);
 
             expect(device(runtime, 'temp-desk')?.reportedState).toEqual({
                 temperature: 22.2,
@@ -375,7 +376,7 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.subscribeRoomPublicationBatch((batch) => batches.push(batch));
 
             clock.advanceBy(31 * 24 * 60 * 60 * 1_000);
-            timer.run(1);
+            timer.runInterval(1000);
 
             expect(runtime.getRoomSnapshot().recentCommands).toEqual(
                 beforeRetirement.recentCommands,
@@ -533,7 +534,7 @@ describe('createTemperatureRoomRuntime', () => {
                 generateNativeMessageId: createEventIdGenerator(),
             });
             recoveryRuntime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(recoveryRuntime.getRoomSnapshot().recentCommands).toEqual(
                 liveProjection.recentCommands,
@@ -738,7 +739,7 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(storage.significantFacts).toEqual([
                 expect.objectContaining({
@@ -957,7 +958,7 @@ describe('createTemperatureRoomRuntime', () => {
 
             clock.advanceBy(5_000);
             const recoveryMetadata = recoveredStorage.port.getMetadata();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(snapshots.map((snapshot) => snapshot.platform.storage.status)).toContain(
                 'recovering',
@@ -1062,8 +1063,8 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
+            recoveryTimer.runInterval(5_000);
 
             expect(probes).toBe(1);
             expect(runtime.getRoomSnapshot().platform.storage).toMatchObject({
@@ -1120,7 +1121,7 @@ describe('createTemperatureRoomRuntime', () => {
                 historyGenerationId: 'verified-generation',
                 storedThroughSequence: 17,
             });
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
             expect(probeContext).toEqual({ verifiedHistoryGenerationId: 'verified-generation' });
         } finally {
             runtime.stop();
@@ -1154,7 +1155,7 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(runtime.getRoomSnapshot().platform.storage.status).toBe('degraded');
             expect(
@@ -1218,8 +1219,8 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
+            recoveryTimer.runInterval(5_000);
 
             expect(probeContexts).toEqual([undefined, 'recovered-generation']);
         } finally {
@@ -1268,7 +1269,9 @@ describe('createTemperatureRoomRuntime', () => {
             batches.length = 0;
             clock.advanceBy(5_000);
 
-            expect(() => recoveryTimer.runLatest()).toThrow('storage_commit_outcome_unknown');
+            expect(() => recoveryTimer.runInterval(5_000)).toThrow(
+                'storage_commit_outcome_unknown',
+            );
             expect(queuedRawInput).toBe(true);
             expect(runtime.getRoomSnapshot().platform.storage.status).not.toBe('available');
             expect(device(runtime, 'temp-desk')).toMatchObject({
@@ -1332,7 +1335,7 @@ describe('createTemperatureRoomRuntime', () => {
             batches.length = 0;
             clock.advanceBy(5_000);
 
-            expect(() => recoveryTimer.runLatest()).toThrow('storage_fatal_error');
+            expect(() => recoveryTimer.runInterval(5_000)).toThrow('storage_fatal_error');
             expect(device(runtime, 'temp-desk')).toMatchObject({
                 reportedState: { temperature: 22, temperatureUnit: 'celsius' },
             });
@@ -1409,7 +1412,7 @@ describe('createTemperatureRoomRuntime', () => {
             try {
                 runtime.start();
                 clock.advanceBy(5_000);
-                recoveryTimer.runLatest();
+                recoveryTimer.runInterval(5_000);
 
                 return {
                     snapshot: runtime.getRoomSnapshot(),
@@ -1498,7 +1501,7 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(batches.at(-1)?.deltas).toEqual(
                 expect.arrayContaining([
@@ -1581,7 +1584,7 @@ describe('createTemperatureRoomRuntime', () => {
             expect(volatileObservation?.lastObservedAt).toBeDefined();
             expect(volatileObservation?.durability).toBe('volatile');
 
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(device(runtime, 'temp-desk')?.observationStatus.temperature).toEqual(
                 volatileObservation,
@@ -1659,7 +1662,7 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(device(runtime, 'led-main')).toMatchObject({
                 availability: 'online',
@@ -1755,7 +1758,7 @@ describe('createTemperatureRoomRuntime', () => {
                 expect.objectContaining({ commandId: volatileCommand.commandId }),
             ]);
 
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(runtime.getRoomSnapshot().platform.storage.status).toBe('recovering');
             expect(
@@ -1767,7 +1770,7 @@ describe('createTemperatureRoomRuntime', () => {
             ).toMatchObject({ error: 'platform_recovering', retryable: true });
 
             commandTimer.runAll();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(runtime.getRoomSnapshot().platform.storage.status).toBe('available');
             expect(runtime.getRoomSnapshot().recentCommands).toEqual(
@@ -2338,7 +2341,7 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(runtime.getRoomSnapshot().platform.storage.status).toBe('available');
             expect(storage.latestCheckpoint?.volatileGuards).toEqual(
@@ -2431,7 +2434,7 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(storage.latestCheckpoint?.volatileGuards).toHaveLength(2);
             expect(storage.latestCheckpoint?.volatileGuards).not.toEqual(
@@ -2503,7 +2506,7 @@ describe('createTemperatureRoomRuntime', () => {
 
         try {
             runtime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             expect(storage.latestCheckpoint?.volatileGuards).not.toEqual(
                 expect.arrayContaining([expect.objectContaining({ eventId: sourceEvent.eventId })]),
@@ -2800,7 +2803,7 @@ describe('createTemperatureRoomRuntime', () => {
             expect(storage.significantFacts).toEqual([]);
 
             runtime.start();
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             const recoveredSnapshot = runtime.getRoomSnapshot();
 
@@ -2882,7 +2885,7 @@ describe('createTemperatureRoomRuntime', () => {
                     ),
             ).toBe(false);
 
-            recoveryTimer.runLatest();
+            recoveryTimer.runInterval(5_000);
 
             const recoveredSnapshot = runtime.getRoomSnapshot();
 
@@ -3632,9 +3635,10 @@ describe('createTemperatureRoomRuntime', () => {
             const initialWindow = device(runtime, 'temp-window')?.reportedState;
 
             clock.advanceBy(1000);
-            timer.run(2);
+            timer.runInterval(1000);
 
-            expect(timer.intervals).toEqual([1000, 1000, 2000]);
+            expect(timer.intervals).toEqual(expect.arrayContaining([1000, 1000, 2000]));
+            expect(timer.intervals).toHaveLength(3);
             expect(device(runtime, 'temp-desk')?.reportedState).toEqual({
                 temperature: 22.2,
                 temperatureUnit: 'celsius',
@@ -3659,8 +3663,8 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.start();
             runtime.runDeviceScenario('temp-window', 'pause_telemetry');
             clock.advanceBy(1000);
-            timer.run(2);
-            timer.run(1);
+            timer.runInterval(1000);
+            timer.runInterval(1000);
 
             expect(device(runtime, 'temp-desk')?.reportedState).toEqual({
                 temperature: 22.2,
@@ -3672,7 +3676,7 @@ describe('createTemperatureRoomRuntime', () => {
             });
 
             runtime.runDeviceScenario('temp-window', 'resume_telemetry');
-            timer.runLatest();
+            timer.runInterval(2_000);
 
             expect(device(runtime, 'temp-window')?.reportedState).toEqual({
                 temperature: 20.2,
@@ -3700,9 +3704,9 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.start();
             runtime.runDeviceScenario('temp-window', 'pause_telemetry');
             clock.advanceBy(1000);
-            timer.run(2);
+            timer.runInterval(1000);
             clock.advanceBy(5_001);
-            timer.run(1);
+            timer.runInterval(1000);
 
             expect(snapshots.at(-1)?.devices).toEqual(
                 expect.arrayContaining([
@@ -3750,22 +3754,22 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.runDeviceScenario('temp-window', 'pause_telemetry');
 
             clock.advanceBy(30_000);
-            timer.run(1);
+            timer.runInterval(1000);
             expectSensorState('temp-desk', 'fresh', 22);
             expectSensorState('temp-window', 'fresh', 20);
 
             clock.advanceBy(1);
-            timer.run(1);
+            timer.runInterval(1000);
             expectSensorState('temp-desk', 'stale', 22);
             expectSensorState('temp-window', 'fresh', 20);
 
             clock.advanceBy(29_999);
-            timer.run(1);
+            timer.runInterval(1000);
             expectSensorState('temp-desk', 'stale', 22);
             expectSensorState('temp-window', 'fresh', 20);
 
             clock.advanceBy(1);
-            timer.run(1);
+            timer.runInterval(1000);
             expectSensorState('temp-desk', 'stale', 22);
             expectSensorState('temp-window', 'stale', 20);
         } finally {
@@ -3776,11 +3780,13 @@ describe('createTemperatureRoomRuntime', () => {
     it('does not publish unchanged freshness and publishes one snapshot for a freshness transition', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
+        const sourceTimer = createManualTimer();
         const runtime = createTemperatureRoomRuntime({
             intervalMs: 1000,
             snapshotBroadcastIntervalMs: 1000,
             clock,
             timer,
+            sourceTimer,
             generateEventId: createEventIdGenerator(),
         });
         const snapshots: ReturnType<typeof runtime.getRoomSnapshot>[] = [];
@@ -3790,11 +3796,11 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.start();
             snapshots.length = 0;
 
-            timer.run(1);
+            timer.runInterval(1000);
             expect(snapshots).toHaveLength(0);
 
             clock.advanceBy(3_001);
-            timer.run(1);
+            timer.runInterval(1000);
             expect(snapshots).toHaveLength(1);
         } finally {
             runtime.stop();
@@ -3804,12 +3810,14 @@ describe('createTemperatureRoomRuntime', () => {
     it('persists prepared freshness before publication without history, identity or watermark', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
+        const sourceTimer = createManualTimer();
         const storage = createScriptedStorage();
         const runtime = createTemperatureRoomRuntime({
             intervalMs: 1000,
             snapshotBroadcastIntervalMs: 1000,
             clock,
             timer,
+            sourceTimer,
             storage: storage.port,
             generateEventId: createEventIdGenerator(),
             generateNativeMessageId: createEventIdGenerator(),
@@ -3839,7 +3847,7 @@ describe('createTemperatureRoomRuntime', () => {
             });
 
             clock.advanceBy(3_001);
-            timer.run(1);
+            timer.runInterval(1000);
 
             expect(inspectedBeforeCommit).toBe(true);
             expect(snapshots).toHaveLength(1);
@@ -3883,7 +3891,7 @@ describe('createTemperatureRoomRuntime', () => {
             );
 
             clock.advanceBy(30_001);
-            timer.run(1);
+            timer.runInterval(1000);
 
             expect(snapshots).toHaveLength(1);
             expect(snapshots[0]?.platform.storage.status).toBe('degraded');
@@ -3912,7 +3920,7 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.start();
             runtime.runDeviceScenario('temp-window', 'pause_telemetry');
             clock.advanceBy(10_001);
-            timer.run(1);
+            timer.runInterval(1000);
 
             expect(device(runtime, 'temp-window')?.availability).toBe('online');
             expect(device(runtime, 'temp-window')?.observationStatus.temperature?.freshness).toBe(
@@ -3921,7 +3929,7 @@ describe('createTemperatureRoomRuntime', () => {
 
             runtime.runDeviceScenario('temp-window', 'resume_telemetry');
             clock.advanceBy(1);
-            timer.runLatest();
+            timer.runInterval(2_000);
 
             expect(device(runtime, 'temp-window')).toEqual(
                 expect.objectContaining({
@@ -3952,7 +3960,7 @@ describe('createTemperatureRoomRuntime', () => {
             runtime.start();
             runtime.runDeviceScenario('temp-window', 'pause_telemetry');
             clock.advanceBy(10_001);
-            timer.run(1);
+            timer.runInterval(1000);
 
             expect(device(runtime, 'temp-window')).toMatchObject({
                 availability: 'online',
@@ -3994,7 +4002,7 @@ describe('createTemperatureRoomRuntime', () => {
             clock.advanceBy(1);
             runtime.runDeviceScenario('temp-window', 'disconnect_device');
             clock.advanceBy(1_000);
-            timer.run(3);
+            timer.runInterval(2_000);
 
             expect(device(runtime, 'temp-window')).toMatchObject({
                 availability: 'offline',
@@ -4024,7 +4032,7 @@ describe('createTemperatureRoomRuntime', () => {
             });
 
             clock.advanceBy(1_000);
-            timer.runLatest();
+            timer.runInterval(2_000);
 
             expect(device(runtime, 'temp-window')?.reportedState).toEqual({
                 temperature: 20.2,
@@ -5275,10 +5283,9 @@ function createMutableClock(
 
 function createManualTimer(): TimerScheduler<number> & {
     intervals: number[];
-    run(handle: number): void;
-    runLatest(): void;
+    runInterval(intervalMs: number): void;
 } {
-    const callbacks = new Map<number, () => void>();
+    const callbacks = new Map<number, { callback: () => void; intervalMs: number }>();
     const intervals: number[] = [];
     let nextHandle = 1;
 
@@ -5286,7 +5293,7 @@ function createManualTimer(): TimerScheduler<number> & {
         intervals,
         setInterval(callback, intervalMs) {
             const handle = nextHandle++;
-            callbacks.set(handle, callback);
+            callbacks.set(handle, { callback, intervalMs });
             intervals.push(intervalMs);
 
             return handle;
@@ -5294,11 +5301,12 @@ function createManualTimer(): TimerScheduler<number> & {
         clearInterval(handle) {
             callbacks.delete(handle);
         },
-        run(handle) {
-            callbacks.get(handle)?.();
-        },
-        runLatest() {
-            callbacks.get(nextHandle - 1)?.();
+        runInterval(intervalMs) {
+            for (const scheduled of callbacks.values()) {
+                if (scheduled.intervalMs === intervalMs) {
+                    scheduled.callback();
+                }
+            }
         },
     };
 }

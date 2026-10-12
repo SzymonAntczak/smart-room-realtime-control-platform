@@ -23,7 +23,8 @@ import type {
     CommandDispatchOutboxState,
 } from '../storage/room-storage';
 
-const setPowerTimeoutMs = 5_000;
+import { createSetPowerTimeoutEvent, setPowerTimeoutMs } from './set-power-command-policy';
+
 const retryIntervalMs = 500;
 
 export interface CommandTimer {
@@ -575,15 +576,14 @@ export function createSetPowerCommandController({
     }
 
     function emitTimeout(commandId: string, deviceId: string, deadlineAt: string): void {
-        emitEvent({
-            eventId: generateEventId(),
-            eventType: 'command.timed_out',
-            occurredAt: deadlineAt,
-            source: 'backend',
-            deviceId,
-            commandId,
-            payload: { timeoutMs: setPowerTimeoutMs, reason: 'confirmation_not_received' },
-        });
+        emitEvent(
+            createSetPowerTimeoutEvent({
+                generateEventId,
+                deadlineAt,
+                deviceId,
+                commandId,
+            }),
+        );
     }
 
     function clearCompletedTimers(

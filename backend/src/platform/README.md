@@ -14,6 +14,15 @@ control model rather than to one external source.
   before a source-specific adapter receives a command.
 - `ports/` contains small interfaces shared by adapters and platform modules,
   such as event sinks and ID generators.
+- `room/` owns room-level orchestration boundaries: the engine, its room and
+  storage-session state owners, serialized input, event-record commits and
+  realtime publication. The engine keeps the single ordered input path and
+  recovery cutover; individual policies live with their platform domains.
+
+The runtime facade preserves the public temperature-room API and composes the
+platform engine with concrete sources. Simulator device definitions, timing,
+scenarios and receipt persistence live in `runtime/simulator/`; platform room
+modules do not import that composition, the API/BFF or source adapters.
 
 Adapters for simulator, Home Assistant, MQTT or hardware should live outside
 `platform/` and translate their source-specific messages into platform events.

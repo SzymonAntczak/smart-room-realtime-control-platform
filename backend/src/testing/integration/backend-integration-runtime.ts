@@ -79,6 +79,7 @@ export async function createBackendIntegrationRuntime({
         };
         const commandTimer = createManualScheduler(() => current);
         const periodicTimer = createManualScheduler(() => current);
+        const sourceTimer = createManualScheduler(() => current);
         const recoveryTimer = createManualScheduler(() => current);
         const runtimeStorage = faultInjectingStorage(
             storage,
@@ -90,6 +91,7 @@ export async function createBackendIntegrationRuntime({
             storageFactory: () => runtimeStorage,
             clock,
             timer: periodicTimer,
+            sourceTimer,
             recoveryTimer,
             commandTimer,
             ledScenarioScheduler: commandTimer,
@@ -156,9 +158,9 @@ export async function createBackendIntegrationRuntime({
             runStorageRecovery() {
                 recoveryTimer.runIntervals();
             },
-            // The first interval is the runtime freshness evaluator; source ticks stay controlled.
+            // Source ticks stay controlled; this advances only the freshness cadence.
             evaluateFreshness() {
-                periodicTimer.runFirstInterval();
+                periodicTimer.runInterval(100);
             },
             async request(path: string, init?: RequestInit) {
                 const response = await fetch(new URL(path, baseUrl), init);
@@ -297,7 +299,7 @@ async function connectSse(url: string) {
 
 function createManualScheduler(now: () => number) {
     const timeouts = new Map<number, { due: number; callback(): void }>();
-    const intervals = new Map<number, () => void>();
+    const intervals = new Map<number, { intervalMs: number; callback: () => void }>();
     let identity = 0;
 
     return {
@@ -312,9 +314,9 @@ function createManualScheduler(now: () => number) {
                 timeouts.delete(handle);
             }
         },
-        setInterval(callback: () => void) {
+        setInterval(callback: () => void, intervalMs: number) {
             const handle = ++identity;
-            intervals.set(handle, callback);
+            intervals.set(handle, { intervalMs, callback });
 
             return handle;
         },
@@ -332,10 +334,14 @@ function createManualScheduler(now: () => number) {
             }
         },
         runIntervals() {
-            [...intervals.values()].forEach((callback) => callback());
+            [...intervals.values()].forEach(({ callback }) => callback());
         },
-        runFirstInterval() {
-            intervals.values().next().value?.();
+        runInterval(intervalMs: number) {
+            for (const scheduled of intervals.values()) {
+                if (scheduled.intervalMs === intervalMs) {
+                    scheduled.callback();
+                }
+            }
         },
     };
 }
