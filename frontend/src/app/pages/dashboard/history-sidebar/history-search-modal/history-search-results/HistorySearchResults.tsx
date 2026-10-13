@@ -3,8 +3,8 @@ import { LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { type Components, Virtuoso } from 'react-virtuoso';
 
-import type { RenderableDeviceProjection } from '../../../device-projection';
 import { Button } from '../../../../../ui';
+import type { RenderableDeviceProjection } from '../../../device-projection';
 import type { HistoryFeedContext } from '../../history-sidebar-content/history-feed/history-feed-context';
 import { HistoryFeedList } from '../../history-sidebar-content/history-feed/history-feed-list/HistoryFeedList';
 import { HistoryFeedRow } from '../../history-sidebar-content/history-feed/history-feed-row/HistoryFeedRow';

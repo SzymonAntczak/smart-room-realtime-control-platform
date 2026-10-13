@@ -499,13 +499,13 @@ Each item has one difficulty rating only:
 | `[x] ST-4-06a-05` | Present accessible user-history items and add virtual rendering.                                        | `ST-4-06a-04`                   | `C`        |
 | `[x] ST-4-06a-06` | Complete story verification and delivery review.                                                        | `ST-4-06a-05`                   | `C`        |
 
-### [ ] `DS-4-06b` — Historical event search by device and date
+### [x] `DS-4-06b` — Historical event search by device and date
 
 - **Value / observable outcome:** users inspect a device's history or a selected
   period in a modal containing both a filter form and historical results,
   independently of the Dashboard's unfiltered live feed.
-- **Status:** shared filter/query contracts and both history contexts are defined.
-  BFF filtering, frontend search and story verification remain pending.
+- **Status:** shared contracts, BFF filtering, frontend search and browser
+  integration, whole-story verification and human acceptance are complete.
 - **Sources / boundaries:** developer-approved historical-search requirements;
   [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md);
   shared BFF response/query contracts, BFF history pagination, frontend history
@@ -533,8 +533,8 @@ GET. Valid submission keeps the modal open and displays results below the
   pinned session using the applied criteria, not unsaved draft values, and
   returns to the top. Clear filters removes drafts, results and the session,
   restoring the initial instruction without a GET. Closing releases the session
-  and ignores late responses; reopening restores the most recently applied
-  criteria in the form but not the result session, so the user submits again.
+  and ignores late responses; reopening starts with empty criteria, no results
+  or session and the initial instruction.
 - **Date semantics:** selected From/To days are inclusive in the browser time
   zone. Send UTC timestamps for the start of From and the start of the day after
   To, using an API interval of `[from, to)`. Either bound may be omitted. Account
@@ -548,15 +548,17 @@ GET. Valid submission keeps the modal open and displays results below the
   normalized filters to the existing pinned generation, watermark, retention
   view and cursor expiry. A raw page without matching items is not the end if
   more raw records remain. Preserve existing ordering and typed cursor/storage
-  errors. Device-filtered results exclude room-level entries while history
-  completeness warnings remain visible.
+  errors. Device-filtered results exclude room-level entries. Completeness
+  metadata remains in the response without a separate search-results notice.
 - **Static results and lifecycle:** do not merge SSE entries into search results
   or refresh them automatically. Infinite scroll loads older pages from the same
   pinned search session, with bounded memory, virtual rendering and an accessible
   Load older control. Show loading, no matches, retry and end-of-history states.
   A new search or Refresh invalidates earlier requests/pages; late responses
   cannot replace new results. Cursor expiry or session invalidation asks for
-  explicit refresh. Read errors preserve a labeled last-known result view.
+  explicit refresh. New searches and Refresh show only loading feedback until
+  results are ready. Read errors may retain prior results in session state,
+  while the UI shows only the error state until results are ready.
 - **Non-goals:** Dashboard filtering, live search-result merging, multi-device
   selection, saved searches, telemetry or technical-audit filtering, retention
   changes, database migration, a new user-history endpoint or another SSE stream.
@@ -576,7 +578,7 @@ GET. Valid submission keeps the modal open and displays results below the
 | `[x] ST-4-06b-03` | Add an independent static frontend search session with paging and manual refresh.            | `ST-4-06b-02`                                                             | `B`        | Session replacement and request races matter.   | Deterministic tests prove no SSE merge, refresh isolation, stale-response rejection and cleanup.                                                                                   |
 | `[x] ST-4-06b-04` | Present an accessible modal with the filter form and bounded virtualized historical results. | `ST-4-06b-03`                                                             | `C`        | Form, dates and virtual scrolling meet.         | UI tests cover submit/clear, applied vs draft values, local dates, focus and list states.                                                                                          |
 | `[x] ST-4-06b-05` | Verify historical search and Dashboard independence through mocked-BFF browser integration.  | `ST-4-06b-04`                                                             | `C`        | Two views share contracts but not sessions.     | Playwright proves search, paging, refresh and live Dashboard updates with validated fixtures.                                                                                      |
-| `[ ] ST-4-06b-06` | Verify story acceptance and complete the bounded delivery review.                            | `ST-4-06b-01`, `ST-4-06b-02`, `ST-4-06b-03`, `ST-4-06b-04`, `ST-4-06b-05` | `C`        | Evidence spans BFF and frontend boundaries.     | All preceding subtasks and approved story criteria pass; integration and docs align; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
+| `[x] ST-4-06b-06` | Verify story acceptance and complete the bounded delivery review.                            | `ST-4-06b-01`, `ST-4-06b-02`, `ST-4-06b-03`, `ST-4-06b-04`, `ST-4-06b-05` | `C`        | Evidence spans BFF and frontend boundaries.     | All preceding subtasks and approved story criteria pass; integration and docs align; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-07` — Storage-aware Dashboard controls and evidence
 

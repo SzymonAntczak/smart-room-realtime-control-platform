@@ -2,7 +2,6 @@ import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../../ui';
-
 import type { RenderableDeviceProjection } from '../device-projection';
 import type { RoomHistorySource } from '../room-history-source';
 
