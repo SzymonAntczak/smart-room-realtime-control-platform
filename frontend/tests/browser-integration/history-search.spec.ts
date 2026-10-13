@@ -12,7 +12,14 @@ import {
     createTemperatureDeviceUpdatedMessage,
 } from './mock-bff/mock-bff-fixtures';
 import { createAvailabilityHistoryItem, createHistoryPage } from './mock-bff/recent-feed-fixtures';
-import { expandHistory, historyEntry, openHistory } from './page-objects/history';
+import {
+    expandHistory,
+    historyEntry,
+    historyOffset,
+    historyPanel,
+    openHistory,
+    scrollToHistoryEntry,
+} from './page-objects/history';
 
 test.use({ timezoneId: 'UTC' });
 
@@ -124,3 +131,89 @@ for (const width of [1440, 390]) {
         },
     );
 }
+
+test('pages and refreshes filtered history without moving the Dashboard session', async ({
+    page,
+}) => {
+    await resetMockRoom(page.request);
+    const records = Array.from({ length: 52 }, (_, index) =>
+        createAvailabilityHistoryItem(52 - index, 'online'),
+    );
+    const firstPage = records.slice(0, 50);
+    const olderPage = records.slice(50);
+    const snapshot = createOnlineLedRoomSnapshot();
+    snapshot.devices.push(createOnlineTemperatureDeviceProjection());
+    snapshot.userHistory = firstPage.slice(0, 20);
+    snapshot.platform.storage = {
+        ...snapshot.platform.storage,
+        status: 'available',
+        historyGenerationId: 'mock-history-generation',
+        storedThroughSequence: 10000,
+    };
+    await setMockRoomSnapshot(page.request, snapshot);
+    await configureMockHistory(page.request, {
+        pages: [createHistoryPage(firstPage, 'search-older'), createHistoryPage(olderPage)],
+    });
+
+    await openHistory(page);
+    const dashboardAnchor = await scrollToHistoryEntry(page, records[15]?.recordId ?? 'missing');
+    const dashboard = historyPanel(page);
+    const dashboardPosition = await dashboardAnchor.getAttribute('aria-posinset');
+    const dashboardOffset = await historyOffset(dashboardAnchor, dashboard);
+
+    await page.getByRole('button', { name: 'Szukaj', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('combobox').selectOption('temp-desk');
+    await dialog.getByRole('button', { name: 'Szukaj', exact: true }).click();
+
+    const result = (id: string) => dialog.getByTestId('history-item-' + id);
+    await expect(result(records[0]?.recordId ?? 'missing')).toBeVisible();
+    await expect(result(olderPage[0]?.recordId ?? 'missing')).toHaveCount(0);
+    const olderRequest = page.waitForRequest((request) => {
+        const url = new URL(request.url());
+
+        return (
+            url.pathname === '/room/history/user-history' &&
+            url.searchParams.get('cursor') === 'search-older'
+        );
+    });
+    await dialog.getByRole('button', { name: 'Wczytaj starsze', exact: true }).click();
+    await olderRequest;
+    await expect(result(olderPage[0]?.recordId ?? 'missing')).toBeVisible();
+    await expect(dashboardAnchor).toHaveAttribute('aria-posinset', dashboardPosition ?? '');
+    await expect
+        .poll(async () =>
+            Math.abs((await historyOffset(dashboardAnchor, dashboard)) - dashboardOffset),
+        )
+        .toBeLessThanOrEqual(2);
+
+    const refreshed = createAvailabilityHistoryItem(100, 'offline');
+    await configureMockHistory(page.request, {
+        pages: [createHistoryPage([refreshed])],
+    });
+    await dialog.getByLabel('Do', { exact: true }).fill('2026-09-19');
+    const refreshRequest = page.waitForRequest((request) => {
+        const url = new URL(request.url());
+
+        return url.pathname === '/room/history/user-history' && !url.searchParams.has('cursor');
+    });
+    await dialog.getByRole('button', { name: 'Odśwież wyniki', exact: true }).click();
+    const request = await refreshRequest;
+    const refreshUrl = new URL(request.url());
+    expect(refreshUrl.searchParams.get('deviceId')).toBe('temp-desk');
+    expect(refreshUrl.searchParams.has('to')).toBe(false);
+    await expect(result(refreshed.recordId)).toBeVisible();
+    await expect(result(records[0]?.recordId ?? 'missing')).toHaveCount(0);
+    await expect
+        .poll(() =>
+            dialog
+                .getByRole('region', { name: 'Wyniki wyszukiwania historii' })
+                .evaluate((element) => element.scrollTop),
+        )
+        .toBe(0);
+    await expect
+        .poll(async () =>
+            Math.abs((await historyOffset(dashboardAnchor, dashboard)) - dashboardOffset),
+        )
+        .toBeLessThanOrEqual(2);
+});

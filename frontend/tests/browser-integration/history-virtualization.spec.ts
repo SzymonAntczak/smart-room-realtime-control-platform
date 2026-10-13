@@ -262,9 +262,7 @@ for (const viewport of [
     });
 }
 
-test('keeps the sidebar frame fixed and shows a temporary top hint while filter remains inactive', async ({
-    page,
-}) => {
+test('keeps the sidebar frame fixed and opens search without reading history', async ({ page }) => {
     const records = mixedHistory(100);
     await configureMockHistory(page.request, {
         pages: [
@@ -276,25 +274,28 @@ test('keeps the sidebar frame fixed and shows a temporary top hint while filter 
     await page.clock.install();
     const root = historyPanel(page);
     const heading = page.getByRole('heading', { name: 'Historia zdarzeń' });
-    const filter = page.getByRole('button', { name: 'Filtruj', exact: true });
+    const search = page.getByRole('button', { name: 'Szukaj', exact: true });
     const top = page.getByRole('button', { name: 'Na górę', exact: true });
     const requests: string[] = [];
     page.on('request', (request) => requests.push(request.url()));
 
     const headingBefore = await heading.boundingBox();
-    const filterBefore = await filter.boundingBox();
+    const searchBefore = await search.boundingBox();
     const topBefore = await top.boundingBox();
     await root.evaluate((element) => {
         element.scrollTop = element.scrollHeight / 2;
     });
     await expect.poll(() => root.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     expect(await heading.boundingBox()).toEqual(headingBefore);
-    expect(await filter.boundingBox()).toEqual(filterBefore);
+    expect(await search.boundingBox()).toEqual(searchBefore);
     expect(await top.boundingBox()).toEqual(topBefore);
 
     const requestCount = requests.length;
-    await filter.click();
+    await search.click();
+    await expect(page.getByRole('dialog')).toBeVisible();
     expect(requests).toHaveLength(requestCount);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
     await top.click();
     await expect.poll(() => root.evaluate((element) => element.scrollTop)).toBe(0);
     await top.click();
@@ -317,18 +318,18 @@ test('keeps the sidebar frame fixed and shows a temporary top hint while filter 
         .poll(() => sidebarSlot.evaluate((element) => getComputedStyle(element).transform))
         .toBe('matrix(1, 0, 0, 1, 0, 0)');
     const mobileHeading = await heading.boundingBox();
-    const mobileFilter = await filter.boundingBox();
+    const mobileSearch = await search.boundingBox();
     const mobileTop = await top.boundingBox();
     await root.evaluate((element) => {
         element.scrollTop = element.scrollHeight / 2;
     });
     await expect.poll(() => root.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     const mobileHeadingAfter = await heading.boundingBox();
-    const mobileFilterAfter = await filter.boundingBox();
+    const mobileSearchAfter = await search.boundingBox();
     const mobileTopAfter = await top.boundingBox();
 
     expect(Math.abs((mobileHeadingAfter?.y ?? 0) - (mobileHeading?.y ?? 0))).toBeLessThanOrEqual(2);
-    expect(Math.abs((mobileFilterAfter?.y ?? 0) - (mobileFilter?.y ?? 0))).toBeLessThanOrEqual(2);
+    expect(Math.abs((mobileSearchAfter?.y ?? 0) - (mobileSearch?.y ?? 0))).toBeLessThanOrEqual(2);
     expect(Math.abs((mobileTopAfter?.y ?? 0) - (mobileTop?.y ?? 0))).toBeLessThanOrEqual(2);
 });
 
