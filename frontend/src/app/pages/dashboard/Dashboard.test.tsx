@@ -136,8 +136,8 @@ describe('Dashboard composition', () => {
             expect(warning).toHaveTextContent(`${status}_test_reason`);
             expect(warning).toHaveTextContent(
                 status === 'degraded'
-                    ? 'Trwały zapis danych jest niedostępny'
-                    : 'Trwa przywracanie trwałego zapisu danych',
+                    ? 'Nowe polecenia są nieutrwalone i mogą zostać utracone po restarcie.'
+                    : 'Wysyłanie nowych poleceń jest chwilowo niedostępne.',
             );
         },
     );
@@ -157,6 +157,29 @@ describe('Dashboard composition', () => {
         rerender(<Dashboard />);
 
         expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('keeps LED controls usable while degraded and locks them only while recovering', () => {
+        ready(snapshot(storageProjection('degraded')));
+        const { rerender } = render(<Dashboard />);
+
+        screen
+            .getAllByRole('button', { name: 'Włącz' })
+            .forEach((button) => expect(button).toBeEnabled());
+
+        ready(snapshot(storageProjection('recovering')));
+        rerender(<Dashboard />);
+
+        screen
+            .getAllByRole('button', { name: 'Włącz' })
+            .forEach((button) => expect(button).toBeDisabled());
+
+        ready(snapshot(storageProjection('available')));
+        rerender(<Dashboard />);
+
+        screen
+            .getAllByRole('button', { name: 'Włącz' })
+            .forEach((button) => expect(button).toBeEnabled());
     });
 
     it('does not show a storage warning for available storage', () => {

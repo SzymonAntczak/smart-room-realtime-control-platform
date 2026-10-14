@@ -85,7 +85,10 @@ export function Dashboard({
                                         activeCommand={activeCommand}
                                         recentCommands={recentCommands}
                                         headerAction={extension?.headerAction}
-                                        interactionLocked={extension?.interactionLocked}
+                                        interactionLocked={
+                                            extension?.interactionLocked ||
+                                            storage?.status === 'recovering'
+                                        }
                                         realtimeUncertain={realtimeUncertain}
                                     />
                                 );

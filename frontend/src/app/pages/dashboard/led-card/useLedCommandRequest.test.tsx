@@ -223,27 +223,28 @@ describe('useLedCommandRequest', () => {
         expect(result.current.admissionEvidence).toBeUndefined();
     });
 
-    it.each(['pre-admission', 'network'])(
-        'does not assign command evidence to a %s error',
-        async (kind) => {
-            const error = { error: 'unknown_device', message: 'Unknown device.' };
+    it.each([
+        [
+            'pre-admission',
+            { error: 'platform_recovering', message: 'Retry after recovery.', retryable: true },
+        ],
+        ['network', undefined],
+    ] as const)('does not assign command evidence to a %s error', async (kind, error) => {
+        if (kind === 'pre-admission') {
             expect(isSchema(preAdmissionCommandErrorResponseSchema, error)).toBe(true);
+            submitLedPowerCommand.mockResolvedValue(error);
+        } else {
+            submitLedPowerCommand.mockRejectedValue(new Error('Disconnected'));
+        }
 
-            if (kind === 'pre-admission') {
-                submitLedPowerCommand.mockResolvedValue(error);
-            } else {
-                submitLedPowerCommand.mockRejectedValue(new Error('Disconnected'));
-            }
-
-            const { result } = requestHook();
-            await act(async () => {
-                await result.current.requestPower('on');
-            });
-            expect(result.current.transportError).toBeTruthy();
-            expect(result.current.admissionEvidence).toBeUndefined();
-            expect(result.current.correlatedCommand).toBeUndefined();
-        },
-    );
+        const { result } = requestHook();
+        await act(async () => {
+            await result.current.requestPower('on');
+        });
+        expect(result.current.transportError).toBeTruthy();
+        expect(result.current.admissionEvidence).toBeUndefined();
+        expect(result.current.correlatedCommand).toBeUndefined();
+    });
 
     it('allows a fresh request after switching away and back while the old HTTP request remains pending', async () => {
         const pending = deferred<AcceptedCommandResponse>();

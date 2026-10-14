@@ -1,4 +1,8 @@
 import {
+    type AcceptedCommandResponse,
+    acceptedCommandResponseSchema,
+    type PreAdmissionCommandErrorResponse,
+    preAdmissionCommandErrorResponseSchema,
     type RejectedCommandResponse,
     rejectedCommandResponseSchema,
     type SetPowerCommandRequest,
@@ -47,6 +51,24 @@ export function parseMockSetPowerCommandRequest(body: string): SetPowerCommandRe
 export function assertMockRejectedCommandResponse(value: unknown): RejectedCommandResponse {
     if (!isSchema(rejectedCommandResponseSchema, value)) {
         throw new Error('Mock BFF rejected command response did not match the shared contract.');
+    }
+
+    return value;
+}
+
+export function assertMockAcceptedCommandResponse(value: unknown): AcceptedCommandResponse {
+    if (!isSchema(acceptedCommandResponseSchema, value)) {
+        throw new Error('Mock BFF accepted command response did not match the shared contract.');
+    }
+
+    return value;
+}
+
+export function assertMockPreAdmissionCommandError(
+    value: unknown,
+): PreAdmissionCommandErrorResponse {
+    if (!isSchema(preAdmissionCommandErrorResponseSchema, value)) {
+        throw new Error('Mock BFF pre-admission error did not match the shared contract.');
     }
 
     return value;

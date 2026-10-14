@@ -13,6 +13,7 @@ import {
     createPendingLedCommand,
     createPendingLedDeviceProjection,
 } from './mock-bff-fixtures';
+import { MockCommandResponses } from './mock-command-responses';
 import { MockHistory } from './mock-history';
 import { MockRoomScenario } from './mock-room-scenario';
 import { createHistoryPage } from './recent-feed-fixtures';
@@ -20,6 +21,7 @@ import { createHistoryPage } from './recent-feed-fixtures';
 const realtimeStreams = new Set<ServerResponse>();
 const roomScenario = new MockRoomScenario();
 const history = new MockHistory();
+const commandResponses = new MockCommandResponses();
 let nextCommandId = 1;
 let rejectNextCommand = false;
 let publishAcceptedBeforeResponse = false;
@@ -122,6 +124,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (request.method === 'POST' && request.url === mockBffPaths.reset) {
         roomScenario.reset();
         history.reset();
+        commandResponses.reset();
         nextCommandId = 1;
         rejectNextCommand = false;
         publishAcceptedBeforeResponse = false;
@@ -144,6 +147,40 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (request.method === 'POST' && request.url === mockBffPaths.rejectNextCommand) {
         rejectNextCommand = true;
         respondJson(response, 204, undefined);
+
+        return;
+    }
+
+    if (url.pathname === mockBffPaths.commandControl) {
+        try {
+            if (request.method === 'GET') {
+                respondJson(response, 200, { held: commandResponses.hasHeldResponse() });
+
+                return;
+            }
+
+            const value: unknown = parseJson(await readRequestBody(request));
+
+            if (typeof value !== 'object' || value === null) {
+                throw new Error('Invalid mock command control');
+            }
+
+            if ('outcome' in value) {
+                if (value.outcome !== 'recovering' && value.outcome !== 'volatile-accepted') {
+                    throw new Error('Invalid mock command outcome');
+                }
+
+                commandResponses.configure(value.outcome, 'hold' in value && value.hold === true);
+            }
+
+            if ('release' in value && value.release === true) {
+                commandResponses.release();
+            }
+
+            respondJson(response, 204, undefined);
+        } catch (error) {
+            respondScenarioError(response, error);
+        }
 
         return;
     }
@@ -188,10 +225,9 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
             return;
         }
 
-        const commandId = `mock-command-${nextCommandId++}`;
-
         if (rejectNextCommand) {
             rejectNextCommand = false;
+            const commandId = `mock-command-${nextCommandId++}`;
             const failedCommand = createFailedLedCommand(commandId);
             const update = roomScenario.applyUpdate(
                 createCommandsUpdatedMessage(roomScenario.currentRevision(), {
@@ -215,6 +251,16 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
             return;
         }
 
+        const commandResponse = await commandResponses.take(
+            () => `mock-command-${nextCommandId++}`,
+        );
+
+        if (commandResponse.status === 503) {
+            respondJson(response, commandResponse.status, commandResponse.body);
+
+            return;
+        }
+
         if (publishAcceptedBeforeResponse) {
             publishAcceptedBeforeResponse = false;
             const update = roomScenario.applyUpdate(
@@ -226,12 +272,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
             publishSseMessage(update);
         }
 
-        respondJson(response, 202, {
-            commandId,
-            status: 'accepted',
-            durability: 'durable',
-            lifecycleDurability: 'durable',
-        });
+        respondJson(response, commandResponse.status, commandResponse.body);
 
         return;
     }

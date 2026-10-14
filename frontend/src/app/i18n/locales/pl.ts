@@ -87,8 +87,10 @@ export const pl = {
             },
         },
         storage: {
-            degraded: 'Trwały zapis danych jest niedostępny{{reason}}.',
-            recovering: 'Trwa przywracanie trwałego zapisu danych{{reason}}.',
+            degraded:
+                'Trwały zapis danych jest niedostępny{{reason}}. Nowe polecenia są nieutrwalone i mogą zostać utracone po restarcie.',
+            recovering:
+                'Trwa przywracanie trwałego zapisu danych{{reason}}. Wysyłanie nowych poleceń jest chwilowo niedostępne.',
         },
         history: {
             scrollRegion: 'Przewijana historia zdarzeń',

@@ -10,6 +10,7 @@ import type {
     PlatformStorageProjection,
 } from '@smart-room/contracts/projections';
 import type { RoomBffRealtimeServerMessage, RoomBffSnapshot } from '@smart-room/contracts/room-bff';
+import type { CommandDurability } from '@smart-room/contracts/storage';
 import type { UserHistoryItem } from '@smart-room/contracts/user-history';
 
 type CommandsUpdatedMessage = Extract<
@@ -188,7 +189,9 @@ export function createFreshTemperatureAfterRecoveryDeviceProjection(): DevicePro
     };
 }
 
-export function createPendingLedCommand(): ActiveCommandProjection {
+export function createPendingLedCommand(
+    durability: CommandDurability = 'durable',
+): ActiveCommandProjection {
     return {
         commandId: ledCommandId,
         deviceId: 'led-main',
@@ -196,8 +199,8 @@ export function createPendingLedCommand(): ActiveCommandProjection {
         status: 'pending',
         requestedState: { power: 'on' },
         requestedAt: commandRequestedAt,
-        durability: 'durable',
-        lifecycleDurability: 'durable',
+        durability,
+        lifecycleDurability: durability,
         delivery: {
             status: 'handed_off',
             dispatchedAt: commandDispatchedAt,
@@ -213,7 +216,9 @@ export function createPendingLedDeviceProjection(): DeviceProjection {
     };
 }
 
-export function createConfirmedLedCommand(): ConfirmedCommandProjection {
+export function createConfirmedLedCommand(
+    durability: CommandDurability = 'durable',
+): ConfirmedCommandProjection {
     return {
         commandId: ledCommandId,
         deviceId: 'led-main',
@@ -221,8 +226,8 @@ export function createConfirmedLedCommand(): ConfirmedCommandProjection {
         status: 'confirmed',
         requestedState: { power: 'on' },
         requestedAt: commandRequestedAt,
-        durability: 'durable',
-        lifecycleDurability: 'durable',
+        durability,
+        lifecycleDurability: durability,
         delivery: {
             status: 'handed_off',
             dispatchedAt: commandDispatchedAt,
@@ -232,7 +237,9 @@ export function createConfirmedLedCommand(): ConfirmedCommandProjection {
     };
 }
 
-export function createConfirmedLedDeviceProjection(): DeviceProjection {
+export function createConfirmedLedDeviceProjection(
+    durability: 'durable' | 'volatile' = 'durable',
+): DeviceProjection {
     return {
         ...createOnlineLedDeviceProjection(),
         reportedState: { power: 'on' },
@@ -240,7 +247,7 @@ export function createConfirmedLedDeviceProjection(): DeviceProjection {
             power: {
                 freshness: 'fresh',
                 lastObservedAt: commandConfirmedAt,
-                durability: 'durable',
+                durability,
             },
         },
     };
@@ -355,6 +362,7 @@ export function createPlatformUpdatedMessage(
     previousRevision: number,
     storedThroughSequence: number,
     sentAt: string,
+    storage?: PlatformStorageProjection,
 ): PlatformUpdatedMessage {
     return {
         messageType: 'platform.updated' as const,
@@ -362,12 +370,35 @@ export function createPlatformUpdatedMessage(
         revision: previousRevision + 1,
         sentAt,
         payload: {
-            storage: {
+            storage: storage ?? {
                 status: 'available',
                 historyGenerationId: 'mock-history-generation',
                 storedThroughSequence,
                 changedAt: fixtureTimestamp,
             },
         },
+    };
+}
+
+export function createStorageProjection(
+    status: 'available' | 'degraded' | 'recovering',
+    storedThroughSequence = 0,
+    changedAt = fixtureTimestamp,
+): PlatformStorageProjection {
+    if (status === 'available') {
+        return {
+            status,
+            changedAt,
+            historyGenerationId: 'mock-history-generation',
+            storedThroughSequence,
+        };
+    }
+
+    return {
+        status,
+        changedAt,
+        reason: `fixture_${status}`,
+        historyGenerationId: 'mock-history-generation',
+        storedThroughSequence,
     };
 }

@@ -2,6 +2,8 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { describe, expect, it } from 'vitest';
 
 import {
+    assertMockAcceptedCommandResponse,
+    assertMockPreAdmissionCommandError,
     assertMockRejectedCommandResponse,
     assertMockRoomSnapshot,
     parseMockSetPowerCommandRequest,
@@ -279,5 +281,49 @@ describe('mock BFF shared-contract boundary', () => {
                 reason: 'command_already_active',
             }),
         ).toThrow('rejected command response did not match the shared contract');
+    });
+
+    it('validates volatile admission and recovering errors at the mock HTTP boundary', () => {
+        expect(
+            assertMockAcceptedCommandResponse({
+                commandId: 'mock-command-1',
+                status: 'accepted',
+                durability: 'volatile',
+                lifecycleDurability: 'volatile',
+            }),
+        ).toMatchObject({ status: 'accepted', durability: 'volatile' });
+
+        expect(
+            assertMockPreAdmissionCommandError({
+                error: 'platform_recovering',
+                message: 'Retry after storage recovery.',
+                retryable: true,
+            }),
+        ).toMatchObject({ error: 'platform_recovering' });
+
+        expect(() =>
+            assertMockPreAdmissionCommandError({
+                error: 'platform_recovering',
+                message: 'Retry after storage recovery.',
+                retryable: true,
+                commandId: 'phantom-command',
+            }),
+        ).toThrow('pre-admission error did not match the shared contract');
+    });
+
+    it('builds storage updates with an explicit recovering status and preserves the generation', () => {
+        const storage = {
+            status: 'recovering',
+            changedAt: '2026-06-08T09:30:00Z',
+            reason: 'fixture_recovering',
+            historyGenerationId: 'mock-history-generation',
+            storedThroughSequence: 4,
+        } as const;
+        const scenario = new MockRoomScenario();
+
+        scenario.applyUpdate(createPlatformUpdatedMessage(0, 4, '2026-06-08T09:30:01Z', storage));
+
+        expect(scenario.snapshotMessage().payload.platform.storage).toEqual(storage);
+        expect(scenario.currentRevision()).toBe(1);
     });
 });

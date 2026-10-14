@@ -12,6 +12,31 @@ export async function rejectNextMockCommand(request: APIRequestContext): Promise
     await assertControlResponse(await request.post(mockBffUrls.rejectNextCommand));
 }
 
+export async function configureMockCommandResponse(
+    request: APIRequestContext,
+    value: { outcome: 'recovering' | 'volatile-accepted'; hold?: boolean },
+): Promise<void> {
+    await assertControlResponse(await request.post(mockBffUrls.commandControl, { data: value }));
+}
+
+export async function isMockCommandResponseHeld(request: APIRequestContext): Promise<boolean> {
+    const response = await request.get(mockBffUrls.commandControl);
+
+    if (!response.ok()) {
+        throw new Error(`Mock BFF command control failed (${response.status()}).`);
+    }
+
+    const body: unknown = await response.json();
+
+    return typeof body === 'object' && body !== null && 'held' in body && body.held === true;
+}
+
+export async function releaseMockCommandResponse(request: APIRequestContext): Promise<void> {
+    await assertControlResponse(
+        await request.post(mockBffUrls.commandControl, { data: { release: true } }),
+    );
+}
+
 export async function publishAcceptedCommandBeforeResponse(
     request: APIRequestContext,
 ): Promise<void> {
