@@ -580,7 +580,7 @@ GET. Valid submission keeps the modal open and displays results below the
 | `[x] ST-4-06b-05` | Verify historical search and Dashboard independence through mocked-BFF browser integration.  | `ST-4-06b-04`                                                             | `C`        | Two views share contracts but not sessions.     | Playwright proves search, paging, refresh and live Dashboard updates with validated fixtures.                                                                                      |
 | `[x] ST-4-06b-06` | Verify story acceptance and complete the bounded delivery review.                            | `ST-4-06b-01`, `ST-4-06b-02`, `ST-4-06b-03`, `ST-4-06b-04`, `ST-4-06b-05` | `C`        | Evidence spans BFF and frontend boundaries.     | All preceding subtasks and approved story criteria pass; integration and docs align; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
-### [ ] `DS-4-07` — Storage-aware Dashboard controls and evidence
+### [x] `DS-4-07` — Storage-aware Dashboard controls and evidence
 
 - **Value / observable outcome:** users see storage degradation and cannot mistake
   volatile state for restart-safe data.
@@ -606,7 +606,7 @@ GET. Valid submission keeps the modal open and displays results below the
 | `[x] ST-4-07-01` | Display current platform storage status prominently.                           | none                                     | `E`        | Component tests cover available, degraded and recovering.                                                                                     |
 | `[x] ST-4-07-02` | Label volatile observations, feed records and command evidence.                | `ST-4-07-01`                             | `C`        | Mixed intent/lifecycle/evidence durability remains distinguishable.                                                                           |
 | `[x] ST-4-07-03` | Apply degraded warning, recovering disablement and racing-503 handling.        | `ST-4-07-01`                             | `C`        | Browser tests show no phantom state or automatic retry.                                                                                       |
-| `[ ] ST-4-07-04` | Review the complete story against all criteria, integration and documentation. | `ST-4-07-01`, `ST-4-07-02`, `ST-4-07-03` | `C`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
+| `[x] ST-4-07-04` | Review the complete story against all criteria, integration and documentation. | `ST-4-07-01`, `ST-4-07-02`, `ST-4-07-03` | `C`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-08` — Accessible bounded telemetry details
 
