@@ -8,12 +8,7 @@ describe('Button', () => {
         'renders the %s variant with native props and local classes',
         (variant) => {
             render(
-                <Button
-                    variant={variant}
-                    type="button"
-                    aria-pressed="true"
-                    className="local-size"
-                >
+                <Button variant={variant} type="button" aria-pressed="true" className="local-size">
                     Action
                 </Button>,
             );

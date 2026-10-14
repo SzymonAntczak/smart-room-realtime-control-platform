@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert } from '../../ui';
+
 import styles from './Dashboard.module.css';
 import type { RenderableDeviceProjection } from './device-projection';
 import { HistorySidebar } from './history-sidebar/HistorySidebar';
@@ -73,7 +74,7 @@ export function Dashboard({
                                 const activeCommand = snapshot.activeCommands.find(
                                     (command) => command.deviceId === device.deviceId,
                                 );
-                                const recentCommand = snapshot.recentCommands.find(
+                                const recentCommands = snapshot.recentCommands.filter(
                                     (command) => command.deviceId === device.deviceId,
                                 );
 
@@ -82,7 +83,7 @@ export function Dashboard({
                                         key={device.deviceId}
                                         device={device}
                                         activeCommand={activeCommand}
-                                        recentCommand={recentCommand}
+                                        recentCommands={recentCommands}
                                         headerAction={extension?.headerAction}
                                         interactionLocked={extension?.interactionLocked}
                                         realtimeUncertain={realtimeUncertain}

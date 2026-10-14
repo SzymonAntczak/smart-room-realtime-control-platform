@@ -1,24 +1,67 @@
-import { useRef, useState } from 'react';
+import type {
+    AcceptedCommandResponse,
+    ActiveCommandProjection,
+    RejectedCommandResponse,
+    TerminalCommandProjection,
+} from '@smart-room/contracts/commands';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { submitLedPowerCommand } from '../../../api/commands';
 
-export function useLedCommandRequest(deviceId: string | undefined) {
+interface RequestState {
+    deviceId: string | undefined;
+    submitting: boolean;
+    consumedByProjection: boolean;
+    requestToken?: object;
+    admission?: AcceptedCommandResponse | RejectedCommandResponse;
+    transportError?: string;
+}
+
+export function useLedCommandRequest(
+    deviceId: string | undefined,
+    activeCommand?: ActiveCommandProjection,
+    recentCommands: readonly TerminalCommandProjection[] = [],
+) {
     const { t } = useTranslation('dashboard');
-    const requestInFlight = useRef(false);
-    const [submitting, setSubmitting] = useState(false);
-    const [transportError, setTransportError] = useState<
-        { commandId: string; message: string } | undefined
-    >();
+    const inFlight = useRef<{ deviceId: string } | undefined>(undefined);
+    const [state, setState] = useState<RequestState>({
+        deviceId,
+        submitting: false,
+        consumedByProjection: false,
+    });
+    useEffect(() => {
+        if (inFlight.current?.deviceId !== deviceId) {
+            inFlight.current = undefined;
+        }
+    }, [deviceId]);
+    const current: RequestState =
+        state.deviceId === deviceId
+            ? state
+            : { deviceId, submitting: false, consumedByProjection: false };
+    const admission = current.admission;
+    const correlatedCommand = admission
+        ? activeCommand?.commandId === admission.commandId
+            ? activeCommand
+            : recentCommands.find((command) => command.commandId === admission.commandId)
+        : undefined;
+
+    // SSE takes precedence immediately; consuming admission is sticky even if
+    // the matching projection later leaves the bounded recent-command cache.
+    if (state.deviceId !== deviceId) {
+        setState(current);
+    } else if (correlatedCommand && !state.consumedByProjection) {
+        setState({ ...state, consumedByProjection: true });
+    }
 
     async function requestPower(power: 'on' | 'off'): Promise<void> {
-        if (!deviceId || requestInFlight.current) {
+        if (!deviceId || inFlight.current?.deviceId === deviceId) {
             return;
         }
 
-        requestInFlight.current = true;
-        setSubmitting(true);
-        setTransportError(undefined);
+        const requestToken = { deviceId };
+        inFlight.current = requestToken;
+        setState({ deviceId, requestToken, submitting: true, consumedByProjection: false });
 
         try {
             const result = await submitLedPowerCommand({
@@ -26,24 +69,47 @@ export function useLedCommandRequest(deviceId: string | undefined) {
                 commandType: 'set.power',
                 requestedState: { power },
             });
-
-            if ('error' in result) {
-                setTransportError({ commandId: 'pre-admission', message: result.message });
-            } else if (result.status === 'rejected') {
-                setTransportError({ commandId: result.commandId, message: result.message });
-            }
+            setState((latest) =>
+                latest.requestToken !== requestToken
+                    ? latest
+                    : {
+                          ...latest,
+                          ...('error' in result
+                              ? { transportError: result.message }
+                              : { admission: result }),
+                      },
+            );
         } catch {
-            setTransportError({ commandId: 'transport', message: t('led.commandRequestFailed') });
+            setState((latest) =>
+                latest.requestToken !== requestToken
+                    ? latest
+                    : {
+                          ...latest,
+                          transportError: t('led.commandRequestFailed'),
+                      },
+            );
         } finally {
-            requestInFlight.current = false;
-            setSubmitting(false);
+            if (inFlight.current === requestToken) {
+                inFlight.current = undefined;
+            }
+
+            setState((latest) =>
+                latest.requestToken !== requestToken
+                    ? latest
+                    : {
+                          ...latest,
+                          submitting: false,
+                      },
+            );
         }
     }
 
     return {
         requestPower,
-        submitting,
-        transportError: transportError?.message,
-        transportErrorCommandId: transportError?.commandId,
+        submitting: current.submitting,
+        transportError: current.transportError,
+        admissionEvidence:
+            !correlatedCommand && !current.consumedByProjection ? admission : undefined,
+        correlatedCommand,
     };
 }

@@ -10,6 +10,31 @@ export const pl = {
         },
     },
     dashboard: {
+        durability: {
+            volatileDimension: '{{dimension}} — dane nieutrwalone',
+            availability: 'Dostępność',
+            health: 'Stan działania',
+            power: 'Dane zasilania',
+            temperature: 'Dane temperatury',
+            intent: 'Zlecenie',
+            lifecycle: 'Status polecenia',
+        },
+        commandEvidence: {
+            active: 'Bieżące polecenie',
+            recent: 'Ostatni wynik polecenia',
+            admission: 'Wynik przyjęcia żądania',
+            correlated: 'Wynik wysłanego polecenia',
+            admissionAccepted:
+                'Żądanie przyjęto. To wynik przyjęcia, a nie bieżący status wykonania.',
+            admissionRejected: 'Żądanie odrzucono.',
+            accepted: 'Przyjęte do wykonania.',
+            pending: 'Oczekuje na potwierdzenie.',
+            confirmed: 'Potwierdzone.',
+            failed: 'Niepowodzenie.',
+            timed_out: 'Upłynął czas oczekiwania na potwierdzenie.',
+            handed_off: 'Polecenie przekazano do wysłania.',
+            uncertain: 'Nie wiadomo, czy polecenie zostało przekazane do wysłania.',
+        },
         feed: {
             heading: 'Ostatnie istotne zdarzenia',
             connecting: 'Ładowanie ostatnich zdarzeń…',

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../../features/date-time';
 import { Alert, type AlertVariant, DeviceCard } from '../../../ui';
 import { getDeviceDisplayName } from '../device-display-name';
+import { VolatileEvidence } from '../volatile-evidence/VolatileEvidence';
 
 import styles from './TemperatureCard.module.css';
 
@@ -82,6 +83,22 @@ export function TemperatureCard({
                         : ''}
                 </span>
             </div>
+            <VolatileEvidence
+                dimensions={[
+                    {
+                        label: t('durability.availability', { ns: 'dashboard' }),
+                        durability: reading.availabilityDurability,
+                    },
+                    {
+                        label: t('durability.health', { ns: 'dashboard' }),
+                        durability: reading.healthDurability,
+                    },
+                    {
+                        label: t('durability.temperature', { ns: 'dashboard' }),
+                        durability: reading.observationDurability,
+                    },
+                ]}
+            />
         </DeviceCard>
     );
 }
@@ -145,8 +162,11 @@ interface TemperatureCardViewModel {
     unit?: 'celsius';
     recordedAt?: string;
     availability: TemperatureSensorDeviceProjection['availability'];
+    availabilityDurability: TemperatureSensorDeviceProjection['availabilityDurability'];
     availabilityReason?: string;
     health: TemperatureSensorDeviceProjection['health'];
+    healthDurability: TemperatureSensorDeviceProjection['healthDurability'];
+    observationDurability: ObservationStatus['durability'];
     healthReason?: string;
     freshness: 'fresh' | 'stale' | 'unknown';
 }
@@ -170,8 +190,11 @@ function toTemperatureCardViewModel(
               }
             : {}),
         availability: device.availability,
+        availabilityDurability: device.availabilityDurability,
         availabilityReason: device.availabilityReason,
         health: device.health,
+        healthDurability: device.healthDurability,
+        observationDurability: device.observationStatus.temperature.durability,
         healthReason: device.healthReason,
         freshness: device.observationStatus.temperature.freshness,
     };

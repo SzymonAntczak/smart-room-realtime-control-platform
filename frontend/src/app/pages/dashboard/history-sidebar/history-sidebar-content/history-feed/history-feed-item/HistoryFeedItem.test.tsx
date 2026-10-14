@@ -1,6 +1,6 @@
 import { isUserHistoryItem, type UserHistoryItem } from '@smart-room/contracts/user-history';
 import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { formatTimestamp } from '../../../../../../features/date-time';
@@ -9,6 +9,43 @@ import { HistoryFeedItem } from './HistoryFeedItem';
 
 const fixtures = createUserHistoryFixtures();
 describe('user history entry', () => {
+    it('labels only volatile entries in mixed history and removes the label for a durable replacement', () => {
+        const durableOther = { ...fixtures.timeout, recordId: `rec:v1:sha256:${'d'.repeat(64)}` };
+        const item: UserHistoryItem = {
+            kind: 'attempt_failed',
+            recordId: fixtures.failure.recordId,
+            occurredAt: fixtures.failure.occurredAt,
+            source: fixtures.failure.source,
+            deviceId: 'led-main',
+            deviceName: 'Main LED',
+            durability: 'volatile',
+        };
+        expect(isUserHistoryItem(item)).toBe(true);
+        expect(isUserHistoryItem(durableOther)).toBe(true);
+        const { rerender } = render(
+            <ol>
+                <HistoryFeedItem item={item} devices={[]} index={0} setSize={2} />
+                <HistoryFeedItem item={durableOther} devices={[]} index={1} setSize={2} />
+            </ol>,
+        );
+        const entries = screen.getAllByRole('listitem');
+        expect(entries).toHaveLength(2);
+        expect(
+            within(screen.getByTestId(`history-item-${item.recordId}`)).getByText('Nieutrwalone'),
+        ).toBeInTheDocument();
+        expect(
+            within(screen.getByTestId(`history-item-${durableOther.recordId}`)).queryByText(
+                'Nieutrwalone',
+            ),
+        ).toBeNull();
+        rerender(
+            <ol>
+                <HistoryFeedItem item={fixtures.failure} devices={[]} index={0} setSize={1} />
+            </ol>,
+        );
+        expect(screen.queryByText('Nieutrwalone')).toBeNull();
+    });
+
     it.each(fixtures.items)('presents $kind without technical diagnostics', (item) => {
         expect(isUserHistoryItem(item)).toBe(true);
         render(

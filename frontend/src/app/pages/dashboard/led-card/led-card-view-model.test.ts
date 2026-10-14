@@ -2,6 +2,8 @@ import type {
     ActiveCommandProjection,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
+import { terminalCommandProjectionSchema } from '@smart-room/contracts/projections';
+import { isSchema } from '@smart-room/contracts/validation';
 import { describe, expect, it } from 'vitest';
 
 import { toLedCardViewModel } from './led-card-view-model';
@@ -65,7 +67,15 @@ describe('toLedCardViewModel', () => {
         });
     });
 
-    it('does not duplicate a correlated HTTP rejection and terminal command failure', () => {
+    it('does not duplicate a correlated projection and latest terminal command failure', () => {
+        const correlatedCommand: TerminalCommandProjection = {
+            ...createPendingCommand(),
+            status: 'failed',
+            failedAt: '2026-08-06T12:00:06Z',
+            reason: 'command_already_active',
+            message: 'Device already has an active command.',
+        };
+        expect(isSchema(terminalCommandProjectionSchema, correlatedCommand)).toBe(true);
         const viewModel = toLedCardViewModel({
             device: createLed(),
             recentCommand: {
@@ -86,8 +96,7 @@ describe('toLedCardViewModel', () => {
                 reason: 'command_already_active',
                 message: 'Device already has an active command.',
             },
-            transportError: 'Device already has an active command.',
-            transportErrorCommandId: 'cmd-1',
+            correlatedCommand,
             realtimeUncertain: false,
             submitting: false,
             interactionLocked: false,

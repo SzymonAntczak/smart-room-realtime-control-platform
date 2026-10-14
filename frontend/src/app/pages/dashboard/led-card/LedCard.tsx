@@ -11,12 +11,15 @@ import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../../features/date-time';
 import { Alert, Button, DeviceCard } from '../../../ui';
 import { getDeviceDisplayName } from '../device-display-name';
+import { VolatileEvidence } from '../volatile-evidence/VolatileEvidence';
 
+import { CommandEvidence } from './command-evidence/CommandEvidence';
 import { type LedCardAlert, toLedCardViewModel } from './led-card-view-model';
 import styles from './LedCard.module.css';
 import { useLedCommandRequest } from './useLedCommandRequest';
 
 type ObservationStatus = DeviceProjection['observationStatus'][string];
+const noRecentCommands: readonly TerminalCommandProjection[] = [];
 
 export interface LedDeviceProjection extends Omit<
     DeviceProjection,
@@ -32,28 +35,29 @@ export interface LedDeviceProjection extends Omit<
 export function LedCard({
     device,
     activeCommand,
-    recentCommand,
+    recentCommands = noRecentCommands,
     headerAction,
     interactionLocked = false,
     realtimeUncertain = false,
 }: {
     device: LedDeviceProjection;
     activeCommand?: ActiveCommandProjection;
-    recentCommand?: TerminalCommandProjection;
+    recentCommands?: readonly TerminalCommandProjection[];
     headerAction?: ReactNode;
     interactionLocked?: boolean;
     realtimeUncertain?: boolean;
 }) {
     const { t } = useTranslation(['common', 'dashboard']);
-    const { requestPower, submitting, transportError, transportErrorCommandId } =
-        useLedCommandRequest(device.deviceId);
+    const { requestPower, submitting, transportError, admissionEvidence, correlatedCommand } =
+        useLedCommandRequest(device.deviceId, activeCommand, recentCommands);
 
     const viewModel = toLedCardViewModel({
         device,
         activeCommand,
-        recentCommand,
+        recentCommand: recentCommands[0],
         transportError,
-        transportErrorCommandId,
+        admissionEvidence,
+        correlatedCommand,
         realtimeUncertain,
         submitting,
         interactionLocked,
@@ -91,6 +95,15 @@ export function LedCard({
                     </strong>
                 </span>
             </div>
+            <VolatileEvidence
+                dimensions={viewModel.deviceEvidence.map(({ label, durability }) => ({
+                    label: t(`durability.${label}`, { ns: 'dashboard' }),
+                    durability,
+                }))}
+            />
+            {viewModel.commandEvidence.map((evidence) => (
+                <CommandEvidence key={evidence.command.commandId} evidence={evidence} />
+            ))}
             <div className={styles.actions} aria-label={t('led.controls', { ns: 'dashboard' })}>
                 <Button
                     variant={viewModel.isOn ? 'filled' : 'outlined'}

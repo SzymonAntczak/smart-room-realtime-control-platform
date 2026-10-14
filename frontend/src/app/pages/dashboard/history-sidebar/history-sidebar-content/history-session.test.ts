@@ -25,6 +25,41 @@ const page = (
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 describe('user history session', () => {
+    it('preserves volatile entry durability when storage recovers without replacement evidence', () => {
+        const durableOther = { ...fixtures.timeout, recordId: `rec:v1:sha256:${'d'.repeat(64)}` };
+        const volatile: UserHistoryItem = {
+            kind: 'attempt_failed',
+            recordId: fixtures.failure.recordId,
+            occurredAt: fixtures.failure.occurredAt,
+            source: fixtures.failure.source,
+            deviceId: 'led-main',
+            deviceName: 'Main LED',
+            durability: 'volatile',
+        };
+        expect(isUserHistoryItem(volatile)).toBe(true);
+        expect(isUserHistoryItem(durableOther)).toBe(true);
+        const fetcher = vi.fn<typeof fetch>();
+        const session = createHistorySession(createHistoryClient(fetcher));
+        session.acceptRealtime({ ...baseline, history: [durableOther, volatile] });
+
+        for (const status of ['degraded', 'recovering'] as const) {
+            session.acceptRealtime({
+                kind: 'addition',
+                storage: {
+                    ...baseline.storage,
+                    status,
+                    reason: `storage_${status}`,
+                },
+            });
+        }
+
+        session.acceptRealtime({ kind: 'addition', storage: baseline.storage });
+        expect(session.getState().items).toEqual(expect.arrayContaining([volatile, durableOther]));
+        expect(session.getState().items).toHaveLength(2);
+        expect(fetcher).not.toHaveBeenCalled();
+        session.close();
+    });
+
     it('keeps closure terminal even after overlay overflow and later public operations', async () => {
         const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response(historyPage([])));
         const session = createHistorySession(createHistoryClient(fetcher));

@@ -17,11 +17,7 @@ export function DevPanelButton({
         variant === 'close' ? styles.close : variant === 'trigger' ? styles.trigger : styles.action;
 
     return (
-        <Button
-            {...props}
-            variant="outlined"
-            className={`${variantClass} ${className ?? ''}`}
-        >
+        <Button {...props} variant="outlined" className={`${variantClass} ${className ?? ''}`}>
             {children}
         </Button>
     );

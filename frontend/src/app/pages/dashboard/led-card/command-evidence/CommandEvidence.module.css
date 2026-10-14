@@ -1,0 +1,11 @@
+.evidence {
+    margin-block: var(--space-3);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+    overflow-wrap: anywhere;
+}
+
+.evidence p {
+    margin-block: var(--space-1);
+    color: var(--color-text-muted);
+}

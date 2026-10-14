@@ -1,5 +1,7 @@
 import type {
+    AcceptedCommandResponse,
     ActiveCommandProjection,
+    RejectedCommandResponse,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
 
@@ -18,6 +20,13 @@ export type LedCardAlert =
     | { readonly kind: 'requested'; readonly power: 'on' | 'off' }
     | { readonly kind: 'command-confirmed'; readonly time: string };
 
+export type LedCommandEvidence =
+    | { context: 'admission'; command: AcceptedCommandResponse | RejectedCommandResponse }
+    | {
+          context: 'active' | 'recent' | 'correlated';
+          command: ActiveCommandProjection | TerminalCommandProjection;
+      };
+
 type LedCardViewModel = {
     availability: LedDeviceProjection['availability'];
     availabilityTone: 'success' | 'danger' | 'warning';
@@ -25,6 +34,11 @@ type LedCardViewModel = {
     isOn: boolean;
     isInteractionDisabled: boolean;
     alert: { messages: readonly LedCardAlert[]; variant?: AlertVariant };
+    deviceEvidence: {
+        label: 'availability' | 'health' | 'power';
+        durability: LedDeviceProjection['availabilityDurability'];
+    }[];
+    commandEvidence: LedCommandEvidence[];
 };
 
 export function toLedCardViewModel({
@@ -32,7 +46,8 @@ export function toLedCardViewModel({
     activeCommand,
     recentCommand,
     transportError,
-    transportErrorCommandId,
+    admissionEvidence,
+    correlatedCommand,
     realtimeUncertain,
     submitting,
     interactionLocked,
@@ -41,21 +56,34 @@ export function toLedCardViewModel({
     activeCommand?: ActiveCommandProjection;
     recentCommand?: TerminalCommandProjection;
     transportError?: string;
-    transportErrorCommandId?: string;
+    admissionEvidence?: AcceptedCommandResponse | RejectedCommandResponse;
+    correlatedCommand?: ActiveCommandProjection | TerminalCommandProjection;
     realtimeUncertain: boolean;
     submitting: boolean;
     interactionLocked: boolean;
 }): LedCardViewModel {
+    const additionalCommand =
+        correlatedCommand &&
+        correlatedCommand.commandId !== activeCommand?.commandId &&
+        correlatedCommand.commandId !== recentCommand?.commandId
+            ? correlatedCommand
+            : undefined;
+    const terminalCommands = [recentCommand, additionalCommand].filter(
+        (command): command is TerminalCommandProjection =>
+            command !== undefined && command.status !== 'accepted' && command.status !== 'pending',
+    );
     const errors: LedCardAlert[] = [
-        ...(transportError && transportErrorCommandId !== recentCommand?.commandId
-            ? [{ kind: 'raw' as const, message: transportError }]
+        ...(transportError ? [{ kind: 'raw' as const, message: transportError }] : []),
+        ...(admissionEvidence?.status === 'rejected'
+            ? [{ kind: 'raw' as const, message: admissionEvidence.message }]
             : []),
-        ...(recentCommand?.status === 'failed'
-            ? [{ kind: 'raw' as const, message: recentCommand.message }]
-            : []),
-        ...(recentCommand?.status === 'timed_out'
-            ? [{ kind: 'command-timed-out' as const, reason: recentCommand.reason }]
-            : []),
+        ...terminalCommands.flatMap((command): LedCardAlert[] =>
+            command.status === 'failed'
+                ? [{ kind: 'raw', message: command.message }]
+                : command.status === 'timed_out'
+                  ? [{ kind: 'command-timed-out', reason: command.reason }]
+                  : [],
+        ),
     ];
     const warnings: LedCardAlert[] = [
         ...(device.availability === 'offline'
@@ -74,19 +102,38 @@ export function toLedCardViewModel({
         ...(activeCommand
             ? [{ kind: 'requested' as const, power: activeCommand.requestedState.power }]
             : []),
-        ...(recentCommand?.status === 'confirmed'
-            ? [
-                  {
-                      kind: 'command-confirmed' as const,
-                      time: terminalTimestamp(recentCommand),
-                  },
-              ]
-            : []),
+        ...terminalCommands.flatMap((command): LedCardAlert[] =>
+            command.status === 'confirmed'
+                ? [{ kind: 'command-confirmed', time: terminalTimestamp(command) }]
+                : [],
+        ),
     ];
     const messages = [...errors, ...warnings, ...information];
     const hasReportedPower = device.reportedState.power !== undefined;
 
     return {
+        deviceEvidence: [
+            { label: 'availability', durability: device.availabilityDurability },
+            { label: 'health', durability: device.healthDurability },
+            ...(device.observationStatus.power
+                ? [
+                      {
+                          label: 'power' as const,
+                          durability: device.observationStatus.power.durability,
+                      },
+                  ]
+                : []),
+        ],
+        commandEvidence: [
+            ...(activeCommand ? [{ context: 'active' as const, command: activeCommand }] : []),
+            ...(recentCommand ? [{ context: 'recent' as const, command: recentCommand }] : []),
+            ...(additionalCommand
+                ? [{ context: 'correlated' as const, command: additionalCommand }]
+                : []),
+            ...(admissionEvidence
+                ? [{ context: 'admission' as const, command: admissionEvidence }]
+                : []),
+        ],
         availability: device.availability,
         availabilityTone:
             device.availability === 'online'
