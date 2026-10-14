@@ -14,6 +14,7 @@ interface RequestState {
     submitting: boolean;
     consumedByProjection: boolean;
     requestToken?: object;
+    recentCommandIdsAtResult?: readonly string[];
     admission?: AcceptedCommandResponse | RejectedCommandResponse;
     transportError?: string;
 }
@@ -25,6 +26,7 @@ export function useLedCommandRequest(
 ) {
     const { t } = useTranslation('dashboard');
     const inFlight = useRef<{ deviceId: string } | undefined>(undefined);
+    const latestRecentCommandIds = useRef<readonly string[]>([]);
     const [state, setState] = useState<RequestState>({
         deviceId,
         submitting: false,
@@ -40,11 +42,24 @@ export function useLedCommandRequest(
             ? state
             : { deviceId, submitting: false, consumedByProjection: false };
     const admission = current.admission;
+    const recentCommandIds = recentCommands.map(({ commandId }) => commandId);
     const correlatedCommand = admission
         ? activeCommand?.commandId === admission.commandId
             ? activeCommand
             : recentCommands.find((command) => command.commandId === admission.commandId)
         : undefined;
+    const localFailure = current.transportError !== undefined || admission?.status === 'rejected';
+    const newerTerminalCommand =
+        localFailure &&
+        recentCommands.some(
+            (command) =>
+                command.commandId !== admission?.commandId &&
+                !current.recentCommandIdsAtResult?.includes(command.commandId),
+        );
+
+    useEffect(() => {
+        latestRecentCommandIds.current = recentCommandIds;
+    }, [recentCommandIds]);
 
     // SSE takes precedence immediately; consuming admission is sticky even if
     // the matching projection later leaves the bounded recent-command cache.
@@ -61,7 +76,12 @@ export function useLedCommandRequest(
 
         const requestToken = { deviceId };
         inFlight.current = requestToken;
-        setState({ deviceId, requestToken, submitting: true, consumedByProjection: false });
+        setState({
+            deviceId,
+            requestToken,
+            submitting: true,
+            consumedByProjection: false,
+        });
 
         try {
             const result = await submitLedPowerCommand({
@@ -75,8 +95,14 @@ export function useLedCommandRequest(
                     : {
                           ...latest,
                           ...('error' in result
-                              ? { transportError: result.message }
-                              : { admission: result }),
+                              ? {
+                                    transportError: result.message,
+                                    recentCommandIdsAtResult: latestRecentCommandIds.current,
+                                }
+                              : {
+                                    admission: result,
+                                    recentCommandIdsAtResult: latestRecentCommandIds.current,
+                                }),
                       },
             );
         } catch {
@@ -86,6 +112,7 @@ export function useLedCommandRequest(
                     : {
                           ...latest,
                           transportError: t('led.commandRequestFailed'),
+                          recentCommandIdsAtResult: latestRecentCommandIds.current,
                       },
             );
         } finally {
@@ -107,9 +134,11 @@ export function useLedCommandRequest(
     return {
         requestPower,
         submitting: current.submitting,
-        transportError: current.transportError,
+        transportError: newerTerminalCommand ? undefined : current.transportError,
         admissionEvidence:
-            !correlatedCommand && !current.consumedByProjection ? admission : undefined,
+            !newerTerminalCommand && !correlatedCommand && !current.consumedByProjection
+                ? admission
+                : undefined,
         correlatedCommand,
     };
 }

@@ -157,6 +157,28 @@ describe('useLedCommandRequest', () => {
         },
     );
 
+    it('keeps an accepted local command loading when an unrelated terminal arrives before HTTP', async () => {
+        const pending = deferred<AcceptedCommandResponse>();
+        submitLedPowerCommand.mockReturnValueOnce(pending.promise);
+        const { result, rerender } = requestHook();
+        await act(async () => {
+            void result.current.requestPower('on');
+        });
+
+        const remoteTerminal = {
+            ...createConfirmedCommand(),
+            commandId: 'cmd-remote',
+        };
+        rerender({ deviceId: 'led-main', recent: [remoteTerminal] });
+        await act(async () => {
+            pending.resolve(accepted);
+        });
+
+        expect(result.current.submitting).toBe(false);
+        expect(result.current.admissionEvidence).toEqual(accepted);
+        expect(result.current.correlatedCommand).toBeUndefined();
+    });
+
     it('reconciles admission against an active projection without rewriting its lifecycle', async () => {
         submitLedPowerCommand.mockResolvedValue(accepted);
         const { result, rerender } = requestHook();
@@ -245,6 +267,38 @@ describe('useLedCommandRequest', () => {
         expect(result.current.admissionEvidence).toBeUndefined();
         expect(result.current.correlatedCommand).toBeUndefined();
     });
+
+    it.each(['transport error', 'rejection'] as const)(
+        'clears a stored local %s when a newer remote terminal report arrives',
+        async (kind) => {
+            const previous = { ...createConfirmedCommand(), commandId: 'cmd-before' };
+
+            if (kind === 'transport error') {
+                submitLedPowerCommand.mockRejectedValue(new Error('Disconnected'));
+            } else {
+                submitLedPowerCommand.mockResolvedValue(rejected);
+            }
+
+            const { result, rerender } = requestHook({
+                deviceId: 'led-main',
+                recent: [previous],
+            });
+            await act(async () => {
+                await result.current.requestPower('on');
+            });
+            expect(
+                kind === 'transport error'
+                    ? result.current.transportError
+                    : result.current.admissionEvidence,
+            ).toBeTruthy();
+
+            const newer = { ...createConfirmedCommand(), commandId: 'cmd-after' };
+            rerender({ deviceId: 'led-main', recent: [newer, previous] });
+
+            expect(result.current.transportError).toBeUndefined();
+            expect(result.current.admissionEvidence).toBeUndefined();
+        },
+    );
 
     it('allows a fresh request after switching away and back while the old HTTP request remains pending', async () => {
         const pending = deferred<AcceptedCommandResponse>();

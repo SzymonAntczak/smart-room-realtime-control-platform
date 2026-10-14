@@ -221,10 +221,12 @@ describe('Dashboard composition', () => {
         const main = within(screen.getByTestId('led-main-led-card'));
         const second = within(screen.getByTestId('led-second-led-card'));
         expect(main.getByRole('button', { name: 'Włącz' })).toBeEnabled();
-        expect(main.getByText(/Main device rejected the command/)).toBeInTheDocument();
+        expect(main.getByText('Main device rejected the command.')).toBeInTheDocument();
         expect(second.getByRole('button', { name: 'Włącz' })).toBeDisabled();
-        expect(second.getByText(/Zażądano: Włączone/)).toBeInTheDocument();
-        expect(second.queryByText(/Main device rejected the command/)).toBeNull();
+        expect(
+            second.getByText('Zażądano: Włączone — oczekiwanie na raport urządzenia.'),
+        ).toBeInTheDocument();
+        expect(second.queryByText('Main device rejected the command.')).toBeNull();
         expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
     });
 

@@ -20,34 +20,23 @@ export type LedCardAlert =
     | { readonly kind: 'requested'; readonly power: 'on' | 'off' }
     | { readonly kind: 'command-confirmed'; readonly time: string };
 
-export type LedCommandEvidence =
-    | { context: 'admission'; command: AcceptedCommandResponse | RejectedCommandResponse }
-    | {
-          context: 'active' | 'recent' | 'correlated';
-          command: ActiveCommandProjection | TerminalCommandProjection;
-      };
-
 type LedCardViewModel = {
     availability: LedDeviceProjection['availability'];
     availabilityTone: 'success' | 'danger' | 'warning';
     hasReportedPower: boolean;
     isOn: boolean;
     isInteractionDisabled: boolean;
+    isLoading: boolean;
     alert: { messages: readonly LedCardAlert[]; variant?: AlertVariant };
-    deviceEvidence: {
-        label: 'availability' | 'health' | 'power';
-        durability: LedDeviceProjection['availabilityDurability'];
-    }[];
-    commandEvidence: LedCommandEvidence[];
 };
 
 export function toLedCardViewModel({
     device,
     activeCommand,
     recentCommand,
-    transportError,
-    admissionEvidence,
     correlatedCommand,
+    admissionEvidence,
+    requestError,
     realtimeUncertain,
     submitting,
     interactionLocked,
@@ -55,25 +44,30 @@ export function toLedCardViewModel({
     device: LedDeviceProjection;
     activeCommand?: ActiveCommandProjection;
     recentCommand?: TerminalCommandProjection;
-    transportError?: string;
-    admissionEvidence?: AcceptedCommandResponse | RejectedCommandResponse;
     correlatedCommand?: ActiveCommandProjection | TerminalCommandProjection;
+    admissionEvidence?: AcceptedCommandResponse | RejectedCommandResponse;
+    requestError?: string;
     realtimeUncertain: boolean;
     submitting: boolean;
     interactionLocked: boolean;
 }): LedCardViewModel {
+    const correlatedIsNewest =
+        correlatedCommand !== undefined &&
+        (recentCommand === undefined || recentCommand.commandId === correlatedCommand.commandId);
     const additionalCommand =
-        correlatedCommand &&
-        correlatedCommand.commandId !== activeCommand?.commandId &&
-        correlatedCommand.commandId !== recentCommand?.commandId
+        !activeCommand && correlatedIsNewest && recentCommand === undefined
             ? correlatedCommand
             : undefined;
     const terminalCommands = [recentCommand, additionalCommand].filter(
         (command): command is TerminalCommandProjection =>
             command !== undefined && command.status !== 'accepted' && command.status !== 'pending',
     );
+    const isLoading =
+        submitting ||
+        activeCommand !== undefined ||
+        (admissionEvidence?.status === 'accepted' && correlatedCommand === undefined);
     const errors: LedCardAlert[] = [
-        ...(transportError ? [{ kind: 'raw' as const, message: transportError }] : []),
+        ...(requestError ? [{ kind: 'raw' as const, message: requestError }] : []),
         ...(admissionEvidence?.status === 'rejected'
             ? [{ kind: 'raw' as const, message: admissionEvidence.message }]
             : []),
@@ -109,31 +103,10 @@ export function toLedCardViewModel({
         ),
     ];
     const messages = [...errors, ...warnings, ...information];
+
     const hasReportedPower = device.reportedState.power !== undefined;
 
     return {
-        deviceEvidence: [
-            { label: 'availability', durability: device.availabilityDurability },
-            { label: 'health', durability: device.healthDurability },
-            ...(device.observationStatus.power
-                ? [
-                      {
-                          label: 'power' as const,
-                          durability: device.observationStatus.power.durability,
-                      },
-                  ]
-                : []),
-        ],
-        commandEvidence: [
-            ...(activeCommand ? [{ context: 'active' as const, command: activeCommand }] : []),
-            ...(recentCommand ? [{ context: 'recent' as const, command: recentCommand }] : []),
-            ...(additionalCommand
-                ? [{ context: 'correlated' as const, command: additionalCommand }]
-                : []),
-            ...(admissionEvidence
-                ? [{ context: 'admission' as const, command: admissionEvidence }]
-                : []),
-        ],
         availability: device.availability,
         availabilityTone:
             device.availability === 'online'
@@ -143,12 +116,14 @@ export function toLedCardViewModel({
                   : 'warning',
         hasReportedPower,
         isOn: device.reportedState.power === 'on',
+        isLoading,
         isInteractionDisabled:
             device.commandAvailability.policy === 'block' ||
             realtimeUncertain ||
             submitting ||
-            interactionLocked ||
             activeCommand !== undefined ||
+            (admissionEvidence?.status === 'accepted' && correlatedCommand === undefined) ||
+            interactionLocked ||
             !hasReportedPower,
         alert: {
             messages,

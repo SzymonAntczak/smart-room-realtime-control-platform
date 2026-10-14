@@ -49,8 +49,8 @@ the observation was stored.
 ## Command Path
 
 1. The user sends a command from the frontend.
-2. The UI may show the request as `submitting` while waiting for backend
-   acceptance.
+2. The UI shows one loading state from submission through backend acceptance and
+   until a device report or other trusted source resolves the active command.
 3. The backend accepts or rejects the command request.
 4. After acceptance, the backend records the requested state as `accepted`.
 5. The backend hands the command to an adapter. Once that hand-off succeeds,
@@ -135,6 +135,12 @@ Confirmed state: LED on
 ```
 
 The UI must not display a requested state as confirmed until the system receives a device report or another trusted confirmation source.
+
+For LED controls, the button label and pressed state always reflect the last
+reported device state. While a request is submitting, accepted or active, the
+control remains disabled and shows loading; HTTP acceptance alone does not
+change the reported state or indicate success. A timeout remains a
+missing-confirmation outcome and does not claim the device did not act.
 
 ## Late Confirmation
 

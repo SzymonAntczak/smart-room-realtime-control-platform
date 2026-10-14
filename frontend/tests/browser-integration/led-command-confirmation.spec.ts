@@ -41,6 +41,7 @@ test('keeps reported LED power unchanged until an accepted command is confirmed 
     await commandResponse;
 
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(ledCard.powerToggle).toHaveAttribute('aria-busy', 'true');
 
     await publishMockRoomUpdate(
         page.request,
@@ -52,7 +53,9 @@ test('keeps reported LED power unchanged until an accepted command is confirmed 
 
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'false');
     await expect(ledCard.powerToggle).toBeDisabled();
-    await expect(ledCard.commandStatus).toContainText('Zażądano:');
+    await expect(ledCard.commandStatus).toContainText(
+        'Zażądano: Włączone — oczekiwanie na raport urządzenia.',
+    );
 
     await publishMockRoomUpdate(
         page.request,
@@ -64,6 +67,8 @@ test('keeps reported LED power unchanged until an accepted command is confirmed 
 
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'true');
     await expect(ledCard.powerToggle).toBeEnabled();
+    await expect(ledCard.powerToggle).toHaveText('Włączone');
+    await expect(ledCard.commandStatus).toContainText('Polecenie potwierdzone o');
 });
 
 test('reconciles a lifecycle update published before the accepted HTTP response by commandId', async ({
@@ -82,12 +87,16 @@ test('reconciles a lifecycle update published before the accepted HTTP response 
     );
     await ledCard.powerToggle.click();
 
-    await expect(ledCard.commandStatus).toContainText('Zażądano:');
+    await expect(ledCard.commandStatus).toContainText(
+        'Zażądano: Włączone — oczekiwanie na raport urządzenia.',
+    );
     await expect(ledCard.powerToggle).toBeDisabled();
     await commandResponse;
 
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'false');
-    await expect(ledCard.commandStatus).toContainText('Zażądano:');
+    await expect(ledCard.commandStatus).toContainText(
+        'Zażądano: Włączone — oczekiwanie na raport urządzenia.',
+    );
 });
 
 test('shows a rejected command response without changing confirmed LED power', async ({ page }) => {
@@ -144,7 +153,9 @@ test('keeps reported LED power unchanged and shows the terminal timeout outcome'
 
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'false');
     await expect(ledCard.powerToggle).toBeEnabled();
-    await expect(ledCard.commandStatus).toContainText('confirmation_not_received');
+    await expect(ledCard.commandStatus).toContainText(
+        'Upłynął limit czasu polecenia: confirmation_not_received.',
+    );
 });
 
 test('updates observed LED power after a timeout without reconfirming the command', async ({
@@ -178,7 +189,9 @@ test('updates observed LED power after a timeout without reconfirming the comman
             recentCommands: [createTimedOutLedCommand()],
         }),
     );
-    await expect(ledCard.commandStatus).toContainText('confirmation_not_received');
+    await expect(ledCard.commandStatus).toContainText(
+        'Upłynął limit czasu polecenia: confirmation_not_received.',
+    );
 
     await publishMockRoomUpdate(
         page.request,
@@ -187,6 +200,39 @@ test('updates observed LED power after a timeout without reconfirming the comman
 
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'true');
     await expect(ledCard.powerToggle).toBeEnabled();
-    await expect(ledCard.commandStatus).toContainText('confirmation_not_received');
-    await expect(ledCard.commandStatus).not.toContainText('Polecenie potwierdzone');
+    await expect(ledCard.commandStatus).toContainText(
+        'Upłynął limit czasu polecenia: confirmation_not_received.',
+    );
+});
+
+test('keeps the LED control visible on mobile and desktop and usable from the keyboard', async ({
+    page,
+}) => {
+    await resetMockRoom(page.request);
+    const realtimeRequest = page.waitForRequest(mockBffUrls.realtime);
+    await page.goto('/');
+    await realtimeRequest;
+    const ledCard = new LedCard(page, 'led-main');
+
+    for (const viewport of [
+        { width: 375, height: 812 },
+        { width: 1280, height: 800 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await expect(ledCard.powerToggle).toBeVisible();
+        const bounds = await ledCard.powerToggle.boundingBox();
+        expect(bounds).not.toBeNull();
+
+        expect(bounds?.x).toBeGreaterThanOrEqual(0);
+
+        expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(viewport.width);
+    }
+
+    const commandResponse = page.waitForResponse(
+        (response) => response.url() === mockBffUrls.commands && response.status() === 202,
+    );
+    await ledCard.powerToggle.focus();
+    await page.keyboard.press('Enter');
+    await commandResponse;
+    await expect(ledCard.powerToggle).toHaveAttribute('aria-busy', 'true');
 });

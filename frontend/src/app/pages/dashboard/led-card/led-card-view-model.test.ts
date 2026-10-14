@@ -1,5 +1,5 @@
 import type {
-    ActiveCommandProjection,
+    AcceptedCommandResponse,
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
 import { terminalCommandProjectionSchema } from '@smart-room/contracts/projections';
@@ -10,14 +10,49 @@ import { toLedCardViewModel } from './led-card-view-model';
 import type { LedDeviceProjection } from './LedCard';
 
 describe('toLedCardViewModel', () => {
-    it('orders errors, warnings, and command progress while retaining error severity', () => {
+    it('keeps an accepted command loading until its realtime projection arrives', () => {
+        const accepted: AcceptedCommandResponse = {
+            commandId: 'cmd-1',
+            status: 'accepted',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
+        };
+        const unrelatedRecentCommand: TerminalCommandProjection = {
+            ...createPendingCommand(),
+            commandId: 'cmd-remote',
+            status: 'confirmed',
+            confirmedAt: '2026-08-06T12:01:00Z',
+        };
+        const viewModel = toLedCardViewModel({
+            device: createLed(),
+            recentCommand: unrelatedRecentCommand,
+            admissionEvidence: accepted,
+            realtimeUncertain: false,
+            submitting: false,
+            interactionLocked: false,
+        });
+
+        expect(viewModel.isLoading).toBe(true);
+        expect(viewModel.isInteractionDisabled).toBe(true);
+        expect(viewModel.alert).toEqual({
+            messages: [{ kind: 'command-confirmed', time: '2026-08-06T12:01:00Z' }],
+            variant: 'info',
+        });
+    });
+
+    it('shows a stable timeout error alongside current device warnings', () => {
+        const timedOut: TerminalCommandProjection = {
+            ...createPendingCommand(),
+            status: 'timed_out',
+            timedOutAt: '2026-08-06T12:00:06Z',
+            reason: 'confirmation_missing',
+        };
+        expect(isSchema(terminalCommandProjectionSchema, timedOut)).toBe(true);
         const viewModel = toLedCardViewModel({
             device: {
                 ...createLed(),
                 availability: 'offline',
-                availabilityReason: 'device_unreachable',
                 health: 'degraded',
-                healthReason: 'partial_data',
                 observationStatus: {
                     power: {
                         freshness: 'stale',
@@ -26,88 +61,112 @@ describe('toLedCardViewModel', () => {
                     },
                 },
             },
-            activeCommand: createPendingCommand(),
-            recentCommand: createTimedOutCommand(),
-            transportError: 'Could not submit LED command.',
+            recentCommand: timedOut,
             realtimeUncertain: true,
-            submitting: true,
+            submitting: false,
             interactionLocked: false,
         });
 
         expect(viewModel.alert).toEqual({
             messages: [
-                { kind: 'raw', message: 'Could not submit LED command.' },
                 { kind: 'command-timed-out', reason: 'confirmation_missing' },
-                { kind: 'offline', reason: 'device_unreachable' },
-                { kind: 'degraded', reason: 'partial_data' },
+                { kind: 'offline', reason: undefined },
+                { kind: 'degraded', reason: undefined },
                 { kind: 'stale' },
                 { kind: 'realtime-reconnecting' },
-                { kind: 'submitting' },
-                { kind: 'requested', power: 'on' },
             ],
             variant: 'error',
         });
-    });
-
-    it('keeps reported power distinct from a requested active command', () => {
-        const viewModel = toLedCardViewModel({
-            device: createLed(),
-            activeCommand: createPendingCommand(),
-            realtimeUncertain: false,
-            submitting: false,
-            interactionLocked: false,
-        });
-
-        expect(viewModel.hasReportedPower).toBe(true);
-        expect(viewModel.isOn).toBe(false);
         expect(viewModel.isInteractionDisabled).toBe(true);
-        expect(viewModel.alert).toEqual({
-            messages: [{ kind: 'requested', power: 'on' }],
-            variant: 'info',
-        });
     });
 
-    it('does not duplicate a correlated projection and latest terminal command failure', () => {
-        const correlatedCommand: TerminalCommandProjection = {
+    it('lets a newer terminal command replace an older locally correlated result', () => {
+        const newerTimedOut: TerminalCommandProjection = {
             ...createPendingCommand(),
-            status: 'failed',
-            failedAt: '2026-08-06T12:00:06Z',
-            reason: 'command_already_active',
-            message: 'Device already has an active command.',
+            commandId: 'cmd-newer',
+            status: 'timed_out',
+            timedOutAt: '2026-08-06T12:01:06Z',
+            reason: 'confirmation_missing',
+            durability: 'volatile',
+            lifecycleDurability: 'volatile',
         };
-        expect(isSchema(terminalCommandProjectionSchema, correlatedCommand)).toBe(true);
+        const olderConfirmed: TerminalCommandProjection = {
+            ...createPendingCommand(),
+            status: 'confirmed',
+            confirmedAt: '2026-08-06T12:00:06Z',
+        };
+        expect(isSchema(terminalCommandProjectionSchema, newerTimedOut)).toBe(true);
+        expect(isSchema(terminalCommandProjectionSchema, olderConfirmed)).toBe(true);
+
         const viewModel = toLedCardViewModel({
             device: createLed(),
-            recentCommand: {
-                commandId: 'cmd-1',
-                deviceId: 'led-main',
-                commandType: 'set.power',
-                requestedState: { power: 'on' },
-                requestedAt: '2026-08-06T12:00:00Z',
-                durability: 'durable',
-                lifecycleDurability: 'durable',
-                delivery: {
-                    status: 'handed_off',
-                    dispatchedAt: '2026-08-06T12:00:01Z',
-                    deadlineAt: '2026-08-06T12:00:06Z',
-                },
-                status: 'failed',
-                failedAt: '2026-08-06T12:00:02Z',
-                reason: 'command_already_active',
-                message: 'Device already has an active command.',
-            },
-            correlatedCommand,
+            recentCommand: newerTimedOut,
+            correlatedCommand: olderConfirmed,
             realtimeUncertain: false,
             submitting: false,
             interactionLocked: false,
         });
 
         expect(viewModel.alert.messages).toEqual([
-            { kind: 'raw', message: 'Device already has an active command.' },
+            { kind: 'command-timed-out', reason: 'confirmation_missing' },
         ]);
     });
 
-    it('keeps an unknown bootstrap state disabled without an alert', () => {
+    it('shows a newer active command and its volatile intent over an older local success', () => {
+        const olderConfirmed: TerminalCommandProjection = {
+            ...createPendingCommand(),
+            status: 'confirmed',
+            confirmedAt: '2026-08-06T12:00:06Z',
+        };
+        const newerActive = {
+            ...createPendingCommand(),
+            commandId: 'cmd-newer',
+            durability: 'volatile',
+            lifecycleDurability: 'volatile',
+        } as const;
+
+        const viewModel = toLedCardViewModel({
+            device: createLed(),
+            activeCommand: newerActive,
+            correlatedCommand: olderConfirmed,
+            realtimeUncertain: false,
+            submitting: false,
+            interactionLocked: false,
+        });
+
+        expect(viewModel.isLoading).toBe(true);
+        expect(viewModel.alert.messages).toEqual([{ kind: 'requested', power: 'on' }]);
+    });
+
+    it('keeps the established command alert separate from durability evidence', () => {
+        const viewModel = toLedCardViewModel({
+            device: {
+                ...createLed(),
+                availabilityDurability: 'volatile',
+                healthDurability: 'volatile',
+                observationStatus: {
+                    power: {
+                        freshness: 'fresh',
+                        lastObservedAt: '2026-08-06T12:00:00Z',
+                        durability: 'volatile',
+                    },
+                },
+            },
+            activeCommand: {
+                ...createPendingCommand(),
+                durability: 'volatile',
+                lifecycleDurability: 'durable',
+            },
+            realtimeUncertain: false,
+            submitting: false,
+            interactionLocked: false,
+        });
+
+        expect(viewModel.alert.messages).toEqual([{ kind: 'requested', power: 'on' }]);
+        expect(viewModel.alert.variant).toBe('info');
+    });
+
+    it('disables unknown power without inventing a pressed state', () => {
         const viewModel = toLedCardViewModel({
             device: {
                 ...createLed(),
@@ -123,8 +182,9 @@ describe('toLedCardViewModel', () => {
         });
 
         expect(viewModel.hasReportedPower).toBe(false);
+        expect(viewModel.isLoading).toBe(false);
         expect(viewModel.isInteractionDisabled).toBe(true);
-        expect(viewModel.alert).toEqual({ messages: [] });
+        expect(viewModel.alert.messages).toEqual([]);
     });
 });
 
@@ -152,7 +212,7 @@ function createLed(): LedDeviceProjection {
     };
 }
 
-function createPendingCommand(): ActiveCommandProjection {
+function createPendingCommand() {
     return {
         commandId: 'cmd-1',
         deviceId: 'led-main',
@@ -167,25 +227,5 @@ function createPendingCommand(): ActiveCommandProjection {
         },
         durability: 'durable',
         lifecycleDurability: 'durable',
-    };
-}
-
-function createTimedOutCommand(): TerminalCommandProjection {
-    return {
-        commandId: 'cmd-1',
-        deviceId: 'led-main',
-        commandType: 'set.power',
-        status: 'timed_out',
-        requestedState: { power: 'on' },
-        requestedAt: '2026-08-06T12:00:00Z',
-        delivery: {
-            status: 'handed_off',
-            dispatchedAt: '2026-08-06T12:00:01Z',
-            deadlineAt: '2026-08-06T12:00:06Z',
-        },
-        timedOutAt: '2026-08-06T12:00:06Z',
-        reason: 'confirmation_missing',
-        durability: 'durable',
-        lifecycleDurability: 'durable',
-    };
+    } as const;
 }

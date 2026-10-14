@@ -160,7 +160,9 @@ describe('App', () => {
         expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Temperatura okna' })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Główne LED' })).toBeInTheDocument();
-        expect(screen.getByText(/Zażądano: Włączone/)).toBeInTheDocument();
+        expect(
+            screen.getByText('Zażądano: Włączone — oczekiwanie na raport urządzenia.'),
+        ).toBeInTheDocument();
         expect(screen.queryByText('Scenariusze programistyczne')).not.toBeInTheDocument();
     });
 

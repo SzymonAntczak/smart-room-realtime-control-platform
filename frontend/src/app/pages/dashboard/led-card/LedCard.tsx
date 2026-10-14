@@ -4,16 +4,14 @@ import type {
 } from '@smart-room/contracts/commands';
 import type { PowerState } from '@smart-room/contracts/devices';
 import type { DeviceProjection } from '@smart-room/contracts/projections';
-import { Lightbulb, LightbulbOff, Power } from 'lucide-react';
+import { Lightbulb, LightbulbOff, LoaderCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../features/date-time';
 import { Alert, Button, DeviceCard } from '../../../ui';
 import { getDeviceDisplayName } from '../device-display-name';
-import { VolatileEvidence } from '../volatile-evidence/VolatileEvidence';
 
-import { CommandEvidence } from './command-evidence/CommandEvidence';
 import { type LedCardAlert, toLedCardViewModel } from './led-card-view-model';
 import styles from './LedCard.module.css';
 import { useLedCommandRequest } from './useLedCommandRequest';
@@ -55,7 +53,7 @@ export function LedCard({
         device,
         activeCommand,
         recentCommand: recentCommands[0],
-        transportError,
+        requestError: transportError,
         admissionEvidence,
         correlatedCommand,
         realtimeUncertain,
@@ -82,44 +80,32 @@ export function LedCard({
                 />
             }
         >
-            <div className={styles.power} aria-label={t('led.confirmedPower', { ns: 'dashboard' })}>
-                <PowerIcon aria-hidden="true" size={28} />
-                <span>
-                    {t('led.confirmed', { ns: 'dashboard' })}{' '}
-                    <strong>
-                        {viewModel.hasReportedPower
-                            ? viewModel.isOn
-                                ? t('led.on', { ns: 'dashboard' })
-                                : t('led.off', { ns: 'dashboard' })
-                            : t('led.unknown', { ns: 'dashboard' })}
-                    </strong>
-                </span>
-            </div>
-            <VolatileEvidence
-                dimensions={viewModel.deviceEvidence.map(({ label, durability }) => ({
-                    label: t(`durability.${label}`, { ns: 'dashboard' }),
-                    durability,
-                }))}
-            />
-            {viewModel.commandEvidence.map((evidence) => (
-                <CommandEvidence key={evidence.command.commandId} evidence={evidence} />
-            ))}
             <div className={styles.actions} aria-label={t('led.controls', { ns: 'dashboard' })}>
                 <Button
                     variant={viewModel.isOn ? 'filled' : 'outlined'}
                     type="button"
                     data-testid={`${device.deviceId}-power-toggle`}
-                    aria-label={
-                        viewModel.isOn
-                            ? t('led.turnOff', { ns: 'dashboard' })
-                            : t('led.turnOn', { ns: 'dashboard' })
-                    }
-                    aria-pressed={viewModel.isOn}
-                    className={viewModel.isOn ? styles.toggleOn : styles.toggleOff}
+                    aria-label={t(viewModel.isOn ? 'led.turnOff' : 'led.turnOn', {
+                        ns: 'dashboard',
+                    })}
+                    aria-pressed={viewModel.hasReportedPower ? viewModel.isOn : undefined}
+                    aria-busy={viewModel.isLoading}
+                    className={`${styles.toggle} ${viewModel.isOn ? styles.toggleOn : styles.toggleOff}`}
                     disabled={viewModel.isInteractionDisabled}
                     onClick={() => void requestPower(viewModel.isOn ? 'off' : 'on')}
                 >
-                    <Power aria-hidden="true" size={20} />
+                    {viewModel.isLoading ? (
+                        <LoaderCircle aria-hidden="true" className={styles.spinner} size={20} />
+                    ) : (
+                        <PowerIcon aria-hidden="true" size={20} />
+                    )}
+                    <span>
+                        {viewModel.hasReportedPower
+                            ? viewModel.isOn
+                                ? t('led.on', { ns: 'dashboard' })
+                                : t('led.off', { ns: 'dashboard' })
+                            : t('led.unknown', { ns: 'dashboard' })}
+                    </span>
                 </Button>
             </div>
         </DeviceCard>

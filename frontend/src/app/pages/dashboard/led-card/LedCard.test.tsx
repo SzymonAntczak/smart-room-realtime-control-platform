@@ -1,201 +1,120 @@
 import {
-    acceptedCommandResponseSchema,
     type PendingCommandProjection,
     rejectedCommandResponseSchema,
     type TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
 import {
-    activeCommandProjectionSchema,
     deviceProjectionSchema,
     terminalCommandProjectionSchema,
 } from '@smart-room/contracts/projections';
 import { isSchema } from '@smart-room/contracts/validation';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { LedCard, type LedDeviceProjection } from './LedCard';
 
-const formatTimestamp = vi.hoisted(() => vi.fn(() => 'formatted local timestamp'));
 const submitLedPowerCommand = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../features/date-time', () => ({ formatTimestamp }));
 vi.mock('../../../api/commands', () => ({ submitLedPowerCommand }));
 
 describe('LedCard', () => {
-    it('replaces rejected admission with a retained older result and keeps its labels separate from the latest result', async () => {
+    it('shows the reported state in one accessible control and keeps the empty alert', () => {
+        render(<LedCard device={createLed()} />);
+
+        const button = screen.getByRole('button', { name: 'Włącz' });
+        expect(button).toHaveTextContent('Wyłączone');
+        expect(button).toHaveAttribute('aria-pressed', 'false');
+        expect(button).toHaveAttribute('aria-busy', 'false');
+        expect(button.querySelector('svg')).toHaveClass('lucide-lightbulb-off');
+        expect(screen.getByTestId('led-main-command-status')).toHaveTextContent(
+            'Brak bieżących alertów.',
+        );
+        expect(screen.queryByText(/Potwierdzono:/)).toBeNull();
+        expect(screen.queryByRole('group', { name: /polecenie/i })).toBeNull();
+    });
+
+    it('shows loading while an accepted command waits for its device report', () => {
+        render(<LedCard device={createLed()} activeCommand={createPendingCommand()} />);
+
+        const button = screen.getByRole('button', { name: 'Włącz' });
+        expect(button).toHaveTextContent('Wyłączone');
+        expect(button).toBeDisabled();
+        expect(button).toHaveAttribute('aria-busy', 'true');
+        expect(screen.getByTestId('led-main-command-status')).toHaveTextContent(
+            'Zażądano: Włączone — oczekiwanie na raport urządzenia.',
+        );
+    });
+
+    it('shows success only with the reported state after confirmation', () => {
+        const confirmed: TerminalCommandProjection = {
+            ...createPendingCommand(),
+            status: 'confirmed',
+            confirmedAt: '2026-08-06T12:00:03Z',
+        };
+        expect(isSchema(terminalCommandProjectionSchema, confirmed)).toBe(true);
+        render(
+            <LedCard
+                device={{ ...createLed(), reportedState: { power: 'on' } }}
+                recentCommands={[confirmed]}
+            />,
+        );
+
+        const button = screen.getByRole('button', { name: 'Wyłącz' });
+        expect(button).toHaveTextContent('Włączone');
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+        expect(button.querySelector('svg')).toHaveClass('lucide-lightbulb');
+        expect(screen.getByTestId('led-main-command-status')).toHaveTextContent(
+            'Polecenie potwierdzone o',
+        );
+        expect(screen.getByTestId('led-main-command-status')).toHaveAttribute(
+            'data-variant',
+            'info',
+        );
+    });
+
+    it('restores the established rejection message from the response', async () => {
         const rejection = {
             commandId: 'cmd-1',
             status: 'rejected',
             reason: 'device_offline',
             message: 'Device is offline.',
-            durability: 'volatile',
-            lifecycleDurability: 'volatile',
+            durability: 'durable',
+            lifecycleDurability: 'durable',
         } as const;
         expect(isSchema(rejectedCommandResponseSchema, rejection)).toBe(true);
         submitLedPowerCommand.mockResolvedValueOnce(rejection);
-        const { rerender } = render(<LedCard device={createLed()} />);
+        render(<LedCard device={createLed()} />);
+
         await userEvent.setup().click(screen.getByRole('button', { name: 'Włącz' }));
-        expect(screen.getByRole('group', { name: 'Wynik przyjęcia żądania' })).toBeInTheDocument();
-        const older: TerminalCommandProjection = {
-            commandId: 'cmd-1',
-            deviceId: 'led-main',
-            commandType: 'set.power',
-            requestedState: { power: 'on' },
-            requestedAt: '2026-08-06T11:59:00Z',
-            status: 'failed',
-            failedAt: '2026-08-06T11:59:01Z',
-            reason: rejection.reason,
-            message: rejection.message,
-            durability: 'volatile',
-            lifecycleDurability: 'durable',
-        };
-        const latest: TerminalCommandProjection = {
-            ...createPendingCommand(),
-            commandId: 'cmd-newer',
-            status: 'confirmed',
-            confirmedAt: '2026-08-06T12:00:03Z',
-            lifecycleDurability: 'volatile',
-        };
-        expect(isSchema(terminalCommandProjectionSchema, older)).toBe(true);
-        expect(isSchema(terminalCommandProjectionSchema, latest)).toBe(true);
-        rerender(<LedCard device={createLed()} recentCommands={[latest, older]} />);
-        expect(screen.queryByRole('group', { name: 'Wynik przyjęcia żądania' })).toBeNull();
-        const correlated = within(screen.getByRole('group', { name: 'Wynik wysłanego polecenia' }));
-        const recent = within(screen.getByRole('group', { name: 'Ostatni wynik polecenia' }));
-        expect(correlated.getByText('Zlecenie — dane nieutrwalone')).toBeInTheDocument();
-        expect(correlated.queryByText('Status polecenia — dane nieutrwalone')).toBeNull();
-        expect(recent.getByText('Status polecenia — dane nieutrwalone')).toBeInTheDocument();
-        expect(recent.queryByText('Zlecenie — dane nieutrwalone')).toBeNull();
-        expect(screen.getAllByText(/Device is offline/)).toHaveLength(1);
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Device is offline.');
+        expect(screen.getByRole('button', { name: 'Włącz' })).toHaveTextContent('Wyłączone');
     });
 
-    it('associates mixed durability with each command and separately with stale device evidence', () => {
-        const active = { ...createPendingCommand(), lifecycleDurability: 'volatile' as const };
-        const recent: TerminalCommandProjection = {
-            commandId: 'cmd-previous',
-            deviceId: 'led-main',
-            commandType: 'set.power',
-            requestedState: { power: 'off' },
-            requestedAt: '2026-08-06T11:59:00Z',
-            status: 'failed',
-            failedAt: '2026-08-06T11:59:01Z',
-            reason: 'volatile_command_lost_on_restart',
-            message: 'Previous command was lost on restart.',
-            durability: 'volatile',
-            lifecycleDurability: 'durable',
+    it('preserves the timeout outcome when a late report changes the displayed state', () => {
+        const timedOut: TerminalCommandProjection = {
+            ...createPendingCommand(),
+            status: 'timed_out',
+            timedOutAt: '2026-08-06T12:00:06Z',
+            reason: 'confirmation_not_received',
         };
-        const device: LedDeviceProjection = {
-            ...createLed(),
-            healthDurability: 'volatile',
-            observationStatus: {
-                power: {
-                    freshness: 'stale',
-                    lastObservedAt: '2026-08-06T11:00:00Z',
-                    durability: 'volatile',
-                },
-            },
-        };
-        expect(isSchema(activeCommandProjectionSchema, active)).toBe(true);
-        expect(isSchema(terminalCommandProjectionSchema, recent)).toBe(true);
+        expect(isSchema(terminalCommandProjectionSchema, timedOut)).toBe(true);
+        const device: LedDeviceProjection = { ...createLed(), reportedState: { power: 'on' } };
         expect(isSchema(deviceProjectionSchema, device)).toBe(true);
-        render(
-            <LedCard
-                device={device}
-                activeCommand={active}
-                recentCommands={[recent]}
-                realtimeUncertain
-            />,
+        render(<LedCard device={device} recentCommands={[timedOut]} />);
+
+        expect(screen.getByRole('button', { name: 'Wyłącz' })).toHaveTextContent('Włączone');
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Upłynął limit czasu polecenia: confirmation_not_received.',
         );
-        const current = within(screen.getByRole('group', { name: 'Bieżące polecenie' }));
-        const previous = within(screen.getByRole('group', { name: 'Ostatni wynik polecenia' }));
-        expect(current.getByText('Status polecenia — dane nieutrwalone')).toBeInTheDocument();
-        expect(current.queryByText('Zlecenie — dane nieutrwalone')).toBeNull();
-        expect(previous.getByText('Zlecenie — dane nieutrwalone')).toBeInTheDocument();
-        expect(previous.queryByText('Status polecenia — dane nieutrwalone')).toBeNull();
-        expect(screen.getByText('Dane zasilania — dane nieutrwalone')).toBeInTheDocument();
-        expect(screen.getByText('Stan działania — dane nieutrwalone')).toBeInTheDocument();
-        expect(screen.queryByText('Dostępność — dane nieutrwalone')).toBeNull();
-        expect(screen.getByLabelText('Potwierdzone zasilanie LED')).toHaveTextContent('Wyłączone');
-        expect(screen.getByText(/Obserwacja stanu LED jest nieaktualna/)).toBeInTheDocument();
-        expect(screen.queryByText('cmd-previous')).toBeNull();
     });
 
-    it('replaces HTTP admission labels with authoritative SSE evidence without changing observed power', async () => {
-        const accepted = {
-            commandId: 'cmd-1',
-            status: 'accepted',
-            durability: 'volatile',
-            lifecycleDurability: 'volatile',
-        } as const;
-        expect(isSchema(acceptedCommandResponseSchema, accepted)).toBe(true);
-        submitLedPowerCommand.mockResolvedValueOnce(accepted);
-        const { rerender } = render(<LedCard device={createLed()} />);
-        await userEvent.setup().click(screen.getByRole('button', { name: 'Włącz' }));
-        const admission = screen.getByRole('group', { name: 'Wynik przyjęcia żądania' });
-        expect(admission).toHaveTextContent('To wynik przyjęcia, a nie bieżący status wykonania.');
-        expect(within(admission).getAllByText(/dane nieutrwalone/)).toHaveLength(2);
-        expect(screen.getByLabelText('Potwierdzone zasilanie LED')).toHaveTextContent('Wyłączone');
-        const active = {
-            ...createPendingCommand(),
-            durability: 'volatile' as const,
-            lifecycleDurability: 'durable' as const,
-        };
-        expect(isSchema(activeCommandProjectionSchema, active)).toBe(true);
-        rerender(<LedCard device={createLed()} activeCommand={active} />);
-        expect(screen.queryByRole('group', { name: 'Wynik przyjęcia żądania' })).toBeNull();
-        const current = within(screen.getByRole('group', { name: 'Bieżące polecenie' }));
-        expect(current.getByText('Zlecenie — dane nieutrwalone')).toBeInTheDocument();
-        expect(current.queryByText('Status polecenia — dane nieutrwalone')).toBeNull();
-        rerender(<LedCard device={createLed()} />);
-        expect(screen.queryByRole('group')).toBeNull();
-    });
-
-    it('keeps reported power confirmed while an on command is pending', () => {
-        render(<LedCard device={createLed()} activeCommand={createPendingCommand()} />);
-
-        expect(screen.getByLabelText('Potwierdzone zasilanie LED')).toHaveTextContent(
-            'Potwierdzono: Wyłączone',
-        );
-        expect(
-            screen.getByText('Zażądano: Włączone — oczekiwanie na raport urządzenia.'),
-        ).toBeInTheDocument();
-        expect(screen.getByText('Online')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
-        expect(screen.queryByText(/dane nieutrwalone/)).toBeNull();
-    });
-
-    it('keeps command progress visible beside degraded and stale warnings', () => {
-        render(
-            <LedCard
-                device={{
-                    ...createLed(),
-                    health: 'degraded',
-                    healthReason: 'partial_data',
-                    observationStatus: {
-                        power: {
-                            freshness: 'stale',
-                            lastObservedAt: '2026-08-06T11:00:00Z',
-                            durability: 'durable',
-                        },
-                    },
-                }}
-                activeCommand={createPendingCommand()}
-            />,
-        );
-
-        expect(screen.getByText(/partial_data/)).toBeInTheDocument();
-        expect(screen.getByText(/Obserwacja stanu LED jest nieaktualna/)).toBeInTheDocument();
-        expect(screen.getByText(/Zażądano: Włączone/)).toBeInTheDocument();
-    });
-
-    it('renders a bootstrap LED without inventing a confirmed power state', () => {
+    it('shows an unknown reported state without enabling the control', () => {
         const device: LedDeviceProjection = {
             ...createLed(),
             availability: 'unknown',
-            availabilityDurability: 'volatile',
             health: 'unknown',
-            healthDurability: 'volatile',
             reportedState: {},
             observationStatus: {},
             commandAvailability: { policy: 'block', reason: 'availability_unknown' },
@@ -204,22 +123,41 @@ describe('LedCard', () => {
         expect(isSchema(deviceProjectionSchema, device)).toBe(true);
         render(<LedCard device={device} />);
 
-        expect(screen.getByLabelText('Potwierdzone zasilanie LED')).toHaveTextContent(
-            'Potwierdzono: Nieznane',
+        const button = screen.getByRole('button', { name: 'Włącz' });
+        expect(button).toHaveTextContent('Nieznane');
+        expect(button).toBeDisabled();
+        expect(button).not.toHaveAttribute('aria-pressed');
+        expect(screen.getByTestId('led-main-command-status')).toHaveTextContent(
+            'Brak bieżących alertów.',
         );
-        expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
-        expect(screen.getByText('Dostępność — dane nieutrwalone')).toBeInTheDocument();
-        expect(screen.getByText('Stan działania — dane nieutrwalone')).toBeInTheDocument();
-        expect(screen.queryByText('Dane zasilania — dane nieutrwalone')).toBeNull();
     });
 
-    it('keeps an empty alert frame visible when the LED has nothing to report', () => {
-        render(<LedCard device={{ ...createLed(), activeCommandId: undefined }} />);
+    it('keeps the established stale, connection and requested-state alerts', () => {
+        const pending: PendingCommandProjection = {
+            ...createPendingCommand(),
+            durability: 'volatile',
+            lifecycleDurability: 'volatile',
+        };
+        const device: LedDeviceProjection = {
+            ...createLed(),
+            observationStatus: {
+                power: {
+                    freshness: 'stale',
+                    lastObservedAt: '2026-08-06T11:00:00Z',
+                    durability: 'volatile',
+                },
+            },
+        };
+        render(<LedCard device={device} activeCommand={pending} realtimeUncertain />);
 
-        expect(screen.getByText('Brak bieżących alertów.')).toBeInTheDocument();
+        const alert = screen.getByRole('alert');
+        expect(alert).toHaveTextContent('Zażądano: Włączone — oczekiwanie na raport urządzenia.');
+        expect(alert).toHaveTextContent('Strumień czasu rzeczywistego ponownie się łączy.');
+        expect(alert).toHaveTextContent('Obserwacja stanu LED jest nieaktualna');
+        expect(alert).not.toHaveTextContent('trwale zapisane');
     });
 
-    it('renders a supplied neutral header action and locks interaction when requested', () => {
+    it('renders a supplied header action and honors an interaction lock', () => {
         render(
             <LedCard
                 device={createLed()}
@@ -231,35 +169,6 @@ describe('LedCard', () => {
         expect(screen.getByRole('button', { name: 'Extra action' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
     });
-});
-
-it('formats a confirmed command timestamp for the browser before rendering it', () => {
-    render(
-        <LedCard
-            device={createLed()}
-            recentCommands={[
-                {
-                    commandId: 'cmd-1',
-                    deviceId: 'led-main',
-                    commandType: 'set.power',
-                    status: 'confirmed',
-                    requestedState: { power: 'on' },
-                    requestedAt: '2026-08-06T12:00:00Z',
-                    durability: 'durable',
-                    lifecycleDurability: 'durable',
-                    delivery: {
-                        status: 'handed_off',
-                        dispatchedAt: '2026-08-06T12:00:01Z',
-                        deadlineAt: '2026-08-06T12:00:06Z',
-                    },
-                    confirmedAt: '2026-08-06T12:00:06Z',
-                },
-            ]}
-        />,
-    );
-
-    expect(formatTimestamp).toHaveBeenCalledWith('2026-08-06T12:00:06Z');
-    expect(screen.getByText(/formatted local timestamp/)).toBeInTheDocument();
 });
 
 function createLed(): LedDeviceProjection {

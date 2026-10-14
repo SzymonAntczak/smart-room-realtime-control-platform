@@ -58,9 +58,8 @@ test('keeps controls available with volatile admission while storage is degraded
     });
 
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'false');
-    const admission = page.getByRole('group', { name: 'Wynik przyjęcia żądania' });
-    await expect(admission).toContainText('Zlecenie');
-    await expect(admission).toContainText('dane nieutrwalone');
+    await expect(ledCard.powerToggle).toHaveAttribute('aria-busy', 'true');
+    await expect(ledCard.commandStatus).toContainText('Brak bieżących alertów.');
     await expect(page.getByText('Brak istotnych zdarzeń.')).toBeVisible();
 
     await publishMockRoomUpdate(
@@ -71,6 +70,9 @@ test('keeps controls available with volatile admission while storage is degraded
         }),
     );
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(ledCard.commandStatus).toContainText(
+        'Zażądano: Włączone — oczekiwanie na raport urządzenia.',
+    );
 
     await publishMockRoomUpdate(
         page.request,
@@ -80,6 +82,7 @@ test('keeps controls available with volatile admission while storage is degraded
         }),
     );
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(ledCard.commandStatus).toContainText('Polecenie potwierdzone o');
 });
 
 test('disables new commands while recovering and restores idle controls when available', async ({
@@ -163,11 +166,8 @@ test('does not invent a command or retry when recovering SSE arrives before HTTP
     });
 
     await expect(ledCard.commandStatus).toContainText(recoveryMessage);
-    await expect(ledCard.commandStatus).not.toContainText('Zażądano:');
     await expect(ledCard.commandStatus).not.toContainText('dane nieutrwalone');
-    await expect(page.getByRole('group', { name: 'Wynik przyjęcia żądania' })).toHaveCount(0);
-    await expect(page.getByRole('group', { name: 'Bieżące polecenie' })).toHaveCount(0);
-    await expect(page.getByRole('group', { name: 'Ostatni wynik polecenia' })).toHaveCount(0);
+    await expect(ledCard.powerToggle).toHaveAttribute('aria-busy', 'false');
     await expect(page.getByText('Brak istotnych zdarzeń.')).toBeVisible();
 
     await publishMockRoomUpdate(
@@ -217,7 +217,6 @@ test('does not retry when HTTP 503 arrives before recovering SSE', async ({ page
     expect(await response.json()).toMatchObject({ error: 'platform_recovering' });
     await expect(ledCard.commandStatus).toContainText(recoveryMessage);
     await expect(ledCard.powerToggle).toHaveAttribute('aria-pressed', 'false');
-    await expect(page.getByRole('group', { name: 'Wynik przyjęcia żądania' })).toHaveCount(0);
 
     await publishMockRoomUpdate(
         page.request,

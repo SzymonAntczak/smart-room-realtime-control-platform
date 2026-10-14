@@ -1014,9 +1014,10 @@ Acceptance requires all of these outcomes:
   one fixed first-attempt deadline, and definite no-handoff never retries.
 - **AC-4:** Restart never redispatches a volatile command; a checkpointed active
   volatile command fails explicitly before the first snapshot.
-- **AC-5:** The UI can distinguish command-intent durability, lifecycle
-  durability, handed-off versus uncertain delivery evidence and every
-  applicable dimension of device-evidence durability.
+- **AC-5:** Command-intent durability, lifecycle durability, delivery certainty
+  and applicable device-evidence durability remain available to technical
+  observability. The LED control keeps its established alert messages and does
+  not add a separate durability summary to the command alert.
 - **AC-6:** `storage.gap.recorded` reaches a connected client through the same
   SSE connection; any required full projection reconciliation precedes it, but
   the gap itself remains on `platform.updated`.

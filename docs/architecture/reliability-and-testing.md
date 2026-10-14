@@ -319,8 +319,9 @@ Storage-aware UI focus areas:
 - the bounded live overlay starts before HTTP, survives all pages and cursor
   restart, is never replaced by a later page response and evicts only according
   to the documented view bound
-- a durable command intent with a volatile lifecycle and mixed durable/volatile
-  device evidence remain distinguishable
+- storage availability remains visible in the Dashboard alert; the LED control
+  keeps its established command alerts without listing command, lifecycle or
+  per-device evidence durability, which remains in technical observability
 
 The LED scenario timing and transport defaults are defined in
 [ADR: LED Command Transport and Operational Defaults](../decisions/adr-led-command-transport-and-operational-defaults.md).
