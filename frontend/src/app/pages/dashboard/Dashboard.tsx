@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Alert } from '../../ui';
 import styles from './Dashboard.module.css';
 import type { RenderableDeviceProjection } from './device-projection';
 import { HistorySidebar } from './history-sidebar/HistorySidebar';
@@ -27,9 +28,25 @@ export function Dashboard({
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;
     const realtimeUncertain =
         room.connectionStatus === 'reconnecting' || room.contractError !== undefined;
+    const storage = snapshot?.platform.storage;
+    const storageWarning =
+        storage?.status === 'degraded'
+            ? t('storage.degraded', {
+                  reason: storage.reason ? ` (${storage.reason})` : '',
+              })
+            : storage?.status === 'recovering'
+              ? t('storage.recovering', {
+                    reason: storage.reason ? ` (${storage.reason})` : '',
+                })
+              : undefined;
 
     return (
         <>
+            {storageWarning ? (
+                <div className={styles.storageWarning}>
+                    <Alert message={storageWarning} variant="warning" />
+                </div>
+            ) : null}
             <main className={styles.shell}>
                 <HistorySidebar
                     source={historySource}

@@ -21,7 +21,28 @@ const historySource = {
     requestBaseline: () => undefined,
 };
 
-function snapshot(): RenderableRoomSnapshot {
+function storageProjection(
+    status: 'available' | 'degraded' | 'recovering',
+): RenderableRoomSnapshot['platform']['storage'] {
+    if (status === 'available') {
+        return {
+            status,
+            changedAt: '2026-06-08T09:30:00Z',
+            historyGenerationId: 'generation-test',
+            storedThroughSequence: 3,
+        };
+    }
+
+    return {
+        status,
+        changedAt: '2026-06-08T09:30:00Z',
+        reason: `${status}_test_reason`,
+        historyGenerationId: 'generation-test',
+        storedThroughSequence: 3,
+    };
+}
+
+function snapshot(storage?: RenderableRoomSnapshot['platform']['storage']): RenderableRoomSnapshot {
     const baseline = createRoomSnapshotMessage();
     const temperature = createTemperatureDevice();
     const observation = temperature.observationStatus.temperature;
@@ -32,6 +53,7 @@ function snapshot(): RenderableRoomSnapshot {
 
     return {
         ...baseline.payload,
+        platform: { storage: storage ?? baseline.payload.platform.storage },
         devices: [
             {
                 ...temperature,
@@ -89,6 +111,60 @@ describe('Dashboard composition', () => {
             screen.getByText('Ponowne łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
         ).toBeInTheDocument();
         expect(overlay).toHaveBeenLastCalledWith(undefined);
+    });
+
+    it('does not show a storage warning before a room snapshot arrives', () => {
+        roomHook.mockReturnValue({
+            room: { status: 'connecting', connectionStatus: 'connecting' },
+            historySource,
+        });
+
+        render(<Dashboard />);
+
+        expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it.each(['degraded', 'recovering'] as const)(
+        'shows a warning for %s storage and includes its reason',
+        (status) => {
+            ready(snapshot(storageProjection(status)));
+
+            render(<Dashboard />);
+
+            const warning = screen.getByRole('alert');
+            expect(warning).toHaveAttribute('data-variant', 'warning');
+            expect(warning).toHaveTextContent(`${status}_test_reason`);
+            expect(warning).toHaveTextContent(
+                status === 'degraded'
+                    ? 'Trwały zapis danych jest niedostępny'
+                    : 'Trwa przywracanie trwałego zapisu danych',
+            );
+        },
+    );
+
+    it('hides the warning when storage becomes available', () => {
+        ready(snapshot(storageProjection('degraded')));
+        const { rerender } = render(<Dashboard />);
+
+        expect(screen.getByRole('alert')).toHaveTextContent('degraded_test_reason');
+
+        ready(snapshot(storageProjection('recovering')));
+        rerender(<Dashboard />);
+
+        expect(screen.getByRole('alert')).toHaveTextContent('recovering_test_reason');
+
+        ready(snapshot(storageProjection('available')));
+        rerender(<Dashboard />);
+
+        expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('does not show a storage warning for available storage', () => {
+        ready(snapshot(storageProjection('available')));
+
+        render(<Dashboard />);
+
+        expect(screen.queryByRole('alert')).toBeNull();
     });
 
     it('associates active and terminal commands with their owning LED cards', () => {

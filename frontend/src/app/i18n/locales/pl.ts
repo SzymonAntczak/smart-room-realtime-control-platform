@@ -61,6 +61,10 @@ export const pl = {
                 backend: 'backend',
             },
         },
+        storage: {
+            degraded: 'Trwały zapis danych jest niedostępny{{reason}}.',
+            recovering: 'Trwa przywracanie trwałego zapisu danych{{reason}}.',
+        },
         history: {
             scrollRegion: 'Przewijana historia zdarzeń',
             room: 'Historia pokoju',
