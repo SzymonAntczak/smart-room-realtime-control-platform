@@ -6,11 +6,12 @@ import { useParams } from 'react-router';
 
 import { formatTimestamp } from '../../features/date-time';
 import { getDeviceDisplayName } from '../../features/device-display';
+import { HistoryFeed, HistoryFilters, HistoryProvider } from '../../features/history';
 import { ButtonLink, StatusTag } from '../../ui';
 
 import styles from './DeviceDetails.module.css';
-import { EventHistory } from './event-history/EventHistory';
-import { TelemetryPanel } from './telemetry-panel/TelemetryPanel';
+import { TelemetryChart } from './telemetry-chart/TelemetryChart';
+import { TelemetryTable } from './telemetry-table/TelemetryTable';
 import { useDeviceDetails } from './useDeviceDetails';
 
 const noTelemetry: readonly RawTelemetrySampleProjection[] = [];
@@ -88,13 +89,22 @@ export function DeviceDetails() {
                     </section>
 
                     {device.role === 'temperature-sensor' ? (
-                        <TelemetryPanel samples={noTelemetry} />
-                    ) : (
-                        <EventHistory
-                            deviceId={device.deviceId}
-                            deviceName={name ?? device.deviceId}
-                        />
-                    )}
+                        <section className={styles.telemetry} aria-labelledby="telemetry-heading">
+                            <h2 id="telemetry-heading">{t('telemetryTitle')}</h2>
+                            <p>{t('historyUnavailable')}</p>
+                            <TelemetryChart samples={noTelemetry} />
+                            <TelemetryTable samples={noTelemetry} />
+                        </section>
+                    ) : null}
+
+                    <section className={styles.history} aria-labelledby="event-history-title">
+                        <h2 id="event-history-title">{t('eventHistory.title')}</h2>
+                        <p>{t('eventHistory.completeness')}</p>
+                        <HistoryProvider key={device.deviceId} mode="search" devices={[device]}>
+                            <HistoryFilters device={device} />
+                            <HistoryFeed />
+                        </HistoryProvider>
+                    </section>
 
                     {device.observationStatus.temperature?.lastObservedAt ? (
                         <p className={styles.observation}>

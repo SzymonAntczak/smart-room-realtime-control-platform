@@ -396,6 +396,14 @@ error state until results are ready; session invalidation asks for explicit
 refresh. These browser scenarios validate shared HTTP/SSE fixtures and do not
 replace production BFF filtering tests.
 
+Selected-device history tests verify hidden device selection, automatic device-only
+loading, date Search, applied-only Refresh and Clear reloading device-only history.
+Provider tests protect independent sessions, identity replacement, display-name
+stability, cancellation and StrictMode cleanup. Browser coverage verifies the
+shared feed in all three consumers with the existing room connection.
+Sensor details must show their telemetry chart and table alongside their own
+retained event history, without displaying another device's history.
+
 ## Manual Acceptance Checklist
 
 Before treating a milestone as done, verify:

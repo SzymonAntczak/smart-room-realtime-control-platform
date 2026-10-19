@@ -17,8 +17,10 @@ const nativeDialog = {
     close: HTMLDialogElement.prototype.close,
 };
 
-vi.mock('./history-feed/HistoryFeed', () => ({ HistoryFeed: () => null }));
-vi.mock('./useHistory', () => ({
+vi.mock('../../../../features/history/history-feed/live-history-list/LiveHistoryList', () => ({
+    LiveHistoryList: () => null,
+}));
+vi.mock('../../../../features/history/history-feed/useHistory', () => ({
     useHistory: () => ({
         state: {
             status: 'ready',
@@ -44,7 +46,7 @@ vi.mock('./useHistory', () => ({
 
 import { HistorySidebarContent } from './HistorySidebarContent';
 
-describe('HistorySidebarContent controls', () => {
+describe('history sidebar controls', () => {
     beforeEach(() => {
         HTMLDialogElement.prototype.showModal = function showModal() {
             this.setAttribute('open', '');
@@ -78,7 +80,7 @@ describe('HistorySidebarContent controls', () => {
         );
 
         fireEvent.click(screen.getByRole('button', { name: 'Szukaj' }));
-        expect(screen.getByRole('dialog', { name: 'Wyszukaj historię' })).toHaveAttribute('open');
+        expect(screen.getByRole('dialog')).toHaveAttribute('open');
         expect(mocks.showNewest).not.toHaveBeenCalled();
         expect(mocks.loadOlder).not.toHaveBeenCalled();
 

@@ -164,6 +164,47 @@ describe('dashboard room composition', () => {
         unmount();
     });
 
+    it('forwards every user-history addition synchronously even when React batches room renders', () => {
+        const fixture = createUserHistoryFixtures();
+        const { result, unmount } = renderHook(useRoom);
+        act(() =>
+            MockEventSource.latest().emitMessage({
+                messageType: 'room.snapshot',
+                revision: 0,
+                sentAt: fixture.snapshot.updatedAt,
+                payload: fixture.snapshot,
+            }),
+        );
+        expect(result.current.room.status).toBe('ready');
+        const listener = vi.fn();
+        result.current.historySource.subscribe(listener);
+        const additions = [1, 2].map((revision) => ({
+            ...fixture.failure,
+            recordId: `rec:v1:sha256:${String(revision).repeat(64)}`,
+            storageSequence: revision + 10,
+        }));
+        act(() => {
+            for (const [index, item] of additions.entries()) {
+                MockEventSource.latest().emitMessage({
+                    messageType: 'commands.updated',
+                    previousRevision: index,
+                    revision: index + 1,
+                    sentAt: fixture.snapshot.updatedAt,
+                    payload: {
+                        devices: fixture.snapshot.devices,
+                        activeCommands: [],
+                        recentCommands: [],
+                        userHistory: [item],
+                    },
+                });
+            }
+        });
+        expect(listener.mock.calls.map(([update]) => update.history?.[0]?.recordId)).toEqual(
+            additions.map((item) => item.recordId),
+        );
+        unmount();
+    });
+
     it('forwards every live telemetry addition synchronously even when React batches room renders', () => {
         const { telemetrySample } = createHistoryIdentityFixtures();
         const { result, unmount } = renderHook(useRoom);

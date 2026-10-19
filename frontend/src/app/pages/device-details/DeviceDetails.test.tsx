@@ -30,12 +30,13 @@ describe('device details navigation', () => {
 
     afterEach(() => vi.unstubAllGlobals());
 
-    it('focuses the page heading and resolves a device only after a valid snapshot', async () => {
+    it('shows sensor telemetry and starts its history only after a valid snapshot', async () => {
         renderAppAt('/device-details/temp-desk');
 
         const heading = screen.getByRole('heading', { name: 'Szczegóły urządzenia', level: 1 });
         await waitFor(() => expect(heading).toHaveFocus());
         expect(screen.queryByText('Nie znaleziono urządzenia o tym identyfikatorze.')).toBeNull();
+        expect(globalThis.fetch).not.toHaveBeenCalled();
 
         act(() =>
             MockEventSource.latest().emitMessage(
@@ -49,7 +50,19 @@ describe('device details navigation', () => {
         expect(screen.getByRole('table', { name: 'Pomiary temperatury' })).toHaveTextContent(
             'Historia pomiarów nie jest jeszcze dostępna.',
         );
-        expect(globalThis.fetch).not.toHaveBeenCalled();
+        expect(
+            screen.getByRole('img', { name: 'Wykres temperatury w czasie' }),
+        ).toHaveAccessibleDescription('Brak punktów pomiarowych do wyświetlenia.');
+        expect(
+            screen.getByRole('heading', { name: 'Historia zdarzeń urządzenia' }),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledOnce());
+        const request = vi.mocked(globalThis.fetch).mock.calls[0];
+        const requestedUrl = new URL(String(request?.[0]));
+        expect(requestedUrl.pathname).toBe('/room/history/user-history');
+        expect(requestedUrl.searchParams.get('deviceId')).toBe('temp-desk');
+        expect(requestedUrl.searchParams.get('pageSize')).toBe('50');
     });
 
     it('loads retained LED history only after a snapshot confirms the selected device', async () => {
@@ -71,6 +84,12 @@ describe('device details navigation', () => {
         expect(requestedUrl.pathname).toBe('/room/history/user-history');
         expect(requestedUrl.searchParams.get('deviceId')).toBe('led-main');
         expect(requestedUrl.searchParams.get('pageSize')).toBe('50');
+        expect(
+            screen.queryByRole('img', { name: 'Wykres temperatury w czasie' }),
+        ).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole('table', { name: 'Pomiary temperatury' }),
+        ).not.toBeInTheDocument();
     });
     it('reports an unknown device only after receiving its baseline', () => {
         renderAppAt('/device-details/missing-device');
@@ -79,6 +98,7 @@ describe('device details navigation', () => {
         expect(
             screen.getByText('Nie znaleziono urządzenia o tym identyfikatorze.'),
         ).toBeInTheDocument();
+        expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
     it('navigates from every device card and leaves only one active room connection', async () => {

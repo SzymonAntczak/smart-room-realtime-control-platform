@@ -44,6 +44,10 @@
     margin: 0;
 }
 
+.telemetry {
+    overflow: hidden;
+}
+
 .summary dl div {
     min-inline-size: 0;
 }
@@ -60,4 +64,10 @@
 
 .observation {
     color: var(--color-text-muted);
+}
+
+.history {
+    display: grid;
+    gap: var(--space-4);
+    min-inline-size: 0;
 }

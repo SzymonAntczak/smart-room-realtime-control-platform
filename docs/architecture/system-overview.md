@@ -161,8 +161,9 @@ Expected responsibilities:
 
 The Dashboard links each device card to a selected-device details page. The
 details page identifies the selected device and presents a temperature sensor's
-telemetry as both a trend and an equivalent raw-value table. For an LED, it
-presents the paged User History entries retained for that device. This is
+telemetry as both a trend and an equivalent raw-value table. Both LED and
+temperature-sensor details present the paged User History entries retained for
+the selected device. This is
 retained evidence and may be incomplete; it is not a complete device log, as
 defined by the [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
 Each live room page owns one realtime connection; navigating between these
@@ -284,6 +285,12 @@ in session state, while search shows only its error state until results are read
 Search actions never alter the Dashboard session. The
 [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md)
 owns both contexts and their detailed lifecycle, filter and accessibility rules.
+
+Device details reuses the history feature with a fixed device and optional local
+From/To days. It automatically reads device-only history; Search applies dates,
+Refresh repeats applied criteria and Clear removes dates and reloads device-only
+history. Each sidebar, modal and details view has an independent feature session.
+The Dashboard retains the room connection and forwards validated live updates.
 
 ### Device Adapters
 

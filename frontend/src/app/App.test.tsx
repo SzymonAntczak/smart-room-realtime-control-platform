@@ -63,18 +63,15 @@ vi.mock('react-virtuoso', async () => {
     };
 });
 
-vi.mock(
-    './pages/dashboard/history-sidebar/history-sidebar-content/history-feed/useHistoryVirtualizer',
-    async () => {
-        const { createRef } = await import('react');
+vi.mock('./features/history/history-feed/live-history-list/useHistoryVirtualizer', async () => {
+    const { createRef } = await import('react');
 
-        return {
-            useHistoryVirtualizer: () => ({
-                virtuosoRef: createRef(),
-            }),
-        };
-    },
-);
+    return {
+        useHistoryVirtualizer: () => ({
+            virtuosoRef: createRef(),
+        }),
+    };
+});
 describe('App', () => {
     beforeEach(() => {
         MockEventSource.instances.length = 0;

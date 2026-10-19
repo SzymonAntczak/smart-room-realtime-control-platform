@@ -18,6 +18,104 @@ import {
 
 test.use({ timezoneId: 'UTC' });
 
+test('shows sensor telemetry alongside retained history scoped to that sensor', async ({
+    page,
+}) => {
+    await resetMockRoom(page.request);
+    const snapshot = createOnlineLedRoomSnapshot();
+    snapshot.devices.push(createOnlineTemperatureDeviceProjection());
+    await setMockRoomSnapshot(page.request, snapshot);
+    const older = {
+        ...createAvailabilityHistoryItem(1, 'offline'),
+        occurredAt: '2026-09-19T10:00:00Z',
+    };
+    const newer = {
+        ...createAvailabilityHistoryItem(2, 'online'),
+        occurredAt: '2026-09-20T10:00:00Z',
+    };
+    const ledEntry = createPowerHistoryItem(3, '2026-09-21T10:00:00Z', 3, 'on');
+    await configureMockHistory(page.request, {
+        pages: [createHistoryPage([ledEntry, newer, older])],
+    });
+    const requests: URL[] = [];
+    page.on('request', (request) => {
+        const url = new URL(request.url());
+
+        if (url.pathname === '/room/history/user-history') {
+            requests.push(url);
+        }
+    });
+    await page.goto('/device-details/temp-desk');
+    await expect(page.getByRole('img', { name: 'Wykres temperatury w czasie' })).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Pomiary temperatury' })).toBeVisible();
+    const history = page.getByRole('region', { name: 'Przewijana historia zdarzeń urządzenia' });
+    await expect(history.getByTestId(`history-item-${older.recordId}`)).toBeVisible();
+    await expect(history.getByTestId(`history-item-${newer.recordId}`)).toBeVisible();
+    await expect(history.getByTestId(`history-item-${ledEntry.recordId}`)).toHaveCount(0);
+    await expect(page.getByRole('combobox')).toHaveCount(0);
+    const initialRequestCount = requests.length;
+    expect(initialRequestCount).toBeGreaterThan(0);
+    await page.getByLabel('Od', { exact: true }).fill('2026-09-20');
+    expect(requests).toHaveLength(initialRequestCount);
+    await page.getByRole('button', { name: 'Szukaj', exact: true }).click();
+    await expect(history.getByTestId(`history-item-${newer.recordId}`)).toBeVisible();
+    await expect(history.getByTestId(`history-item-${older.recordId}`)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Wyczyść filtry' }).click();
+    await expect(history.getByTestId(`history-item-${older.recordId}`)).toBeVisible();
+    expect(requests.every((url) => url.searchParams.get('deviceId') === 'temp-desk')).toBe(true);
+    await expect(page.getByRole('table', { name: 'Pomiary temperatury' })).toBeVisible();
+});
+
+test('filters LED history by dates and clears back to its automatically loaded device history', async ({
+    page,
+}) => {
+    await resetMockRoom(page.request);
+    const snapshot = createOnlineLedRoomSnapshot();
+    snapshot.platform.storage = {
+        ...snapshot.platform.storage,
+        status: 'available',
+        historyGenerationId: 'mock-history-generation',
+        storedThroughSequence: 10000,
+    };
+    await setMockRoomSnapshot(page.request, snapshot);
+    const older = createPowerHistoryItem(1, '2026-06-07T09:00:00Z', 1, 'on');
+    const newer = createPowerHistoryItem(2, '2026-06-08T09:00:00Z', 2, 'off');
+    await configureMockHistory(page.request, { pages: [createHistoryPage([newer, older])] });
+    const requests: URL[] = [];
+    page.on('request', (request) => {
+        const url = new URL(request.url());
+
+        if (url.pathname === '/room/history/user-history') {
+            requests.push(url);
+        }
+    });
+    await page.goto('/device-details/led-main');
+    const history = page.getByRole('region', { name: 'Przewijana historia zdarzeń urządzenia' });
+    await expect(history.getByTestId(`history-item-${older.recordId}`)).toBeVisible();
+    await expect(page.getByRole('combobox')).toHaveCount(0);
+    const initialRequests = requests.length;
+    expect(initialRequests).toBeGreaterThan(0);
+    await page.getByLabel('Od', { exact: true }).fill('2026-06-08');
+    expect(requests).toHaveLength(initialRequests);
+    await page.getByRole('button', { name: 'Szukaj', exact: true }).click();
+    await expect(history.getByTestId(`history-item-${newer.recordId}`)).toBeVisible();
+    await expect(history.getByTestId(`history-item-${older.recordId}`)).toHaveCount(0);
+    expect(requests.at(-1)?.searchParams.get('from')).toBe('2026-06-08T00:00:00Z');
+    await page.getByLabel('Od', { exact: true }).fill('2026-06-09');
+    const refreshed = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === '/room/history/user-history',
+    );
+    await page.getByRole('button', { name: 'Odśwież wyniki' }).click();
+    await refreshed;
+    await expect(history.getByTestId(`history-item-${newer.recordId}`)).toBeVisible();
+    expect(requests.at(-1)?.searchParams.get('from')).toBe('2026-06-08T00:00:00Z');
+    await page.getByRole('button', { name: 'Wyczyść filtry' }).click();
+    await expect(history.getByTestId(`history-item-${older.recordId}`)).toBeVisible();
+    await expect(page.getByLabel('Od', { exact: true })).toHaveValue('');
+    expect(requests.at(-1)?.searchParams.has('from')).toBe(false);
+    expect(requests.every((url) => url.searchParams.get('deviceId') === 'led-main')).toBe(true);
+});
+
 test('opens LED details from the accessible icon and presents only paged events for that device', async ({
     page,
 }) => {
@@ -76,7 +174,9 @@ test('opens LED details from the accessible icon and presents only paged events 
     await expect(page.getByText(/dostępne zachowane wpisy historii użytkownika/i)).toBeVisible();
     await expect(page.getByTestId(`history-item-${temperatureEvent.recordId}`)).toHaveCount(0);
 
-    const scrollRegion = page.getByTestId('led-history-scroll');
+    const scrollRegion = page.getByRole('region', {
+        name: 'Przewijana historia zdarzeń urządzenia',
+    });
     await expect(scrollRegion).toBeVisible();
     expect((await scrollRegion.boundingBox())?.height).toBeGreaterThan(500);
     await expect(page.getByRole('button', { name: 'Wczytaj starsze wpisy' })).toHaveCount(0);
@@ -145,9 +245,12 @@ test('a direct LED details URL survives refresh and an unknown device does not r
     expect(historyRequests).toEqual([]);
 
     await page.goto('/device-details/led-main');
-    await expect(page.getByRole('heading', { name: /Historia zdarzeń LED/ })).toBeVisible();
+    const eventHistoryHeading = page.getByRole('heading', {
+        name: 'Historia zdarzeń urządzenia',
+    });
+    await expect(eventHistoryHeading).toBeVisible();
     await page.reload();
-    await expect(page.getByRole('heading', { name: /Historia zdarzeń LED/ })).toBeVisible();
+    await expect(eventHistoryHeading).toBeVisible();
     await expect(
         page.getByRole('status').filter({ hasText: /Brak zachowanych wpisów/ }),
     ).toBeVisible();

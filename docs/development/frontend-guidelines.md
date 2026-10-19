@@ -22,19 +22,21 @@ Organize `src/app` by responsibility:
   features, pages, application composition or development tooling.
 - `pages/<page>` composes one screen and owns its local components, hooks,
   supporting models, tests and layout interactions. Dashboard owns LED controls,
-  temperature readings, the live event feed and its search form. Pages do not
+  temperature readings and composition of its live history and search modal. Pages do not
   import other pages.
 - `features/<module>` owns a cohesive business module with actual reuse by
   multiple consumers. Shared modules include date-time formatting. Reuse across independent modules
   on one page counts; hypothetical future reuse and tests alone do not. The
-  `user-history` feature owns the bounded static HTTP search session, shared
-  event-entry rendering and semantic virtualized list used by Dashboard search
-  and LED details. Each page owns its query trigger and surrounding presentation;
-  LED details starts a filtered query only after a validated room snapshot
-  confirms the selected device is an LED. Its larger virtualized viewport loads
-  older pages as the user reaches the end. This history is retained evidence and
-  does not merge SSE events or refresh on room reconnect. Production transport
-  belongs in `api`.
+  `history` feature owns independent live and static HTTP sessions, the complete
+  filter section and virtualized feed shared by Dashboard sidebar, historical
+  search and device details. Each view composes a local provider; pages own their
+  framing and open/close interactions.
+  The sidebar owns its footer buttons and tooltip; the feed exposes a small
+  scroll-to-top ref API instead of accepting page actions or footer slots.
+  Device details mounts fixed-device filters only after its validated snapshot
+  confirms the selected device. For temperature sensors, the page directly
+  composes its telemetry chart and table alongside history. Production transport belongs
+  in `api`; history consumes the Dashboard connection through its own source port.
 - `ui/<component>` owns a basic reusable UI component, its styles and tests.
   Keep shared presentation primitives directly under `app/ui` instead of
   `features`.
@@ -55,11 +57,10 @@ snapshot, including its bounded feed. Dashboard's `useRoom` owns renderable room
 state and maps its device projections for rendering. Device Details consumes the
 validated room snapshot through the public room API. Dashboard's device cards
 own their renderable device projection types. The `device-display` feature owns
-localized display names shared across pages. Dashboard owns its room history
-update contract, source port and connection bridge. The history API owns HTTP
-clients and response validation for user history. The shared `user-history`
-feature owns the static bounded search session, common entry renderer and list;
-Dashboard and Device Details compose those pieces for their respective views.
+localized display names shared across pages. The history feature owns its live source port and update contract; Dashboard
+owns the connection bridge. The history API owns HTTP clients and response
+validation. The shared `history` feature owns filters, session lifecycle, list
+rendering, paging and scrolling for each independently scoped consumer.
 Dashboard's room hook publishes validated history updates before the new room
 view.
 
@@ -102,7 +103,7 @@ The folder owns that component, its hooks, styles and tests;
 child components have their own folders. Keep module entrypoints at the
 page or feature boundary rather than adding an `index.ts` to every component folder.
 Nest private component folders under the component that owns their composition:
-the history sidebar owns its content, which owns the history feed and its item.
+the history feature owns its feed, which owns its private lists and item components.
 
 Name custom-hook files in camelCase matching the exported hook, including tests:
 `useLedCommandRequest.ts` and `useLedCommandRequest.test.tsx`. Other non-component modules retain

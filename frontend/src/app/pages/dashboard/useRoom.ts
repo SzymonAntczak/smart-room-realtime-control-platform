@@ -7,10 +7,10 @@ import {
     type RoomRealtimeConnectionStatus,
     type RoomRealtimeUpdate,
 } from '../../api/room';
+import type { HistoryLiveSource } from '../../features/history';
+import type { HistoryLiveUpdate } from '../../features/history';
 
 import type { RenderableDeviceProjection } from './device-projection';
-import type { RoomHistorySource } from './room-history-source';
-import type { RoomHistoryRealtimeUpdate } from './room-history-update';
 
 export interface RenderableRoomSnapshot extends Omit<RoomBffSnapshot, 'devices'> {
     readonly devices: RenderableDeviceProjection[];
@@ -29,20 +29,20 @@ type RoomRealtimeState =
           contractError?: string;
       };
 
-type HistoryBaseline = Extract<RoomHistoryRealtimeUpdate, { kind: 'baseline' }>;
+type HistoryBaseline = Extract<HistoryLiveUpdate, { kind: 'baseline' }>;
 
 interface RoomHistoryBridge {
-    readonly source: RoomHistorySource;
+    readonly source: HistoryLiveSource;
     setRequestBaseline(action: () => void): void;
-    publish(update: RoomHistoryRealtimeUpdate, currentBaseline?: HistoryBaseline): void;
+    publish(update: HistoryLiveUpdate, currentBaseline?: HistoryBaseline): void;
 }
 
 /** Keeps the current room baseline and synchronously forwards realtime history updates. */
 function createRoomHistoryBridge(): RoomHistoryBridge {
     let baseline: HistoryBaseline | undefined;
     let requestBaseline = () => undefined as void;
-    const listeners = new Set<(update: RoomHistoryRealtimeUpdate) => void>();
-    const source: RoomHistorySource = {
+    const listeners = new Set<(update: HistoryLiveUpdate) => void>();
+    const source: HistoryLiveSource = {
         subscribe(listener) {
             listeners.add(listener);
 

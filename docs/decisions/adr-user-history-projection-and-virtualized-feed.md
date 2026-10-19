@@ -40,10 +40,10 @@ rendered DOM, and must not interrupt a user reading older history.
 
 One `GET /room/history/user-history` endpoint serves two independent contexts:
 
-| Context           | Query and updates                                                            | Session ownership                                                        |
-| ----------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Dashboard history | Unfiltered HTTP pages merged with the existing SSE connection.               | The Dashboard owns its pages, live overlay, cursor and reading position. |
-| Historical search | Optional device/date filters, with static HTTP results and explicit refresh. | The modal owns separate criteria, pages, cursor and scroll position.     |
+| Context           | Query and updates                                                            | Session ownership                                                                                        |
+| ----------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Dashboard history | Unfiltered HTTP pages merged with the existing SSE connection.               | A Dashboard-scoped feature instance owns pages, live overlay, cursor and reading position.               |
+| Historical search | Optional device/date filters, with static HTTP results and explicit refresh. | Each modal or device-details feature instance owns separate criteria, pages, cursor and scroll position. |
 
 Search actions never replace, filter, reset or move the Dashboard session.
 Both contexts reuse the user-item contract and appropriate rendering/pagination
@@ -348,6 +348,36 @@ searches, telemetry/technical-audit filtering and retention changes are outside
 this decision. The domain-evidence SQLite and checkpoint migrations described
 above are part of this decision.
 
+### Reusable frontend history and selected-device filters
+
+The frontend `features/history` module owns filters, independent live/static
+sessions, entry rendering, virtual lists, pagination and reading position.
+Each consumer composes its own local `HistoryProvider`, `HistoryFilters` and
+`HistoryFeed`. Dashboard keeps the room connection and synchronously forwards
+validated updates through the feature-owned source port; history creates no
+additional SSE connection. Closing a view releases only its own history session.
+
+The Dashboard sidebar owns its title, footer, search trigger, Return to top button
+and button tooltip. The history feed renders its scrollable entries and status
+feedback only; it has no footer slot. A narrow ref-based scroll-to-top action lets
+the sidebar request navigation while the feature keeps virtual scrolling and
+live-overlay recovery inside the feed.
+
+Device details mounts history only after a validated room snapshot confirms the
+selected device. Both LEDs and temperature sensors show retained event history.
+`HistoryFilters device={device}` hides the device select and fixes
+every query to that device. Mounting starts a static device-only query. Date
+edits remain drafts until Search, and Refresh repeats applied criteria. Clear
+removes date drafts and starts a new device-only query. A device identity change
+creates a new provider/session; a display-name change does not refetch. Dates use
+the same inclusive browser-local calendar-day rules as modal search. Details
+retains its larger virtual viewport and automatic older-page loading without a
+Load older button. Static device results never merge SSE or rebuild on reconnect.
+Temperature details presents telemetry as a chart and equivalent raw-value table
+alongside this event history. The page composes these telemetry components directly.
+Temperature measurements remain separate from user-history events such as
+availability and health changes.
+
 ### Dashboard infinite scroll, bounded memory and virtual rendering
 
 Create the live overlay before the first HTTP request and retain it across
@@ -504,6 +534,9 @@ range, room-entry exclusion for device filters and sparse-page continuation.
 Changed or omitted filters must produce typed cursor mismatch; storage and
 main/auxiliary read errors must preserve whole-response failure.
 
+Selected-device filter tests must verify automatic device-only loading, hidden
+device selection, draft dates, applied-only refresh, date clearing with a new
+device-only query, identity replacement and display-name stability.
 Deterministic search-session tests must protect static results, applied versus
 draft criteria, single-flight paging, explicit refresh after invalidation,
 request replacement and cleanup. Mocked-BFF browser scenarios must protect

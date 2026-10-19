@@ -1,9 +1,9 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import type { HistoryLiveSource } from '../../../features/history';
 import { Button } from '../../../ui';
 import type { RenderableDeviceProjection } from '../device-projection';
-import type { RoomHistorySource } from '../room-history-source';
 
 import { HistorySidebarContent } from './history-sidebar-content/HistorySidebarContent';
 import styles from './HistorySidebar.module.css';
@@ -15,7 +15,7 @@ export function HistorySidebar({
     realtimeUncertain,
     waitingForRoom,
 }: {
-    source: RoomHistorySource;
+    source: HistoryLiveSource;
     devices: readonly RenderableDeviceProjection[];
     realtimeUncertain: boolean;
     waitingForRoom: boolean;

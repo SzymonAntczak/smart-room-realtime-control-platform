@@ -1,0 +1,24 @@
+.results,
+.deviceResults {
+    min-block-size: 10rem;
+    block-size: min(45dvh, 32rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    border-block-start: var(--border-width-thin) solid var(--color-border);
+    padding-block-start: var(--space-3);
+}
+.deviceResults {
+    block-size: min(70dvh, 48rem);
+    min-block-size: 22rem;
+}
+.results:focus-visible,
+.deviceResults:focus-visible {
+    outline: var(--border-width-thin) solid var(--color-info-text);
+    outline-offset: var(--space-1);
+}
+@media (max-width: 48rem) {
+    .results {
+        block-size: min(42dvh, 32rem);
+    }
+}

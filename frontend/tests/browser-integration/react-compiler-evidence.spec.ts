@@ -28,7 +28,7 @@ test('compiles the history feed and position controller with React Compiler', as
     const response = await page.request.get('/__test/react-compiler-evidence');
     expect(response.ok()).toBe(true);
     const events = (await response.json()) as Record<string, string[]>;
-    const historyEvents = events['HistoryFeed.tsx']?.map(
+    const historyEvents = events['LiveHistoryList.tsx']?.map(
         (event) => JSON.parse(event) as { kind: string; fnName?: string },
     );
     const controllerEvents = events['useHistoryVirtualizer.ts']?.map(
@@ -36,7 +36,7 @@ test('compiles the history feed and position controller with React Compiler', as
     );
     expect(historyEvents).toEqual(
         expect.arrayContaining([
-            expect.objectContaining({ kind: 'CompileSuccess', fnName: 'HistoryFeed' }),
+            expect.objectContaining({ kind: 'CompileSuccess', fnName: 'LiveHistoryList' }),
         ]),
     );
     expect(controllerEvents).toEqual(
