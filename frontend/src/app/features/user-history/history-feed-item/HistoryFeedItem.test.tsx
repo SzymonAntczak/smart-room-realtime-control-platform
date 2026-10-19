@@ -3,7 +3,7 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { formatTimestamp } from '../../../../../../features/date-time';
+import { formatTimestamp } from '../../date-time';
 
 import { HistoryFeedItem } from './HistoryFeedItem';
 
@@ -24,8 +24,8 @@ describe('user history entry', () => {
         expect(isUserHistoryItem(durableOther)).toBe(true);
         const { rerender } = render(
             <ol>
-                <HistoryFeedItem item={item} devices={[]} index={0} setSize={2} />
-                <HistoryFeedItem item={durableOther} devices={[]} index={1} setSize={2} />
+                <HistoryFeedItem item={item} index={0} setSize={2} />
+                <HistoryFeedItem item={durableOther} index={1} setSize={2} />
             </ol>,
         );
         const entries = screen.getAllByRole('listitem');
@@ -40,7 +40,7 @@ describe('user history entry', () => {
         ).toBeNull();
         rerender(
             <ol>
-                <HistoryFeedItem item={fixtures.failure} devices={[]} index={0} setSize={1} />
+                <HistoryFeedItem item={fixtures.failure} index={0} setSize={1} />
             </ol>,
         );
         expect(screen.queryByText('Nieutrwalone')).toBeNull();
@@ -50,7 +50,7 @@ describe('user history entry', () => {
         expect(isUserHistoryItem(item)).toBe(true);
         render(
             <ol>
-                <HistoryFeedItem item={item} devices={[]} index={14} setSize={-1} />
+                <HistoryFeedItem item={item} index={14} setSize={-1} />
             </ol>,
         );
         const entry = screen.getByRole('listitem');
@@ -77,7 +77,7 @@ describe('user history entry', () => {
     it('does not claim a timeout proves that the device did not act', () => {
         render(
             <ol>
-                <HistoryFeedItem item={fixtures.timeout} devices={[]} index={0} setSize={1} />
+                <HistoryFeedItem item={fixtures.timeout} index={0} setSize={1} />
             </ol>,
         );
         expect(screen.getByRole('listitem')).toHaveTextContent(
@@ -94,7 +94,7 @@ describe('user history entry', () => {
             expect(isUserHistoryItem(item)).toBe(true);
             render(
                 <ol>
-                    <HistoryFeedItem item={item} devices={[]} index={0} setSize={1} />
+                    <HistoryFeedItem item={item} index={0} setSize={1} />
                 </ol>,
             );
             expect(screen.getByRole('listitem')).toHaveTextContent(text);
@@ -115,7 +115,7 @@ describe('user history entry', () => {
         expect(isUserHistoryItem(item)).toBe(true);
         render(
             <ol>
-                <HistoryFeedItem item={item} devices={[]} index={0} setSize={1} />
+                <HistoryFeedItem item={item} index={0} setSize={1} />
             </ol>,
         );
         expect(screen.getByRole('listitem')).toHaveTextContent('Nieutrwalone');

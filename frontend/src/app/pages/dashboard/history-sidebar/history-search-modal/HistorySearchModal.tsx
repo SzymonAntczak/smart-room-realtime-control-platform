@@ -10,12 +10,12 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { getDeviceDisplayName } from '../../../../features/device-display';
+import type { HistorySearchCriteria } from '../../../../features/user-history';
 import { Button } from '../../../../ui';
-import { getDeviceDisplayName } from '../../device-display-name';
 import type { RenderableDeviceProjection } from '../../device-projection';
 
 import { HistorySearchResults } from './history-search-results/HistorySearchResults';
-import type { HistorySearchCriteria } from './history-search-session';
 import styles from './HistorySearchModal.module.css';
 import { useHistorySearch } from './useHistorySearch';
 

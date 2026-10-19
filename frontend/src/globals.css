@@ -5,6 +5,7 @@
     --font-size-label-md: 0.84rem;
     --font-size-body-sm: 0.95rem;
     --font-size-body-md: 1rem;
+    --font-size-heading-sm: 1.25rem;
     --font-size-heading-md: 1.75rem;
     --font-size-display-md: 3.25rem;
     --font-size-display-lg: 4rem;
@@ -80,4 +81,33 @@ input,
 textarea,
 select {
     font: inherit;
+}
+
+::view-transition-old(root) {
+    animation: route-fade-out 180ms ease both;
+}
+
+::view-transition-new(root) {
+    animation: route-fade-in 220ms ease both;
+}
+
+@keyframes route-fade-out {
+    to {
+        opacity: 0;
+        transform: translateX(-0.35rem);
+    }
+}
+
+@keyframes route-fade-in {
+    from {
+        opacity: 0;
+        transform: translateX(0.35rem);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+        animation-duration: 1ms;
+    }
 }

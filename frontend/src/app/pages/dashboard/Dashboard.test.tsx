@@ -1,5 +1,6 @@
 import { isRoomBffSnapshot } from '@smart-room/contracts/room-bff';
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -20,6 +21,21 @@ const historySource = {
     getBaseline: () => undefined,
     requestBaseline: () => undefined,
 };
+
+function renderDashboard(props: Parameters<typeof Dashboard>[0] = {}) {
+    const element = (nextProps: Parameters<typeof Dashboard>[0]) => (
+        <MemoryRouter>
+            <Dashboard {...nextProps} />
+        </MemoryRouter>
+    );
+    const result = render(element(props));
+
+    return {
+        ...result,
+        rerender: (nextProps: Parameters<typeof Dashboard>[0] = props) =>
+            result.rerender(element(nextProps)),
+    };
+}
 
 function storageProjection(
     status: 'available' | 'degraded' | 'recovering',
@@ -84,6 +100,20 @@ function ready(
 }
 
 describe('Dashboard composition', () => {
+    it('focuses the main area when navigation requests focus restoration', () => {
+        roomHook.mockReturnValue({
+            room: { status: 'connecting', connectionStatus: 'connecting' },
+            historySource,
+        });
+        render(
+            <MemoryRouter initialEntries={[{ pathname: '/', state: { focusDashboard: true } }]}>
+                <Dashboard />
+            </MemoryRouter>,
+        );
+
+        expect(screen.getByRole('main')).toHaveFocus();
+    });
+
     beforeEach(() => {
         roomHook.mockReset();
     });
@@ -94,7 +124,7 @@ describe('Dashboard composition', () => {
             room: { status: 'connecting', connectionStatus: 'connecting' },
             historySource,
         });
-        const { rerender } = render(<Dashboard renderOverlay={overlay} />);
+        const { rerender } = renderDashboard({ renderOverlay: overlay });
         expect(
             screen.getByText('Łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
         ).toBeInTheDocument();
@@ -105,7 +135,7 @@ describe('Dashboard composition', () => {
             room: { status: 'connecting', connectionStatus: 'reconnecting' },
             historySource,
         });
-        rerender(<Dashboard renderOverlay={overlay} />);
+        rerender({ renderOverlay: overlay });
 
         expect(
             screen.getByText('Ponowne łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
@@ -119,7 +149,7 @@ describe('Dashboard composition', () => {
             historySource,
         });
 
-        render(<Dashboard />);
+        renderDashboard();
 
         expect(screen.queryByRole('alert')).toBeNull();
     });
@@ -129,7 +159,7 @@ describe('Dashboard composition', () => {
         (status) => {
             ready(snapshot(storageProjection(status)));
 
-            render(<Dashboard />);
+            renderDashboard();
 
             const warning = screen.getByRole('alert');
             expect(warning).toHaveAttribute('data-variant', 'warning');
@@ -144,38 +174,38 @@ describe('Dashboard composition', () => {
 
     it('hides the warning when storage becomes available', () => {
         ready(snapshot(storageProjection('degraded')));
-        const { rerender } = render(<Dashboard />);
+        const { rerender } = renderDashboard();
 
         expect(screen.getByRole('alert')).toHaveTextContent('degraded_test_reason');
 
         ready(snapshot(storageProjection('recovering')));
-        rerender(<Dashboard />);
+        rerender();
 
         expect(screen.getByRole('alert')).toHaveTextContent('recovering_test_reason');
 
         ready(snapshot(storageProjection('available')));
-        rerender(<Dashboard />);
+        rerender();
 
         expect(screen.queryByRole('alert')).toBeNull();
     });
 
     it('keeps LED controls usable while degraded and locks them only while recovering', () => {
         ready(snapshot(storageProjection('degraded')));
-        const { rerender } = render(<Dashboard />);
+        const { rerender } = renderDashboard();
 
         screen
             .getAllByRole('button', { name: 'Włącz' })
             .forEach((button) => expect(button).toBeEnabled());
 
         ready(snapshot(storageProjection('recovering')));
-        rerender(<Dashboard />);
+        rerender();
 
         screen
             .getAllByRole('button', { name: 'Włącz' })
             .forEach((button) => expect(button).toBeDisabled());
 
         ready(snapshot(storageProjection('available')));
-        rerender(<Dashboard />);
+        rerender();
 
         screen
             .getAllByRole('button', { name: 'Włącz' })
@@ -185,7 +215,7 @@ describe('Dashboard composition', () => {
     it('does not show a storage warning for available storage', () => {
         ready(snapshot(storageProjection('available')));
 
-        render(<Dashboard />);
+        renderDashboard();
 
         expect(screen.queryByRole('alert')).toBeNull();
     });
@@ -216,7 +246,7 @@ describe('Dashboard composition', () => {
         ];
         ready(view);
 
-        render(<Dashboard />);
+        renderDashboard();
 
         const main = within(screen.getByTestId('led-main-led-card'));
         const second = within(screen.getByTestId('led-second-led-card'));
@@ -235,19 +265,16 @@ describe('Dashboard composition', () => {
         ready(view);
         const overlay = vi.fn(() => <aside aria-label="Development overlay" />);
 
-        render(
-            <Dashboard
-                getDeviceExtension={(device) =>
-                    device.deviceId === 'led-main'
-                        ? {
-                              headerAction: <button>Device scenario</button>,
-                              interactionLocked: true,
-                          }
-                        : undefined
-                }
-                renderOverlay={overlay}
-            />,
-        );
+        renderDashboard({
+            getDeviceExtension: (device) =>
+                device.deviceId === 'led-main'
+                    ? {
+                          headerAction: <button>Device scenario</button>,
+                          interactionLocked: true,
+                      }
+                    : undefined,
+            renderOverlay: overlay,
+        });
 
         expect(
             within(screen.getByTestId('led-main-led-card')).getByRole('button', { name: 'Włącz' }),
@@ -270,7 +297,7 @@ describe('Dashboard composition', () => {
     ])('keeps controls uncertain after %s or a contract error (%s)', (connection, error) => {
         ready(snapshot(), connection, error);
 
-        render(<Dashboard />);
+        renderDashboard();
 
         expect(screen.getAllByRole('button', { name: 'Włącz' })).toHaveLength(2);
         screen

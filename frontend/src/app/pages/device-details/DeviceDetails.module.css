@@ -1,0 +1,63 @@
+.page {
+    display: grid;
+    gap: var(--space-5);
+    inline-size: min(100% - 2 * var(--space-5), 76rem);
+    margin-inline: auto;
+    padding-block: var(--space-6);
+}
+
+.page h1,
+.page h2,
+.page p {
+    margin: 0;
+}
+
+.page h1 {
+    font-size: var(--font-size-heading-md);
+}
+
+.page h1:focus {
+    outline: 0.1875rem solid var(--color-action-primary);
+    outline-offset: var(--space-1);
+}
+
+.backLink {
+    justify-self: start;
+}
+
+.summary,
+.telemetry {
+    display: grid;
+    gap: var(--space-4);
+    min-inline-size: 0;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-5);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-panel);
+}
+
+.summary dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: var(--space-4);
+    margin: 0;
+}
+
+.summary dl div {
+    min-inline-size: 0;
+}
+
+.summary dt {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-label-md);
+}
+
+.summary dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.observation {
+    color: var(--color-text-muted);
+}

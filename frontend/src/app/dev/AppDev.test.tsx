@@ -1,10 +1,19 @@
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../../test/room/mock-event-source';
 
 import { AppDev } from './AppDev';
+
+function renderAppDev() {
+    return render(
+        <MemoryRouter>
+            <AppDev />
+        </MemoryRouter>,
+    );
+}
 
 vi.mock(
     '../pages/dashboard/history-sidebar/history-sidebar-content/history-feed/useHistoryVirtualizer',
@@ -40,7 +49,7 @@ describe('AppDev', () => {
     it('opens a device-scoped scenario sidebar and restores trigger focus after closing it', async () => {
         const user = userEvent.setup();
         deferHistoryRequests();
-        render(<AppDev />);
+        renderAppDev();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const trigger = screen.getByRole('button', { name: 'Scenariusze programistyczne' });
@@ -65,7 +74,7 @@ describe('AppDev', () => {
     it('closes the panel with Escape and restores trigger focus', async () => {
         const user = userEvent.setup();
         deferHistoryRequests();
-        render(<AppDev />);
+        renderAppDev();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const trigger = screen.getByRole('button', { name: 'Scenariusze programistyczne' });
@@ -111,7 +120,7 @@ describe('AppDev', () => {
         );
         const user = userEvent.setup();
         deferHistoryRequests();
-        render(<AppDev />);
+        renderAppDev();
         act(() =>
             MockEventSource.latest().emitMessage(createRoomSnapshotMessage([createLedDevice()])),
         );

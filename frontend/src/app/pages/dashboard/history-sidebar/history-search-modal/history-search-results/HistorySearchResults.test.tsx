@@ -2,7 +2,7 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { createHistorySearchSession } from '../history-search-session';
+import { createHistorySearchSession } from '../../../../../features/user-history';
 
 import { HistorySearchResults } from './HistorySearchResults';
 

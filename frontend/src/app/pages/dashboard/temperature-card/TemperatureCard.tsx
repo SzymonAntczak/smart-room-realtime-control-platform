@@ -4,8 +4,8 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../features/date-time';
+import { getDeviceDisplayName } from '../../../features/device-display';
 import { Alert, type AlertVariant, DeviceCard } from '../../../ui';
-import { getDeviceDisplayName } from '../device-display-name';
 import { VolatileEvidence } from '../volatile-evidence/VolatileEvidence';
 
 import styles from './TemperatureCard.module.css';

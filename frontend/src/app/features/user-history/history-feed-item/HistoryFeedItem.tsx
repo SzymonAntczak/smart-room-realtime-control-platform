@@ -3,37 +3,28 @@ import type { TFunction } from 'i18next';
 import type { CSSProperties, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { formatTimestamp } from '../../../../../../features/date-time';
-import { getDeviceDisplayName } from '../../../../device-display-name';
-import type { RenderableDeviceProjection } from '../../../../device-projection';
+import { formatTimestamp } from '../../date-time';
 
 import styles from './HistoryFeedItem.module.css';
 
 export function HistoryFeedItem({
     item,
-    devices,
+    deviceName,
     index,
     setSize,
     style,
     ref,
 }: {
     item: UserHistoryItem;
-    devices: readonly RenderableDeviceProjection[];
+    deviceName?: string;
     index: number;
     setSize: number;
     style?: CSSProperties;
     ref?: Ref<HTMLLIElement>;
 }) {
     const { t } = useTranslation('dashboard');
-    const device =
-        'deviceId' in item
-            ? devices.find((candidate) => candidate.deviceId === item.deviceId)
-            : undefined;
-    const deviceName = device
-        ? getDeviceDisplayName(device, (key) => t(key))
-        : 'deviceId' in item
-          ? item.deviceName
-          : t('history.room');
+    const resolvedDeviceName =
+        deviceName ?? ('deviceId' in item ? item.deviceName : t('history.room'));
 
     return (
         <li
@@ -45,7 +36,7 @@ export function HistoryFeedItem({
             style={style}
             ref={ref}
         >
-            <strong>{deviceName}</strong>
+            <strong>{resolvedDeviceName}</strong>
             <p>{describeHistoryItem(item, t)}</p>
             <div className={styles.context}>
                 <time dateTime={item.occurredAt}>{formatTimestamp(item.occurredAt)}</time>

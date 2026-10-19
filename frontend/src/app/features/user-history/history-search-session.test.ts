@@ -2,8 +2,8 @@ import type { UserHistoryPage } from '@smart-room/contracts/user-history';
 import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { HistoryClient } from '../../../../api/history';
-import type { HistoryResponseResult } from '../../../../api/history/history-response';
+import type { HistoryClient } from '../../api/history';
+import type { HistoryResponseResult } from '../../api/history/history-response';
 
 import { createHistorySearchSession, type HistorySearchCriteria } from './history-search-session';
 

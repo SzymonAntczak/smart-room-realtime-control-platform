@@ -6,12 +6,20 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentType } from 'react';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { Components, ContextProp, ItemProps, ListProps } from 'react-virtuoso';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../test/room/mock-event-source';
 
-import { App } from './App';
+import { createAppRoutes } from './AppRoutes';
+
+function renderApp() {
+    const router = createMemoryRouter(createAppRoutes());
+
+    return render(<RouterProvider router={router} />);
+}
+
 interface HistoryFeedContext {
     devices: [];
     endReached: boolean;
@@ -80,7 +88,7 @@ describe('App', () => {
     afterEach(() => vi.unstubAllGlobals());
 
     it('waits for a realtime snapshot before rendering device controls', () => {
-        render(<App />);
+        renderApp();
 
         expect(
             screen.getByText('Łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
@@ -97,7 +105,7 @@ describe('App', () => {
         expect(isUserHistoryPage(replacementPage)).toBe(true);
 
         const user = userEvent.setup();
-        const { unmount } = render(<App />);
+        const { unmount } = renderApp();
         await user.click(screen.getByRole('button', { name: 'Ukryj ostatnie zdarzenia' }));
         act(() =>
             MockEventSource.latest().emitMessage(
@@ -148,13 +156,13 @@ describe('App', () => {
     });
 
     it('does not render development scenario controls', () => {
-        render(<App />);
+        renderApp();
 
         expect(screen.queryByText('Scenariusze programistyczne')).not.toBeInTheDocument();
     });
 
     it('renders supported device cards from one room snapshot and maps LED commands by device', () => {
-        render(<App />);
+        renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
@@ -167,7 +175,7 @@ describe('App', () => {
     });
 
     it('keeps the temperature view visible and marks it uncertain while reconnecting', () => {
-        render(<App />);
+        renderApp();
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ devices: [temperatureDevice()], activeCommands: [] }),
@@ -184,7 +192,7 @@ describe('App', () => {
     });
 
     it('renders the bounded snapshot feed and marks it last known while reconnecting', () => {
-        render(<App />);
+        renderApp();
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({
@@ -211,7 +219,7 @@ describe('App', () => {
     });
 
     it('adds a feed fact from a contiguous device update', () => {
-        render(<App />);
+        renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
@@ -244,7 +252,7 @@ describe('App', () => {
 
     it('keeps live telemetry out of the significant-events feed', () => {
         const { telemetrySample } = createHistoryIdentityFixtures();
-        render(<App />);
+        renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
@@ -269,7 +277,7 @@ describe('App', () => {
     });
 
     it('keeps accepted non-applying facts out of the feed when only the watermark advances', () => {
-        render(<App />);
+        renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
@@ -294,7 +302,7 @@ describe('App', () => {
 
     it('does not add a no-change LED report after a command timeout', () => {
         const timedOutLed = { ...ledDevice(), activeCommandId: undefined };
-        render(<App />);
+        renderApp();
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({
@@ -343,7 +351,7 @@ describe('App', () => {
 
     it('opens the desktop feed by default and lets the same button hide and restore it', async () => {
         const user = userEvent.setup();
-        render(<App />);
+        renderApp();
 
         const toggle = screen.getByRole('button', { name: 'Ukryj ostatnie zdarzenia' });
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -371,7 +379,7 @@ describe('App', () => {
         const media = createMockMediaQuery(true);
         vi.stubGlobal('matchMedia', media.matchMedia);
         const user = userEvent.setup();
-        render(<App />);
+        renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const toggle = screen.getByRole('button', { name: 'Pokaż ostatnie zdarzenia' });
@@ -387,7 +395,7 @@ describe('App', () => {
     });
 
     it('rejects a snapshot with a role outside the current platform contract', () => {
-        render(<App />);
+        renderApp();
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ devices: [unsupportedDevice()], activeCommands: [] }),

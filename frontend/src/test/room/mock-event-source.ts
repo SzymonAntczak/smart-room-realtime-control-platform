@@ -2,6 +2,7 @@ export class MockEventSource extends EventTarget {
     static instances: MockEventSource[] = [];
 
     readonly url: string;
+    closed = false;
 
     constructor(url: string) {
         super();
@@ -20,6 +21,7 @@ export class MockEventSource extends EventTarget {
     }
 
     close(): void {
+        this.closed = true;
         this.dispatchEvent(new Event('close'));
     }
 

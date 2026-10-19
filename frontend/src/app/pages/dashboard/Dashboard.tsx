@@ -1,6 +1,10 @@
+import { Info } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link, useLocation } from 'react-router';
 
+import { getDeviceDisplayName } from '../../features/device-display';
 import { Alert } from '../../ui';
 
 import styles from './Dashboard.module.css';
@@ -26,6 +30,16 @@ export function Dashboard({
 }) {
     const { room, historySource } = useRoom();
     const { t } = useTranslation('dashboard');
+    const { t: deviceDetailsT } = useTranslation('deviceDetails');
+    const location = useLocation();
+    const mainRef = useRef<HTMLElement>(null);
+
+    useEffect(() => {
+        if (location.state?.focusDashboard === true) {
+            mainRef.current?.focus();
+        }
+    }, [location.key, location.state]);
+
     const snapshot = room.status === 'ready' ? room.snapshot : undefined;
     const realtimeUncertain =
         room.connectionStatus === 'reconnecting' || room.contractError !== undefined;
@@ -48,7 +62,11 @@ export function Dashboard({
                     <Alert message={storageWarning} variant="warning" />
                 </div>
             ) : null}
-            <main className={styles.shell}>
+            <main
+                ref={mainRef}
+                className={styles.shell}
+                tabIndex={location.state?.focusDashboard === true ? -1 : undefined}
+            >
                 <HistorySidebar
                     source={historySource}
                     devices={snapshot?.devices ?? []}
@@ -58,6 +76,22 @@ export function Dashboard({
                 <div className={styles.controls}>
                     {snapshot?.devices.map((device) => {
                         const extension = getDeviceExtension?.(device);
+                        const deviceName = getDeviceDisplayName(device, (key) =>
+                            t(key, { ns: 'dashboard' }),
+                        );
+                        const headerAction = (
+                            <>
+                                {extension?.headerAction}
+                                <Link
+                                    aria-label={deviceDetailsT('open', { name: deviceName })}
+                                    to={`/device-details/${encodeURIComponent(device.deviceId)}`}
+                                    viewTransition
+                                    className={styles.detailsLink}
+                                >
+                                    <Info aria-hidden="true" size={18} />
+                                </Link>
+                            </>
+                        );
 
                         switch (device.role) {
                             case 'temperature-sensor':
@@ -65,7 +99,7 @@ export function Dashboard({
                                     <TemperatureCard
                                         key={device.deviceId}
                                         device={device}
-                                        headerAction={extension?.headerAction}
+                                        headerAction={headerAction}
                                         realtimeUncertain={realtimeUncertain}
                                     />
                                 );
@@ -84,7 +118,7 @@ export function Dashboard({
                                         device={device}
                                         activeCommand={activeCommand}
                                         recentCommands={recentCommands}
-                                        headerAction={extension?.headerAction}
+                                        headerAction={headerAction}
                                         interactionLocked={
                                             extension?.interactionLocked ||
                                             storage?.status === 'recovering'

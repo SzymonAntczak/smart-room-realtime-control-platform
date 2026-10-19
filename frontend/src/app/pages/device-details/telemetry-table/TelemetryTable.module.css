@@ -1,0 +1,30 @@
+.scroll {
+    max-inline-size: 100%;
+    overflow-x: auto;
+}
+
+.table {
+    inline-size: 100%;
+    border-collapse: collapse;
+    text-align: start;
+}
+
+.table caption {
+    margin-block-end: var(--space-3);
+    color: var(--color-text);
+    font-weight: var(--font-weight-bold);
+    text-align: start;
+}
+
+.table th,
+.table td {
+    border-block-end: var(--border-width-thin) solid var(--color-border);
+    padding-block: var(--space-3);
+    padding-inline: var(--space-3);
+}
+
+.table th {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-label-md);
+    text-align: start;
+}

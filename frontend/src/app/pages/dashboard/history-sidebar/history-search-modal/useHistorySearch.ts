@@ -4,7 +4,7 @@ import {
     createHistorySearchSession,
     type HistorySearchCriteria,
     type HistorySearchSession,
-} from './history-search-session';
+} from '../../../../features/user-history';
 
 export function useHistorySearch() {
     const sessionRef = useRef<HistorySearchSession | null>(null);

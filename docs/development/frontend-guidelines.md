@@ -21,32 +21,53 @@ Organize `src/app` by responsibility:
   API. There is no aggregate `api/index.ts`. API modules do not depend on React,
   features, pages, application composition or development tooling.
 - `pages/<page>` composes one screen and owns its local components, hooks,
-  supporting models, sessions, tests and layout interactions. Dashboard owns LED
-  controls, temperature readings and its history panel, session and pagination.
-  Pages do not import other pages.
+  supporting models, tests and layout interactions. Dashboard owns LED controls,
+  temperature readings, the live event feed and its search form. Pages do not
+  import other pages.
 - `features/<module>` owns a cohesive business module with actual reuse by
   multiple consumers. Shared modules include date-time formatting. Reuse across independent modules
-  on one page counts; hypothetical future reuse and tests alone do not. Keep
-  page-specific state and presentation code with its page. Production transport
+  on one page counts; hypothetical future reuse and tests alone do not. The
+  `user-history` feature owns the bounded static HTTP search session, shared
+  event-entry rendering and semantic virtualized list used by Dashboard search
+  and LED details. Each page owns its query trigger and surrounding presentation;
+  LED details starts a filtered query only after a validated room snapshot
+  confirms the selected device is an LED. Its larger virtualized viewport loads
+  older pages as the user reaches the end. This history is retained evidence and
+  does not merge SSE events or refresh on room reconnect. Production transport
   belongs in `api`.
 - `ui/<component>` owns a basic reusable UI component, its styles and tests.
   Keep shared presentation primitives directly under `app/ui` instead of
   `features`.
-- The page that renders the live room owns its shared room connection and binds
-  room updates to its history source. Dashboard owns `useRoom`; `App.tsx` and
-  development `AppDev` render the same Dashboard, and development composition
-  extends it through `getDeviceExtension` and the `renderOverlay` slot.
+- The page that renders the live room owns its room connection and binds room
+  updates to its page state. Dashboard owns `useRoom`; Device Details owns its
+  selected-device state. The route renders only one page at a time so navigation
+  closes the old connection before the next page opens one. Development
+  composition decorates the Dashboard through `getDeviceExtension` and the
+  `renderOverlay` slot.
 - `dev` owns development tooling and may compose production public APIs.
-- `src/main.tsx` owns bootstrap and build-mode selection.
+- `src/main.tsx` owns bootstrap, the browser data router and build-mode selection;
+  `AppRoutes.tsx` owns the route table. The Dashboard route is `/` and selected-device
+  details use `/device-details/:deviceId`. The SPA host serves `index.html` for
+  direct requests to application routes.
 
 The room API owns SSE, validation, revisions, reconnect and the current BFF
 snapshot, including its bounded feed. Dashboard's `useRoom` owns renderable room
-state and maps its device projections for rendering. Dashboard's device cards
-own their renderable device projection types. Dashboard owns device display
-names and its room history update contract, source port and connection bridge.
-The history API owns HTTP clients and response validation for user history. Dashboard history owns history presentation, sessions, pagination
-and virtual rendering. Dashboard's room hook publishes validated history
-updates before the new room view.
+state and maps its device projections for rendering. Device Details consumes the
+validated room snapshot through the public room API. Dashboard's device cards
+own their renderable device projection types. The `device-display` feature owns
+localized display names shared across pages. Dashboard owns its room history
+update contract, source port and connection bridge. The history API owns HTTP
+clients and response validation for user history. The shared `user-history`
+feature owns the static bounded search session, common entry renderer and list;
+Dashboard and Device Details compose those pieces for their respective views.
+Dashboard's room hook publishes validated history updates before the new room
+view.
+
+Use the shared `StatusTag` for device availability and `ButtonLink` for
+navigation styled as a button. Route links that change pages opt into React
+Router view transitions; global CSS uses a short fade with a slight horizontal
+offset, and `prefers-reduced-motion` reduces that animation to an imperceptible
+duration. Browsers without View Transitions keep ordinary navigation behavior.
 
 Keep each module's API small, with named exports through its designated entrypoint.
 Features and API resources use `index.ts`; the dashboard exposes only
@@ -112,8 +133,13 @@ introduce a hook merely to wrap a pure mapping or to reduce the number of files.
 
 Features must not import pages or application composition; pages must not import
 other pages or application composition. Application composition exposes only
-`App.tsx` to bootstrap. Dashboard's `useRoom` remains private to the page, with
+`AppRoutes.tsx` to bootstrap. Dashboard's `useRoom` remains private to the page, with
 its room/history bridge inline in the hook.
+
+`AppRoutes.tsx` receives an optional Dashboard page element from bootstrap for the
+development composition; its production default is the public Dashboard page.
+Development code remains dynamically imported only by the DEV branch in
+`src/main.tsx`.
 
 External libraries and `@smart-room/contracts` follow the existing contract and
 package boundaries. Production modules must not import test-only code or global

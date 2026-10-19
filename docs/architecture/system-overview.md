@@ -159,6 +159,15 @@ Expected responsibilities:
 - show `degraded` or `recovering` storage status persistently
   and distinguish volatile observations and commands from durable ones
 
+The Dashboard links each device card to a selected-device details page. The
+details page identifies the selected device and presents a temperature sensor's
+telemetry as both a trend and an equivalent raw-value table. For an LED, it
+presents the paged User History entries retained for that device. This is
+retained evidence and may be incomplete; it is not a complete device log, as
+defined by the [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
+Each live room page owns one realtime connection; navigating between these
+pages closes the previous connection before opening the next.
+
 ### Telemetry Storage
 
 Stores events and derived telemetry used for history, debugging and trend analysis.

@@ -3,11 +3,11 @@ import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type Components, Virtuoso } from 'react-virtuoso';
 
+import { HistoryFeedList } from '../../../../../features/user-history';
 import type { RenderableDeviceProjection } from '../../../device-projection';
 import type { HistoryReadingPosition, HistorySessionState } from '../history-session';
 
 import type { HistoryFeedContext } from './history-feed-context';
-import { HistoryFeedList } from './history-feed-list/HistoryFeedList';
 import { HistoryFeedRow } from './history-feed-row/HistoryFeedRow';
 import styles from './HistoryFeed.module.css';
 import { useHistoryPaging } from './useHistoryPaging';

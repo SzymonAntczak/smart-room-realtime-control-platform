@@ -9,8 +9,8 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../features/date-time';
+import { getDeviceDisplayName } from '../../../features/device-display';
 import { Alert, Button, DeviceCard } from '../../../ui';
-import { getDeviceDisplayName } from '../device-display-name';
 
 import { type LedCardAlert, toLedCardViewModel } from './led-card-view-model';
 import styles from './LedCard.module.css';

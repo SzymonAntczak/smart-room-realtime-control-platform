@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 
 import { Alert } from '../alert/Alert';
+import { StatusTag, type StatusTagTone } from '../status-tag/StatusTag';
 
 import styles from './DeviceCard.module.css';
-
-type DeviceCardStatusTone = 'neutral' | 'success' | 'warning' | 'danger';
 
 interface DeviceCardProps {
     title: string;
@@ -13,7 +12,7 @@ interface DeviceCardProps {
     headerAction?: ReactNode;
     children: ReactNode;
     bottomAlert?: ReactNode;
-    statusTone?: DeviceCardStatusTone;
+    statusTone?: StatusTagTone;
     statusAriaLive?: 'off' | 'polite' | 'assertive';
     statusRole?: 'status';
     titleId?: string;
@@ -41,16 +40,15 @@ export function DeviceCard({
                 </div>
                 <div className={styles.headerActions}>
                     {headerAction}
-                    <span
-                        className={styles.status}
-                        data-tone={statusTone}
-                        data-testid={`${testId}-status`}
+                    <StatusTag
+                        tone={statusTone}
+                        icon={statusIcon}
+                        testId={`${testId}-status`}
                         role={statusRole}
-                        aria-live={statusAriaLive}
+                        ariaLive={statusAriaLive}
                     >
-                        {statusIcon}
                         {status}
-                    </span>
+                    </StatusTag>
                 </div>
             </div>
 

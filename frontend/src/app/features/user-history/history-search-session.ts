@@ -6,7 +6,7 @@ import {
     type UserHistoryPage,
 } from '@smart-room/contracts/user-history';
 
-import { createHistoryClient, type HistoryClient } from '../../../../api/history';
+import { createHistoryClient, type HistoryClient } from '../../api/history';
 
 const limits = { pageSize: defaultUserHistoryPageSize, pages: 100, items: 5000 } as const;
 
@@ -21,7 +21,7 @@ type HistorySearchError =
     | 'cursor_query_mismatch'
     | 'history_limit_reached';
 
-interface HistorySearchState {
+export interface HistorySearchState {
     status: 'idle' | 'loading' | 'ready' | 'error' | 'closed';
     items: readonly UserHistoryItem[];
     appliedCriteria: HistorySearchCriteria | null;
