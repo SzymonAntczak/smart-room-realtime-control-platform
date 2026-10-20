@@ -54,7 +54,6 @@ export const pl = {
                 history_limit_reached: 'Osiągnięto limit wpisów dla tej sesji.',
             },
         },
-        lastObservation: 'Ostatnia obserwacja: {{time}}.',
         temperatureUnit: '°C',
         chart: {
             title: 'Wykres temperatury w czasie',

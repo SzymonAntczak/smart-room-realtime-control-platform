@@ -11,6 +11,7 @@
 .deviceResults {
     block-size: min(70dvh, 48rem);
     min-block-size: 22rem;
+    overscroll-behavior: auto;
 }
 .results:focus-visible,
 .deviceResults:focus-visible {

@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-import { formatTimestamp } from '../../features/date-time';
 import { getDeviceDisplayName } from '../../features/device-display';
 import { HistoryFeed, HistoryFilters, HistoryProvider } from '../../features/history';
 import { ButtonLink, StatusTag } from '../../ui';
@@ -105,16 +104,6 @@ export function DeviceDetails() {
                             <HistoryFeed />
                         </HistoryProvider>
                     </section>
-
-                    {device.observationStatus.temperature?.lastObservedAt ? (
-                        <p className={styles.observation}>
-                            {t('lastObservation', {
-                                time: formatTimestamp(
-                                    device.observationStatus.temperature.lastObservedAt,
-                                ),
-                            })}
-                        </p>
-                    ) : null}
                 </>
             ) : null}
         </main>

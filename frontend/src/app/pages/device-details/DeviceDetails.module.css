@@ -62,10 +62,6 @@
     overflow-wrap: anywhere;
 }
 
-.observation {
-    color: var(--color-text-muted);
-}
-
 .history {
     display: grid;
     gap: var(--space-4);
