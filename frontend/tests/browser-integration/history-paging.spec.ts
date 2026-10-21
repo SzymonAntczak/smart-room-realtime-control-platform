@@ -458,31 +458,18 @@ test('releases a closed panel and ignores its held response when reopened', asyn
     await expect(item(page, old[0]?.recordId ?? 'missing')).toHaveCount(0);
 });
 
-test('advances empty pages on user input and keeps invalid data labeled until explicit retry', async ({
-    page,
-}) => {
-    const records = createHistoryItems(2);
+test('keeps invalid history labeled until explicit retry after a reconnect', async ({ page }) => {
+    const records = createHistoryItems(51);
     await configureMockHistory(page.request, {
         pages: [
-            createHistoryPage([], 'sparse'),
-            createHistoryPage(records, 'duplicate'),
-            createHistoryPage(records),
+            createHistoryPage(records.slice(0, 50), 'older'),
+            createHistoryPage(records.slice(50)),
         ],
     });
     await openHistory(page);
-    await expect(page.getByText('Brak istotnych zdarzeń.')).toBeVisible();
-    const sparsePage = page.waitForResponse((response) => response.url().includes('cursor=sparse'));
+    await expect(item(page, records[0]?.recordId ?? 'missing')).toBeVisible();
     await panel(page).press('End');
-    await sparsePage;
-    await expect(entries(page)).toHaveCount(2);
-    const duplicatePage = page.waitForResponse((response) =>
-        response.url().includes('cursor=duplicate'),
-    );
-    await panel(page).press('End');
-    await duplicatePage;
-    await expect(
-        page.getByRole('status').filter({ hasText: 'Koniec dostępnego zakresu historii.' }),
-    ).toBeVisible();
+    await expect(item(page, records[50]?.recordId ?? 'missing')).toBeVisible();
     let invalidRequests = 0;
     await page.route('**/room/history/user-history?*', async (route) => {
         invalidRequests += 1;
@@ -493,20 +480,16 @@ test('advances empty pages on user input and keeps invalid data labeled until ex
         });
     });
     await disconnectMockRealtime(page.request);
-    await expect(
-        page.getByRole('alert').filter({ hasText: 'Nie udało się odczytać poprawnej historii.' }),
-    ).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: /poprawnej historii/ })).toBeVisible();
     await publishMockRoomUpdate(
         page.request,
         createCommandsUpdatedMessage(0, { userHistory: createHistoryItems(1, 10001) }),
     );
-    await expect(entries(page)).toHaveCount(3);
     expect(invalidRequests).toBe(1);
     await page.unroute('**/room/history/user-history?*');
-    await page.getByRole('button', { name: 'Spróbuj ponownie', exact: true }).click();
+    await page.getByRole('button', { name: /ponownie/, exact: true }).click();
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(panel(page)).toBeFocused();
-    await expect(entries(page)).toHaveCount(1);
     await panel(page).press('End');
-    await expect(entries(page)).toHaveCount(3);
+    await expect(item(page, records[50]?.recordId ?? 'missing')).toBeVisible();
 });

@@ -89,6 +89,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
                 history.setPages(value.pages);
             }
 
+            if ('queries' in value) {
+                history.setQueries(value.queries);
+            }
+
             if ('error' in value && 'status' in value && typeof value.status === 'number') {
                 history.setError(value.status, value.error);
             }

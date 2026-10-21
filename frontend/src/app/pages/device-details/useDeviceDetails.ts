@@ -1,9 +1,9 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
-import { useEffect, useState } from 'react';
 
-import { connectRoomRealtime, type RoomRealtimeConnectionStatus } from '../../api/room';
+import type { RoomRealtimeConnectionStatus } from '../../api/room';
+import { useRoomConnection } from '../../features/room';
 
-export type DeviceDetailsState =
+type DeviceDetailsState =
     | {
           status: 'connecting';
           connectionStatus: Extract<RoomRealtimeConnectionStatus, 'connecting' | 'reconnecting'>;
@@ -17,55 +17,17 @@ export type DeviceDetailsState =
       };
 
 export function useDeviceDetails(deviceId: string | undefined): DeviceDetailsState {
-    const [state, setState] = useState<DeviceDetailsState>({
-        status: 'connecting',
-        connectionStatus: 'connecting',
-    });
+    const { room } = useRoomConnection();
 
-    useEffect(() => {
-        const connection = connectRoomRealtime({
-            onConnectionStatus(connectionStatus) {
-                setState((current) =>
-                    current.status === 'ready'
-                        ? {
-                              ...current,
-                              connectionStatus:
-                                  connectionStatus === 'connected' ? 'connected' : 'reconnecting',
-                          }
-                        : {
-                              status: 'connecting',
-                              connectionStatus:
-                                  connectionStatus === 'connecting' ||
-                                  connectionStatus === 'connected'
-                                      ? 'connecting'
-                                      : 'reconnecting',
-                          },
-                );
-            },
-            onMessage({ snapshot }) {
-                setState({
-                    status: 'ready',
-                    deviceId,
-                    device: snapshot.devices.find((device) => device.deviceId === deviceId),
-                    connectionStatus: 'connected',
-                });
-            },
-            onInterrupted() {
-                setState((current) => ({ ...current, connectionStatus: 'reconnecting' }));
-            },
-            onInvalidMessage() {
-                setState((current) =>
-                    current.status === 'ready' ? { ...current, contractError: true } : current,
-                );
-            },
-        });
-
-        return () => connection.close();
-    }, [deviceId]);
-
-    if (state.status === 'ready' && state.deviceId !== deviceId) {
-        return { status: 'connecting', connectionStatus: 'connecting' };
+    if (room.status !== 'ready') {
+        return { status: 'connecting', connectionStatus: room.connectionStatus };
     }
 
-    return state;
+    return {
+        status: 'ready',
+        deviceId,
+        device: room.snapshot.devices.find((device) => device.deviceId === deviceId),
+        connectionStatus: room.connectionStatus,
+        ...(room.contractError ? { contractError: true } : {}),
+    };
 }

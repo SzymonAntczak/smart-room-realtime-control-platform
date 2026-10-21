@@ -125,15 +125,10 @@ describe('device details navigation', () => {
         const deviceDetailsLink = screen.getByRole('link', {
             name: 'Szczegóły urządzenia: Temperatura biurka',
         });
+        const establishedSource = MockEventSource.latest();
+        const establishedCount = MockEventSource.instances.length;
         deviceDetailsLink.focus();
         await user.keyboard('{Enter}');
-        act(() =>
-            MockEventSource.latest().emitMessage(
-                createRoomSnapshotMessage({
-                    devices: [createTemperatureDevice(), createLedDevice()],
-                }),
-            ),
-        );
         await waitFor(() =>
             expect(
                 screen.getByRole('heading', {
@@ -144,18 +139,23 @@ describe('device details navigation', () => {
         );
         expect(MockEventSource.instances.filter((source) => !source.closed)).toHaveLength(1);
 
+        expect(MockEventSource.latest()).toBe(establishedSource);
+        expect(MockEventSource.instances).toHaveLength(establishedCount);
         await user.click(screen.getByRole('link', { name: 'Wróć do Dashboardu' }));
         await waitFor(() => expect(screen.getByRole('main')).toHaveFocus());
         expect(MockEventSource.instances.filter((source) => !source.closed)).toHaveLength(1);
 
         await act(async () => router.navigate(-1));
         expect(router.state.location.pathname).toBe('/device-details/temp-desk');
-        expect(
-            screen.getByRole('heading', { name: 'Szczegóły urządzenia', level: 1 }),
-        ).toBeVisible();
+        expect(MockEventSource.latest()).toBe(establishedSource);
+        expect(MockEventSource.instances).toHaveLength(establishedCount);
+        expect(screen.getByRole('heading', { name: /Temperatura biurka/, level: 1 })).toBeVisible();
         await act(async () => router.navigate(1));
         expect(router.state.location.pathname).toBe('/');
         await waitFor(() => expect(screen.getByRole('main')).toHaveFocus());
+        await act(async () => router.navigate('/unknown-route'));
+        expect(establishedSource.closed).toBe(true);
+        expect(MockEventSource.instances).toHaveLength(establishedCount);
     });
 
     it('shows a not-found page for incomplete or unknown URLs', () => {

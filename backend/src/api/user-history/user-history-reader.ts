@@ -1,8 +1,3 @@
-import {
-    isSignificantFactPage,
-    type SignificantFactPage,
-    type SignificantFactPageQuery,
-} from '@smart-room/contracts/history';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 import {
@@ -13,7 +8,11 @@ import {
     type UserHistoryPage,
 } from '@smart-room/contracts/user-history';
 
-import type { RoomHistoryReadResult } from '../../platform/history/room-history-reader';
+import {
+    isPinnedSignificantFactSnapshot,
+    type RoomHistoryReader,
+    type RoomHistoryReadResult,
+} from '../../platform/history/room-history-reader';
 
 import { createUserHistoryCursorCodec, type UserHistoryCursorCodec } from './user-history-cursor';
 import {
@@ -22,27 +21,21 @@ import {
     toHistoricalUserHistoryItems,
 } from './user-history-facts';
 
-// Stage 4's hard significant-fact retention bound also bounds auxiliary scan work.
-const maximumPinnedFactCount = 5_000;
-
 export interface UserHistoryReader {
     readPage(query: NormalizedUserHistoryPageQuery): RoomHistoryReadResult<UserHistoryPage>;
 }
 
 export function createUserHistoryReader({
-    readSignificantFactPage,
+    readPinnedSignificantFactSnapshot,
     getRoomSnapshot,
     cursorCodec = createUserHistoryCursorCodec(),
 }: {
-    readSignificantFactPage(
-        query: SignificantFactPageQuery,
-    ): RoomHistoryReadResult<SignificantFactPage>;
+    readPinnedSignificantFactSnapshot: RoomHistoryReader['readPinnedSignificantFactSnapshot'];
     getRoomSnapshot(): RoomSnapshotProjection;
     cursorCodec?: UserHistoryCursorCodec;
 }): UserHistoryReader {
     return {
         readPage(query) {
-            const rawQuery: SignificantFactPageQuery = { pageSize: query.pageSize };
             const scope: UserHistoryCursorQueryScope = {
                 dataset: 'user_history',
                 order: 'occurred_at_desc',
@@ -51,46 +44,44 @@ export function createUserHistoryReader({
                 ...(query.from !== undefined ? { from: query.from } : {}),
                 ...(query.to !== undefined ? { to: query.to } : {}),
             };
+            const cursor =
+                query.cursor === undefined ? undefined : cursorCodec.decode(query.cursor);
 
-            if (query.cursor !== undefined) {
-                const payload = cursorCodec.decode(query.cursor);
-
-                if (!payload) {
-                    return {
-                        status: 'cursor_error',
-                        error: {
-                            error: 'invalid_cursor',
-                            message: 'The cursor cannot be verified.',
-                        },
-                    };
-                }
-
-                if (!isMatchingUserHistoryCursorQueryScope(payload.scope, scope)) {
-                    return {
-                        status: 'cursor_error',
-                        error: {
-                            error: 'cursor_query_mismatch',
-                            message: 'The cursor does not match this query.',
-                        },
-                    };
-                }
-
-                rawQuery.cursor = payload.rawCursor;
+            if (query.cursor !== undefined && cursor === undefined) {
+                return {
+                    status: 'cursor_error',
+                    error: { error: 'invalid_cursor', message: 'The cursor cannot be verified.' },
+                };
             }
 
-            const result = readSignificantFactPage(rawQuery);
+            if (cursor && !isMatchingUserHistoryCursorQueryScope(cursor.scope, scope)) {
+                return {
+                    status: 'cursor_error',
+                    error: {
+                        error: 'cursor_query_mismatch',
+                        message: 'The cursor does not match this query.',
+                    },
+                };
+            }
+
+            const result = readPinnedSignificantFactSnapshot(cursor?.bounds);
 
             if (result.status !== 'available') {
                 return result;
             }
 
-            const main = result.value;
+            const raw = result.value;
             const snapshot = getRoomSnapshot();
 
             if (
-                !isSignificantFactPage(main) ||
-                main.pageSize !== query.pageSize ||
-                !isRoomSnapshotProjection(snapshot)
+                !isPinnedSignificantFactSnapshot(raw) ||
+                !isRoomSnapshotProjection(snapshot) ||
+                (cursor &&
+                    Object.keys(cursor.bounds).some(
+                        (key) =>
+                            raw.bounds[key as keyof typeof raw.bounds] !==
+                            cursor.bounds[key as keyof typeof cursor.bounds],
+                    ))
             ) {
                 return { status: 'invalid_internal_data' };
             }
@@ -98,54 +89,39 @@ export function createUserHistoryReader({
             const deviceNames = new Map(
                 snapshot.devices.map((device) => [device.deviceId, device.name]),
             );
-            const evidence = createTimeoutEvidence(main.items, deviceNames);
-            collectTimeoutRequestEvidence(evidence, main.items);
-
-            let previous = main;
-            let scannedFacts = main.items.length;
-
-            while (evidence.size > 0 && previous.nextCursor !== null) {
-                const auxiliary = readSignificantFactPage({
-                    pageSize: query.pageSize,
-                    cursor: previous.nextCursor,
-                });
-
-                if (auxiliary.status !== 'available') {
-                    return auxiliary;
-                }
-
-                const page = auxiliary.value;
-
-                if (!isSignificantFactPage(page) || !isFollowingPinnedPage(previous, page)) {
-                    return { status: 'invalid_internal_data' };
-                }
-
-                scannedFacts += page.items.length;
-
-                if (scannedFacts > maximumPinnedFactCount) {
-                    return { status: 'invalid_internal_data' };
-                }
-
-                collectTimeoutRequestEvidence(evidence, page.items);
-                previous = page;
-            }
-
-            const historicalItems = toHistoricalUserHistoryItems(main.items, deviceNames, evidence);
-            const page = {
-                items: historicalItems.filter((item) => matchesUserHistoryFilters(item, query)),
-                historyGenerationId: main.historyGenerationId,
-                throughSequence: main.throughSequence,
-                retentionAsOf: main.retentionAsOf,
+            const evidence = createTimeoutEvidence(raw.items, deviceNames);
+            collectTimeoutRequestEvidence(evidence, raw.items);
+            const matching = toHistoricalUserHistoryItems(raw.items, deviceNames, evidence)
+                .filter(
+                    (item) =>
+                        matchesUserHistoryFilters(item, query) &&
+                        (!cursor ||
+                            Date.parse(item.occurredAt) < Date.parse(cursor.position.occurredAt) ||
+                            (item.occurredAt === cursor.position.occurredAt &&
+                                item.storageSequence < cursor.position.storageSequence)),
+                )
+                .slice(0, query.pageSize + 1);
+            const items = matching.slice(0, query.pageSize);
+            const last = items.at(-1);
+            const page: UserHistoryPage = {
+                items,
                 pageSize: query.pageSize,
-                nextCursor:
-                    main.nextCursor === null
-                        ? null
-                        : cursorCodec.encode({
-                              version: 1,
-                              scope,
-                              rawCursor: main.nextCursor,
-                          }),
+                historyGenerationId: raw.bounds.historyGenerationId,
+                throughSequence: raw.bounds.throughSequence,
+                retentionAsOf: raw.bounds.retentionAsOf,
                 completeness: 'retained_evidence_only',
+                nextCursor:
+                    matching.length > query.pageSize && last
+                        ? cursorCodec.encode({
+                              version: 2,
+                              scope,
+                              bounds: raw.bounds,
+                              position: {
+                                  occurredAt: last.occurredAt,
+                                  storageSequence: last.storageSequence,
+                              },
+                          })
+                        : null,
             };
 
             return isUserHistoryPage(page)
@@ -156,45 +132,13 @@ export function createUserHistoryReader({
 }
 
 function matchesUserHistoryFilters(
-    item: ReturnType<typeof toHistoricalUserHistoryItems>[number],
+    item: UserHistoryPage['items'][number],
     query: NormalizedUserHistoryPageQuery,
 ): boolean {
-    if (
-        query.deviceId !== undefined &&
-        (!('deviceId' in item) || item.deviceId !== query.deviceId)
-    ) {
-        return false;
-    }
-
-    const occurredAt = Date.parse(item.occurredAt);
-
     return (
-        (query.from === undefined || occurredAt >= Date.parse(query.from)) &&
-        (query.to === undefined || occurredAt < Date.parse(query.to))
-    );
-}
-
-function isFollowingPinnedPage(
-    previous: SignificantFactPage,
-    current: SignificantFactPage,
-): boolean {
-    if (
-        current.historyGenerationId !== previous.historyGenerationId ||
-        current.throughSequence !== previous.throughSequence ||
-        current.retentionAsOf !== previous.retentionAsOf ||
-        current.pageSize !== previous.pageSize
-    ) {
-        return false;
-    }
-
-    const last = previous.items.at(-1);
-    const first = current.items[0];
-
-    return (
-        first === undefined ||
-        (last !== undefined &&
-            (Date.parse(first.occurredAt) < Date.parse(last.occurredAt) ||
-                (first.occurredAt === last.occurredAt &&
-                    first.storageSequence < last.storageSequence)))
+        (query.deviceId === undefined ||
+            ('deviceId' in item && item.deviceId === query.deviceId)) &&
+        (query.from === undefined || Date.parse(item.occurredAt) >= Date.parse(query.from)) &&
+        (query.to === undefined || Date.parse(item.occurredAt) < Date.parse(query.to))
     );
 }

@@ -2,9 +2,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import type { RoomStorage } from '../storage/room-storage';
+import type {
+    PinnedHistoryBounds,
+    RoomStorage,
+    RoomStorageTransaction,
+} from '../storage/room-storage';
 import { createSqliteRoomStorage } from '../storage/sqlite-room-storage';
 import { StorageAvailabilityError } from '../storage/storage-errors';
 
@@ -156,3 +160,56 @@ function storageGapPayload(outageEndedAt: string) {
         observationsBackfilled: false as const,
     };
 }
+
+it('bulk-reads the complete pinned snapshot once per request and guards the 5000-fact bound', () => {
+    const bounds: PinnedHistoryBounds = {
+        historyGenerationId: 'generation',
+        throughSequence: 5001,
+        retentionAsOf: '2026-09-10T10:00:00.000Z',
+        retentionRevision: 0,
+        expiresAt: '2026-09-10T10:05:00.000Z',
+    };
+    const facts = Array.from({ length: 5001 }, (_, index) => ({
+        historyGenerationId: 'generation',
+        storageSequence: 5001 - index,
+        recordId: 'rec:v1:sha256:' + (5001 - index).toString(16).padStart(64, '0'),
+        eventType: 'storage.gap.recorded',
+        source: 'backend',
+        occurredAt: '2026-09-10T10:00:00.000Z',
+        payload: storageGapPayload('2026-09-10T10:00:00.000Z'),
+    }));
+    const capture = vi.fn(() => bounds);
+    const list = vi.fn(() => facts.slice(0, 5000));
+    const read = vi.fn(() => ({ status: 'available', value: facts.slice(0, 5000) }));
+    const storage = {
+        transact(operation: (transaction: RoomStorageTransaction) => unknown) {
+            return {
+                status: 'committed',
+                value: operation({
+                    capturePinnedHistoryBounds: capture,
+                    listPinnedSignificantFacts: list,
+                } as unknown as RoomStorageTransaction),
+            };
+        },
+        readPinnedSignificantFacts: read,
+    } as unknown as RoomStorage;
+    const reader = createRoomHistoryReader({
+        storage,
+        cursorCodec: createHistoryCursorCodec(),
+        now: () => bounds.retentionAsOf,
+    });
+    expect(reader.readPinnedSignificantFactSnapshot()).toMatchObject({
+        status: 'available',
+        value: { bounds, items: expect.any(Array) },
+    });
+    expect(capture).toHaveBeenCalledOnce();
+    expect(list).toHaveBeenCalledExactlyOnceWith(bounds, { limit: 5001 });
+    expect(reader.readPinnedSignificantFactSnapshot(bounds).status).toBe('available');
+    expect(read).toHaveBeenCalledExactlyOnceWith({
+        bounds,
+        readAt: bounds.retentionAsOf,
+        options: { limit: 5001 },
+    });
+    list.mockReturnValueOnce(facts);
+    expect(reader.readPinnedSignificantFactSnapshot()).toEqual({ status: 'invalid_internal_data' });
+});

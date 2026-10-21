@@ -5,10 +5,17 @@ import {
     type UserHistoryCursorQueryScope,
 } from '@smart-room/contracts/user-history';
 
+import {
+    isHistoryPagePosition,
+    isPinnedHistoryBounds,
+} from '../../platform/history/room-history-cursor';
+import type { HistoryPagePosition, PinnedHistoryBounds } from '../../platform/storage/room-storage';
+
 export interface UserHistoryCursorPayload {
-    version: 1;
+    version: 2;
     scope: UserHistoryCursorQueryScope;
-    rawCursor: string;
+    bounds: PinnedHistoryBounds;
+    position: HistoryPagePosition;
 }
 
 export interface UserHistoryCursorCodec {
@@ -16,7 +23,7 @@ export interface UserHistoryCursorCodec {
     decode(cursor: string): UserHistoryCursorPayload | undefined;
 }
 
-/** The raw cursor owns expiry and retention; this signature owns presentation scope. */
+/** Binds presentation scope and keyset position to the original pinned storage bounds. */
 export function createUserHistoryCursorCodec({
     secret = randomBytes(32),
 }: { secret?: Uint8Array } = {}): UserHistoryCursorCodec {
@@ -77,13 +84,14 @@ function isUserHistoryCursorPayload(value: unknown): value is UserHistoryCursorP
     return (
         typeof value === 'object' &&
         value !== null &&
-        Object.keys(value).length === 3 &&
+        Object.keys(value).length === 4 &&
         'version' in value &&
-        value.version === 1 &&
+        value.version === 2 &&
         'scope' in value &&
         normalizeUserHistoryCursorQueryScope(value.scope) !== undefined &&
-        'rawCursor' in value &&
-        typeof value.rawCursor === 'string' &&
-        value.rawCursor.length > 0
+        'bounds' in value &&
+        isPinnedHistoryBounds(value.bounds) &&
+        'position' in value &&
+        isHistoryPagePosition(value.position, value.bounds.throughSequence)
     );
 }

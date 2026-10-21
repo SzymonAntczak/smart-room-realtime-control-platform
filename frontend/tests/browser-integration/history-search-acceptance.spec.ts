@@ -68,7 +68,22 @@ for (const scenario of [
             ...item,
             occurredAt: new Date(times[index] ?? '').toISOString(),
         }));
-        await configureMockHistory(page.request, { pages: [createHistoryPage(records)] });
+        await configureMockHistory(page.request, {
+            pages: [createHistoryPage(records)],
+            queries: [
+                {
+                    criteria: {
+                        ...(scenario.from ? { from: scenario.lower } : {}),
+                        ...(scenario.to ? { to: scenario.upper } : {}),
+                    },
+                    pages: [
+                        createHistoryPage(
+                            records.filter((_, index) => scenario.includedIndices.includes(index)),
+                        ),
+                    ],
+                },
+            ],
+        });
         await openHistory(page);
         await page.getByRole('button', { name: 'Szukaj', exact: true }).click();
         const dialog = page.getByRole('dialog');

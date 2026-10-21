@@ -8,6 +8,7 @@ import {
 import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
 import { describe, expect, it, vi } from 'vitest';
 
+import { createHistoryPageFixture } from '../../../../test/history/history-page-fixtures';
 import { createHistoryClient } from '../../../api/history';
 
 import { createHistorySession } from './history-session';
@@ -18,10 +19,7 @@ const baseline = {
     storage: fixtures.snapshot.platform.storage,
     history: [],
 } as const;
-const page = (
-    items: UserHistoryPage['items'],
-    nextCursor: string | null = null,
-): UserHistoryPage => ({ ...fixtures.page, items, pageSize: 50, nextCursor });
+const page = createHistoryPageFixture;
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 describe('user history session', () => {
@@ -262,7 +260,7 @@ describe('user history session', () => {
         );
     });
 
-    it('limits a sparse rebuild to one hundred pages and preserves its labeled last-known view', async () => {
+    it('limits a rebuild to one hundred pages and preserves its labeled last-known view', async () => {
         const anchor = records(1)[0];
 
         if (!anchor) {
@@ -274,7 +272,7 @@ describe('user history session', () => {
             .mockResolvedValueOnce(response(historyPage([anchor])));
 
         for (let index = 0; index < 100; index += 1) {
-            fetcher.mockResolvedValueOnce(response(historyPage([], `empty-${index}`)));
+            fetcher.mockResolvedValueOnce(response(historyPage([], `page-${index}`)));
         }
 
         const session = createHistorySession(createHistoryClient(fetcher));
@@ -354,7 +352,11 @@ describe('user history session', () => {
             status: 400,
             error: 'cursor_query_mismatch',
         },
-        { body: historyPage([], 'older'), status: 200, error: 'invalid_response' },
+        {
+            body: { ...historyPage([]), nextCursor: 'older' },
+            status: 200,
+            error: 'invalid_response',
+        },
     ])('preserves its view without automatic retry for $error', async ({ body, status, error }) => {
         const items = records(1);
         const fetcher = vi
@@ -367,7 +369,11 @@ describe('user history session', () => {
         await session.loadNextPage();
         session.acceptRealtime({ ...baseline, kind: 'addition' });
         expect(fetcher).toHaveBeenCalledTimes(2);
-        expect(session.getState()).toMatchObject({ error, lastKnown: true, items });
+        expect(session.getState()).toMatchObject({
+            error,
+            lastKnown: true,
+            items: historyPage(items, 'older').items,
+        });
     });
 
     it('retries a network failure at the same cursor and rejects malformed JSON without looping', async () => {
@@ -386,7 +392,7 @@ describe('user history session', () => {
         expect(session.getState().error).toBe('invalid_response');
         expect(fetcher).toHaveBeenCalledTimes(3);
     });
-    it('keeps live additions before, during and between sparse pinned pages', async () => {
+    it('keeps live additions before, during and between pinned pages', async () => {
         let release: (value: Response) => void = () => undefined;
         const fetcher = vi
             .fn<typeof fetch>()

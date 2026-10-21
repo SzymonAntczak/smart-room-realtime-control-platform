@@ -3,12 +3,14 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createHistoryPageFixture } from '../../../../test/history/history-page-fixtures';
+
 import { useHistorySearch } from './useHistorySearch';
 
 const fixtures = createUserHistoryFixtures();
 
 function response(nextCursor: string | null = null) {
-    return new Response(JSON.stringify({ ...fixtures.page, pageSize: 50, nextCursor }));
+    return new Response(JSON.stringify(createHistoryPageFixture(fixtures.page.items, nextCursor)));
 }
 
 function deferredResponse() {

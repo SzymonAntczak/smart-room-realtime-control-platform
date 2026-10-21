@@ -4,13 +4,16 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../../test/room/mock-event-source';
+import { RoomProvider } from '../features/room';
 
 import { AppDev } from './AppDev';
 
 function renderAppDev() {
     return render(
         <MemoryRouter>
-            <AppDev />
+            <RoomProvider>
+                <AppDev />
+            </RoomProvider>
         </MemoryRouter>,
     );
 }

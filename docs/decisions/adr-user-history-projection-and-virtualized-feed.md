@@ -159,8 +159,8 @@ and `completeness: retained_evidence_only`. This value marks that unproven
 transitions may be omitted; it does not assert exhaustive user history.
 Pages have at most `pageSize` items (1–100), unique IDs and storage sequences,
 and source order `(occurredAt, storageSequence)` descending. Each item sequence
-is at or below the pinned watermark. Filtering permits short or empty pages
-with a non-null next cursor, rather than falsely declaring the raw session ended.
+is at or below the pinned watermark. A non-null next cursor requires exactly pageSize matching items. Short or empty
+pages indicate exhaustion of the matching retained entries.
 The query accepts optional `pageSize` (integer 1–100, default 50), an optional
 nonempty `cursor`, and optional `deviceId`, `from` and `to` filters. The first-page schema
 excludes `cursor`; the page schema supports both first and continuation requests.
@@ -201,10 +201,9 @@ The BFF transforms data as it crosses its existing API boundary. For live
 updates it uses the raw history additions with their captured domain processing
 evidence. Legacy live classification uses the subscriber's before/after room
 projection. For historical reads it consumes
-the existing pinned significant-fact pages, aggregates and filters them inside
-the BFF, and only then returns user-history pages. It consumes and advances the
-existing raw cursor internally; the browser receives an opaque cursor scoped to
-the same pinned generation, watermark, retention view and expiry. The raw page carries the evidence stored with each new relevant fact; migration
+one complete pinned significant-fact snapshot, derives and filters user entries inside
+the BFF, and only then returns user-history pages. It selects matching user entries from a complete pinned fact snapshot; the browser receives an opaque cursor scoped to
+the same pinned generation, watermark, retention view and expiry. Each retained fact carries its stored evidence; migration
 preserves existing rows without inventing missing evidence. When retained evidence cannot prove an
 older state change, the BFF omits that change and preserves an honest history
 completeness label rather than guessing.
@@ -228,28 +227,32 @@ raw facts for its product feed. Preserve the underlying page order
 `(occurredAt, storageSequence)` descending, pinned `historyGenerationId`,
 `throughSequence`, `retentionAsOf`, private retention revision, five-minute
 expiry, 1–100 page-size limits, typed cursor errors and storage `503` behavior.
-The BFF cursor binds its user-dataset scope to the underlying raw session; it
+The BFF cursor binds its user-dataset scope to the original pinned storage view; it
 cannot be used as a raw significant-facts cursor.
 
-`GET /room/history/user-history` uses one raw significant-fact page per user
-page, with the effective `pageSize` (default 50). Filtering may yield fewer or
-zero items while `nextCursor` still points to the next raw range. It does not
-fill pages by consuming additional ranges. A BFF-local HMAC-SHA256 cursor binds
-the user scope and unchanged raw cursor with a process-local random key. The
-raw cursor remains the owner of pinned bounds, private retention revision and
-fixed expiry; no database or storage-port change is needed.
+`GET /room/history/user-history` paginates matching user entries, not raw
+significant-fact ranges. Each GET bulk-reads one complete pinned fact snapshot
+with at most 5,000 records, validates it, derives user entries and applies the
+requested device/date filters. Reading 5,001 records detects a violated bound
+and fails the response. There is no cross-request fact or user-page cache.
 
-Device/date filters shape the returned user entries within that pinned raw
-session. They do not narrow the retained evidence needed to transform facts
-truthfully: a request outside the selected period may still prove the target of
-a timeout inside it. Auxiliary reads retain their existing bounds and do not
-advance the main cursor. A main raw page without matches can return an empty
-user page with a non-null cursor; only exhaustion of the raw session ends
-pagination. Device-filtered results omit room-level entries such as
-`history_gap`. The response retains `completeness: retained_evidence_only`, but
-the historical-search UI does not render a separate completeness notice.
-Filtering does not reconstruct unproven historical transitions or hide read
-failures through partial success.
+The BFF returns at most the effective `pageSize` matching entries (default 50).
+It examines one additional match to determine whether another page exists.
+A non-null `nextCursor` requires a full page; short and empty pages have no
+continuation. Device-filtered results omit room-level entries such as
+`history_gap`. Results retain `completeness: retained_evidence_only`.
+
+A version-2 BFF-local HMAC-SHA256 cursor binds normalized user scope, original
+pinned bounds (including private retention revision and fixed expiry) and the
+last returned `(occurredAt, storageSequence)` position. Continuations use the
+same snapshot membership and only older matching positions. Old-version and
+unverifiable cursors return `invalid_cursor`. Raw significant-fact HTTP pagination
+is unchanged and uses a separate cursor contract. No database migration or
+second stored projection is needed.
+
+Device/date filters apply after evidence collection. A request outside the
+selected period may still prove a timeout target inside it. Filtering never
+reconstructs unproven transitions or hides read failures through partial success.
 
 For records with processing evidence, snapshots, live updates and history pages
 use the same mapper. Only applied value changes produce power, availability or
@@ -268,15 +271,11 @@ while its source fact is retained in the same history generation, including
 after browser reload, cache eviction and backend restart. Volatile entries retain
 their existing bounded guarantee.
 
-For legacy timeouts on the main page, the BFF scans that page and older pages of the
-same pinned session through its end, retaining only the relevant request
-evidence. Missing or conflicting targets omit the timeout. Auxiliary reads
-never advance the returned cursor: it wraps the main raw page's `nextCursor`.
-Every raw page is validated and auxiliary boundaries/order must match. An
-auxiliary read failure fails the whole response instead of returning partial
-success. Pages without eligible timeouts need no auxiliary scan. A scan can
-read the remaining retained history (at most 5,000 facts), but neither facts
-nor user pages are cached across requests.
+For legacy timeouts, the BFF collects request targets from the complete pinned
+snapshot before applying device/date filters. Missing or conflicting retained
+targets omit the timeout. Malformed facts or evidence and storage failures fail
+the whole response. One bulk read bounds database work; validation and mapping
+cost O(N) time and memory for at most 5,000 facts per GET.
 
 The BFF maps its existing room snapshot and `device.updated`, `commands.updated`
 and `platform.updated` publications to user-history entries, without changing
@@ -329,10 +328,9 @@ The BFF does not interpret calendar dates or infer the browser's zone.
 Search results are static. SSE additions, reconnect and storage recovery do not
 merge results or automatically refresh the search. Infinite scroll and an
 accessible Load older control fetch older pages from the same pinned search,
-with one request in flight, bounded memory and virtual rendering. Sparse pages
-with a cursor continue pagination. Show loading, no matches, retry and
-end-of-history states; an empty intermediate page is not proof of no matches or
-end of history. A new search or Refresh may retain prior results in session
+with one request in flight, bounded memory and virtual rendering. Each search or paging action makes one HTTP read. Show loading, no matches, retry and
+end-of-history states. An empty result is terminal because the BFF has checked
+the complete pinned matching dataset. A new search or Refresh may retain prior results in session
 state, but shows only loading feedback until the new results are ready. Read
 errors may also preserve prior results in session state, but the search UI shows
 only the error state until results are ready.
@@ -353,7 +351,7 @@ above are part of this decision.
 The frontend `features/history` module owns filters, independent live/static
 sessions, entry rendering, virtual lists, pagination and reading position.
 Each consumer composes its own local `HistoryProvider`, `HistoryFilters` and
-`HistoryFeed`. Dashboard keeps the room connection and synchronously forwards
+`HistoryFeed`. The shared room provider keeps the connection and synchronously forwards
 validated updates through the feature-owned source port; history creates no
 additional SSE connection. Closing a view releases only its own history session.
 
@@ -371,8 +369,10 @@ edits remain drafts until Search, and Refresh repeats applied criteria. Clear
 removes date drafts and starts a new device-only query. A device identity change
 creates a new provider/session; a display-name change does not refetch. Dates use
 the same inclusive browser-local calendar-day rules as modal search. Details
-retains its larger virtual viewport and automatic older-page loading without a
-Load older button. Static device results never merge SSE or rebuild on reconnect.
+retains its larger virtual viewport and scroll-triggered older-page loading without a
+Load older button. Paging requires real user scroll input within 320 pixels of the
+end and consumes that intent once; measurement and programmatic scrolling do not
+request further pages. Static device results never merge SSE or rebuild on reconnect.
 Temperature details presents telemetry as a chart and equivalent raw-value table
 alongside this event history. The page composes these telemetry components directly.
 Temperature measurements remain separate from user-history events such as
@@ -391,7 +391,7 @@ range and overscan do not start paging on their own, so opening a short list
 does not fetch a second page. Each approach loads one page. Receiving that page,
 changing the cursor or measuring the new content does not start another read.
 Further paging requires new user scroll input after the request completes,
-including after a sparse or empty page. Use one request in flight. Expose a loading state,
+including after a page response. Use one request in flight. Expose a loading state,
 explicit retry after errors and the end of retained history. Invalid payloads
 remain an error rather than triggering an automatic retry loop.
 Keep the history title and footer controls outside the scrollable
@@ -445,7 +445,7 @@ The first HTTP page pins generation, watermark and retention time. After the
 user scrolls within 320 pixels of the content scroller's end, paging reads one
 page through the cursor. The request consumes that scroll intent; input during
 loading and programmatic scroll adjustments cannot queue a further read.
-A new user scroll after completion can continue through an empty page's cursor.
+A new user scroll after completion can request the next matching page.
 Paging and explicit retry share the same single-flight session operation. The
 frontend renders only a measured virtual range; virtual indexes never
 determine the HTTP cursor or change session limits.
@@ -521,7 +521,7 @@ the history boundary honestly.
 Contract and client-boundary tests must protect the BFF schemas and validation
 adapters. Transformer, cursor, reader and isolated HTTP/SQLite tests must cover
 optional page size/default, conservative classification, cross-page timeout
-evidence, sparse pages, signed dataset/scope separation, fixed expiry, pinned
+evidence, filled filtered pages, signed dataset/scope separation, fixed expiry, pinned
 retention/generation and whole-response errors. Platform/raw API and runtime
 bootstrap tests must protect the unchanged internal contracts.
 
@@ -530,7 +530,7 @@ continuation queries, UTC/offset normalization, one-sided ranges, empty/reversed
 ranges, strict unknown-field rejection and complete canonical cursor-scope
 matching. BFF reader/HTTP tests must protect AND filtering by event time,
 inclusive lower/exclusive upper bounds, retained evidence outside the requested
-range, room-entry exclusion for device filters and sparse-page continuation.
+range, room-entry exclusion for device filters and lossless filtered continuation.
 Changed or omitted filters must produce typed cursor mismatch; storage and
 main/auxiliary read errors must preserve whole-response failure.
 

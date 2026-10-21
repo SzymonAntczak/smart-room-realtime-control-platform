@@ -2,10 +2,13 @@ import { expect, test } from '@playwright/test';
 
 import {
     configureMockHistory,
+    publishMockRoomUpdate,
     resetMockRoom,
     setMockRoomSnapshot,
 } from './mock-bff/mock-bff-control';
 import {
+    createDeviceUpdatedMessage,
+    createOnlineLedDeviceProjection,
     createOnlineLedRoomSnapshot,
     createOnlineTemperatureDeviceProjection,
 } from './mock-bff/mock-bff-fixtures';
@@ -36,6 +39,13 @@ test('shows sensor telemetry alongside retained history scoped to that sensor', 
     const ledEntry = createPowerHistoryItem(3, '2026-09-21T10:00:00Z', 3, 'on');
     await configureMockHistory(page.request, {
         pages: [createHistoryPage([ledEntry, newer, older])],
+        queries: [
+            { criteria: { deviceId: 'temp-desk' }, pages: [createHistoryPage([newer, older])] },
+            {
+                criteria: { deviceId: 'temp-desk', from: '2026-09-20T00:00:00Z' },
+                pages: [createHistoryPage([newer])],
+            },
+        ],
     });
     const requests: URL[] = [];
     page.on('request', (request) => {
@@ -80,7 +90,15 @@ test('filters LED history by dates and clears back to its automatically loaded d
     await setMockRoomSnapshot(page.request, snapshot);
     const older = createPowerHistoryItem(1, '2026-06-07T09:00:00Z', 1, 'on');
     const newer = createPowerHistoryItem(2, '2026-06-08T09:00:00Z', 2, 'off');
-    await configureMockHistory(page.request, { pages: [createHistoryPage([newer, older])] });
+    await configureMockHistory(page.request, {
+        pages: [createHistoryPage([newer, older])],
+        queries: [
+            {
+                criteria: { deviceId: 'led-main', from: '2026-06-08T00:00:00Z' },
+                pages: [createHistoryPage([newer])],
+            },
+        ],
+    });
     const requests: URL[] = [];
     page.on('request', (request) => {
         const url = new URL(request.url());
@@ -125,14 +143,23 @@ test('opens LED details from the accessible icon and presents only paged events 
     snapshot.devices.push(createOnlineTemperatureDeviceProjection());
     await setMockRoomSnapshot(page.request, snapshot);
 
-    const ledEvents = createHistoryItems(49);
+    const ledEvents = createHistoryItems(50);
     const temperatureEvent = createAvailabilityHistoryItem(80, 'offline');
     const olderLedEvent = createPowerHistoryItem(101, '2026-06-07T09:00:00Z', 101, 'on');
-    const firstPage = [...ledEvents, temperatureEvent].sort(
+    const firstPage = [...ledEvents.slice(0, 49), temperatureEvent].sort(
         (left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt),
     );
     await configureMockHistory(page.request, {
         pages: [createHistoryPage(firstPage, 'older-cursor'), createHistoryPage([olderLedEvent])],
+        queries: [
+            {
+                criteria: { deviceId: 'led-main' },
+                pages: [
+                    createHistoryPage(ledEvents, 'device-older'),
+                    createHistoryPage([olderLedEvent]),
+                ],
+            },
+        ],
     });
 
     await page.goto('/');
@@ -185,16 +212,14 @@ test('opens LED details from the accessible icon and presents only paged events 
 
         return (
             url.pathname === '/room/history/user-history' &&
-            url.searchParams.get('cursor') === 'older-cursor'
+            url.searchParams.get('cursor') === 'device-older'
         );
     });
-    await scrollRegion.evaluate((element) => {
-        element.scrollTop = element.scrollHeight;
-    });
+    await scrollRegion.press('End');
     await olderPageRequest;
     const olderEvent = page.getByTestId(`history-item-${olderLedEvent.recordId}`);
     await expect(olderEvent).toBeVisible();
-    await expect(olderEvent).toHaveAttribute('aria-setsize', '50');
+    await expect(olderEvent).toHaveAttribute('aria-setsize', '51');
     await expect(
         page.getByRole('status').filter({ hasText: /Koniec dostępnych zachowanych wpisów/ }),
     ).toBeVisible();
@@ -279,3 +304,89 @@ test('browser Back and Forward restore Dashboard and Device Details routes', asy
     await expect(page).toHaveURL(/\/device-details\/led-main$/);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 });
+
+for (const width of [1440, 390]) {
+    test(
+        'reuses SSE across routes and loads exactly one device-history page per scroll at ' +
+            width +
+            'px',
+        async ({ page }) => {
+            await page.setViewportSize({ width, height: 900 });
+            await resetMockRoom(page.request);
+            const snapshot = createOnlineLedRoomSnapshot();
+            snapshot.platform.storage = {
+                ...snapshot.platform.storage,
+                status: 'available',
+                historyGenerationId: 'mock-history-generation',
+                storedThroughSequence: 10000,
+            };
+            await setMockRoomSnapshot(page.request, snapshot);
+            const records = createHistoryItems(100);
+            await configureMockHistory(page.request, {
+                pages: [
+                    createHistoryPage(records.slice(0, 50), 'older'),
+                    createHistoryPage(records.slice(50)),
+                ],
+            });
+            const streams: string[] = [];
+            const cursors: (string | null)[] = [];
+            page.on('request', (request) => {
+                const url = new URL(request.url());
+
+                if (url.pathname === '/room/realtime') {
+                    streams.push(request.url());
+                }
+            });
+            page.on('requestfinished', (request) => {
+                const url = new URL(request.url());
+
+                if (
+                    url.pathname === '/room/history/user-history' &&
+                    url.searchParams.get('deviceId') === 'led-main'
+                ) {
+                    cursors.push(url.searchParams.get('cursor'));
+                }
+            });
+            await page.goto('/');
+            const link = page.getByRole('link', { name: /LED$/ });
+            await expect(link).toBeVisible();
+            const established = streams.length;
+            await link.click();
+            await expect(page).toHaveURL(/device-details/);
+            await expect(page.getByRole('heading', { level: 1, name: /LED$/ })).toBeVisible();
+            const region = page.getByRole('region', { name: /historia.*urz/ });
+            await expect(region.getByTestId('history-item-' + records[0]?.recordId)).toBeVisible();
+            await expect.poll(() => cursors).toEqual([null]);
+            expect(streams).toHaveLength(established);
+            // Programmatic layout/scroll changes do not express a paging action.
+            await region.evaluate((element) => {
+                element.scrollTop = element.scrollHeight;
+            });
+            await expect(region.getByTestId('history-item-' + records[49]?.recordId)).toBeVisible();
+            expect(cursors).toEqual([null]);
+            await region.press('End');
+            await expect.poll(() => cursors.length).toBe(2);
+            expect(cursors).toEqual([null, 'older']);
+            const live = createPowerHistoryItem(10001, '2026-09-21T10:00:00Z', 10001, 'on');
+            const changed = {
+                ...createOnlineLedDeviceProjection(),
+                availability: 'offline' as const,
+                commandAvailability: { policy: 'block' as const, reason: 'device_offline' },
+                reportedState: { power: 'on' },
+                availabilityReason: 'transport_disconnected',
+                availabilityChangedAt: live.occurredAt,
+            };
+            await publishMockRoomUpdate(
+                page.request,
+                createDeviceUpdatedMessage(0, changed, [live], live.occurredAt),
+            );
+            await expect(page.getByRole('heading', { level: 1, name: /LED$/ })).toBeVisible();
+            await expect(page.getByText('Offline', { exact: true })).toBeVisible();
+            await expect(region.getByTestId('history-item-' + live.recordId)).toHaveCount(0);
+            expect(cursors).toHaveLength(2);
+            await page.getByRole('link', { name: /Dashboard/ }).click();
+            await expect(page.getByRole('link', { name: /LED$/ })).toBeVisible();
+            expect(streams).toHaveLength(established);
+        },
+    );
+}

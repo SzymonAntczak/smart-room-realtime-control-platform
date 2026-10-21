@@ -40,8 +40,9 @@ doubles and real BFF/SQLite; there is no production telemetry-history client or 
 - `src/main.tsx`: Vite/React bootstrap and build-mode selection.
 - `src/globals.css`: global reset and shared design tokens.
 - `src/app/App.tsx`: production composition root.
-- `src/app/pages/dashboard/useRoom.ts`: dashboard room connection lifecycle,
-  renderable room state and synchronous room-to-history integration.
+- `src/app/features/room`: shared room connection lifecycle, validated snapshots
+  and synchronous room-to-history integration for Dashboard and Device Details.
+- `src/app/pages/dashboard/useRoom.ts`: maps shared room state to dashboard projections.
 - `src/app/api/commands`: LED command HTTP client and validation.
 - `src/app/api/history`: history HTTP client and validation.
 - `src/app/api/room`: validated SSE client, revisions, reconnect and BFF snapshots.
@@ -72,9 +73,11 @@ transport remains in `dev`.
 Dependency directions and test seams are specified in
 [frontend guidelines](../docs/development/frontend-guidelines.md#application-structure-and-imports)
 and checked during review. ESLint enforces filename conventions; it does not
-check module import directions or feature/API cycles. Dashboard's `useRoom` hook connects the room API to the
-shared history source, publishing history before the new room view. Dashboard
-components use this shared state without opening additional room connections.
+check module import directions or feature/API cycles. `RoomProvider` connects the
+room API to the shared history source, publishing history before the new room
+view. Dashboard and Device Details share that provider across navigation.
+Each history context owns its HTTP session; only the Dashboard sidebar merges
+SSE additions. Search and device history stay static until explicitly refreshed.
 
 ## Scripts
 

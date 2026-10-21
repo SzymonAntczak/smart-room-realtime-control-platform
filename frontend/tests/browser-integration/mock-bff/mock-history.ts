@@ -14,6 +14,7 @@ interface MockHistoryResponse {
 /** Scripted frontend-facing responses, not an implementation of production history. */
 export class MockHistory {
     #pages: UserHistoryPage[] = [];
+    #queries = new Map<string, UserHistoryPage[]>();
     #nextError: MockHistoryResponse | undefined;
     #holdNext = false;
     #held:
@@ -23,6 +24,7 @@ export class MockHistory {
     reset() {
         this.release();
         this.#pages = [];
+        this.#queries.clear();
         this.#nextError = undefined;
         this.#holdNext = false;
     }
@@ -32,6 +34,37 @@ export class MockHistory {
         }
 
         this.#pages = value;
+        this.#queries.clear();
+    }
+    setQueries(value: unknown) {
+        if (!Array.isArray(value)) {
+            throw new Error('Invalid mock history queries');
+        }
+
+        this.#queries.clear();
+
+        for (const entry of value) {
+            if (
+                typeof entry !== 'object' ||
+                entry === null ||
+                !('criteria' in entry) ||
+                !('pages' in entry) ||
+                typeof entry.criteria !== 'object' ||
+                entry.criteria === null ||
+                !Array.isArray(entry.pages) ||
+                !entry.pages.every(isUserHistoryPage)
+            ) {
+                throw new Error('Invalid mock history queries');
+            }
+
+            const query = normalizeUserHistoryPageQuery({ ...entry.criteria, pageSize: 50 });
+
+            if (!query || query.cursor !== undefined) {
+                throw new Error('Invalid mock history queries');
+            }
+
+            this.#queries.set(scopeKey(query), entry.pages);
+        }
     }
     setError(status: number, body: unknown) {
         if (
@@ -81,30 +114,23 @@ export class MockHistory {
         this.#nextError = undefined;
 
         if (!result) {
+            const pages = this.#queries.get(scopeKey(query)) ?? this.#pages;
             const index =
                 query.cursor === undefined
                     ? 0
-                    : this.#pages.findIndex((page) => page.nextCursor === query.cursor) + 1;
+                    : pages.findIndex((page) => page.nextCursor === query.cursor) + 1;
 
             if (query.cursor !== undefined && index === 0) {
                 throw new Error('Unknown mock cursor');
             }
 
-            const page = this.#pages[index] ?? (query.cursor === undefined ? fallback : undefined);
+            const page = pages[index] ?? (query.cursor === undefined ? fallback : undefined);
 
             if (!page || !isUserHistoryPage(page)) {
                 throw new Error('Missing mock page');
             }
 
             const captured = structuredClone(page);
-            captured.items = captured.items.filter(
-                (item) =>
-                    (query.deviceId === undefined ||
-                        ('deviceId' in item && item.deviceId === query.deviceId)) &&
-                    (query.from === undefined ||
-                        Date.parse(item.occurredAt) >= Date.parse(query.from)) &&
-                    (query.to === undefined || Date.parse(item.occurredAt) < Date.parse(query.to)),
-            );
             result = { status: 200, body: captured };
         }
 
@@ -119,4 +145,8 @@ export class MockHistory {
             this.#held = { response: captured, release: resolve };
         });
     }
+}
+
+function scopeKey(query: { deviceId?: string; from?: string; to?: string }) {
+    return JSON.stringify([query.deviceId ?? null, query.from ?? null, query.to ?? null]);
 }

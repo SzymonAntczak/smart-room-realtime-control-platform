@@ -1494,6 +1494,7 @@ function createHistoryBffHarness() {
     const server = createRoomBffServer({
         ...createRoomBffConfig(),
         readSignificantFactPage: reader.readSignificantFactPage,
+        readPinnedSignificantFactSnapshot: reader.readPinnedSignificantFactSnapshot,
         readRawTelemetryPage: reader.readRawTelemetryPage,
         readTrend: reader.readTrend,
     });

@@ -166,8 +166,9 @@ temperature-sensor details present the paged User History entries retained for
 the selected device. This is
 retained evidence and may be incomplete; it is not a complete device log, as
 defined by the [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
-Each live room page owns one realtime connection; navigating between these
-pages closes the previous connection before opening the next.
+A shared room provider owns one realtime connection across the Dashboard and
+device-details routes. Navigation reuses the connection and validated snapshot.
+Leaving the live-room routes releases the connection.
 
 ### Telemetry Storage
 
@@ -290,7 +291,7 @@ Device details reuses the history feature with a fixed device and optional local
 From/To days. It automatically reads device-only history; Search applies dates,
 Refresh repeats applied criteria and Clear removes dates and reloads device-only
 history. Each sidebar, modal and details view has an independent feature session.
-The Dashboard retains the room connection and forwards validated live updates.
+The shared room provider retains the room connection and forwards validated live updates.
 
 ### Device Adapters
 

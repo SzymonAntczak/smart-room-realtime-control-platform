@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import type { HistorySessionState } from '../history-session';
+import type { HistorySessionState } from './history-session';
 
 const historyPagingOffset = 320;
 const historyScrollKeys = new Set([
@@ -19,7 +19,7 @@ export function useHistoryPaging({
     loadOlder,
     returningToTop,
 }: {
-    state: HistorySessionState;
+    state: Pick<HistorySessionState, 'status' | 'nextCursor' | 'endReached'> & { error: unknown };
     scrollViewport: HTMLElement | null;
     loadOlder(): void;
     returningToTop: boolean;

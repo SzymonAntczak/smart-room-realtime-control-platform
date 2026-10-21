@@ -56,7 +56,10 @@ import Fastify, {
 } from 'fastify';
 
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
-import type { RoomHistoryReadResult } from '../platform/history/room-history-reader';
+import type {
+    RoomHistoryReader,
+    RoomHistoryReadResult,
+} from '../platform/history/room-history-reader';
 
 import {
     isJsonMediaType,
@@ -71,6 +74,7 @@ import { toRoomBffSnapshot } from './user-history/user-history-projection';
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readPinnedSignificantFactSnapshot?: RoomHistoryReader['readPinnedSignificantFactSnapshot'];
     readSignificantFactPage?: (
         query: SignificantFactPageQuery,
     ) => RoomHistoryReadResult<SignificantFactPage>;
@@ -90,6 +94,7 @@ export function createRoomBffServer({
     getRoomSnapshot,
     getDiagnosticsSnapshot,
     readSignificantFactPage,
+    readPinnedSignificantFactSnapshot,
     readRawTelemetryPage,
     readTrend,
     subscribeRoomPublicationBatch,
@@ -100,8 +105,8 @@ export function createRoomBffServer({
     now = realClock,
 }: RoomBffConfig): FastifyInstance {
     const server = loggerInstance ? Fastify({ loggerInstance }) : Fastify();
-    const userHistoryReader = readSignificantFactPage
-        ? createUserHistoryReader({ readSignificantFactPage, getRoomSnapshot })
+    const userHistoryReader = readPinnedSignificantFactSnapshot
+        ? createUserHistoryReader({ readPinnedSignificantFactSnapshot, getRoomSnapshot })
         : undefined;
     const handlers: RoomBffHandlers = {
         getRoomSnapshot,

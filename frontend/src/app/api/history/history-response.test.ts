@@ -6,7 +6,7 @@ import { validateHistoryResponse } from './history-response';
 const { page, powerChange } = createUserHistoryFixtures();
 
 describe('user history HTTP response validation', () => {
-    it('returns a validated page without changing source identity or sparse-page semantics', () => {
+    it('returns a validated page without changing source identity or page bounds', () => {
         const body: unknown = structuredClone(page);
         const result = validateHistoryResponse(200, body);
         expect(result.kind).toBe('page');
@@ -18,7 +18,7 @@ describe('user history HTTP response validation', () => {
         expect(result.page.items[0]?.recordId).toBe(powerChange.recordId);
         expect(result.page).toBe(body);
         const sparse = { ...page, items: [], nextCursor: 'opaque-user-cursor' };
-        expect(validateHistoryResponse(200, sparse)).toEqual({ kind: 'page', page: sparse });
+        expect(validateHistoryResponse(200, sparse)).toEqual({ kind: 'invalid_response' });
     });
 
     it('distinguishes typed cursor errors and unavailable storage from an empty result', () => {

@@ -105,7 +105,7 @@ describe('processing evidence history acceptance', () => {
         ).toEqual([offline]);
     });
 
-    it('AC-2 keeps identities beyond the twenty-record cache and through a real backend restart and sparse pages', async () => {
+    it('AC-2 keeps identities beyond the twenty-record cache and through a real backend restart and filtered pages', async () => {
         const directory = mkdtempSync(join(tmpdir(), 'smart-room-history-restart-'));
         const databasePath = join(directory, 'room.sqlite');
         let backend = await createBackendIntegrationRuntime({ databasePath });
@@ -128,7 +128,7 @@ describe('processing evidence history acceptance', () => {
                 ),
             ).toBe(false);
             const first = await page(backend, { deviceId: 'temp-desk', pageSize: '1' });
-            expect(first.items).toEqual([]);
+            expect(first.items).toEqual(expected.slice(0, 1));
             expect(first.nextCursor).not.toBeNull();
             const before = await all(backend, { deviceId: 'temp-desk', pageSize: '1' });
             expect(before.slice(0, 2)).toEqual(expected);

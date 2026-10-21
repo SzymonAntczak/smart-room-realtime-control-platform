@@ -1,5 +1,5 @@
 import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -77,9 +77,9 @@ describe('fixed-device history results', () => {
         render(view(makeState()));
         expect(screen.getByRole('status')).toHaveTextContent('Brak zachowanych wpisów');
     });
-    it('loads older device entries at the end without a paging button', async () => {
+    it('ignores rendered-end callbacks and loads only from user scroll input without a paging button', async () => {
         const user = userEvent.setup();
-        render(
+        const { rerender } = render(
             view(
                 makeState({
                     items: [createUserHistoryFixtures().powerChange],
@@ -92,6 +92,34 @@ describe('fixed-device history results', () => {
             screen.queryByRole('button', { name: /Wczytaj starsze wpisy/ }),
         ).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Reach the end of the history' }));
+        expect(loadOlder).not.toHaveBeenCalled();
+        const scroller = document.createElement('div');
+        Object.defineProperties(scroller, {
+            clientHeight: { value: 400 },
+            scrollHeight: { value: 1000 },
+            scrollTop: { value: 400, writable: true },
+        });
+        rerender(
+            <SearchHistoryList
+                state={makeState({
+                    items: [createUserHistoryFixtures().powerChange],
+                    nextCursor: 'older',
+                    endReached: false,
+                })}
+                devices={[]}
+                scrollParent={scroller}
+                loadOlder={loadOlder}
+                retry={retry}
+                refresh={refresh}
+                deviceScoped
+            />,
+        );
+        fireEvent.scroll(scroller);
+        expect(loadOlder).not.toHaveBeenCalled();
+        fireEvent.wheel(scroller, { deltaY: 100 });
+        fireEvent.scroll(scroller);
+        expect(loadOlder).toHaveBeenCalledOnce();
+        fireEvent.scroll(scroller);
         expect(loadOlder).toHaveBeenCalledOnce();
     });
     it('retries transient errors and explicitly refreshes invalidated device history', async () => {

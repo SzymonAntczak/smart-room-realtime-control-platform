@@ -43,6 +43,7 @@ import {
 import { createHistoryCursorCodec } from '../history/room-history-cursor';
 import {
     createRoomHistoryReader,
+    type PinnedSignificantFactSnapshot,
     type RoomHistoryReadResult,
 } from '../history/room-history-reader';
 import {
@@ -55,6 +56,7 @@ import { createRoomProjector, type RoomProjector } from '../read-model/room-proj
 import { withBootstrapDurability } from '../read-model/room-recovery-policy';
 import type {
     AcceptedInputIdentity,
+    PinnedHistoryBounds,
     RoomStorage,
     RoomStorageLifecycle,
     RuntimeSession,
@@ -141,6 +143,9 @@ export interface RoomEngine {
     isStarted(): boolean;
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readPinnedSignificantFactSnapshot(
+        bounds?: PinnedHistoryBounds,
+    ): RoomHistoryReadResult<PinnedSignificantFactSnapshot>;
     readSignificantFactPage(
         query: SignificantFactPageQuery,
     ): RoomHistoryReadResult<SignificantFactPage>;
@@ -548,6 +553,13 @@ export function createRoomEngine({
         },
         getDiagnosticsSnapshot() {
             return roomState.diagnostics.getSnapshot();
+        },
+        readPinnedSignificantFactSnapshot(bounds) {
+            const reader = availableHistoryReader();
+
+            return reader
+                ? handleHistoryRead(reader.readPinnedSignificantFactSnapshot(bounds))
+                : { status: 'unavailable' };
         },
         readSignificantFactPage(query) {
             const reader = availableHistoryReader();

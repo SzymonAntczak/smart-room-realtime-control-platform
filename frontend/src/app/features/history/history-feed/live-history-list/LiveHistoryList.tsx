@@ -8,9 +8,9 @@ import type { HistoryFeedContext } from '../history-feed-context';
 import { HistoryFeedList } from '../history-feed-list/HistoryFeedList';
 import { HistoryFeedRow } from '../history-feed-row/HistoryFeedRow';
 import type { HistoryReadingPosition, HistorySessionState } from '../history-session';
+import { useHistoryPaging } from '../useHistoryPaging';
 
 import styles from './LiveHistoryList.module.css';
-import { useHistoryPaging } from './useHistoryPaging';
 import { useHistoryVirtualizer } from './useHistoryVirtualizer';
 
 const components: Components<UserHistoryItem, HistoryFeedContext, HTMLUListElement> = {

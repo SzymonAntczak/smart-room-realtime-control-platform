@@ -117,7 +117,7 @@ function isHistoryCursorPayload(value: unknown): value is HistoryCursorPayload {
     );
 }
 
-function isPinnedHistoryBounds(value: unknown): value is PinnedHistoryBounds {
+export function isPinnedHistoryBounds(value: unknown): value is PinnedHistoryBounds {
     return (
         isObjectWithExactKeys(value, [
             'historyGenerationId',
@@ -135,7 +135,7 @@ function isPinnedHistoryBounds(value: unknown): value is PinnedHistoryBounds {
     );
 }
 
-function isHistoryPagePosition(
+export function isHistoryPagePosition(
     value: unknown,
     throughSequence: number,
 ): value is HistoryPagePosition {

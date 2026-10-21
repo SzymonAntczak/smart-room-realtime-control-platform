@@ -226,19 +226,18 @@ describe('user history page contracts', () => {
         ).toBe(false);
     });
 
-    it('accepts sparse or empty filtered pages with further raw history to read', () => {
+    it('requires a full page when a continuation exists', () => {
         expect(isUserHistoryPage(fixtures.page)).toBe(true);
-        expect(
-            isUserHistoryPage({ ...fixtures.page, items: [], nextCursor: 'opaque-user-cursor' }),
-        ).toBe(true);
-        expect(
-            isUserHistoryPage({
-                ...fixtures.page,
-                pageSize: 100,
-                nextCursor: 'opaque-user-cursor',
-            }),
-        ).toBe(true);
-        expect(fixtures.page.items[0]?.recordId).toBe(fixtures.powerChange.recordId);
+        expect(isUserHistoryPage({ ...fixtures.page, items: [], nextCursor: 'opaque' })).toBe(
+            false,
+        );
+        expect(isUserHistoryPage({ ...fixtures.page, pageSize: 100, nextCursor: 'opaque' })).toBe(
+            false,
+        );
+        expect(isUserHistoryPage({ ...fixtures.page, pageSize: 1, nextCursor: 'opaque' })).toBe(
+            true,
+        );
+        expect(isUserHistoryPage({ ...fixtures.page, items: [], nextCursor: null })).toBe(true);
     });
 
     it('protects the pinned watermark, storage order, durable-only pages and completeness label', () => {

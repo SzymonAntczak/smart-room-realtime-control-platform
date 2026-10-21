@@ -9,54 +9,38 @@ const query = (cursor?: string) =>
     );
 
 describe('scripted user history boundary', () => {
-    it('accepts device/date filters, preserves sparse cursors and rejects unknown or invalid criteria', async () => {
+    it('selects prepared filtered pages without filtering or scanning raw ranges', async () => {
         const history = new MockHistory();
-        const records = createHistoryItems(3);
-        const newest = records[0];
-        const oldest = records[2];
-
-        if (!newest || !oldest) {
-            throw new Error('Expected both history date boundaries');
-        }
-
-        const fallback = createHistoryPage(records);
-        history.setPages([createHistoryPage([], 'sparse'), fallback]);
+        const records = createHistoryItems(51);
+        const first = createHistoryPage(records.slice(0, 50), 'opaque');
+        const last = createHistoryPage(records.slice(50));
+        const fallback = createHistoryPage([]);
+        history.setQueries([
+            {
+                criteria: { deviceId: 'led-main', from: '2026-09-20T00:00:00Z' },
+                pages: [first, last],
+            },
+        ]);
         const url = query();
         url.searchParams.set('deviceId', 'led-main');
-        url.searchParams.set('from', oldest.occurredAt);
-        url.searchParams.set('to', newest.occurredAt);
-        expect(await history.read(url, fallback)).toMatchObject({
-            status: 200,
-            body: { items: [], nextCursor: 'sparse' },
-        });
-        url.searchParams.set('cursor', 'sparse');
-        expect(await history.read(url, fallback)).toMatchObject({
-            status: 200,
-            body: { items: records.slice(1), nextCursor: null },
-        });
-        url.searchParams.set('deviceId', 'temp-desk');
-        expect(await history.read(url, fallback)).toMatchObject({ body: { items: [] } });
-        url.searchParams.set('from', 'invalid');
-        expect(() => history.read(url, fallback)).toThrow('Invalid mock history query');
+        url.searchParams.set('from', '2026-09-20T01:00:00+01:00');
+        expect(await history.read(url, fallback)).toEqual({ status: 200, body: first });
+        url.searchParams.set('cursor', 'opaque');
+        expect(await history.read(url, fallback)).toEqual({ status: 200, body: last });
+        expect(() => history.setPages([createHistoryPage([], 'sparse')])).toThrow(
+            'Invalid mock history pages',
+        );
+        expect(() =>
+            history.setQueries([{ criteria: { from: 'invalid' }, pages: [last] }]),
+        ).toThrow('Invalid mock history queries');
+        expect(() => history.read(new URL('http://localhost/?pageSize=20'), fallback)).toThrow(
+            'Invalid mock history query',
+        );
         expect(() =>
             history.read(new URL('http://localhost/?pageSize=50&extra=1'), fallback),
         ).toThrow('Invalid mock history query');
-    });
-    it('continues a sparse page using its opaque cursor and rejects malformed configuration', async () => {
-        const history = new MockHistory();
-        const older = createHistoryPage(createHistoryItems(1));
-        history.setPages([createHistoryPage([], 'opaque'), older]);
-        expect(await history.read(query(), older)).toMatchObject({
-            status: 200,
-            body: { items: [], nextCursor: 'opaque' },
-        });
-        expect(await history.read(query('opaque'), older)).toEqual({ status: 200, body: older });
-        expect(() => history.setPages([{ items: [] }])).toThrow('Invalid mock history pages');
         expect(() => history.setError(503, { error: 'wrong' })).toThrow(
             'Invalid mock history error',
-        );
-        expect(() => history.read(new URL('http://localhost/?pageSize=20'), older)).toThrow(
-            'Invalid mock history query',
         );
     });
 

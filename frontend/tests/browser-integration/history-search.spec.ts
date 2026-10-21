@@ -44,7 +44,7 @@ for (const width of [1440, 390]) {
             };
             await setMockRoomSnapshot(page.request, snapshot);
             await configureMockHistory(page.request, {
-                pages: [createHistoryPage([], 'sparse'), createHistoryPage([online, offline])],
+                pages: [createHistoryPage([online, offline])],
             });
             await openHistory(page);
             await expect(historyEntry(page, offline.recordId)).toBeVisible();
@@ -119,6 +119,18 @@ for (const width of [1440, 390]) {
                         lowerBoundary,
                         beforeRange,
                     ]),
+                ],
+            });
+            await configureMockHistory(page.request, {
+                queries: [
+                    {
+                        criteria: {
+                            deviceId: 'temp-desk',
+                            from: '2026-09-20T00:00:00Z',
+                            to: '2026-09-21T00:00:00Z',
+                        },
+                        pages: [createHistoryPage([latest, online, offline, lowerBoundary])],
+                    },
                 ],
             });
             await dialog.getByLabel('Od', { exact: true }).fill('2026-09-20');

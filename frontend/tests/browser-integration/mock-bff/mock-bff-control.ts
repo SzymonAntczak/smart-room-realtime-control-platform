@@ -77,7 +77,14 @@ async function assertControlResponse(
 
 export async function configureMockHistory(
     request: APIRequestContext,
-    value: { pages?: unknown; hold?: boolean; release?: boolean; status?: number; error?: unknown },
+    value: {
+        pages?: unknown;
+        queries?: unknown;
+        hold?: boolean;
+        release?: boolean;
+        status?: number;
+        error?: unknown;
+    },
 ): Promise<void> {
     await assertControlResponse(await request.post(mockBffUrls.historyControl, { data: value }));
 }

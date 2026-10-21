@@ -96,6 +96,7 @@ export function createBackend({
         getRoomSnapshot: runtime.getRoomSnapshot,
         getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
         readSignificantFactPage: runtime.readSignificantFactPage,
+        readPinnedSignificantFactSnapshot: runtime.readPinnedSignificantFactSnapshot,
         readRawTelemetryPage: runtime.readRawTelemetryPage,
         readTrend: runtime.readTrend,
         subscribeRoomPublicationBatch: runtime.subscribeRoomPublicationBatch,

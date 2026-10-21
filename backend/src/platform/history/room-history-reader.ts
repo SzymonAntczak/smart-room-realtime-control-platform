@@ -1,9 +1,11 @@
 import {
+    type DurableSignificantFactProjection,
     durableSignificantFactProjectionSchema,
     type HistoryCursorErrorResponse,
     type HistoryCursorQueryScope,
     isMatchingHistoryCursorQueryScope,
     isRawTelemetryPage,
+    isRecentEventsProjection,
     isSignificantFactPage,
     isTrendResponse,
     type NormalizedRawTelemetryPageQuery,
@@ -26,7 +28,11 @@ import type {
     StoredTelemetrySample,
 } from '../storage/room-storage';
 
-import { type HistoryCursorCodec, type HistoryCursorPayload } from './room-history-cursor';
+import {
+    type HistoryCursorCodec,
+    type HistoryCursorPayload,
+    isPinnedHistoryBounds,
+} from './room-history-cursor';
 
 export type RoomHistoryReadResult<Value> =
     | { status: 'available'; value: Value }
@@ -38,7 +44,37 @@ export type RoomHistoryReadResult<Value> =
       }
     | { status: 'invalid_internal_data' };
 
+export interface PinnedSignificantFactSnapshot {
+    bounds: PinnedHistoryBounds;
+    items: readonly DurableSignificantFactProjection[];
+}
+
+export function isPinnedSignificantFactSnapshot(value: PinnedSignificantFactSnapshot): boolean {
+    return (
+        isPinnedHistoryBounds(value.bounds) &&
+        value.items.length <= 5000 &&
+        new Set(value.items.map((item) => item.recordId)).size === value.items.length &&
+        new Set(value.items.map((item) => item.storageSequence)).size === value.items.length &&
+        value.items.every((item, index) => {
+            const next = value.items[index + 1];
+
+            return (
+                isSchema(durableSignificantFactProjectionSchema, item) &&
+                isRecentEventsProjection([item]) &&
+                item.storageSequence <= value.bounds.throughSequence &&
+                (next === undefined ||
+                    Date.parse(item.occurredAt) > Date.parse(next.occurredAt) ||
+                    (item.occurredAt === next.occurredAt &&
+                        item.storageSequence > next.storageSequence))
+            );
+        })
+    );
+}
+
 export interface RoomHistoryReader {
+    readPinnedSignificantFactSnapshot(
+        bounds?: PinnedHistoryBounds,
+    ): RoomHistoryReadResult<PinnedSignificantFactSnapshot>;
     readSignificantFactPage(
         query: SignificantFactPageQuery,
     ): RoomHistoryReadResult<SignificantFactPage>;
@@ -60,6 +96,62 @@ export function createRoomHistoryReader({
     now,
 }: RoomHistoryReaderConfig): RoomHistoryReader {
     return {
+        readPinnedSignificantFactSnapshot(bounds) {
+            let records: StoredSignificantFact[];
+            let pinned: PinnedHistoryBounds;
+
+            if (bounds === undefined) {
+                const outcome = storage.transact(
+                    (transaction) => {
+                        const captured = transaction.capturePinnedHistoryBounds();
+
+                        return {
+                            bounds: captured,
+                            records: transaction.listPinnedSignificantFacts(captured, {
+                                limit: 5001,
+                            }),
+                        };
+                    },
+                    { retentionAsOf: now() },
+                );
+
+                if (outcome.status !== 'committed') {
+                    return unavailable(outcome);
+                }
+
+                pinned = outcome.value.bounds;
+                records = outcome.value.records;
+            } else {
+                try {
+                    const outcome = storage.readPinnedSignificantFacts({
+                        bounds,
+                        readAt: now(),
+                        options: { limit: 5001 },
+                    });
+
+                    if (outcome.status !== 'available') {
+                        return pinnedReadError(outcome);
+                    }
+
+                    pinned = bounds;
+                    records = outcome.value;
+                } catch (error) {
+                    return unavailableRead(error);
+                }
+            }
+
+            const items = records.map(toDurableSignificantFact);
+
+            if (!allPresent(items)) {
+                return { status: 'invalid_internal_data' };
+            }
+
+            const value = { bounds: pinned, items };
+
+            return isPinnedSignificantFactSnapshot(value)
+                ? { status: 'available', value }
+                : { status: 'invalid_internal_data' };
+        },
         readSignificantFactPage(query) {
             const scope: HistoryCursorQueryScope = {
                 dataset: 'significant_facts',

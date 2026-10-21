@@ -316,6 +316,7 @@ export function isUserHistoryPage(value: unknown): value is UserHistoryPage {
 
     return (
         value.items.length <= value.pageSize &&
+        (value.nextCursor === null || value.items.length === value.pageSize) &&
         new Set(value.items.map((item) => item.recordId)).size === value.items.length &&
         new Set(value.items.map((item) => item.storageSequence)).size === value.items.length &&
         value.items.every((item, index) => {

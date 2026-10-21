@@ -15,7 +15,7 @@ type RequestEvidence =
     | { kind: 'known'; power: PowerState }
     | { kind: 'conflicting' };
 
-/** Only timeout identities on the main page are retained, never the whole raw history. */
+/** Only legacy timeout identities in the pinned snapshot need request evidence. */
 export type TimeoutEvidence = Map<string, Map<string, RequestEvidence>>;
 
 export function createTimeoutEvidence(

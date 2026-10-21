@@ -1,8 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createHistorySession, type HistorySessionState } from '../history-session';
-
+import { createHistorySession, type HistorySessionState } from './history-session';
 import { useHistoryPaging } from './useHistoryPaging';
 
 describe('history paging', () => {

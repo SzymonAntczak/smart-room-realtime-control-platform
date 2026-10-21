@@ -6,7 +6,6 @@ import {
     type DurableSignificantFactProjection,
     isSignificantFactPage,
     type SignificantFactPage,
-    type SignificantFactPageQuery,
 } from '@smart-room/contracts/history';
 import { isRoomSnapshotProjection } from '@smart-room/contracts/realtime';
 import { isUserHistoryPage, type UserHistoryPage } from '@smart-room/contracts/user-history';
@@ -14,14 +13,44 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { describe, expect, it, vi } from 'vitest';
 
 import { createHistoryCursorCodec } from '../platform/history/room-history-cursor';
-import type { RoomHistoryReadResult } from '../platform/history/room-history-reader';
+import type {
+    PinnedSignificantFactSnapshot,
+    RoomHistoryReadResult,
+} from '../platform/history/room-history-reader';
 import { createRoomHistoryReader } from '../platform/history/room-history-reader';
+import type { PinnedHistoryBounds } from '../platform/storage/room-storage';
 import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
 import { StorageAvailabilityError } from '../platform/storage/storage-errors';
 
 import { createRoomBffServer } from './room-bff';
 
 describe('BFF user history endpoint', () => {
+    it('returns fifty matching device entries in the first HTTP response despite interleaved other devices', async () => {
+        const history = createHarness();
+
+        try {
+            history.append(
+                Array.from({ length: 200 }, (_, index) =>
+                    failure(index + 1, index % 2 ? 'led-side' : 'led-main'),
+                ),
+            );
+            const first = await readPage(history, 'deviceId=led-main');
+            expect(first.items).toHaveLength(50);
+            expect(
+                first.items.every((item) => 'deviceId' in item && item.deviceId === 'led-main'),
+            ).toBe(true);
+            expect(first.items[0]?.recordId).toBe(failure(199).recordId);
+            expect(history.read).toHaveBeenCalledTimes(1);
+            const second = await readPage(history, 'deviceId=led-main&' + cursorQuery(first));
+            expect(second.items).toHaveLength(50);
+            expect(second.nextCursor).toBeNull();
+            expect(
+                new Set([...first.items, ...second.items].map((item) => item.recordId)).size,
+            ).toBe(100);
+        } finally {
+            await history.close();
+        }
+    });
     it('uses the default page size across pages and accepts explicit limits', async () => {
         const history = createHarness();
 
@@ -133,40 +162,22 @@ describe('BFF user history endpoint', () => {
         }
     });
 
-    it('keeps filtered empty SQLite pages sparse and preserves their pinned bounds after writes', async () => {
+    it('fills filtered SQLite pages and keeps their original pinned membership after writes', async () => {
         const history = createHarness();
 
         try {
-            history.append([gap(1), failure(2), failure(3, 'led-side'), gap(4)]);
+            history.append([failure(1), failure(2), failure(3, 'led-side'), gap(4)]);
             const first = await readPage(history, 'pageSize=1&deviceId=led-main');
-            expect(first.items).toEqual([]);
-            expect(first.nextCursor).not.toBeNull();
-
+            expect(first.items.map((item) => item.recordId)).toEqual([failure(2).recordId]);
             history.append([failure(5)]);
             const second = await readPage(
                 history,
-                `pageSize=1&deviceId=led-main&${cursorQuery(first)}`,
+                'pageSize=1&deviceId=led-main&' + cursorQuery(first),
             );
-            expect(second.items).toEqual([]);
-            expect(second.nextCursor).not.toBeNull();
-            expect(second.historyGenerationId).toBe(first.historyGenerationId);
+            expect(second.items.map((item) => item.recordId)).toEqual([failure(1).recordId]);
+            expect(second.nextCursor).toBeNull();
             expect(second.throughSequence).toBe(first.throughSequence);
             expect(second.retentionAsOf).toBe(first.retentionAsOf);
-
-            const third = await readPage(
-                history,
-                `pageSize=1&deviceId=led-main&${cursorQuery(second)}`,
-            );
-            expect(third.items.map((item) => item.recordId)).toEqual([failure(2).recordId]);
-            expect(third.nextCursor).not.toBeNull();
-            expect(third.throughSequence).toBe(first.throughSequence);
-
-            const fourth = await readPage(
-                history,
-                `pageSize=1&deviceId=led-main&${cursorQuery(third)}`,
-            );
-            expect(fourth.items).toEqual([]);
-            expect(fourth.nextCursor).toBeNull();
         } finally {
             await history.close();
         }
@@ -188,7 +199,7 @@ describe('BFF user history endpoint', () => {
                     requestedPower: 'off',
                 },
             ]);
-            expect(history.read).toHaveBeenCalledTimes(3);
+            expect(history.read).toHaveBeenCalledTimes(1);
         } finally {
             await history.close();
         }
@@ -403,12 +414,10 @@ describe('BFF user history endpoint', () => {
                     requestedPower: 'off',
                 },
             ]);
-            expect(history.read).toHaveBeenCalledTimes(3);
+            expect(history.read).toHaveBeenCalledTimes(1);
             const second = await readPage(history, `pageSize=1&${cursorQuery(first)}`);
             expect(second.items[0]?.recordId).toBe(gap(2).recordId);
-            const third = await readPage(history, `pageSize=1&${cursorQuery(second)}`);
-            expect(third.items).toEqual([]);
-            expect(third.nextCursor).toBeNull();
+            expect(second.nextCursor).toBeNull();
         } finally {
             await history.close();
         }
@@ -434,7 +443,7 @@ describe('BFF user history endpoint', () => {
         code: number;
         error: string;
     }[])(
-        'returns $code without partial success when an auxiliary read returns $error',
+        'returns $code without partial success when the pinned snapshot read returns $error',
         async ({ result, code, error }) => {
             const history = createHarness();
 
@@ -450,18 +459,14 @@ describe('BFF user history endpoint', () => {
                         payload: { timeoutMs: 5000, reason: 'confirmation_not_received' },
                     },
                 ]);
-                history.read
-                    .mockImplementationOnce((query) =>
-                        history.rawReader().readSignificantFactPage(query),
-                    )
-                    .mockReturnValueOnce(result);
+                history.read.mockReturnValueOnce(result);
                 const response = await history.server.inject({
                     url: '/room/history/user-history?pageSize=2&deviceId=led-main',
                 });
                 expect(response.statusCode).toBe(code);
                 expect(response.json()).toMatchObject({ error });
                 expect(response.json()).not.toHaveProperty('items');
-                expect(history.read).toHaveBeenCalledTimes(2);
+                expect(history.read).toHaveBeenCalledTimes(1);
             } finally {
                 await history.close();
             }
@@ -480,7 +485,7 @@ describe('BFF user history endpoint', () => {
             expect(unavailable.statusCode).toBe(503);
             expect(unavailable.json()).toMatchObject({ error: 'durable_history_unavailable' });
             history.append([gap(1)]);
-            const raw = history.rawReader().readSignificantFactPage({ pageSize: 50 });
+            const raw = history.rawReader().readPinnedSignificantFactSnapshot();
 
             if (raw.status !== 'available') {
                 throw new Error('Expected raw page.');
@@ -491,7 +496,7 @@ describe('BFF user history endpoint', () => {
                 value: {
                     ...raw.value,
                     items: [{ ...gap(1), payload: { invalid: true } }],
-                } as unknown as SignificantFactPage,
+                } as unknown as PinnedSignificantFactSnapshot,
             });
             const invalid = await history.server.inject({ url: '/room/history/user-history' });
             expect(invalid.statusCode).toBe(500);
@@ -625,14 +630,17 @@ function createHarness() {
         throw new Error('Invalid room fixture.');
     }
 
-    const read = vi.fn((query: SignificantFactPageQuery) => reader.readSignificantFactPage(query));
+    const read = vi.fn((bounds?: PinnedHistoryBounds) =>
+        reader.readPinnedSignificantFactSnapshot(bounds),
+    );
     const server = createRoomBffServer({
         getRoomSnapshot: () => snapshot,
         getDiagnosticsSnapshot() {
             throw new Error('Diagnostics are outside this test boundary.');
         },
         subscribeRoomPublicationBatch: () => () => undefined,
-        readSignificantFactPage: read,
+        readSignificantFactPage: (query) => reader.readSignificantFactPage(query),
+        readPinnedSignificantFactSnapshot: read,
     });
 
     return {

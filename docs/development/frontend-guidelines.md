@@ -36,16 +36,16 @@ Organize `src/app` by responsibility:
   Device details mounts fixed-device filters only after its validated snapshot
   confirms the selected device. For temperature sensors, the page directly
   composes its telemetry chart and table alongside history. Production transport belongs
-  in `api`; history consumes the Dashboard connection through its own source port.
+  in `api`; history consumes the shared room connection through its own source port.
 - `ui/<component>` owns a basic reusable UI component, its styles and tests.
   Keep shared presentation primitives directly under `app/ui` instead of
   `features`.
-- The page that renders the live room owns its room connection and binds room
-  updates to its page state. Dashboard owns `useRoom`; Device Details owns its
-  selected-device state. The route renders only one page at a time so navigation
-  closes the old connection before the next page opens one. Development
-  composition decorates the Dashboard through `getDeviceExtension` and the
-  `renderOverlay` slot.
+- `features/room` owns the shared room provider, validated realtime state and
+  history-source bridge. A persistent route layout mounts it around Dashboard and
+  Device Details; navigation reuses the connection. Pages select and adapt its
+  state without owning transport. Leaving those routes closes the connection.
+  Development composition decorates the Dashboard through `getDeviceExtension`
+  and the `renderOverlay` slot.
 - `dev` owns development tooling and may compose production public APIs.
 - `src/main.tsx` owns bootstrap, the browser data router and build-mode selection;
   `AppRoutes.tsx` owns the route table. The Dashboard route is `/` and selected-device
@@ -53,15 +53,15 @@ Organize `src/app` by responsibility:
   direct requests to application routes.
 
 The room API owns SSE, validation, revisions, reconnect and the current BFF
-snapshot, including its bounded feed. Dashboard's `useRoom` owns renderable room
+snapshot, including its bounded feed. Dashboard's `useRoom` derives renderable room
 state and maps its device projections for rendering. Device Details consumes the
-validated room snapshot through the public room API. Dashboard's device cards
+validated room snapshot through the public room feature API. Dashboard's device cards
 own their renderable device projection types. The `device-display` feature owns
-localized display names shared across pages. The history feature owns its live source port and update contract; Dashboard
+localized display names shared across pages. The history feature owns its live source port and update contract; the room feature
 owns the connection bridge. The history API owns HTTP clients and response
 validation. The shared `history` feature owns filters, session lifecycle, list
 rendering, paging and scrolling for each independently scoped consumer.
-Dashboard's room hook publishes validated history updates before the new room
+The shared room provider publishes validated history updates before the new room
 view.
 
 Use the shared `StatusTag` for device availability and `ButtonLink` for
@@ -134,8 +134,7 @@ introduce a hook merely to wrap a pure mapping or to reduce the number of files.
 
 Features must not import pages or application composition; pages must not import
 other pages or application composition. Application composition exposes only
-`AppRoutes.tsx` to bootstrap. Dashboard's `useRoom` remains private to the page, with
-its room/history bridge inline in the hook.
+`AppRoutes.tsx` to bootstrap. Dashboard's `useRoom` remains private to the page and adapts shared room state.
 
 `AppRoutes.tsx` receives an optional Dashboard page element from bootstrap for the
 development composition; its production default is the public Dashboard page.
@@ -156,7 +155,7 @@ Tests may import reusable fixtures and mocks from `src/test`; production modules
 must not import that directory. Shared test modules retain the application
 module directions and public API rules when importing production code, and do
 not re-export production implementations. Room/history composition tests belong
-near `frontend/src/app/pages/dashboard/useRoom.ts`.
+with the shared room provider.
 
 ## React
 
@@ -297,7 +296,7 @@ near `frontend/src/app/pages/dashboard/useRoom.ts`.
 - Domain UI behavior tests belong near their owner in
   `frontend/src/app/features/<domain>` or `frontend/src/app/pages/<page>`.
 - Feature and API client tests belong near their module; tests composing room and history belong
-  near `frontend/src/app/pages/dashboard/useRoom.ts`. A translation
+  with the shared room provider in `frontend/src/app/features/room`. A translation
   test that renders a UI component belongs with that component.
 - Shared UI tests belong near their component under `frontend/src/app/ui`.
 - Global test setup and genuinely reusable fixtures or mocks belong under

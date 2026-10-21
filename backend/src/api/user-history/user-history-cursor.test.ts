@@ -6,13 +6,20 @@ import { createUserHistoryCursorCodec, type UserHistoryCursorPayload } from './u
 
 const secret = Buffer.alloc(32, 9);
 const payload: UserHistoryCursorPayload = {
-    version: 1,
+    version: 2,
     scope: { dataset: 'user_history', order: 'occurred_at_desc', pageSize: 50 },
-    rawCursor: 'unchanged-raw-cursor',
+    bounds: {
+        historyGenerationId: 'generation',
+        throughSequence: 10,
+        retentionAsOf: '2026-09-10T10:00:00Z',
+        retentionRevision: 0,
+        expiresAt: '2026-09-10T10:05:00Z',
+    },
+    position: { occurredAt: '2026-09-10T09:00:00Z', storageSequence: 7 },
 };
 
 describe('BFF user-history cursor encoding and validation', () => {
-    it('preserves raw cursor and rejects tampering or another instance key', () => {
+    it('preserves pinned bounds and position and rejects tampering or another instance key', () => {
         const codec = createUserHistoryCursorCodec({ secret });
         const cursor = codec.encode(payload);
         expect(codec.decode(cursor)).toEqual(payload);
@@ -28,8 +35,8 @@ describe('BFF user-history cursor encoding and validation', () => {
     });
 
     it.each([
-        { ...payload, version: 2 },
-        { ...payload, rawCursor: '' },
+        { ...payload, version: 1 },
+        { ...payload, position: { ...payload.position, storageSequence: 11 } },
         { ...payload, extra: true },
         { ...payload, scope: { ...payload.scope, dataset: 'significant_facts' } },
         { ...payload, scope: { ...payload.scope, pageSize: 101 } },
@@ -52,7 +59,7 @@ describe('BFF user-history cursor encoding and validation', () => {
         ).toBeUndefined();
     });
 
-    it('round-trips a signed filtered scope without changing the underlying raw cursor', () => {
+    it('round-trips a signed filtered scope without changing the underlying pinned bounds and position', () => {
         const filtered: UserHistoryCursorPayload = {
             ...payload,
             scope: {

@@ -32,14 +32,21 @@ import type {
 
 import type { CommandTimer } from '../platform/command-processing/set-power-command-controller';
 import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
-import type { RoomHistoryReadResult } from '../platform/history/room-history-reader';
+import type {
+    PinnedSignificantFactSnapshot,
+    RoomHistoryReadResult,
+} from '../platform/history/room-history-reader';
 import {
     createRoomEngine,
     type RoomClock,
     type RoomEngine,
     type RoomSourceReceiptFailure,
 } from '../platform/room/room-engine';
-import type { RoomStorage, RoomStorageLifecycle } from '../platform/storage/room-storage';
+import type {
+    PinnedHistoryBounds,
+    RoomStorage,
+    RoomStorageLifecycle,
+} from '../platform/storage/room-storage';
 import { StorageError } from '../platform/storage/storage-errors';
 
 import { createTemperatureRoomSources } from './simulator/temperature-room-sources';
@@ -76,6 +83,9 @@ export interface TemperatureRoomRuntime {
     stop(): void;
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readPinnedSignificantFactSnapshot(
+        bounds?: PinnedHistoryBounds,
+    ): RoomHistoryReadResult<PinnedSignificantFactSnapshot>;
     readSignificantFactPage(
         query: SignificantFactPageQuery,
     ): RoomHistoryReadResult<SignificantFactPage>;
@@ -196,6 +206,8 @@ export function createTemperatureRoomRuntime({
         stop: () => requireEngine().stop(),
         getRoomSnapshot: () => requireEngine().getRoomSnapshot(),
         getDiagnosticsSnapshot: () => requireEngine().getDiagnosticsSnapshot(),
+        readPinnedSignificantFactSnapshot: (bounds) =>
+            requireEngine().readPinnedSignificantFactSnapshot(bounds),
         readSignificantFactPage: (query) => requireEngine().readSignificantFactPage(query),
         readRawTelemetryPage: (query) => requireEngine().readRawTelemetryPage(query),
         readTrend: (query) => requireEngine().readTrend(query),

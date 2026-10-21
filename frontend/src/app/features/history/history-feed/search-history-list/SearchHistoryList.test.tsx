@@ -15,7 +15,7 @@ vi.mock('react-virtuoso', () => ({
     }: {
         data: Array<{ recordId: string }>;
         defaultItemHeight: number;
-        endReached: () => void;
+        endReached?: () => void;
         minOverscanItemCount: { top: number; bottom: number };
     }) => (
         <div
@@ -25,7 +25,7 @@ vi.mock('react-virtuoso', () => ({
             data-overscan={`${minOverscanItemCount.top}:${minOverscanItemCount.bottom}`}
         >
             <span>{data[0]?.recordId}</span>
-            <button type="button" onClick={endReached}>
+            <button type="button" onClick={() => endReached?.()}>
                 Reach end
             </button>
         </div>
@@ -205,7 +205,7 @@ describe('SearchHistoryList', () => {
         expect(retry).toHaveBeenCalledOnce();
     });
 
-    it('keeps the result list virtualized and requests another page at the end', () => {
+    it('keeps the result list virtualized without loading from rendered range callbacks', () => {
         const items = Array.from({ length: 30 }, (_, index) => ({
             ...fixtures.powerChange,
             recordId: `record-${index}`,
@@ -236,7 +236,7 @@ describe('SearchHistoryList', () => {
         expect(virtualList).not.toHaveTextContent('record-29');
 
         fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
-        expect(loadOlder).toHaveBeenCalledOnce();
+        expect(loadOlder).not.toHaveBeenCalled();
 
         rerender(
             <SearchHistoryList

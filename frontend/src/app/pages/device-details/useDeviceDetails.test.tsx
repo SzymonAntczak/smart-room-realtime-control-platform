@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../../../test/room/mock-event-source';
+import { RoomProvider } from '../../features/room';
 
 import { useDeviceDetails } from './useDeviceDetails';
 
@@ -14,7 +15,9 @@ describe('useDeviceDetails', () => {
     afterEach(() => vi.unstubAllGlobals());
 
     it('waits for a valid snapshot before resolving whether the device exists', () => {
-        const { result } = renderHook(() => useDeviceDetails('temp-desk'));
+        const { result } = renderHook(() => useDeviceDetails('temp-desk'), {
+            wrapper: RoomProvider,
+        });
 
         expect(result.current).toEqual({ status: 'connecting', connectionStatus: 'connecting' });
 
@@ -29,7 +32,9 @@ describe('useDeviceDetails', () => {
     });
 
     it('keeps the last valid device while the realtime source reconnects', () => {
-        const { result } = renderHook(() => useDeviceDetails('temp-desk'));
+        const { result } = renderHook(() => useDeviceDetails('temp-desk'), {
+            wrapper: RoomProvider,
+        });
         act(() => MockEventSource.latest().emitMessage(createSnapshot([temperatureDevice()])));
 
         const retainedDevice =
@@ -44,9 +49,11 @@ describe('useDeviceDetails', () => {
         });
     });
 
-    it('closes its source and cancels a pending reconnect when the page unmounts', () => {
+    it('closes its source and cancels a pending reconnect when the provider unmounts', () => {
         vi.useFakeTimers();
-        const { unmount } = renderHook(() => useDeviceDetails('temp-desk'));
+        const { unmount } = renderHook(() => useDeviceDetails('temp-desk'), {
+            wrapper: RoomProvider,
+        });
         const source = MockEventSource.latest();
         act(() => source.emitError());
 

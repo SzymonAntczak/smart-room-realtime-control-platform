@@ -9,6 +9,7 @@ import type { HistoryFeedContext } from '../history-feed-context';
 import { HistoryFeedList } from '../history-feed-list/HistoryFeedList';
 import { HistoryFeedRow } from '../history-feed-row/HistoryFeedRow';
 import type { HistorySearchSession } from '../history-search-session';
+import { useHistoryPaging } from '../useHistoryPaging';
 
 import styles from './SearchHistoryList.module.css';
 
@@ -36,6 +37,7 @@ export function SearchHistoryList({
     refresh(): Promise<void>;
     deviceScoped?: boolean;
 }) {
+    useHistoryPaging({ state, scrollViewport: scrollParent, loadOlder, returningToTop: false });
     const { t } = useTranslation('dashboard');
     const { t: deviceT } = useTranslation('deviceDetails');
     const context: HistoryFeedContext = {
@@ -79,11 +81,6 @@ export function SearchHistoryList({
                     computeItemKey={(_index, item) => item.recordId}
                     defaultItemHeight={192}
                     minOverscanItemCount={{ top: 5, bottom: 5 }}
-                    endReached={() => {
-                        if (state.status === 'ready' && state.nextCursor !== null) {
-                            void loadOlder();
-                        }
-                    }}
                     itemContent={() => null}
                 />
             ) : null}

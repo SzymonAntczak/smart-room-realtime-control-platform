@@ -87,10 +87,12 @@ Out-of-range values return `400 invalid_request`.
 The user-history `pageSize` is optional and defaults to 50. Optional `deviceId`,
 `from` and `to` filters combine with AND over user entries by event time; the time
 bounds form a half-open interval (`[from,to)`) and accept RFC 3339 timestamps
-with a timezone. A device filter omits room-level entries. Each user page
-transforms one pinned raw page, so filtering can produce a short or empty page
-with a next cursor. Its signed cursor binds the effective page size and
-normalized filters; repeat the same filters when continuing that session. The
+with a timezone. A device filter omits room-level entries. Each GET reads one
+complete pinned snapshot of at most 5,000 facts and returns up to `pageSize`
+matching user entries. A next cursor requires a full page; short or empty pages
+end pagination. Its signed cursor binds the pinned bounds, last returned position,
+effective page size and normalized filters; repeat the same filters when
+continuing that session. The
 response marks completeness as `retained_evidence_only`; historical device
 changes are omitted when retained facts cannot prove that the reported
 transition applied.

@@ -228,7 +228,7 @@ export function createHistorySearchSession(
         operation = Promise.resolve();
         emit();
 
-        const pending = readPages(cursor, currentEpoch, signalController.signal).finally(() => {
+        const pending = readPage(cursor, currentEpoch, signalController.signal).finally(() => {
             if (currentEpoch === epoch) {
                 operation = undefined;
                 controller = undefined;
@@ -239,15 +239,9 @@ export function createHistorySearchSession(
         return pending;
     }
 
-    async function readPages(
-        initialCursor: string | null,
-        currentEpoch: number,
-        signal: AbortSignal,
-    ) {
-        let cursor = initialCursor;
-
+    async function readPage(cursor: string | null, currentEpoch: number, signal: AbortSignal) {
         try {
-            while (active(currentEpoch)) {
+            if (active(currentEpoch)) {
                 const criteria = activeCriteria;
 
                 if (criteria === null) {
@@ -331,7 +325,6 @@ export function createHistorySearchSession(
 
                 acceptedPages += 1;
                 nextCursor = page.nextCursor;
-                const replacedLastKnown = lastKnown !== null;
                 displayedCriteria = criteria;
                 lastKnown = null;
 
@@ -342,24 +335,9 @@ export function createHistorySearchSession(
                     limitReached = true;
                 }
 
-                if (
-                    replacedLastKnown &&
-                    additions.length === 0 &&
-                    nextCursor !== null &&
-                    !limitReached
-                ) {
-                    emit();
-                }
-
-                if (additions.length > 0 || nextCursor === null || limitReached) {
-                    status = 'ready';
-                    error = null;
-                    emit();
-
-                    return;
-                }
-
-                cursor = nextCursor;
+                status = 'ready';
+                error = null;
+                emit();
             }
         } catch {
             if (active(currentEpoch)) {

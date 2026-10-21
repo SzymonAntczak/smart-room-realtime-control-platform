@@ -1,7 +1,8 @@
-import type { UserHistoryPage } from '@smart-room/contracts/user-history';
+import { isUserHistoryPage, type UserHistoryPage } from '@smart-room/contracts/user-history';
 import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fixtures';
 import { describe, expect, it, vi } from 'vitest';
 
+import { createHistoryPageFixture } from '../../../../test/history/history-page-fixtures';
 import type { HistoryClient } from '../../../api/history';
 import type { HistoryResponseResult } from '../../../api/history/history-response';
 
@@ -19,10 +20,16 @@ const olderItem = {
 function page(
     overrides: Partial<UserHistoryPage> = {},
 ): Extract<HistoryResponseResult, { kind: 'page' }> {
-    return {
-        kind: 'page',
-        page: { ...fixtures.page, pageSize: 50, nextCursor: null, ...overrides },
+    const value = {
+        ...createHistoryPageFixture(
+            overrides.items ?? fixtures.page.items,
+            overrides.nextCursor ?? null,
+        ),
+        ...overrides,
     };
+    expect(isUserHistoryPage(value)).toBe(true);
+
+    return { kind: 'page', page: value };
 }
 
 function deferred<T>() {
@@ -80,24 +87,20 @@ describe('static history search session', () => {
         expect(session.getState().sessionRevision).toBe(2);
     });
 
-    it('walks empty intermediate pages without declaring the search complete', async () => {
-        const session = createHistorySearchSession(
-            clientFor(
-                page({ nextCursor: 'empty-1' }),
-                page({ items: [], nextCursor: 'match' }),
-                page({ items: [olderItem], nextCursor: null }),
-            ),
-        );
-
+    it('makes one read for each explicit search or paging action', async () => {
+        const readPage = vi
+            .fn<HistoryClient['readPage']>()
+            .mockResolvedValueOnce(page({ nextCursor: 'older' }))
+            .mockResolvedValueOnce(page({ items: [olderItem] }));
+        const session = createHistorySearchSession({ readPage });
         await session.search(criteria);
+        expect(readPage).toHaveBeenCalledTimes(1);
         await session.loadOlder();
-
-        expect(session.getState()).toMatchObject({
-            status: 'ready',
-            endReached: true,
-            items: [fixtures.powerChange, olderItem],
-            completeness: 'retained_evidence_only',
-        });
+        expect(readPage).toHaveBeenCalledTimes(2);
+        expect(session.getState().items).toEqual([
+            ...page({ nextCursor: 'older' }).page.items,
+            olderItem,
+        ]);
     });
 
     it('deduplicates records that reappear across paged results', async () => {
@@ -107,7 +110,7 @@ describe('static history search session', () => {
         await session.search(criteria);
         await session.loadOlder();
 
-        expect(session.getState().items).toEqual([fixtures.powerChange]);
+        expect(session.getState().items).toEqual(page({ nextCursor: 'duplicate' }).page.items);
     });
 
     it('prevents duplicate paging and keeps a previous view labeled when a replacement fails', async () => {
@@ -130,7 +133,7 @@ describe('static history search session', () => {
         const replacementSearch = session.search({ deviceId: 'another-device' });
         expect(session.getState()).toMatchObject({
             status: 'loading',
-            items: [fixtures.powerChange],
+            items: page({ nextCursor: 'older' }).page.items,
             displayedCriteria: normalizedCriteria,
             appliedCriteria: { deviceId: 'another-device' },
         });
@@ -142,7 +145,7 @@ describe('static history search session', () => {
 
         expect(session.getState()).toMatchObject({
             status: 'error',
-            items: [fixtures.powerChange],
+            items: page({ nextCursor: 'older' }).page.items,
             displayedCriteria: normalizedCriteria,
             appliedCriteria: { deviceId: 'another-device' },
             lastKnown: true,
@@ -237,28 +240,6 @@ describe('static history search session', () => {
         expect(session.getState().items).toHaveLength(5000);
     });
 
-    it('bounds sparse empty-page traversal without treating it as end of history', async () => {
-        let pageNumber = 0;
-        const readPage = vi.fn<HistoryClient['readPage']>(async () => {
-            pageNumber += 1;
-
-            return page({ items: [], nextCursor: `cursor-${pageNumber}` });
-        });
-        const session = createHistorySearchSession({ readPage });
-
-        await session.search(criteria);
-
-        expect(readPage).toHaveBeenCalledTimes(100);
-        expect(session.getState()).toMatchObject({
-            status: 'ready',
-            items: [],
-            endReached: false,
-            limitReached: true,
-            nextCursor: 'cursor-100',
-            error: null,
-        });
-    });
-
     it.each([
         'cursor_expired',
         'invalid_cursor',
@@ -305,34 +286,23 @@ describe('static history search session', () => {
             status: 'error',
             error: 'invalid_response',
             refreshRequired: true,
-            items: [fixtures.powerChange],
+            items: page({ nextCursor: 'older' }).page.items,
         });
     });
 
-    it('replaces the previous criteria and results on the first valid sparse page', async () => {
+    it('replaces previous results with a terminal empty result in one read', async () => {
         const readPage = vi
             .fn<HistoryClient['readPage']>()
             .mockResolvedValueOnce(page())
-            .mockResolvedValueOnce(page({ items: [], nextCursor: 'sparse' }))
-            .mockResolvedValueOnce(page({ items: [olderItem] }));
+            .mockResolvedValueOnce(page({ items: [], nextCursor: null }));
         const session = createHistorySearchSession({ readPage });
         await session.search(criteria);
-        const observed: ReturnType<typeof session.getState>[] = [];
-        session.subscribe(() => observed.push(session.getState()));
-
         await session.search({ deviceId: 'another-device' });
-
-        expect(observed).toContainEqual(
-            expect.objectContaining({
-                status: 'loading',
-                items: [],
-                displayedCriteria: { deviceId: 'another-device' },
-                lastKnown: false,
-            }),
-        );
+        expect(readPage).toHaveBeenCalledTimes(2);
         expect(session.getState()).toMatchObject({
             status: 'ready',
-            items: [olderItem],
+            items: [],
+            endReached: true,
             displayedCriteria: { deviceId: 'another-device' },
         });
     });
@@ -353,7 +323,7 @@ describe('static history search session', () => {
         expect(session.getState()).toMatchObject({
             status: 'error',
             lastKnown: true,
-            items: [fixtures.powerChange],
+            items: page({ nextCursor: 'older' }).page.items,
             refreshRequired: false,
         });
         await session.retry();
