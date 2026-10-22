@@ -1,4 +1,4 @@
-import type { RawTelemetrySampleProjection } from '@smart-room/contracts/history';
+import type { LiveTelemetrySampleProjection } from '@smart-room/contracts/history';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,7 @@ import { TelemetryTable } from './telemetry-table/TelemetryTable';
 import { useDeviceDetails } from './useDeviceDetails';
 import { useDeviceTelemetry } from './useDeviceTelemetry';
 
-const noTelemetry: readonly RawTelemetrySampleProjection[] = [];
+const noTelemetry: readonly LiveTelemetrySampleProjection[] = [];
 
 export function DeviceDetails() {
     const { deviceId } = useParams();
@@ -35,6 +35,10 @@ export function DeviceDetails() {
     const telemetryState = telemetry.state;
     const samples = telemetryState?.samples ?? noTelemetry;
     const telemetryStatus = telemetryState?.status ?? 'loading';
+    const telemetryLoading =
+        telemetryStatus === 'loading' ||
+        telemetryStatus === 'idle' ||
+        telemetryStatus === 'waiting_for_baseline';
     const emptyTelemetryMessage = t(
         telemetryStatus === 'error'
             ? 'telemetry.failed'
@@ -116,9 +120,7 @@ export function DeviceDetails() {
                             ) : null}
                             <p>{t('telemetry.count', { count: samples.length })}</p>
                             <div role="status">
-                                {telemetryStatus === 'loading' ? (
-                                    <p>{t('telemetry.loading')}</p>
-                                ) : null}
+                                {telemetryLoading ? <p>{t('telemetry.loading')}</p> : null}
                                 {telemetryStatus === 'ready' && samples.length === 0 ? (
                                     <p>{t('telemetry.empty')}</p>
                                 ) : null}

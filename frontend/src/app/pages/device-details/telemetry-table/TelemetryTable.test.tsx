@@ -36,10 +36,51 @@ describe('TelemetryTable', () => {
         ).toBeInTheDocument();
         expect(within(table).getByRole('cell', { name: '22.5' })).toBeInTheDocument();
         expect(
+            within(table).getByRole('columnheader', {
+                name: i18n.t('table.durability', { ns: 'deviceDetails' }),
+            }),
+        ).toBeInTheDocument();
+        expect(
+            within(table).getByRole('cell', {
+                name: i18n.t('telemetry.durability.durable', { ns: 'deviceDetails' }),
+            }),
+        ).toBeInTheDocument();
+        expect(
             within(table).getByRole('cell', {
                 name: i18n.t('temperatureUnit', { ns: 'deviceDetails' }),
             }),
         ).toBeInTheDocument();
+    });
+
+    it('distinguishes volatile samples from durable history without inventing storage evidence', () => {
+        const { telemetrySample } = createHistoryIdentityFixtures();
+        render(
+            <TelemetryTable
+                samples={[
+                    {
+                        recordId: telemetrySample.recordId,
+                        deviceId: telemetrySample.deviceId,
+                        metric: telemetrySample.metric,
+                        value: telemetrySample.value,
+                        unit: telemetrySample.unit,
+                        occurredAt: telemetrySample.occurredAt,
+                        durability: 'volatile',
+                    },
+                ]}
+                emptyMessage=""
+            />,
+        );
+
+        expect(
+            screen.getByRole('cell', {
+                name: i18n.t('telemetry.durability.volatile', { ns: 'deviceDetails' }),
+            }),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByRole('cell', {
+                name: i18n.t('telemetry.durability.durable', { ns: 'deviceDetails' }),
+            }),
+        ).not.toBeInTheDocument();
     });
 
     it('keeps the table available and explains that its history is empty', () => {

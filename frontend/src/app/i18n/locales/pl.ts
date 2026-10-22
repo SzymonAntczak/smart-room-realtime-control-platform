@@ -29,8 +29,9 @@ export const pl = {
         },
         telemetryTitle: 'Historia pomiarów temperatury',
         telemetry: {
-            baseline: 'Zachowana historia pomiarów pobrana jednorazowo przez HTTP.',
-            range: 'Zakres czasu obserwacji: od {{from}} do {{to}} (bez końca zakresu).',
+            baseline:
+                'Zachowana historia pomiarów pobrana przez HTTP i uzupełniana pomiarami na żywo, także spoza zakresu bazy HTTP.',
+            range: 'Zakres bazy HTTP: od {{from}} do {{to}} (bez końca zakresu).',
             count: 'Liczba wyświetlanych pomiarów: {{count}}.',
             loading: 'Ładowanie historii pomiarów…',
             empty: 'Brak zachowanych pomiarów w tym zakresie.',
@@ -39,6 +40,10 @@ export const pl = {
             partial:
                 'Wyświetlane pomiary są częściowe lub ostatnio znane. Kompletność odczytu nie została potwierdzona.',
             retry: 'Ponów pobieranie pomiarów',
+            durability: {
+                durable: 'Utrwalone',
+                volatile: 'Nieutrwalone',
+            },
             errors: {
                 unavailable: 'Trwała historia pomiarów jest chwilowo niedostępna.',
                 invalid_response: 'Otrzymano niepoprawną historię pomiarów.',
@@ -84,6 +89,7 @@ export const pl = {
             time: 'Czas obserwacji',
             value: 'Wartość',
             unit: 'Jednostka',
+            durability: 'Trwałość danych',
         },
         open: 'Szczegóły urządzenia: {{name}}',
         openLabel: 'Szczegóły urządzenia',

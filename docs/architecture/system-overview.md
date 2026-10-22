@@ -170,6 +170,18 @@ count, and explains when the sample limit leaves older measurements outside the
 view. The chart and table use the same samples in chronological order, with
 record identity breaking timestamp ties.
 
+The HTTP range describes the durable baseline only. All live temperature samples
+for the selected device join that baseline through the shared room connection,
+including samples outside the HTTP interval. A separate live overlay retains at
+most 200 samples across paging and same-generation refetches. The combined chart
+and table also retain at most 200 samples, evicting the oldest by observation
+time and then record identity. HTTP and SSE copies share one logical sample;
+durable evidence takes precedence over volatile evidence. The table identifies
+sample durability, and the chart's accessible description marks volatile samples.
+Reconnect and storage recovery refetch a new 30-day baseline ending at the new
+read's start time; cursor restarts keep the current read's fixed range. Generation
+changes invalidate the old baseline and overlay before replacement data merges.
+
 Both LED and temperature-sensor details present the paged User History entries
 retained for the selected device. This is retained evidence and may be incomplete;
 it is not a complete device log, as

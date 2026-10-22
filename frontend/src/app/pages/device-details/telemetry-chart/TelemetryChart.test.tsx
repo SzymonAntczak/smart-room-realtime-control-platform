@@ -23,6 +23,30 @@ describe('TelemetryChart', () => {
         expect(screen.getByRole('img')).toHaveAccessibleDescription(/22\.5/);
     });
 
+    it('identifies volatile measurements in the accessible chart description', () => {
+        render(
+            <TelemetryChart
+                samples={[
+                    {
+                        recordId: firstSample.recordId,
+                        deviceId: firstSample.deviceId,
+                        metric: firstSample.metric,
+                        value: firstSample.value,
+                        unit: firstSample.unit,
+                        occurredAt: firstSample.occurredAt,
+                        durability: 'volatile',
+                    },
+                ]}
+            />,
+        );
+
+        expect(screen.getByRole('img')).toHaveAccessibleDescription(
+            expect.stringContaining(
+                i18n.t('telemetry.durability.volatile', { ns: 'deviceDetails' }),
+            ),
+        );
+    });
+
     it('handles flat values and equal timestamps without producing invalid coordinates', () => {
         const secondSample = {
             ...firstSample,

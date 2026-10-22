@@ -1,4 +1,4 @@
-import type { RawTelemetrySampleProjection } from '@smart-room/contracts/history';
+import type { LiveTelemetrySampleProjection } from '@smart-room/contracts/history';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -8,7 +8,7 @@ import styles from './TelemetryChart.module.css';
 
 const plot = { left: 64, right: 704, top: 24, bottom: 164 };
 
-export function TelemetryChart({ samples }: { samples: readonly RawTelemetrySampleProjection[] }) {
+export function TelemetryChart({ samples }: { samples: readonly LiveTelemetrySampleProjection[] }) {
     const { t } = useTranslation('deviceDetails');
     const titleId = useId();
     const descriptionId = useId();
@@ -61,7 +61,7 @@ export function TelemetryChart({ samples }: { samples: readonly RawTelemetrySamp
                               points: samples
                                   .map(
                                       (sample) =>
-                                          `${formatTimestamp(sample.occurredAt)}: ${sample.value}`,
+                                          `${formatTimestamp(sample.occurredAt)}: ${sample.value}${sample.durability === 'volatile' ? ` (${t('telemetry.durability.volatile')})` : ''}`,
                                   )
                                   .join('; '),
                               unit: t('temperatureUnit'),

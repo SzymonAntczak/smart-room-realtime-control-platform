@@ -1,5 +1,9 @@
 import { isRawTelemetryPage, type RawTelemetryPage } from '@smart-room/contracts/history';
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
+import {
+    isRoomBffRealtimeServerMessage,
+    type RoomBffRealtimeServerMessage,
+} from '@smart-room/contracts/room-bff';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
@@ -30,6 +34,7 @@ function makeTelemetryPage(
     const fixture = createHistoryIdentityFixtures();
     const page = {
         ...fixture.rawTelemetryPage,
+        historyGenerationId: 'generation-test',
         pageSize: 100,
         throughSequence: 1000,
         items: Array.from({ length: count }, (_, index) => ({
@@ -148,7 +153,7 @@ describe('device details navigation', () => {
 
         const displayedValues = within(table)
             .getAllByRole('cell')
-            .filter((_, index) => index % 3 === 1)
+            .filter((_, index) => index % 4 === 1)
             .map((cell) => cell.textContent);
         expect(displayedValues).toEqual(
             Array.from({ length: 102 }, (_, index) => String(300 - index + 0.125)),
@@ -210,13 +215,66 @@ describe('device details navigation', () => {
             );
             await screen.findByText(i18n.t(`telemetry.${outcome}`, { ns: 'deviceDetails' }));
             const table = screen.getByRole('table');
-            expect(within(table).getAllByRole('row')).toHaveLength(outcome === 'limit' ? 201 : 101);
+            expect(within(table).getAllByRole('row', { hidden: true })).toHaveLength(
+                outcome === 'limit' ? 201 : 101,
+            );
             expect(table).not.toHaveTextContent(i18n.t('telemetry.empty', { ns: 'deviceDetails' }));
             expect(
                 fetcher.mock.calls.filter(
                     ([input]) => new URL(String(input)).pathname === '/room/history/telemetry',
                 ),
             ).toHaveLength(2);
+
+            if (outcome === 'limit') {
+                const sample = {
+                    recordId: `rec:v1:sha256:${'f'.repeat(64)}`,
+                    deviceId: 'temp-desk',
+                    metric: 'temperature',
+                    unit: 'celsius',
+                    value: 25.25,
+                    occurredAt: '2026-09-11T00:00:01.000Z',
+                    durability: 'volatile',
+                } as const;
+                const message = {
+                    messageType: 'device.updated',
+                    previousRevision: 0,
+                    revision: 1,
+                    sentAt: sample.occurredAt,
+                    payload: createTemperatureDevice(),
+                    telemetrySample: sample,
+                } as const;
+                expect(isRoomBffRealtimeServerMessage(message)).toBe(true);
+                act(() => MockEventSource.latest().emitMessage(message));
+                expect(within(table).getAllByRole('row', { hidden: true })).toHaveLength(201);
+                expect(table).not.toHaveTextContent('300.125');
+                expect(
+                    within(table)
+                        .getAllByRole('cell', { hidden: true })
+                        .filter((_, index) => index % 4 === 1)
+                        .map((cell) => cell.textContent),
+                ).toEqual([
+                    ...[...first.items, ...second.items].slice(1).map((item) => String(item.value)),
+                    '25.25',
+                ]);
+                expect(
+                    screen.getByRole('img', {
+                        name: i18n.t('chart.title', { ns: 'deviceDetails' }),
+                    }),
+                ).toHaveAccessibleDescription(
+                    i18n.t('chart.description', {
+                        ns: 'deviceDetails',
+                        unit: i18n.t('temperatureUnit', { ns: 'deviceDetails' }),
+                        points: [
+                            ...[...first.items, ...second.items]
+                                .slice(1)
+                                .map(
+                                    (item) => `${formatTimestamp(item.occurredAt)}: ${item.value}`,
+                                ),
+                            `${formatTimestamp(sample.occurredAt)}: ${sample.value} (${i18n.t('telemetry.durability.volatile', { ns: 'deviceDetails' })})`,
+                        ].join('; '),
+                    }),
+                );
+            }
 
             if (outcome === 'partial') {
                 expect(
@@ -228,9 +286,116 @@ describe('device details navigation', () => {
         },
     );
 
+    it('updates the equivalent chart and table through the shared stream and labels live data while HTTP is unavailable', async () => {
+        let resolvePage: (response: Response) => void = () => undefined;
+        vi.stubGlobal(
+            'fetch',
+            vi.fn<typeof fetch>((input) => {
+                if (new URL(String(input)).pathname !== '/room/history/telemetry') {
+                    return new Promise(() => undefined);
+                }
+
+                return new Promise((resolve) => {
+                    resolvePage = resolve;
+                });
+            }),
+        );
+        renderAppAt('/device-details/temp-desk');
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
+        const establishedCount = MockEventSource.instances.length;
+        const device = createTemperatureDevice();
+        const fixture = createHistoryIdentityFixtures().telemetrySample;
+        const durable = {
+            ...fixture,
+            recordId: `rec:v1:sha256:${'c'.repeat(64)}`,
+            value: 23.25,
+            storageSequence: 1001,
+            occurredAt: '2026-09-11T00:00:01.000Z',
+        } as const;
+        const volatile = {
+            recordId: `rec:v1:sha256:${'d'.repeat(64)}`,
+            deviceId: fixture.deviceId,
+            metric: fixture.metric,
+            value: 24.75,
+            unit: fixture.unit,
+            occurredAt: '2026-09-11T00:00:02.000Z',
+            durability: 'volatile',
+        } as const;
+
+        const publish = (message: RoomBffRealtimeServerMessage) => {
+            expect(isRoomBffRealtimeServerMessage(message)).toBe(true);
+            MockEventSource.latest().emitMessage(message);
+        };
+
+        act(() => {
+            publish({
+                messageType: 'device.updated',
+                previousRevision: 0,
+                revision: 1,
+                sentAt: durable.occurredAt,
+                payload: device,
+                telemetrySample: durable,
+            });
+            publish({
+                messageType: 'device.updated',
+                previousRevision: 1,
+                revision: 2,
+                sentAt: volatile.occurredAt,
+                payload: device,
+                telemetrySample: volatile,
+            });
+        });
+        await act(async () =>
+            resolvePage(
+                new Response(
+                    JSON.stringify({
+                        error: 'durable_history_unavailable',
+                        message: 'Unavailable',
+                    }),
+                    { status: 503 },
+                ),
+            ),
+        );
+        const table = screen.getByRole('table', {
+            name: i18n.t('table.caption', { ns: 'deviceDetails' }),
+        });
+        const chart = screen.getByRole('img', {
+            name: i18n.t('chart.title', { ns: 'deviceDetails' }),
+        });
+        expect(within(table).getAllByRole('row')).toHaveLength(3);
+        expect(within(table).getByRole('cell', { name: '23.25' })).toBeInTheDocument();
+        expect(within(table).getByRole('cell', { name: '24.75' })).toBeInTheDocument();
+        expect(
+            within(table).getByRole('cell', {
+                name: i18n.t('telemetry.durability.volatile', { ns: 'deviceDetails' }),
+            }),
+        ).toBeInTheDocument();
+        expect(chart).toHaveAccessibleDescription(
+            i18n.t('chart.description', {
+                ns: 'deviceDetails',
+                unit: i18n.t('temperatureUnit', { ns: 'deviceDetails' }),
+                points: `${formatTimestamp(durable.occurredAt)}: 23.25; ${formatTimestamp(volatile.occurredAt)}: 24.75 (${i18n.t('telemetry.durability.volatile', { ns: 'deviceDetails' })})`,
+            }),
+        );
+        expect(
+            screen.getByText(i18n.t('telemetry.errors.unavailable', { ns: 'deviceDetails' })),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(i18n.t('telemetry.partial', { ns: 'deviceDetails' })),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(i18n.t('telemetry.baseline', { ns: 'deviceDetails' })),
+        ).toBeInTheDocument();
+        expect(MockEventSource.instances).toHaveLength(establishedCount);
+        expect(MockEventSource.instances.filter((connection) => !connection.closed)).toHaveLength(
+            1,
+        );
+    });
+
     it('distinguishes an empty HTTP result from an unavailable history and supports explicit retry', async () => {
         const empty = {
             ...createHistoryIdentityFixtures().rawTelemetryPage,
+            historyGenerationId: 'generation-test',
             pageSize: 100,
             items: [],
         };

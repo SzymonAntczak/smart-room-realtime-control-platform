@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 
+import { useRoomConnection } from '../../features/room';
+
 import { createTelemetrySession } from './telemetry-session';
 
 export function useDeviceTelemetry(deviceId: string | undefined) {
+    const { historySource } = useRoomConnection();
     const sessionRef = useRef<ReturnType<typeof createTelemetrySession> | null>(null);
     const listeners = useRef(new Set<() => void>());
     const subscribe = useCallback((listener: () => void) => {
@@ -27,18 +30,31 @@ export function useDeviceTelemetry(deviceId: string | undefined) {
             return;
         }
 
-        const session = createTelemetrySession(deviceId);
+        const session = createTelemetrySession(
+            deviceId,
+            undefined,
+            undefined,
+            historySource.requestBaseline,
+        );
         sessionRef.current = session;
         const unsubscribe = session.subscribe(notify);
+        const unsubscribeRealtime = historySource.subscribe(session.acceptRealtime);
+        const baseline = historySource.getBaseline();
+
+        if (baseline) {
+            session.acceptRealtime(baseline);
+        }
+
         void session.start();
 
         return () => {
+            unsubscribeRealtime();
             unsubscribe();
             session.close();
             sessionRef.current = null;
             notify();
         };
-    }, [deviceId, notify]);
+    }, [deviceId, historySource, notify]);
 
     const retry = useCallback(() => {
         void sessionRef.current?.start();
