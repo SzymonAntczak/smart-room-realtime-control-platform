@@ -1,4 +1,4 @@
 interface:
     display_name: 'Smart Room Frontend E2E Testing'
     short_description: 'Maintain mocked-BFF frontend-e2e scenarios'
-    default_prompt: 'Use $smart-room-browser-integration-testing to add a deterministic browser scenario.'
+    default_prompt: 'Use $smart-room-frontend-e2e-testing to add a deterministic frontend E2E scenario.'

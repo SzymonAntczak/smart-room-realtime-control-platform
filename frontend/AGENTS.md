@@ -16,6 +16,6 @@ Verification section and the shared coding guide.
 
 Mocked-BFF browser tests and their runtime belong to the separate
 `frontend-e2e/` workspace. Follow its `AGENTS.md` and
-`smart-room-browser-integration-testing` when working on that suite.
+`smart-room-frontend-e2e-testing` when working on that suite.
 For suite boundaries, use Test Suite Boundaries in
 `docs/development/coding-guidelines.md`.

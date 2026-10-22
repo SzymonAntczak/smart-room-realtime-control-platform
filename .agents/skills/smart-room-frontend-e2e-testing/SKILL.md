@@ -1,9 +1,9 @@
 ---
-name: smart-room-browser-integration-testing
-description: Add or review Smart Room frontend-e2e mocked-BFF Playwright scenarios and their harness/configuration. Applies to frontend browser integration, not root-level full-runtime end-to-end tests.
+name: smart-room-frontend-e2e-testing
+description: Add or review Smart Room frontend-e2e mocked-BFF Playwright scenarios and their harness/configuration. Applies to the frontend-e2e workspace, not root-level full-system E2E tests.
 ---
 
-# Smart Room Browser Integration Testing
+# Smart Room Frontend E2E Testing
 
 Use this skill for the mocked-BFF Playwright suite.
 
