@@ -10,15 +10,18 @@ import tseslint from 'typescript-eslint';
 const frontendSourceFiles = [
     'frontend/**/*.{ts,tsx}',
     'src/**/*.{ts,tsx}',
-    'tests/browser-integration/**/*.{ts,tsx}',
+    'frontend-e2e/tests/**/*.spec.ts',
+    'frontend-e2e/tests/page-objects/**/*.ts',
+    'tests/**/*.spec.ts',
+    'tests/page-objects/**/*.ts',
 ];
 const frontendAppComponents = ['frontend/src/app/**/*.tsx', '**/src/app/**/*.tsx'];
 const frontendHookFiles = ['frontend/src/**/use*.{ts,tsx}', 'src/**/use*.{ts,tsx}'];
 const frontendTestSupportBlocklist = {
     '**/*.test-support.{ts,tsx}': '**/src/test/**/*.ts',
 };
-const browserIntegrationSpecFiles = ['**/tests/browser-integration/**/*.spec.ts'];
-const mockBffSourceFiles = ['**/tests/browser-integration/mock-bff/**/*.ts'];
+const browserIntegrationSpecFiles = ['frontend-e2e/tests/**/*.spec.ts', 'tests/**/*.spec.ts'];
+const mockBffSourceFiles = ['frontend-e2e/**/*.ts', 'tests/mock-bff/**/*.ts', '*.config.ts'];
 const nodeSourceFiles = ['backend/**/*.ts', 'simulator/**/*.ts'];
 const nodeScriptFiles = ['scripts/**/*.mjs'];
 const sharedSourceFiles = ['shared/**/*.ts'];

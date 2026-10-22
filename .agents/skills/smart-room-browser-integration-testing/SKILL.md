@@ -1,6 +1,6 @@
 ---
 name: smart-room-browser-integration-testing
-description: Add or review Smart Room mocked-BFF Playwright scenarios and their harness/configuration. Applies to frontend browser integration, not root-level full-runtime end-to-end tests.
+description: Add or review Smart Room frontend-e2e mocked-BFF Playwright scenarios and their harness/configuration. Applies to frontend browser integration, not root-level full-runtime end-to-end tests.
 ---
 
 # Smart Room Browser Integration Testing
@@ -11,12 +11,13 @@ Use this skill for the mocked-BFF Playwright suite.
 
 Read the relevant parts of:
 
-- `frontend/AGENTS.md`
+- `frontend-e2e/AGENTS.md`
 - [frontend guidelines](../../../docs/development/frontend-guidelines.md#browser-integration-tests),
   Browser Integration Tests section
 - `docs/decisions/adr-playwright-frontend-integration-tests.md`
 - `docs/architecture/reliability-and-testing.md`
-- root `package.json`, `frontend/package.json` and `playwright.config.ts`
+- root `package.json`, `frontend-e2e/package.json` and the Playwright
+  configurations in `frontend-e2e/`
 - the closest existing spec, mock-BFF fixture and shared contract for the
   scenario
 
@@ -40,9 +41,10 @@ command lifecycle, availability, freshness, health or history behavior.
 6. Assert user-visible Dashboard behavior, rather than mock endpoints or
    implementation details of the mock BFF.
 7. Run the narrowest relevant checks:
-    - `npm run typecheck:browser`
-    - `npm run test:browser`
-    - `npm run test:frontend` when changing mock-BFF unit tests
+    - `npm run typecheck:frontend-e2e`
+    - `npm run test:frontend-e2e`
+    - `npm run test:frontend-e2e:unit` when changing mock-BFF implementation or unit tests
+    - `npm run test:frontend-e2e:compiler` when changing shared harness or compiler configuration
     - relevant lint or format checks
 
 Apply the browser-suite conventions from the linked frontend guidelines throughout

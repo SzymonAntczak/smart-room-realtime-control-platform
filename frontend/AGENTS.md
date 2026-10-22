@@ -14,10 +14,8 @@ Verification section and the shared coding guide.
 
 ## Browser Integration
 
-For `tests/browser-integration` and its runtime/configuration use
-`smart-room-browser-integration-testing`, the guide's Browser Integration Tests
-section, `docs/decisions/adr-playwright-frontend-integration-tests.md` and
-`docs/architecture/reliability-and-testing.md`.
-
-For the distinction from root-level full-runtime tests, use Test Suite Boundaries
-in `docs/development/coding-guidelines.md`.
+Mocked-BFF browser tests and their runtime belong to the separate
+`frontend-e2e/` workspace. Follow its `AGENTS.md` and
+`smart-room-browser-integration-testing` when working on that suite.
+For suite boundaries, use Test Suite Boundaries in
+`docs/development/coding-guidelines.md`.

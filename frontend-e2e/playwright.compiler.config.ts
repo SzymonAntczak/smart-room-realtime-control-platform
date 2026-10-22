@@ -4,11 +4,11 @@ import { browserIntegrationConfig } from './playwright.shared.config';
 
 export default defineConfig({
     ...browserIntegrationConfig,
-    outputDir: 'test-results/frontend-integration',
-    testIgnore: '**/react-compiler-evidence.spec.ts',
+    metadata: { reactCompiler: true },
+    outputDir: '../test-results/frontend-integration-compiler',
     projects: [
         {
-            name: 'chromium',
+            name: 'chromium-react-compiler',
             use: { browserName: 'chromium' },
         },
     ],

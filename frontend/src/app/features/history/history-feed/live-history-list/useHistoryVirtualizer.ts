@@ -142,6 +142,12 @@ export function useHistoryVirtualizer({
             nextPosition !== null &&
             priorItems.findIndex((item) => item.recordId === nextPosition.recordId) !==
                 state.items.findIndex((item) => item.recordId === nextPosition.recordId);
+        const rowsReplaced =
+            itemsChanged &&
+            priorItems.some(
+                (item, index) =>
+                    state.items[index]?.recordId === item.recordId && state.items[index] !== item,
+            );
         previousItems.current = state.items;
 
         let shouldRestore = false;
@@ -151,10 +157,11 @@ export function useHistoryVirtualizer({
             position.current = nextPosition;
         } else if (
             itemsChanged &&
-            anchorIndexChanged &&
+            (anchorIndexChanged || rowsReplaced) &&
             pinnedPosition.current === null &&
             state.items.some((item) => item.recordId === nextPosition.recordId)
         ) {
+            // Rebuilt rows can change measurements even when the anchor keeps its index.
             pinnedPosition.current = nextPosition;
         } else if (
             pinnedPosition.current !== null &&
@@ -279,78 +286,60 @@ export function useHistoryVirtualizer({
 
     useEffect(() => {
         const root = scrollRoot.current;
-        const anchor = position.current;
 
-        if (!root || !anchor || !pinnedPosition.current || returningToTop) {
+        if (!root || returningToTop) {
             restoringPosition.current = false;
 
             return;
         }
 
+        let frame: number | undefined;
         let correctionFrame: number | undefined;
-        let corrections = 0;
-        let stableFrames = 0;
-        let previousOffset = Number.NaN;
-        const version = restorationVersion.current;
-        const frame = requestAnimationFrame(() => {
-            if (version !== restorationVersion.current) {
-                return;
+
+        const cancelFrames = () => {
+            if (frame !== undefined) {
+                cancelAnimationFrame(frame);
             }
 
-            const currentAnchor = position.current;
-
-            if (
-                !root.isConnected ||
-                !currentAnchor ||
-                currentAnchor.recordId !== anchor.recordId ||
-                currentAnchor.occurredAt !== anchor.occurredAt ||
-                currentAnchor.offsetPx !== anchor.offsetPx
-            ) {
-                restoringPosition.current = false;
-
-                return;
+            if (correctionFrame !== undefined) {
+                cancelAnimationFrame(correctionFrame);
             }
+        };
 
-            const index = stateRef.current.items.findIndex(
-                (item) => item.recordId === anchor.recordId,
-            );
-
-            if (index < 0) {
-                if (pinnedPosition.current?.recordId === anchor.recordId) {
-                    pinnedPosition.current = null;
-                }
-
-                restoringPosition.current = false;
-
-                return;
-            }
-
-            positionIndex.current = index;
-            virtuosoRef.current?.scrollToIndex({
-                index,
-                align: 'start',
-                offset: -anchor.offsetPx,
-            });
-
-            const correctAnchor = () => {
+        const restoreAnchor = (anchor: HistoryReadingPosition) => {
+            cancelFrames();
+            pinnedPosition.current = anchor;
+            restoringPosition.current = true;
+            let corrections = 0;
+            let stableFrames = 0;
+            let previousOffset = Number.NaN;
+            const version = restorationVersion.current;
+            frame = requestAnimationFrame(() => {
                 if (version !== restorationVersion.current) {
                     return;
                 }
 
-                if (!root.isConnected || !samePosition(position.current, anchor)) {
+                const currentAnchor = position.current;
+
+                if (
+                    !root.isConnected ||
+                    !currentAnchor ||
+                    currentAnchor.recordId !== anchor.recordId ||
+                    currentAnchor.occurredAt !== anchor.occurredAt ||
+                    currentAnchor.offsetPx !== anchor.offsetPx
+                ) {
                     restoringPosition.current = false;
 
                     return;
                 }
 
-                const row = root.querySelector<HTMLElement>(`[data-index="${index}"]`);
+                const index = stateRef.current.items.findIndex(
+                    (item) => item.recordId === anchor.recordId,
+                );
 
-                if (!row) {
-                    if (corrections < 8) {
-                        corrections += 1;
-                        correctionFrame = requestAnimationFrame(correctAnchor);
-
-                        return;
+                if (index < 0) {
+                    if (pinnedPosition.current?.recordId === anchor.recordId) {
+                        pinnedPosition.current = null;
                     }
 
                     restoringPosition.current = false;
@@ -358,121 +347,100 @@ export function useHistoryVirtualizer({
                     return;
                 }
 
-                const currentOffset =
-                    row.getBoundingClientRect().top - root.getBoundingClientRect().top;
-                const correction = currentOffset - anchor.offsetPx;
-
-                if (Math.abs(correction) > 1) {
-                    root.scrollTop += correction;
-                    corrections += 1;
-                    stableFrames = 0;
-                } else if (Math.abs(currentOffset - previousOffset) <= 0.5) {
-                    stableFrames += 1;
-                } else {
-                    stableFrames = 0;
-                }
-
-                previousOffset = currentOffset;
-
-                if (stableFrames < 6 && corrections < 120) {
-                    correctionFrame = requestAnimationFrame(correctAnchor);
-
-                    return;
-                }
-
-                pinnedPosition.current = null;
-                updatePositionRef.current(anchor);
-                restoringPosition.current = false;
-            };
-
-            correctionFrame = requestAnimationFrame(correctAnchor);
-        });
-
-        return () => {
-            cancelAnimationFrame(frame);
-
-            if (correctionFrame !== undefined) {
-                cancelAnimationFrame(correctionFrame);
-            }
-        };
-    }, [state.items, scrollRoot, returningToTop]);
-
-    useEffect(() => {
-        const root = scrollRoot.current;
-
-        if (!root || typeof ResizeObserver === 'undefined') {
-            return;
-        }
-
-        let previousWidth = root.clientWidth;
-        let animationFrame: number | undefined;
-
-        const resizeObserver = new ResizeObserver(() => {
-            const nextWidth = root.clientWidth;
-
-            if (nextWidth === previousWidth) {
-                return;
-            }
-
-            previousWidth = nextWidth;
-
-            if (returningToTop || !position.current) {
-                return;
-            }
-
-            const anchor = position.current;
-            const index = stateRef.current.items.findIndex(
-                (item) => item.recordId === anchor.recordId,
-            );
-
-            if (index < 0) {
-                return;
-            }
-
-            if (animationFrame !== undefined) {
-                cancelAnimationFrame(animationFrame);
-            }
-
-            const version = restorationVersion.current;
-            animationFrame = requestAnimationFrame(() => {
-                animationFrame = undefined;
-                const currentAnchor = position.current;
-
-                if (
-                    version !== restorationVersion.current ||
-                    !root.isConnected ||
-                    !samePosition(currentAnchor, anchor)
-                ) {
-                    return;
-                }
-
-                const currentIndex = stateRef.current.items.findIndex(
-                    (item) => item.recordId === anchor.recordId,
-                );
-
-                if (currentIndex < 0) {
-                    return;
-                }
-
-                positionIndex.current = currentIndex;
+                positionIndex.current = index;
                 virtuosoRef.current?.scrollToIndex({
-                    index: currentIndex,
+                    index,
                     align: 'start',
                     offset: -anchor.offsetPx,
                 });
-            });
-        });
 
-        resizeObserver.observe(root);
+                const correctAnchor = () => {
+                    if (version !== restorationVersion.current) {
+                        return;
+                    }
+
+                    if (!root.isConnected || !samePosition(position.current, anchor)) {
+                        restoringPosition.current = false;
+
+                        return;
+                    }
+
+                    const row = root.querySelector<HTMLElement>(`[data-index="${index}"]`);
+
+                    if (!row) {
+                        if (corrections < 8) {
+                            corrections += 1;
+                            correctionFrame = requestAnimationFrame(correctAnchor);
+
+                            return;
+                        }
+
+                        restoringPosition.current = false;
+
+                        return;
+                    }
+
+                    const currentOffset =
+                        row.getBoundingClientRect().top - root.getBoundingClientRect().top;
+                    const correction = currentOffset - anchor.offsetPx;
+
+                    if (Math.abs(correction) > 1) {
+                        root.scrollTop += correction;
+                        corrections += 1;
+                        stableFrames = 0;
+                    } else if (Math.abs(currentOffset - previousOffset) <= 0.5) {
+                        stableFrames += 1;
+                    } else {
+                        stableFrames = 0;
+                    }
+
+                    previousOffset = currentOffset;
+
+                    if (stableFrames < 6 && corrections < 120) {
+                        correctionFrame = requestAnimationFrame(correctAnchor);
+
+                        return;
+                    }
+
+                    pinnedPosition.current = null;
+                    updatePositionRef.current(anchor);
+                    restoringPosition.current = false;
+                };
+
+                correctionFrame = requestAnimationFrame(correctAnchor);
+            });
+        };
+
+        if (pinnedPosition.current) {
+            restoreAnchor(pinnedPosition.current);
+        } else {
+            restoringPosition.current = false;
+        }
+
+        let previousWidth = root.clientWidth;
+        const resizeObserver =
+            typeof ResizeObserver === 'undefined'
+                ? undefined
+                : new ResizeObserver(() => {
+                      const nextWidth = root.clientWidth;
+
+                      if (nextWidth === previousWidth) {
+                          return;
+                      }
+
+                      previousWidth = nextWidth;
+
+                      if (position.current) {
+                          restoreAnchor(position.current);
+                      }
+                  });
+        resizeObserver?.observe(root);
 
         return () => {
-            resizeObserver.disconnect();
-
-            if (animationFrame !== undefined) {
-                cancelAnimationFrame(animationFrame);
-            }
+            cancelFrames();
+            resizeObserver?.disconnect();
         };
-    }, [scrollRoot, returningToTop]);
+    }, [state.items, scrollRoot, returningToTop]);
 
     useEffect(() => {
         const root = scrollRoot.current;

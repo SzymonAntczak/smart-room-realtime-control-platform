@@ -41,6 +41,7 @@ const instructionPaths = new Set([
     'AGENTS.md',
     'backend/AGENTS.md',
     'frontend/AGENTS.md',
+    'frontend-e2e/AGENTS.md',
     'simulator/AGENTS.md',
 ]);
 
@@ -88,6 +89,13 @@ function addFullSafeChecks(commands) {
     addCommand(commands, npmCommand('test:backend', 'test:backend', ['run', 'test:backend']));
     addCommand(commands, npmCommand('test:frontend', 'test:frontend', ['run', 'test:frontend']));
     addCommand(commands, npmCommand('test:simulator', 'test:simulator', ['run', 'test:simulator']));
+    addCommand(
+        commands,
+        npmCommand('test:frontend-e2e:unit', 'test:frontend-e2e:unit', [
+            'run',
+            'test:frontend-e2e:unit',
+        ]),
+    );
 }
 
 export function buildVerificationPlan(paths, isFilePresent = () => true) {
@@ -131,27 +139,33 @@ export function buildVerificationPlan(paths, isFilePresent = () => true) {
     const frontendChanged = runtimePaths.some(
         (path) => hasPrefix(path, 'frontend/src/') || path === 'frontend/vite.config.ts',
     );
-    const compilerEvidencePath =
-        'frontend/tests/browser-integration/react-compiler-evidence.spec.ts';
-    const browserChanged = normalizedPaths.some(
+    const compilerEvidencePath = 'frontend-e2e/tests/react-compiler-evidence.spec.ts';
+    const commonBrowserChanged = runtimePaths.some(
         (path) =>
-            (hasPrefix(path, 'frontend/tests/browser-integration/') &&
-                path !== compilerEvidencePath) ||
-            path === 'playwright.config.ts' ||
-            path === 'playwright.shared.config.ts' ||
-            path === 'frontend/tsconfig.browser-tests.json',
+            hasPrefix(path, 'frontend-e2e/tests/mock-bff/') ||
+            hasPrefix(path, 'frontend-e2e/tests/page-objects/') ||
+            path === 'frontend-e2e/tests/browser-test-runtime.ts' ||
+            path === 'frontend-e2e/playwright.shared.config.ts' ||
+            path === 'frontend-e2e/tsconfig.json' ||
+            path === 'frontend-e2e/package.json',
     );
-    const compilerChanged = normalizedPaths.some(
+    const browserChanged = runtimePaths.some(
         (path) =>
-            path === 'frontend/vite.compiler.config.ts' ||
-            path === 'playwright.compiler.config.ts' ||
-            path === 'playwright.shared.config.ts' ||
+            (hasPrefix(path, 'frontend-e2e/tests/') &&
+                path.endsWith('.spec.ts') &&
+                path !== compilerEvidencePath) ||
+            path === 'frontend-e2e/playwright.config.ts',
+    );
+    const compilerChanged = runtimePaths.some(
+        (path) =>
+            path === 'frontend-e2e/vite.compiler.config.ts' ||
+            path === 'frontend-e2e/playwright.compiler.config.ts' ||
             path === compilerEvidencePath,
     );
-    const mockBffUnitTestChanged = normalizedPaths.some(
+    const mockBffChanged = runtimePaths.some(
         (path) =>
-            hasPrefix(path, 'frontend/tests/browser-integration/mock-bff/') &&
-            path.endsWith('.test.ts'),
+            hasPrefix(path, 'frontend-e2e/tests/mock-bff/') ||
+            path === 'frontend-e2e/vitest.config.ts',
     );
     const productionBoundaryChanged = normalizedPaths.some(
         (path) =>
@@ -176,16 +190,14 @@ export function buildVerificationPlan(paths, isFilePresent = () => true) {
             hasPrefix(path, 'backend/') ||
             hasPrefix(path, 'docs/') ||
             hasPrefix(path, 'frontend/') ||
+            hasPrefix(path, 'frontend-e2e/') ||
             hasPrefix(path, 'shared/') ||
             hasPrefix(path, 'simulator/') ||
             hasPrefix(path, '.agents/') ||
             hasPrefix(path, '.codex/') ||
             hasPrefix(path, 'scripts/') ||
-            path === 'playwright.compiler.config.ts' ||
-            path === 'playwright.shared.config.ts' ||
             instructionPaths.has(path) ||
-            rootVerificationPaths.has(path) ||
-            path === 'playwright.config.ts',
+            rootVerificationPaths.has(path),
     );
 
     if (backendChanged) {
@@ -219,37 +231,45 @@ export function buildVerificationPlan(paths, isFilePresent = () => true) {
         );
     }
 
-    if (browserChanged || browserContractChanged) {
+    if (
+        browserChanged ||
+        sharedChanged ||
+        commonBrowserChanged ||
+        compilerChanged ||
+        mockBffChanged
+    ) {
         addCommand(
             commands,
-            npmCommand('typecheck:browser', 'typecheck:browser', ['run', 'typecheck:browser']),
-        );
-        addCommand(commands, npmCommand('test:browser', 'test:browser', ['run', 'test:browser']));
-    }
-
-    if (mockBffUnitTestChanged) {
-        addWorkspaceChecks(commands, '@smart-room/frontend', 'test:frontend');
-    }
-
-    if (compilerChanged) {
-        addCommand(
-            commands,
-            npmCommand('typecheck:frontend', 'typecheck frontend compiler configuration', [
+            npmCommand('typecheck:frontend-e2e', 'typecheck:frontend-e2e', [
                 'run',
-                'typecheck',
-                '--workspace',
-                '@smart-room/frontend',
+                'typecheck:frontend-e2e',
             ]),
         );
+    }
+
+    if (browserChanged || browserContractChanged || commonBrowserChanged) {
         addCommand(
             commands,
-            npmCommand('typecheck:browser', 'typecheck:browser', ['run', 'typecheck:browser']),
+            npmCommand('test:frontend-e2e', 'test:frontend-e2e', ['run', 'test:frontend-e2e']),
         );
+    }
+
+    if (mockBffChanged || sharedChanged) {
         addCommand(
             commands,
-            npmCommand('test:browser:compiler', 'test:browser:compiler', [
+            npmCommand('test:frontend-e2e:unit', 'test:frontend-e2e:unit', [
                 'run',
-                'test:browser:compiler',
+                'test:frontend-e2e:unit',
+            ]),
+        );
+    }
+
+    if (compilerChanged || commonBrowserChanged) {
+        addCommand(
+            commands,
+            npmCommand('test:frontend-e2e:compiler', 'test:frontend-e2e:compiler', [
+                'run',
+                'test:frontend-e2e:compiler',
             ]),
         );
     }

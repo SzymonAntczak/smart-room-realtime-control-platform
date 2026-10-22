@@ -82,7 +82,7 @@ SSE additions. Search and device history stay static until explicitly refreshed.
 ## Scripts
 
 Frontend unit, component and hook tests run in this workspace. From the root,
-`npm run test:browser` runs Playwright against a mocked BFF; backend integration
+`npm run test:frontend-e2e` runs Playwright against a mocked BFF; backend integration
 runs separately with `npm run test:backend:integration` and imports no frontend.
 Root-level E2E smoke is reserved for the full system with its real sources.
 
@@ -101,16 +101,16 @@ Use `npm run format:write` only when intentionally updating formatting.
 Use `npm run verify:production-bundle` when a change could affect which modules
 reach the production bundle, especially the development-only UI.
 
-Run the deterministic browser-integration suite from the repository root,
-not from `frontend/`:
+Browser integration is owned by the separate
+[`frontend-e2e` workspace](../frontend-e2e/README.md). Run it from the repository root:
 
 ```powershell
-npm run test:browser
+npm run test:frontend-e2e
 ```
 
 It starts only the Vite frontend and a test-local mocked BFF; it does not start
 the production backend or simulator. If Chromium is not installed yet, run
-`npm run install:browser` from the repository root first. Failed tests retain
+`npm run install:frontend-e2e` from the repository root first. Failed tests retain
 Playwright trace, screenshot and video artifacts in
 `test-results/frontend-integration`.
 

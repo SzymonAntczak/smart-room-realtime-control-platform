@@ -46,11 +46,13 @@ Frontend unit/component/hook tests run with `npm run test:frontend`. Shared
 contracts and simulator tests stay in their workspaces. See
 [Test Suite Boundaries](docs/decisions/adr-test-suite-boundaries.md).
 
-Run the deterministic frontend browser-integration reference suite from the
+The [`frontend-e2e` workspace](frontend-e2e/README.md) owns deterministic browser
+integration against a mocked BFF. Full-system E2E belongs in `e2e/`.
+Run the frontend browser suite from the
 repository root:
 
 ```bash
-npm run test:browser
+npm run test:frontend-e2e
 ```
 
 The suite starts only the Vite frontend and a test-local mocked BFF; it does
@@ -58,7 +60,7 @@ not start the production backend or simulator. Install the Chromium browser
 binary first when it is not already available:
 
 ```bash
-npm run install:browser
+npm run install:frontend-e2e
 ```
 
 When a browser test fails, Playwright retains its trace, screenshot and video

@@ -213,6 +213,99 @@ describe('history position controller', () => {
         },
     );
 
+    it.each(['data replacement', 'viewport resize'] as const)(
+        'keeps the reading offset through delayed measurements after %s',
+        async (change) => {
+            const runFrame = controlAnimationFrames();
+            const updateReadingPosition = vi.fn();
+            const { rerender } = render(
+                <Harness
+                    state={{ ...readyState, position: anchor }}
+                    updateReadingPosition={updateReadingPosition}
+                />,
+            );
+            const root = screen.getByRole('region');
+            root.scrollTop = 224;
+            let measuredOffset = 0;
+            vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+                this: HTMLElement,
+            ) {
+                const top =
+                    this.tagName === 'LI'
+                        ? Number(this.dataset.index) * 200 + measuredOffset - root.scrollTop
+                        : 0;
+
+                return new DOMRect(0, top, 320, 200);
+            });
+            controls.scrollToIndex.mockImplementation(({ index, offset }) => {
+                root.scrollTop = index * 200 + offset;
+                fireEvent.scroll(root);
+            });
+
+            if (change === 'data replacement') {
+                rerender(
+                    <Harness
+                        state={{
+                            ...readyState,
+                            items: items.map((item) => ({ ...item })),
+                            position: anchor,
+                        }}
+                        updateReadingPosition={updateReadingPosition}
+                    />,
+                );
+            } else {
+                Object.defineProperty(root, 'clientWidth', { configurable: true, value: 400 });
+                act(() => TestResizeObserver.instances[0]?.trigger());
+            }
+
+            await runFrame();
+            measuredOffset = 251;
+            fireEvent.scroll(root);
+            await runFrame();
+
+            expect(root.scrollTop).toBe(475);
+            expect(updateReadingPosition).not.toHaveBeenCalled();
+
+            for (let frame = 0; frame < 8; frame += 1) {
+                await runFrame();
+            }
+
+            expect(root.scrollTop).toBe(475);
+            expect(updateReadingPosition).toHaveBeenLastCalledWith(anchor);
+        },
+    );
+
+    it('does not restart scrolling for loading status or an appended older page', async () => {
+        const runFrame = controlAnimationFrames();
+        const updateReadingPosition = vi.fn();
+        const { rerender } = render(
+            <Harness
+                state={{ ...readyState, position: anchor }}
+                updateReadingPosition={updateReadingPosition}
+            />,
+        );
+        controls.scrollToIndex.mockClear();
+
+        rerender(
+            <Harness
+                state={{ ...readyState, status: 'loading', items: [...items], position: anchor }}
+                updateReadingPosition={updateReadingPosition}
+            />,
+        );
+        await runFrame();
+        const older = { ...items[2], recordId: 'older' };
+        rerender(
+            <Harness
+                state={{ ...readyState, items: [...items, older], position: anchor }}
+                updateReadingPosition={updateReadingPosition}
+            />,
+        );
+        await runFrame();
+
+        expect(controls.scrollToIndex).not.toHaveBeenCalled();
+        expect(updateReadingPosition).not.toHaveBeenCalled();
+    });
+
     it('restores the reading anchor after the scroll viewport width changes', () => {
         render(
             <Harness state={{ ...readyState, position: anchor }} updateReadingPosition={vi.fn()} />,

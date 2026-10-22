@@ -95,8 +95,9 @@ test('routes shared browser contracts through all affected consumers and browser
         'test:backend',
         'typecheck:@smart-room/frontend',
         'test:frontend',
-        'typecheck:browser',
-        'test:browser',
+        'typecheck:frontend-e2e',
+        'test:frontend-e2e',
+        'test:frontend-e2e:unit',
     ]);
 });
 
@@ -104,7 +105,7 @@ test('routes simulator, development wiring, mock-BFF tests, and root config dete
     const plan = buildVerificationPlan([
         'simulator/src/index.ts',
         'frontend/src/app/dev/AppDev.tsx',
-        'frontend/tests/browser-integration/mock-bff/mock-bff-contracts.test.ts',
+        'frontend-e2e/tests/mock-bff/mock-bff-contracts.test.ts',
         'package.json',
     ]);
     const keys = plan.map((command) => command.key);
@@ -119,8 +120,10 @@ test('routes simulator, development wiring, mock-BFF tests, and root config dete
         'typecheck:@smart-room/frontend',
         'test:frontend',
         'verify:production-bundle',
-        'typecheck:browser',
-        'test:browser',
+        'typecheck:frontend-e2e',
+        'test:frontend-e2e',
+        'test:frontend-e2e:unit',
+        'test:frontend-e2e:compiler',
         'lint',
         'typecheck',
         'test:contracts',
@@ -139,6 +142,7 @@ test('routes a package-local ESLint configuration through the full safe suite', 
         'test:backend',
         'test:frontend',
         'test:simulator',
+        'test:frontend-e2e:unit',
     ]);
 });
 
@@ -150,7 +154,13 @@ test('does not send unsupported TOML files to Prettier', () => {
 });
 
 test('formats repository and package instructions without runtime checks', () => {
-    const paths = ['AGENTS.md', 'backend/AGENTS.md', 'frontend/AGENTS.md', 'simulator/AGENTS.md'];
+    const paths = [
+        'AGENTS.md',
+        'backend/AGENTS.md',
+        'frontend-e2e/AGENTS.md',
+        'frontend/AGENTS.md',
+        'simulator/AGENTS.md',
+    ];
     const plan = buildVerificationPlan(paths);
 
     assert.deepEqual(
@@ -229,38 +239,82 @@ test('routes backend integration and runner configuration through backend checks
         assert.ok(keys.includes('typecheck:@smart-room/backend'));
         assert.ok(keys.includes('test:backend'));
         assert.ok(!keys.includes('test:frontend'));
-        assert.ok(!keys.includes('test:browser'));
+        assert.ok(!keys.includes('test:frontend-e2e'));
     }
 });
 
 test('checks both compiler configurations and runs the compiler browser suite', () => {
-    for (const path of ['frontend/vite.compiler.config.ts', 'playwright.compiler.config.ts']) {
+    for (const path of [
+        'frontend-e2e/vite.compiler.config.ts',
+        'frontend-e2e/playwright.compiler.config.ts',
+    ]) {
         const keys = buildVerificationPlan([path]).map((command) => command.key);
-        assert.ok(keys.includes('typecheck:frontend'));
-        assert.ok(keys.includes('typecheck:browser'));
-        assert.ok(keys.includes('test:browser:compiler'));
+        assert.ok(keys.includes('typecheck:frontend-e2e'));
+        assert.ok(keys.includes('test:frontend-e2e:compiler'));
     }
 });
 
 test('verifies shared Playwright configuration with both browser suites', () => {
-    const keys = buildVerificationPlan(['playwright.shared.config.ts']).map(
+    const keys = buildVerificationPlan(['frontend-e2e/playwright.shared.config.ts']).map(
         (command) => command.key,
     );
 
-    assert.ok(keys.includes('typecheck:browser'));
-    assert.ok(keys.includes('test:browser'));
-    assert.ok(keys.includes('test:browser:compiler'));
+    assert.ok(keys.includes('typecheck:frontend-e2e'));
+    assert.ok(keys.includes('test:frontend-e2e'));
+    assert.ok(keys.includes('test:frontend-e2e:compiler'));
     assert.ok(!keys.includes('test:backend'));
 });
 
 test('runs the compiler evidence spec in the suite that discovers it', () => {
-    const keys = buildVerificationPlan([
-        'frontend/tests/browser-integration/react-compiler-evidence.spec.ts',
-    ]).map((command) => command.key);
+    const keys = buildVerificationPlan(['frontend-e2e/tests/react-compiler-evidence.spec.ts']).map(
+        (command) => command.key,
+    );
 
-    assert.ok(keys.includes('typecheck:browser'));
-    assert.ok(keys.includes('test:browser:compiler'));
-    assert.ok(!keys.includes('test:browser'));
+    assert.ok(keys.includes('typecheck:frontend-e2e'));
+    assert.ok(keys.includes('test:frontend-e2e:compiler'));
+    assert.ok(!keys.includes('test:frontend-e2e'));
+});
+
+test('routes ordinary browser specs only through the standard suite', () => {
+    const keys = buildVerificationPlan(['frontend-e2e/tests/led-command-confirmation.spec.ts']).map(
+        (command) => command.key,
+    );
+
+    assert.deepEqual(keys, [
+        'format:files',
+        'lint:files',
+        'typecheck:frontend-e2e',
+        'test:frontend-e2e',
+    ]);
+});
+
+test('routes common browser infrastructure through both browser suites', () => {
+    for (const path of [
+        'frontend-e2e/tests/browser-test-runtime.ts',
+        'frontend-e2e/tests/page-objects/history.ts',
+        'frontend-e2e/tests/mock-bff/test-runtime.ts',
+        'frontend-e2e/tsconfig.json',
+        'frontend-e2e/package.json',
+    ]) {
+        const keys = buildVerificationPlan([path]).map((command) => command.key);
+        assert.ok(keys.includes('typecheck:frontend-e2e'));
+        assert.ok(keys.includes('test:frontend-e2e'));
+        assert.ok(keys.includes('test:frontend-e2e:compiler'));
+    }
+});
+
+test('verifies mock-BFF implementations and tests with their owning unit suite', () => {
+    for (const path of [
+        'frontend-e2e/tests/mock-bff/mock-history.ts',
+        'frontend-e2e/tests/mock-bff/mock-history.test.ts',
+        'frontend-e2e/vitest.config.ts',
+    ]) {
+        const keys = buildVerificationPlan([path]).map((command) => command.key);
+        assert.ok(keys.includes('typecheck:frontend-e2e'));
+        assert.ok(keys.includes('test:frontend-e2e:unit'));
+        assert.ok(!keys.includes('test:frontend'));
+        assert.ok(!keys.includes('test:backend'));
+    }
 });
 
 test('runs npm commands without spawning npm.cmd directly on Windows', async () => {

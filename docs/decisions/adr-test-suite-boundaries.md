@@ -23,7 +23,8 @@ than tests of the module responsible for a failure.
 ## Decision
 
 Frontend unit, component and hook tests protect frontend-owned behavior.
-Frontend Playwright integration runs the real frontend against a test-local
+The separate `frontend-e2e/` workspace owns frontend Playwright integration
+and its mocked-BFF harness unit tests. Browser integration runs the real frontend against a test-local
 mocked BFF with shared-contract-valid HTTP and SSE messages.
 
 Backend unit tests protect module behavior, contracts, adapters, storage and

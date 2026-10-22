@@ -42,6 +42,10 @@ agents here. Architecture and accepted ADRs remain binding for product behavior.
   shared contracts.
 - `frontend` may import shared contracts and its own domain/UI modules. It must
   not import backend, simulator or server runtime internals.
+- `frontend-e2e` owns mocked-BFF browser tests and their harness. It may use
+  shared contracts and launch the frontend through its tooling, but must not
+  import frontend, backend or simulator internals. Production packages must not
+  import this test workspace.
 - `backend` may import shared contracts and backend-local platform, runtime,
   adapter and API modules. Backend platform/domain code should not depend on API
   handlers, simulator adapters or other outer runtime details unless an
@@ -80,7 +84,7 @@ report what was run. If no relevant commands exist yet, say so explicitly.
   must not import frontend code or replace native input with prepared projections.
 - Backend unit tests stay near the module owning their behavior. Backend Vitest
   projects `unit` and `integration` must have disjoint discovery.
-- Root-level `tests/` is reserved for full-system E2E smoke using the real BFF,
+- Root-level `e2e/` is reserved for full-system E2E smoke using the real BFF,
   frontend and required source infrastructure. Detailed failure matrices belong
   to the owning unit or integration suite.
 - Before changing a suite, read [Test Suite Boundaries](../decisions/adr-test-suite-boundaries.md)

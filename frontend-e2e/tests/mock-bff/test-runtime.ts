@@ -1,18 +1,24 @@
 import { type ChildProcess, spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import type { FullConfig } from '@playwright/test';
 
 import { browserTestRuntime, browserTestUrls, mockBffUrls } from '../browser-test-runtime';
 
 const readinessTimeoutMs = 30_000;
+const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
+const require = createRequire(import.meta.url);
 
 export default async function startBrowserTestRuntime(
     config: FullConfig,
 ): Promise<() => Promise<void>> {
     const compilerEnabled = config.metadata['reactCompiler'] === true;
     const mockBff = startProcess([
-        './node_modules/tsx/dist/cli.mjs',
-        'frontend/tests/browser-integration/mock-bff/mock-bff.ts',
+        '--import',
+        pathToFileURL(require.resolve('tsx')).href,
+        fileURLToPath(new URL('./mock-bff.ts', import.meta.url)),
     ]);
     let frontend: ChildProcess | undefined;
 
@@ -21,10 +27,12 @@ export default async function startBrowserTestRuntime(
 
         const startedFrontend = startProcess(
             [
-                './node_modules/vite/bin/vite.js',
+                join(dirname(require.resolve('vite/package.json')), 'bin/vite.js'),
                 'frontend',
                 '--config',
-                compilerEnabled ? 'frontend/vite.compiler.config.ts' : 'frontend/vite.config.ts',
+                compilerEnabled
+                    ? 'frontend-e2e/vite.compiler.config.ts'
+                    : 'frontend/vite.config.ts',
                 '--host',
                 browserTestRuntime.host,
                 '--port',
@@ -60,7 +68,7 @@ function startProcess(
     environment: Record<string, string> = {},
 ): ChildProcess {
     return spawn(process.execPath, arguments_, {
-        cwd: process.cwd(),
+        cwd: repositoryRoot,
         env: { ...process.env, ...environment },
         stdio: 'inherit',
     });

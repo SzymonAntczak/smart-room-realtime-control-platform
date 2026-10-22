@@ -1,4 +1,4 @@
 interface:
-    display_name: 'Smart Room Browser Integration Testing'
-    short_description: 'Add deterministic Playwright UI scenarios'
+    display_name: 'Smart Room Frontend E2E Testing'
+    short_description: 'Maintain mocked-BFF frontend-e2e scenarios'
     default_prompt: 'Use $smart-room-browser-integration-testing to add a deterministic browser scenario.'

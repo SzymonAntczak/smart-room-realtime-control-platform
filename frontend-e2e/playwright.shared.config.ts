@@ -1,10 +1,10 @@
 import type { PlaywrightTestConfig } from '@playwright/test';
 
-import { browserTestUrls } from './frontend/tests/browser-integration/browser-test-runtime';
+import { browserTestUrls } from './tests/browser-test-runtime';
 
 export const browserIntegrationConfig = {
-    globalSetup: './frontend/tests/browser-integration/mock-bff/test-runtime.ts',
-    testDir: 'frontend/tests/browser-integration',
+    globalSetup: './tests/mock-bff/test-runtime.ts',
+    testDir: './tests',
     testMatch: '**/*.spec.ts',
     workers: 1,
     use: {

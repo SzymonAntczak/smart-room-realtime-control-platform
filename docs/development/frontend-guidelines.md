@@ -311,7 +311,7 @@ Follow Test Quality in the shared coding guide for test intent and naming.
 
 ## Browser Integration Tests
 
-- Place Playwright specs under `frontend/tests/browser-integration`.
+- Place Playwright specs under `frontend-e2e/tests`.
 - Start only the Vite frontend and a test-local mocked BFF. The frontend must
   use the production-facing HTTP and SSE URLs against that BFF; do not start the
   production backend or simulator.

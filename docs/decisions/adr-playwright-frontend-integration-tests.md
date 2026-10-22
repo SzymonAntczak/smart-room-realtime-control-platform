@@ -25,6 +25,9 @@ project.
 ## Decision
 
 Use Playwright Test with TypeScript for the frontend browser integration suite.
+The private `@smart-room/frontend-e2e` workspace owns its specs, mocked BFF,
+harness unit tests and runner configurations. The frontend application owns
+its unit, component and hook tests; full-system E2E belongs in `e2e/`.
 
 Each test starts the Vite frontend and a test-local mocked BFF. The mocked BFF
 implements only the frontend-facing contract: `GET /room/realtime` as a
@@ -52,7 +55,7 @@ appears.
 
 ## Verification
 
-- `npm run test:browser` starts only the Vite frontend and mocked BFF, then runs
+- `npm run test:frontend-e2e` starts only the Vite frontend and mocked BFF, then runs
   the suite headlessly in Chromium.
 - The browser suite covers normal and delayed confirmation, rejection, timeout,
   and a late report after timeout through BFF-contract messages.
