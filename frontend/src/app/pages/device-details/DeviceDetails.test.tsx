@@ -1,4 +1,6 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { isRawTelemetryPage, type RawTelemetryPage } from '@smart-room/contracts/history';
+import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -11,6 +13,7 @@ import {
     createTemperatureDevice,
 } from '../../../test/room/room-realtime-fixtures';
 import { createAppRoutes } from '../../AppRoutes';
+import { formatTimestamp } from '../../features/date-time';
 import { i18n } from '../../i18n';
 
 function renderAppAt(initialEntry: string) {
@@ -19,8 +22,33 @@ function renderAppAt(initialEntry: string) {
     return render(<RouterProvider router={router} />);
 }
 
+function makeTelemetryPage(
+    first: number,
+    count: number,
+    nextCursor: string | null,
+): RawTelemetryPage {
+    const fixture = createHistoryIdentityFixtures();
+    const page = {
+        ...fixture.rawTelemetryPage,
+        pageSize: 100,
+        throughSequence: 1000,
+        items: Array.from({ length: count }, (_, index) => ({
+            ...fixture.telemetrySample,
+            storageSequence: first - index,
+            value: first - index + 0.125,
+            recordId: `rec:v1:sha256:${(1000 - first + index).toString(16).padStart(64, '0')}`,
+        })),
+        nextCursor,
+    };
+    expect(isRawTelemetryPage(page)).toBe(true);
+
+    return page;
+}
+
 describe('device details navigation', () => {
     beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-09-11T00:00:00.000Z'));
         MockEventSource.instances.length = 0;
         vi.stubGlobal('EventSource', MockEventSource);
         vi.stubGlobal(
@@ -29,7 +57,10 @@ describe('device details navigation', () => {
         );
     });
 
-    afterEach(() => vi.unstubAllGlobals());
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
 
     it('shows sensor telemetry and starts its history only after a valid snapshot', async () => {
         renderAppAt('/device-details/temp-desk');
@@ -58,7 +89,7 @@ describe('device details navigation', () => {
         ).toBeInTheDocument();
         expect(
             screen.getByRole('table', { name: i18n.t('table.caption', { ns: 'deviceDetails' }) }),
-        ).toHaveTextContent(i18n.t('historyUnavailable', { ns: 'deviceDetails' }));
+        ).toHaveTextContent(i18n.t('telemetry.loading', { ns: 'deviceDetails' }));
         expect(
             screen.getByRole('img', { name: i18n.t('chart.title', { ns: 'deviceDetails' }) }),
         ).toHaveAccessibleDescription(i18n.t('chart.empty', { ns: 'deviceDetails' }));
@@ -68,12 +99,183 @@ describe('device details navigation', () => {
             }),
         ).toBeInTheDocument();
         expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledOnce());
-        const request = vi.mocked(globalThis.fetch).mock.calls[0];
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(2));
+        const calls = vi.mocked(globalThis.fetch).mock.calls;
+        const telemetryRequest = calls.find(
+            ([input]) => new URL(String(input)).pathname === '/room/history/telemetry',
+        );
+        const telemetryUrl = new URL(String(telemetryRequest?.[0]));
+        expect(telemetryUrl.searchParams.get('deviceId')).toBe('temp-desk');
+        expect(telemetryUrl.searchParams.get('pageSize')).toBe('100');
+        const request = calls.find(
+            ([input]) => new URL(String(input)).pathname === '/room/history/user-history',
+        );
         const requestedUrl = new URL(String(request?.[0]));
         expect(requestedUrl.pathname).toBe('/room/history/user-history');
         expect(requestedUrl.searchParams.get('deviceId')).toBe('temp-desk');
         expect(requestedUrl.searchParams.get('pageSize')).toBe('50');
+    });
+
+    it('renders the same raw measurements from two HTTP pages in the chart and table', async () => {
+        const first = makeTelemetryPage(300, 100, 'older');
+        const second = makeTelemetryPage(200, 2, null);
+        const fetcher = vi.fn<typeof fetch>((input) => {
+            const url = new URL(String(input));
+
+            if (url.pathname !== '/room/history/telemetry') {
+                return new Promise(() => undefined);
+            }
+
+            return Promise.resolve(
+                new Response(JSON.stringify(url.searchParams.has('cursor') ? second : first)),
+            );
+        });
+        vi.stubGlobal('fetch', fetcher);
+        renderAppAt('/device-details/temp-desk');
+        act(() =>
+            MockEventSource.latest().emitMessage(
+                createRoomSnapshotMessage({ devices: [createTemperatureDevice()] }),
+            ),
+        );
+        await screen.findByText(i18n.t('telemetry.count', { ns: 'deviceDetails', count: 102 }));
+        const table = screen.getByRole('table', {
+            name: i18n.t('table.caption', { ns: 'deviceDetails' }),
+        });
+        const chart = screen.getByRole('img', {
+            name: i18n.t('chart.title', { ns: 'deviceDetails' }),
+        });
+        expect(within(table).getAllByRole('row')).toHaveLength(103);
+
+        const displayedValues = within(table)
+            .getAllByRole('cell')
+            .filter((_, index) => index % 3 === 1)
+            .map((cell) => cell.textContent);
+        expect(displayedValues).toEqual(
+            Array.from({ length: 102 }, (_, index) => String(300 - index + 0.125)),
+        );
+        expect(chart).toHaveAccessibleDescription(
+            i18n.t('chart.description', {
+                ns: 'deviceDetails',
+                unit: i18n.t('temperatureUnit', { ns: 'deviceDetails' }),
+                points: [...first.items, ...second.items]
+                    .map((sample) => `${formatTimestamp(sample.occurredAt)}: ${sample.value}`)
+                    .join('; '),
+            }),
+        );
+
+        expect(within(table).getAllByRole('row')[1]).toHaveTextContent('300.125');
+        expect(within(table).getAllByRole('row').at(-1)).toHaveTextContent('199.125');
+        expect(
+            screen.getByText(i18n.t('telemetry.baseline', { ns: 'deviceDetails' })),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(i18n.t('history.loading', { ns: 'dashboard' })),
+        ).toBeInTheDocument();
+    });
+
+    it.each(['limit', 'partial'] as const)(
+        'labels a %s baseline without presenting it as empty',
+        async (outcome) => {
+            const first = makeTelemetryPage(300, 100, 'older');
+            const second = makeTelemetryPage(200, 100, 'outside-view');
+            const fetcher = vi.fn<typeof fetch>((input) => {
+                const url = new URL(String(input));
+
+                if (url.pathname !== '/room/history/telemetry') {
+                    return new Promise(() => undefined);
+                }
+
+                if (!url.searchParams.has('cursor')) {
+                    return Promise.resolve(new Response(JSON.stringify(first)));
+                }
+
+                return Promise.resolve(
+                    outcome === 'limit'
+                        ? new Response(JSON.stringify(second))
+                        : new Response(
+                              JSON.stringify({
+                                  error: 'durable_history_unavailable',
+                                  message: 'Unavailable',
+                              }),
+                              { status: 503 },
+                          ),
+                );
+            });
+            vi.stubGlobal('fetch', fetcher);
+            renderAppAt('/device-details/temp-desk');
+            act(() =>
+                MockEventSource.latest().emitMessage(
+                    createRoomSnapshotMessage({ devices: [createTemperatureDevice()] }),
+                ),
+            );
+            await screen.findByText(i18n.t(`telemetry.${outcome}`, { ns: 'deviceDetails' }));
+            const table = screen.getByRole('table');
+            expect(within(table).getAllByRole('row')).toHaveLength(outcome === 'limit' ? 201 : 101);
+            expect(table).not.toHaveTextContent(i18n.t('telemetry.empty', { ns: 'deviceDetails' }));
+            expect(
+                fetcher.mock.calls.filter(
+                    ([input]) => new URL(String(input)).pathname === '/room/history/telemetry',
+                ),
+            ).toHaveLength(2);
+
+            if (outcome === 'partial') {
+                expect(
+                    screen.getByRole('button', {
+                        name: i18n.t('telemetry.retry', { ns: 'deviceDetails' }),
+                    }),
+                ).toBeInTheDocument();
+            }
+        },
+    );
+
+    it('distinguishes an empty HTTP result from an unavailable history and supports explicit retry', async () => {
+        const empty = {
+            ...createHistoryIdentityFixtures().rawTelemetryPage,
+            pageSize: 100,
+            items: [],
+        };
+        expect(isRawTelemetryPage(empty)).toBe(true);
+        let fail = true;
+        const fetcher = vi.fn<typeof fetch>((input) => {
+            if (new URL(String(input)).pathname !== '/room/history/telemetry') {
+                return new Promise(() => undefined);
+            }
+
+            return Promise.resolve(
+                fail
+                    ? new Response(
+                          JSON.stringify({
+                              error: 'durable_history_unavailable',
+                              message: 'Unavailable',
+                          }),
+                          { status: 503 },
+                      )
+                    : new Response(JSON.stringify(empty)),
+            );
+        });
+        vi.stubGlobal('fetch', fetcher);
+        renderAppAt('/device-details/temp-desk');
+        act(() =>
+            MockEventSource.latest().emitMessage(
+                createRoomSnapshotMessage({ devices: [createTemperatureDevice()] }),
+            ),
+        );
+        await screen.findByText(i18n.t('telemetry.errors.unavailable', { ns: 'deviceDetails' }));
+        const table = screen.getByRole('table');
+        expect(table).toHaveTextContent(i18n.t('telemetry.failed', { ns: 'deviceDetails' }));
+        expect(table).not.toHaveTextContent(i18n.t('telemetry.empty', { ns: 'deviceDetails' }));
+        fail = false;
+        await userEvent.setup().click(
+            screen.getByRole('button', {
+                name: i18n.t('telemetry.retry', { ns: 'deviceDetails' }),
+            }),
+        );
+        await waitFor(() =>
+            expect(table).toHaveTextContent(i18n.t('telemetry.empty', { ns: 'deviceDetails' })),
+        );
+        expect(
+            screen.queryByText(i18n.t('telemetry.errors.unavailable', { ns: 'deviceDetails' })),
+        ).not.toBeInTheDocument();
     });
 
     it('loads retained LED history only after a snapshot confirms the selected device', async () => {

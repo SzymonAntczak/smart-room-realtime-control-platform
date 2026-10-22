@@ -28,7 +28,24 @@ export const pl = {
             'led-output': 'Oświetlenie LED',
         },
         telemetryTitle: 'Historia pomiarów temperatury',
-        historyUnavailable: 'Historia pomiarów nie jest jeszcze dostępna.',
+        telemetry: {
+            baseline: 'Zachowana historia pomiarów pobrana jednorazowo przez HTTP.',
+            range: 'Zakres czasu obserwacji: od {{from}} do {{to}} (bez końca zakresu).',
+            count: 'Liczba wyświetlanych pomiarów: {{count}}.',
+            loading: 'Ładowanie historii pomiarów…',
+            empty: 'Brak zachowanych pomiarów w tym zakresie.',
+            failed: 'Nie udało się pobrać historii pomiarów.',
+            limit: 'Wyświetlono 200 najnowszych pomiarów. Starsze pomiary pozostają poza widokiem.',
+            partial:
+                'Wyświetlane pomiary są częściowe lub ostatnio znane. Kompletność odczytu nie została potwierdzona.',
+            retry: 'Ponów pobieranie pomiarów',
+            errors: {
+                unavailable: 'Trwała historia pomiarów jest chwilowo niedostępna.',
+                invalid_response: 'Otrzymano niepoprawną historię pomiarów.',
+                request_failed: 'Nie udało się połączyć z historią pomiarów.',
+                cursor_error: 'Nie udało się kontynuować odczytu historii pomiarów.',
+            },
+        },
         telemetryUnsupported: 'To urządzenie nie udostępnia telemetrii temperatury.',
         eventHistory: {
             scrollRegion: 'Przewijana historia zdarzeń urządzenia',

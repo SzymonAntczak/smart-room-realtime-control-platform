@@ -9,7 +9,12 @@ import { TelemetryTable } from './TelemetryTable';
 describe('TelemetryTable', () => {
     it('renders raw sample values using semantic column headers', () => {
         const { telemetrySample } = createHistoryIdentityFixtures();
-        render(<TelemetryTable samples={[telemetrySample]} />);
+        render(
+            <TelemetryTable
+                samples={[telemetrySample]}
+                emptyMessage={i18n.t('telemetry.empty', { ns: 'deviceDetails' })}
+            />,
+        );
 
         const table = screen.getByRole('table', {
             name: i18n.t('table.caption', { ns: 'deviceDetails' }),
@@ -38,10 +43,15 @@ describe('TelemetryTable', () => {
     });
 
     it('keeps the table available and explains that its history is empty', () => {
-        render(<TelemetryTable samples={[]} />);
+        render(
+            <TelemetryTable
+                samples={[]}
+                emptyMessage={i18n.t('telemetry.empty', { ns: 'deviceDetails' })}
+            />,
+        );
 
         expect(
             screen.getByRole('table', { name: i18n.t('table.caption', { ns: 'deviceDetails' }) }),
-        ).toHaveTextContent(i18n.t('historyUnavailable', { ns: 'deviceDetails' }));
+        ).toHaveTextContent(i18n.t('telemetry.empty', { ns: 'deviceDetails' }));
     });
 });

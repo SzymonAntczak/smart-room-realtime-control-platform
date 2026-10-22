@@ -161,10 +161,18 @@ Expected responsibilities:
 
 The Dashboard links each device card to a selected-device details page. The
 details page identifies the selected device and presents a temperature sensor's
-telemetry as both a trend and an equivalent raw-value table. Both LED and
-temperature-sensor details present the paged User History entries retained for
-the selected device. This is
-retained evidence and may be incomplete; it is not a complete device log, as
+telemetry as both a trend and an equivalent raw-value table. Temperature
+details load the newest retained measurements automatically, using
+HTTP pages of 100 and a baseline limited to 200 samples. The default range is
+the half-open interval from 30 days before the read starts up to its start time;
+the UTC bounds remain fixed across pages. The view shows its range and sample
+count, and explains when the sample limit leaves older measurements outside the
+view. The chart and table use the same samples in chronological order, with
+record identity breaking timestamp ties.
+
+Both LED and temperature-sensor details present the paged User History entries
+retained for the selected device. This is retained evidence and may be incomplete;
+it is not a complete device log, as
 defined by the [User History Projection and Virtualized Feed ADR](../decisions/adr-user-history-projection-and-virtualized-feed.md).
 A shared room provider owns one realtime connection across the Dashboard and
 device-details routes. Navigation reuses the connection and validated snapshot.

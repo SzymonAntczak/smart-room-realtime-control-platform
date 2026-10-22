@@ -24,9 +24,13 @@ and releases its cache when closed. ST-4-06a-05 adds measured virtual rendering
 with stable record keys, five overscan entries per side and keyboard-accessible
 scrolling and controls. Width changes preserve the first unobscured reading
 anchor; DOM rows and measurement observers are released as the range changes.
-Raw significant-fact and telemetry history sessions are not frontend product
-paths. Backend integration verifies telemetry HTTP/SSE contracts with native-source
-doubles and real BFF/SQLite; there is no production telemetry-history client or live session.
+Temperature device details use `/room/history/telemetry` to load up to 200 newest
+raw measurements from the last 30 days, in pages of 100. This independent HTTP
+baseline supplies the same chronologically ordered samples to the chart and
+table, with loading, empty, limited and partial/error states and explicit retry.
+Raw significant-fact history remains a technical inspection surface. Backend
+integration verifies telemetry HTTP/SSE contracts with native-source doubles and
+real BFF/SQLite.
 
 ## Source Of Truth
 
@@ -44,10 +48,12 @@ doubles and real BFF/SQLite; there is no production telemetry-history client or 
   and synchronous room-to-history integration for Dashboard and Device Details.
 - `src/app/pages/dashboard/useRoom.ts`: maps shared room state to dashboard projections.
 - `src/app/api/commands`: LED command HTTP client and validation.
-- `src/app/api/history`: history HTTP client and validation.
+- `src/app/api/history`: user-history and telemetry-history HTTP clients and validation.
 - `src/app/api/room`: validated SSE client, revisions, reconnect and BFF snapshots.
 - `src/app/pages/dashboard`: dashboard composition, local device projections,
   display names and LED and temperature controls, plus history presentation and session.
+- `src/app/pages/device-details`: selected-device view, bounded telemetry baseline,
+  chart and table, alongside independently scoped event history.
 - `src/app/i18n`: initialization, locale detection and translations.
 - `src/app/features/date-time`: shared timestamp formatting.
 - `src/app/ui`: reusable UI building blocks.

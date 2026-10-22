@@ -5,7 +5,13 @@ import { formatTimestamp } from '../../../features/date-time';
 
 import styles from './TelemetryTable.module.css';
 
-export function TelemetryTable({ samples }: { samples: readonly RawTelemetrySampleProjection[] }) {
+export function TelemetryTable({
+    samples,
+    emptyMessage,
+}: {
+    samples: readonly RawTelemetrySampleProjection[];
+    emptyMessage: string;
+}) {
     const { t } = useTranslation('deviceDetails');
 
     return (
@@ -30,7 +36,7 @@ export function TelemetryTable({ samples }: { samples: readonly RawTelemetrySamp
                         ))
                     ) : (
                         <tr>
-                            <td colSpan={3}>{t('historyUnavailable')}</td>
+                            <td colSpan={3}>{emptyMessage}</td>
                         </tr>
                     )}
                 </tbody>

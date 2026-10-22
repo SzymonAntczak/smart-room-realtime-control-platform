@@ -4,14 +4,16 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
+import { formatTimestamp } from '../../features/date-time';
 import { getDeviceDisplayName } from '../../features/device-display';
 import { HistoryFeed, HistoryFilters, HistoryProvider } from '../../features/history';
-import { ButtonLink, StatusTag } from '../../ui';
+import { Button, ButtonLink, StatusTag } from '../../ui';
 
 import styles from './DeviceDetails.module.css';
 import { TelemetryChart } from './telemetry-chart/TelemetryChart';
 import { TelemetryTable } from './telemetry-table/TelemetryTable';
 import { useDeviceDetails } from './useDeviceDetails';
+import { useDeviceTelemetry } from './useDeviceTelemetry';
 
 const noTelemetry: readonly RawTelemetrySampleProjection[] = [];
 
@@ -27,6 +29,19 @@ export function DeviceDetails() {
 
     const isReady = state.status === 'ready';
     const device = isReady ? state.device : undefined;
+    const telemetry = useDeviceTelemetry(
+        device?.role === 'temperature-sensor' ? device.deviceId : undefined,
+    );
+    const telemetryState = telemetry.state;
+    const samples = telemetryState?.samples ?? noTelemetry;
+    const telemetryStatus = telemetryState?.status ?? 'loading';
+    const emptyTelemetryMessage = t(
+        telemetryStatus === 'error'
+            ? 'telemetry.failed'
+            : telemetryStatus === 'ready'
+              ? 'telemetry.empty'
+              : 'telemetry.loading',
+    );
     const name = device
         ? getDeviceDisplayName(device, (key) => t(key, { ns: 'dashboard' }))
         : undefined;
@@ -90,9 +105,41 @@ export function DeviceDetails() {
                     {device.role === 'temperature-sensor' ? (
                         <section className={styles.telemetry} aria-labelledby="telemetry-heading">
                             <h2 id="telemetry-heading">{t('telemetryTitle')}</h2>
-                            <p>{t('historyUnavailable')}</p>
-                            <TelemetryChart samples={noTelemetry} />
-                            <TelemetryTable samples={noTelemetry} />
+                            <p>{t('telemetry.baseline')}</p>
+                            {telemetryState?.range ? (
+                                <p>
+                                    {t('telemetry.range', {
+                                        from: formatTimestamp(telemetryState.range.from),
+                                        to: formatTimestamp(telemetryState.range.to),
+                                    })}
+                                </p>
+                            ) : null}
+                            <p>{t('telemetry.count', { count: samples.length })}</p>
+                            <div role="status">
+                                {telemetryStatus === 'loading' ? (
+                                    <p>{t('telemetry.loading')}</p>
+                                ) : null}
+                                {telemetryStatus === 'ready' && samples.length === 0 ? (
+                                    <p>{t('telemetry.empty')}</p>
+                                ) : null}
+                                {telemetryState?.limitReached ? (
+                                    <p>{t('telemetry.limit')}</p>
+                                ) : null}
+                                {telemetryState?.lastKnown ? <p>{t('telemetry.partial')}</p> : null}
+                                {telemetryState?.error ? (
+                                    <p>{t(`telemetry.errors.${telemetryState.error}`)}</p>
+                                ) : null}
+                            </div>
+                            {telemetryStatus === 'error' ? (
+                                <Button variant="outlined" onClick={telemetry.retry}>
+                                    {t('telemetry.retry')}
+                                </Button>
+                            ) : null}
+                            <TelemetryChart samples={samples} />
+                            <TelemetryTable
+                                samples={samples}
+                                emptyMessage={emptyTelemetryMessage}
+                            />
                         </section>
                     ) : null}
 
