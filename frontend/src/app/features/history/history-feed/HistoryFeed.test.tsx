@@ -2,6 +2,7 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../i18n';
 import { HistoryFilters } from '../history-filters/HistoryFilters';
 import { HistoryProvider } from '../HistoryProvider';
 
@@ -51,9 +52,13 @@ it('keeps a live feed intact while a sibling search feed loads its own results',
     expect(live.queryByRole('button')).not.toBeInTheDocument();
     expect(fetcher).not.toHaveBeenCalled();
     const before = live.getByRole('status').textContent;
-    fireEvent.change(search.getByLabelText('Od'), { target: { value: '2026-10-20' } });
-    fireEvent.click(search.getByRole('button', { name: 'Szukaj' }));
-    expect(await search.findByText('Brak zdarzeń spełniających te kryteria.')).toBeVisible();
+    fireEvent.change(search.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+        target: { value: '2026-10-20' },
+    });
+    fireEvent.click(
+        search.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+    );
+    expect(await search.findByText(i18n.t('history.noMatches', { ns: 'dashboard' }))).toBeVisible();
     expect(fetcher).toHaveBeenCalledOnce();
     expect(live.getByRole('status').textContent).toBe(before);
 });

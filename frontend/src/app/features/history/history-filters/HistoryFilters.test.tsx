@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../i18n';
 import { HistoryProvider } from '../HistoryProvider';
 
 import { HistoryFilters } from './HistoryFilters';
@@ -39,27 +40,39 @@ describe('fixed-device history filters', () => {
             device.deviceId,
         );
 
-        fireEvent.change(screen.getByLabelText('Od'), { target: { value: '2026-10-20' } });
+        fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+            target: { value: '2026-10-20' },
+        });
         expect(fetcher).toHaveBeenCalledTimes(1);
-        fireEvent.click(screen.getByRole('button', { name: 'Szukaj' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+        );
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
         const applied = new URL(String(fetcher.mock.calls[1]?.[0])).searchParams;
         expect(applied.get('deviceId')).toBe(device.deviceId);
         expect(applied.get('from')).toBe(new Date(2026, 9, 20).toISOString().replace('.000Z', 'Z'));
-        fireEvent.change(screen.getByLabelText('Od'), { target: { value: '2026-10-19' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Odśwież wyniki' }));
+        fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+            target: { value: '2026-10-19' },
+        });
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+        );
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
         expect(new URL(String(fetcher.mock.calls[2]?.[0])).searchParams.get('from')).toBe(
             applied.get('from'),
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Wyczyść filtry' }));
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: i18n.t('history.clearFilters', { ns: 'dashboard' }),
+            }),
+        );
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(4));
         const cleared = new URL(String(fetcher.mock.calls[3]?.[0])).searchParams;
         expect(cleared.get('deviceId')).toBe(device.deviceId);
         expect(cleared.has('from')).toBe(false);
         expect(cleared.has('to')).toBe(false);
-        expect(screen.getByLabelText('Od')).toHaveValue('');
+        expect(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }))).toHaveValue('');
     });
 
     it('retains the session through renaming and aborts it on device identity replacement or unmount', async () => {

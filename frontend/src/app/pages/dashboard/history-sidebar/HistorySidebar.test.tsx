@@ -2,6 +2,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../i18n';
+
 import { HistorySidebar } from './HistorySidebar';
 
 const content = vi.hoisted(() => ({ mount: vi.fn(), release: vi.fn() }));
@@ -41,7 +43,9 @@ describe('HistorySidebar session lifecycle and accessibility', () => {
     it('releases content when collapsed and remounts it through the accessible toggle', async () => {
         const user = userEvent.setup();
         render(<HistorySidebar {...props} />);
-        const toggle = screen.getByRole('button', { name: 'Ukryj ostatnie zdarzenia' });
+        const toggle = screen.getByRole('button', {
+            name: i18n.t('feed.hideSidebar', { ns: 'dashboard' }),
+        });
         const sidebar = screen.getByRole('complementary');
         expect(toggle).toHaveAttribute('aria-controls', sidebar.id);
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -49,7 +53,7 @@ describe('HistorySidebar session lifecycle and accessibility', () => {
 
         await user.click(toggle);
 
-        expect(toggle).toHaveAccessibleName('Pokaż ostatnie zdarzenia');
+        expect(toggle).toHaveAccessibleName(i18n.t('feed.showSidebar', { ns: 'dashboard' }));
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
         expect(sidebar).toHaveAttribute('aria-hidden', 'true');
         expect(sidebar).toHaveAttribute('inert');
@@ -72,9 +76,11 @@ describe('HistorySidebar session lifecycle and accessibility', () => {
         render(<HistorySidebar {...props} />);
         expect(content.mount).not.toHaveBeenCalled();
 
-        await userEvent
-            .setup()
-            .click(screen.getByRole('button', { name: 'Pokaż ostatnie zdarzenia' }));
+        await userEvent.setup().click(
+            screen.getByRole('button', {
+                name: i18n.t('feed.showSidebar', { ns: 'dashboard' }),
+            }),
+        );
 
         expect(content.mount).toHaveBeenCalledOnce();
     });

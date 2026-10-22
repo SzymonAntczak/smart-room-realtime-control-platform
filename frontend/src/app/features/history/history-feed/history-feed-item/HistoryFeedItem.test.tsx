@@ -3,6 +3,7 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { i18n } from '../../../../i18n';
 import { formatTimestamp } from '../../../date-time';
 
 import { HistoryFeedItem } from './HistoryFeedItem';
@@ -31,11 +32,13 @@ describe('user history entry', () => {
         const entries = screen.getAllByRole('listitem');
         expect(entries).toHaveLength(2);
         expect(
-            within(screen.getByTestId(`history-item-${item.recordId}`)).getByText('Nieutrwalone'),
+            within(screen.getByTestId(`history-item-${item.recordId}`)).getByText(
+                i18n.t('feed.volatile', { ns: 'dashboard' }),
+            ),
         ).toBeInTheDocument();
         expect(
             within(screen.getByTestId(`history-item-${durableOther.recordId}`)).queryByText(
-                'Nieutrwalone',
+                i18n.t('feed.volatile', { ns: 'dashboard' }),
             ),
         ).toBeNull();
         rerender(
@@ -43,7 +46,7 @@ describe('user history entry', () => {
                 <HistoryFeedItem item={fixtures.failure} index={0} setSize={1} />
             </ol>,
         );
-        expect(screen.queryByText('Nieutrwalone')).toBeNull();
+        expect(screen.queryByText(i18n.t('feed.volatile', { ns: 'dashboard' }))).toBeNull();
     });
 
     it.each(fixtures.items)('presents $kind without technical diagnostics', (item) => {
@@ -55,17 +58,38 @@ describe('user history entry', () => {
         );
         const entry = screen.getByRole('listitem');
         expect(entry).toHaveTextContent(
-            item.kind === 'history_gap' ? 'Historia pokoju' : item.deviceName,
+            item.kind === 'history_gap'
+                ? i18n.t('history.room', { ns: 'dashboard' })
+                : item.deviceName,
         );
         expect(entry.querySelector('time')).toHaveAttribute('dateTime', item.occurredAt);
         expect(entry).toHaveTextContent(formatTimestamp(item.occurredAt));
         const descriptions = {
-            power_changed: 'Zaobserwowano zmianę zasilania:',
-            availability_changed: 'Dostępność zmieniła się:',
-            health_changed: 'Stan działania zmienił się:',
-            attempt_failed: 'Próba sterowania nie powiodła się.',
-            confirmation_missing: 'Nie otrzymano potwierdzenia zmiany zasilania',
-            history_gap: 'Przerwa od',
+            power_changed: i18n.t('history.powerChanged', {
+                ns: 'dashboard',
+                previous: i18n.t('led.off', { ns: 'dashboard' }),
+                current: i18n.t('led.on', { ns: 'dashboard' }),
+            }),
+            availability_changed: i18n.t('feed.availabilityChanged', {
+                ns: 'dashboard',
+                previous: i18n.t('feed.availability.online', { ns: 'dashboard' }),
+                current: i18n.t('feed.availability.offline', { ns: 'dashboard' }),
+            }),
+            health_changed: i18n.t('feed.healthChanged', {
+                ns: 'dashboard',
+                previous: i18n.t('feed.health.healthy', { ns: 'dashboard' }),
+                current: i18n.t('feed.health.degraded', { ns: 'dashboard' }),
+            }),
+            attempt_failed: i18n.t('history.failed', { ns: 'dashboard' }),
+            confirmation_missing: i18n.t('history.confirmationMissing', {
+                ns: 'dashboard',
+                power: i18n.t('led.on', { ns: 'dashboard' }),
+            }),
+            history_gap: i18n.t('feed.gapInterval', {
+                ns: 'dashboard',
+                from: formatTimestamp(fixtures.gap.outageStartedAt),
+                to: formatTimestamp(fixtures.gap.outageEndedAt),
+            }),
         };
         expect(entry).toHaveTextContent(descriptions[item.kind]);
         expect(entry).toHaveAttribute('aria-posinset', '15');
@@ -81,12 +105,28 @@ describe('user history entry', () => {
             </ol>,
         );
         expect(screen.getByRole('listitem')).toHaveTextContent(
-            'Urządzenie mogło wykonać polecenie.',
+            i18n.t('history.confirmationMissing', {
+                ns: 'dashboard',
+                power: i18n.t('led.on', { ns: 'dashboard' }),
+            }),
         );
     });
     it.each([
-        { previous: null, text: 'Poprzednia dostępność nie jest znana.' },
-        { previous: 'unknown' as const, text: 'nieznana → offline' },
+        {
+            previous: null,
+            text: i18n.t('history.availabilityObserved', {
+                ns: 'dashboard',
+                current: i18n.t('feed.availability.offline', { ns: 'dashboard' }),
+            }),
+        },
+        {
+            previous: 'unknown' as const,
+            text: i18n.t('feed.availabilityChanged', {
+                ns: 'dashboard',
+                previous: i18n.t('feed.availability.unknown', { ns: 'dashboard' }),
+                current: i18n.t('feed.availability.offline', { ns: 'dashboard' }),
+            }),
+        },
     ])(
         'distinguishes an unevidenced previous value from a known unknown value ($previous)',
         ({ previous, text }) => {
@@ -118,6 +158,8 @@ describe('user history entry', () => {
                 <HistoryFeedItem item={item} index={0} setSize={1} />
             </ol>,
         );
-        expect(screen.getByRole('listitem')).toHaveTextContent('Nieutrwalone');
+        expect(screen.getByRole('listitem')).toHaveTextContent(
+            i18n.t('feed.volatile', { ns: 'dashboard' }),
+        );
     });
 });

@@ -2,6 +2,7 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../../i18n';
 import { createHistorySearchSession } from '../history-search-session';
 
 import { SearchHistoryList } from './SearchHistoryList';
@@ -48,7 +49,7 @@ describe('SearchHistoryList', () => {
             />,
         );
         expect(screen.getByRole('status')).toHaveTextContent(
-            'Wybierz co najmniej jedno kryterium i rozpocznij wyszukiwanie.',
+            i18n.t('history.searchInstruction', { ns: 'dashboard' }),
         );
 
         rerender(
@@ -66,7 +67,9 @@ describe('SearchHistoryList', () => {
                 refresh={vi.fn()}
             />,
         );
-        expect(screen.getByText('Brak zdarzeń spełniających te kryteria.')).toBeInTheDocument();
+        expect(
+            screen.getByText(i18n.t('history.noMatches', { ns: 'dashboard' })),
+        ).toBeInTheDocument();
     });
 
     it('does not display a completeness notice for retained-evidence results', () => {
@@ -103,7 +106,9 @@ describe('SearchHistoryList', () => {
             />,
         );
 
-        expect(screen.getByRole('status')).toHaveTextContent('Ładowanie historii');
+        expect(screen.getByRole('status')).toHaveTextContent(
+            i18n.t('history.loading', { ns: 'dashboard' }),
+        );
         expect(screen.getAllByRole('status')).toHaveLength(1);
         expect(screen.queryByTestId('virtual-history')).toBeNull();
     });
@@ -125,7 +130,11 @@ describe('SearchHistoryList', () => {
             />,
         );
 
-        expect(screen.queryByRole('button', { name: 'Wczytaj starsze' })).toBeNull();
+        expect(
+            screen.queryByRole('button', {
+                name: i18n.t('history.loadOlder', { ns: 'dashboard' }),
+            }),
+        ).toBeNull();
     });
 
     it('exposes the explicit older-page action for the applied session', () => {
@@ -146,9 +155,13 @@ describe('SearchHistoryList', () => {
             />,
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Wczytaj starsze' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.loadOlder', { ns: 'dashboard' }) }),
+        );
         expect(loadOlder).toHaveBeenCalledOnce();
-        expect(screen.queryByRole('button', { name: 'Odśwież wyniki' })).toBeNull();
+        expect(
+            screen.queryByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+        ).toBeNull();
     });
 
     it('requests a fresh session after cursor invalidation', () => {
@@ -172,7 +185,9 @@ describe('SearchHistoryList', () => {
             />,
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Odśwież wyniki' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+        );
         expect(refresh).toHaveBeenCalledOnce();
         expect(retry).not.toHaveBeenCalled();
     });
@@ -189,7 +204,9 @@ describe('SearchHistoryList', () => {
                 refresh={vi.fn()}
             />,
         );
-        expect(screen.getByRole('status')).toHaveTextContent('Ładowanie historii');
+        expect(screen.getByRole('status')).toHaveTextContent(
+            i18n.t('history.loading', { ns: 'dashboard' }),
+        );
 
         rerender(
             <SearchHistoryList
@@ -201,7 +218,9 @@ describe('SearchHistoryList', () => {
                 refresh={vi.fn()}
             />,
         );
-        fireEvent.click(screen.getByRole('button', { name: 'Spróbuj ponownie' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.retry', { ns: 'dashboard' }) }),
+        );
         expect(retry).toHaveBeenCalledOnce();
     });
 
@@ -254,7 +273,9 @@ describe('SearchHistoryList', () => {
                 refresh={vi.fn()}
             />,
         );
-        expect(screen.getByRole('status')).toHaveTextContent('Koniec dostępnego zakresu historii.');
+        expect(screen.getByRole('status')).toHaveTextContent(
+            i18n.t('history.end', { ns: 'dashboard' }),
+        );
     });
 
     it('resets the scroll position before refreshing results', () => {
@@ -282,7 +303,9 @@ describe('SearchHistoryList', () => {
             />,
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Odśwież wyniki' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+        );
         expect(scrollParent.scrollTop).toBe(0);
         expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' });
         expect(refresh).toHaveBeenCalledOnce();

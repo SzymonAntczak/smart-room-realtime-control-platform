@@ -12,6 +12,9 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { formatTimestamp } from '../../../features/date-time';
+import { i18n } from '../../../i18n';
+
 import { LedCard, type LedDeviceProjection } from './LedCard';
 
 const submitLedPowerCommand = vi.hoisted(() => vi.fn());
@@ -22,27 +25,34 @@ describe('LedCard', () => {
     it('shows the reported state in one accessible control and keeps the empty alert', () => {
         render(<LedCard device={createLed()} />);
 
-        const button = screen.getByRole('button', { name: 'Włącz' });
-        expect(button).toHaveTextContent('Wyłączone');
+        const button = screen.getByRole('button', {
+            name: i18n.t('led.turnOn', { ns: 'dashboard' }),
+        });
+        expect(button).toHaveTextContent(i18n.t('led.off', { ns: 'dashboard' }));
         expect(button).toHaveAttribute('aria-pressed', 'false');
         expect(button).toHaveAttribute('aria-busy', 'false');
         expect(button.querySelector('svg')).toHaveClass('lucide-lightbulb-off');
         expect(screen.getByTestId('led-main-command-status')).toHaveTextContent(
-            'Brak bieżących alertów.',
+            i18n.t('alert.none', { ns: 'common' }),
         );
-        expect(screen.queryByText(/Potwierdzono:/)).toBeNull();
-        expect(screen.queryByRole('group', { name: /polecenie/i })).toBeNull();
+        expect(screen.getAllByRole('button')).toHaveLength(1);
+        expect(screen.queryByRole('group')).toBeNull();
     });
 
     it('shows loading while an accepted command waits for its device report', () => {
         render(<LedCard device={createLed()} activeCommand={createPendingCommand()} />);
 
-        const button = screen.getByRole('button', { name: 'Włącz' });
-        expect(button).toHaveTextContent('Wyłączone');
+        const button = screen.getByRole('button', {
+            name: i18n.t('led.turnOn', { ns: 'dashboard' }),
+        });
+        expect(button).toHaveTextContent(i18n.t('led.off', { ns: 'dashboard' }));
         expect(button).toBeDisabled();
         expect(button).toHaveAttribute('aria-busy', 'true');
         expect(screen.getByTestId('led-main-command-status')).toHaveTextContent(
-            'Zażądano: Włączone — oczekiwanie na raport urządzenia.',
+            i18n.t('led.alert.requested', {
+                ns: 'dashboard',
+                power: i18n.t('led.on', { ns: 'dashboard' }),
+            }),
         );
     });
 
@@ -60,12 +70,17 @@ describe('LedCard', () => {
             />,
         );
 
-        const button = screen.getByRole('button', { name: 'Wyłącz' });
-        expect(button).toHaveTextContent('Włączone');
+        const button = screen.getByRole('button', {
+            name: i18n.t('led.turnOff', { ns: 'dashboard' }),
+        });
+        expect(button).toHaveTextContent(i18n.t('led.on', { ns: 'dashboard' }));
         expect(button).toHaveAttribute('aria-pressed', 'true');
         expect(button.querySelector('svg')).toHaveClass('lucide-lightbulb');
         expect(screen.getByTestId('led-main-command-status')).toHaveTextContent(
-            'Polecenie potwierdzone o',
+            i18n.t('led.alert.commandConfirmed', {
+                ns: 'dashboard',
+                time: formatTimestamp('2026-08-06T12:00:03Z'),
+            }),
         );
         expect(screen.getByTestId('led-main-command-status')).toHaveAttribute(
             'data-variant',
@@ -86,10 +101,14 @@ describe('LedCard', () => {
         submitLedPowerCommand.mockResolvedValueOnce(rejection);
         render(<LedCard device={createLed()} />);
 
-        await userEvent.setup().click(screen.getByRole('button', { name: 'Włącz' }));
+        await userEvent
+            .setup()
+            .click(screen.getByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }));
 
         expect(screen.getByRole('alert')).toHaveTextContent('Device is offline.');
-        expect(screen.getByRole('button', { name: 'Włącz' })).toHaveTextContent('Wyłączone');
+        expect(
+            screen.getByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }),
+        ).toHaveTextContent(i18n.t('led.off', { ns: 'dashboard' }));
     });
 
     it('preserves the timeout outcome when a late report changes the displayed state', () => {
@@ -104,9 +123,14 @@ describe('LedCard', () => {
         expect(isSchema(deviceProjectionSchema, device)).toBe(true);
         render(<LedCard device={device} recentCommands={[timedOut]} />);
 
-        expect(screen.getByRole('button', { name: 'Wyłącz' })).toHaveTextContent('Włączone');
+        expect(
+            screen.getByRole('button', { name: i18n.t('led.turnOff', { ns: 'dashboard' }) }),
+        ).toHaveTextContent(i18n.t('led.on', { ns: 'dashboard' }));
         expect(screen.getByRole('alert')).toHaveTextContent(
-            'Upłynął limit czasu polecenia: confirmation_not_received.',
+            i18n.t('led.alert.commandTimedOut', {
+                ns: 'dashboard',
+                reason: 'confirmation_not_received',
+            }),
         );
     });
 
@@ -123,12 +147,14 @@ describe('LedCard', () => {
         expect(isSchema(deviceProjectionSchema, device)).toBe(true);
         render(<LedCard device={device} />);
 
-        const button = screen.getByRole('button', { name: 'Włącz' });
-        expect(button).toHaveTextContent('Nieznane');
+        const button = screen.getByRole('button', {
+            name: i18n.t('led.turnOn', { ns: 'dashboard' }),
+        });
+        expect(button).toHaveTextContent(i18n.t('led.unknown', { ns: 'dashboard' }));
         expect(button).toBeDisabled();
         expect(button).not.toHaveAttribute('aria-pressed');
         expect(screen.getByTestId('led-main-command-status')).toHaveTextContent(
-            'Brak bieżących alertów.',
+            i18n.t('alert.none', { ns: 'common' }),
         );
     });
 
@@ -151,10 +177,16 @@ describe('LedCard', () => {
         render(<LedCard device={device} activeCommand={pending} realtimeUncertain />);
 
         const alert = screen.getByRole('alert');
-        expect(alert).toHaveTextContent('Zażądano: Włączone — oczekiwanie na raport urządzenia.');
-        expect(alert).toHaveTextContent('Strumień czasu rzeczywistego ponownie się łączy.');
-        expect(alert).toHaveTextContent('Obserwacja stanu LED jest nieaktualna');
-        expect(alert).not.toHaveTextContent('trwale zapisane');
+        expect(alert.textContent).toBe(
+            [
+                i18n.t('led.alert.stale', { ns: 'dashboard' }),
+                i18n.t('led.alert.realtimeReconnecting', { ns: 'dashboard' }),
+                i18n.t('led.alert.requested', {
+                    ns: 'dashboard',
+                    power: i18n.t('led.on', { ns: 'dashboard' }),
+                }),
+            ].join(' '),
+        );
     });
 
     it('renders a supplied header action and honors an interaction lock', () => {
@@ -167,7 +199,9 @@ describe('LedCard', () => {
         );
 
         expect(screen.getByRole('button', { name: 'Extra action' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }),
+        ).toBeDisabled();
     });
 });
 

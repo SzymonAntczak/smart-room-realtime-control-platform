@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockEventSource } from '../test/room/mock-event-source';
 
 import { createAppRoutes } from './AppRoutes';
+import { i18n } from './i18n';
 
 function renderApp() {
     const router = createMemoryRouter(createAppRoutes());
@@ -88,7 +89,7 @@ describe('App', () => {
         renderApp();
 
         expect(
-            screen.getByText('Łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
+            screen.getByText(i18n.t('realtime.connecting', { ns: 'dashboard' })),
         ).toBeInTheDocument();
     });
 
@@ -103,7 +104,9 @@ describe('App', () => {
 
         const user = userEvent.setup();
         const { unmount } = renderApp();
-        await user.click(screen.getByRole('button', { name: 'Ukryj ostatnie zdarzenia' }));
+        await user.click(
+            screen.getByRole('button', { name: i18n.t('feed.hideSidebar', { ns: 'dashboard' }) }),
+        );
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ userHistory: [fixtures.gap] }),
@@ -133,12 +136,18 @@ describe('App', () => {
             .mockResolvedValue(new Response(JSON.stringify(replacementPage)));
         vi.stubGlobal('fetch', fetcher);
 
-        await user.click(screen.getByRole('button', { name: 'Pokaż ostatnie zdarzenia' }));
+        await user.click(
+            screen.getByRole('button', { name: i18n.t('feed.showSidebar', { ns: 'dashboard' }) }),
+        );
         await waitFor(() => expect(close).toHaveBeenCalledOnce());
 
-        const history = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
+        const history = screen.getByRole('region', {
+            name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+        });
         expect(fetcher).toHaveBeenCalledOnce();
-        expect(within(history).getByText('Ładowanie historii…')).toBeInTheDocument();
+        expect(
+            within(history).getByText(i18n.t('history.loading', { ns: 'dashboard' })),
+        ).toBeInTheDocument();
         expect(
             within(history).getByTestId(`history-item-${fixtures.gap.recordId}`),
         ).toBeInTheDocument();
@@ -155,20 +164,39 @@ describe('App', () => {
     it('does not render development scenario controls', () => {
         renderApp();
 
-        expect(screen.queryByText('Scenariusze programistyczne')).not.toBeInTheDocument();
+        expect(
+            screen.queryByText(i18n.t('trigger', { ns: 'development' })),
+        ).not.toBeInTheDocument();
     });
 
     it('renders supported device cards from one room snapshot and maps LED commands by device', () => {
         renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
-        expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: 'Temperatura okna' })).toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: 'Główne LED' })).toBeInTheDocument();
         expect(
-            screen.getByText('Zażądano: Włączone — oczekiwanie na raport urządzenia.'),
+            screen.getByRole('heading', {
+                name: i18n.t('devices.temperatureDesk', { ns: 'dashboard' }),
+            }),
         ).toBeInTheDocument();
-        expect(screen.queryByText('Scenariusze programistyczne')).not.toBeInTheDocument();
+        expect(
+            screen.getByRole('heading', {
+                name: i18n.t('devices.temperatureWindow', { ns: 'dashboard' }),
+            }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole('heading', { name: i18n.t('devices.ledMain', { ns: 'dashboard' }) }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                i18n.t('led.alert.requested', {
+                    ns: 'dashboard',
+                    power: i18n.t('led.on', { ns: 'dashboard' }),
+                }),
+            ),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByText(i18n.t('trigger', { ns: 'development' })),
+        ).not.toBeInTheDocument();
     });
 
     it('keeps the temperature view visible and marks it uncertain while reconnecting', () => {
@@ -180,11 +208,13 @@ describe('App', () => {
         );
         act(() => MockEventSource.latest().emitError());
 
-        expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
         expect(
-            screen.getByText(
-                'Strumień czasu rzeczywistego ponownie się łączy. Wyświetlany jest ostatni prawidłowy odczyt temperatury.',
-            ),
+            screen.getByRole('heading', {
+                name: i18n.t('devices.temperatureDesk', { ns: 'dashboard' }),
+            }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(i18n.t('temperature.alert.realtimeReconnecting', { ns: 'dashboard' })),
         ).toBeInTheDocument();
     });
 
@@ -209,18 +239,22 @@ describe('App', () => {
         );
 
         expect(
-            screen.getByRole('region', { name: 'Przewijana historia zdarzeń' }),
-        ).toHaveTextContent('Próba sterowania nie powiodła się.');
+            screen.getByRole('region', {
+                name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+            }),
+        ).toHaveTextContent(i18n.t('history.failed', { ns: 'dashboard' }));
         act(() => MockEventSource.latest().emitError());
-        expect(screen.getByText(/Wyświetlane są ostatnio znane zdarzenia/)).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('feed.lastKnown', { ns: 'dashboard' }))).toBeInTheDocument();
     });
 
     it('adds a feed fact from a contiguous device update', () => {
         renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
-        expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
+        const feed = screen.getByRole('region', {
+            name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+        });
+        expect(feed).toHaveTextContent(i18n.t('feed.empty', { ns: 'dashboard' }));
 
         act(() =>
             MockEventSource.latest().emitMessage({
@@ -243,8 +277,8 @@ describe('App', () => {
             }),
         );
 
-        expect(feed).toHaveTextContent('Próba sterowania nie powiodła się.');
-        expect(feed).toHaveTextContent('Główne LED');
+        expect(feed).toHaveTextContent(i18n.t('history.failed', { ns: 'dashboard' }));
+        expect(feed).toHaveTextContent(i18n.t('devices.ledMain', { ns: 'dashboard' }));
     });
 
     it('keeps live telemetry out of the significant-events feed', () => {
@@ -252,8 +286,10 @@ describe('App', () => {
         renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
-        expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
+        const feed = screen.getByRole('region', {
+            name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+        });
+        expect(feed).toHaveTextContent(i18n.t('feed.empty', { ns: 'dashboard' }));
 
         act(() =>
             MockEventSource.latest().emitMessage({
@@ -266,10 +302,10 @@ describe('App', () => {
             }),
         );
 
-        expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
+        expect(feed).toHaveTextContent(i18n.t('feed.empty', { ns: 'dashboard' }));
         expect(within(feed).queryByRole('listitem')).not.toBeInTheDocument();
         expect(
-            screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
+            screen.queryByText(i18n.t('feed.lastKnown', { ns: 'dashboard' })),
         ).not.toBeInTheDocument();
     });
 
@@ -277,7 +313,9 @@ describe('App', () => {
         renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
+        const feed = screen.getByRole('region', {
+            name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+        });
         act(() =>
             MockEventSource.latest().emitMessage({
                 messageType: 'platform.updated',
@@ -290,10 +328,10 @@ describe('App', () => {
             }),
         );
 
-        expect(feed).toHaveTextContent('Brak istotnych zdarzeń.');
+        expect(feed).toHaveTextContent(i18n.t('feed.empty', { ns: 'dashboard' }));
         expect(within(feed).queryByRole('listitem')).not.toBeInTheDocument();
         expect(
-            screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
+            screen.queryByText(i18n.t('feed.lastKnown', { ns: 'dashboard' })),
         ).not.toBeInTheDocument();
     });
 
@@ -322,11 +360,18 @@ describe('App', () => {
             ),
         );
 
-        const feed = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
-        expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia zmiany zasilania');
+        const feed = screen.getByRole('region', {
+            name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+        });
+        expect(feed).toHaveTextContent(
+            i18n.t('history.confirmationMissing', {
+                ns: 'dashboard',
+                power: i18n.t('led.on', { ns: 'dashboard' }),
+            }),
+        );
         expect(within(feed).getAllByRole('listitem')).toHaveLength(1);
         expect(
-            screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
+            screen.queryByText(i18n.t('feed.lastKnown', { ns: 'dashboard' })),
         ).not.toBeInTheDocument();
 
         act(() =>
@@ -339,10 +384,15 @@ describe('App', () => {
             }),
         );
 
-        expect(feed).toHaveTextContent('Nie otrzymano potwierdzenia zmiany zasilania');
+        expect(feed).toHaveTextContent(
+            i18n.t('history.confirmationMissing', {
+                ns: 'dashboard',
+                power: i18n.t('led.on', { ns: 'dashboard' }),
+            }),
+        );
         expect(within(feed).getAllByRole('listitem')).toHaveLength(1);
         expect(
-            screen.queryByText(/Wyświetlane są ostatnio znane zdarzenia/),
+            screen.queryByText(i18n.t('feed.lastKnown', { ns: 'dashboard' })),
         ).not.toBeInTheDocument();
     });
 
@@ -350,23 +400,41 @@ describe('App', () => {
         const user = userEvent.setup();
         renderApp();
 
-        const toggle = screen.getByRole('button', { name: 'Ukryj ostatnie zdarzenia' });
+        const toggle = screen.getByRole('button', {
+            name: i18n.t('feed.hideSidebar', { ns: 'dashboard' }),
+        });
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
-        expect(screen.getByText('Ładowanie ostatnich zdarzeń…')).toBeInTheDocument();
-        expect(screen.queryByText('Brak istotnych zdarzeń.')).not.toBeInTheDocument();
+        expect(
+            screen.getByText(i18n.t('feed.connecting', { ns: 'dashboard' })),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByText(i18n.t('feed.empty', { ns: 'dashboard' })),
+        ).not.toBeInTheDocument();
 
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
-        expect(screen.getByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeVisible();
+        expect(
+            screen.getByRole('region', {
+                name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+            }),
+        ).toBeVisible();
 
         await user.click(toggle);
-        expect(toggle).toHaveAccessibleName('Pokaż ostatnie zdarzenia');
+        expect(toggle).toHaveAccessibleName(i18n.t('feed.showSidebar', { ns: 'dashboard' }));
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
-        expect(screen.queryByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeNull();
+        expect(
+            screen.queryByRole('region', {
+                name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+            }),
+        ).toBeNull();
         expect(toggle).toHaveFocus();
 
         await user.keyboard(' ');
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
-        expect(screen.getByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeVisible();
+        expect(
+            screen.getByRole('region', {
+                name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+            }),
+        ).toBeVisible();
 
         await user.keyboard('{Enter}');
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -379,9 +447,15 @@ describe('App', () => {
         renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const toggle = screen.getByRole('button', { name: 'Pokaż ostatnie zdarzenia' });
+        const toggle = screen.getByRole('button', {
+            name: i18n.t('feed.showSidebar', { ns: 'dashboard' }),
+        });
         expect(toggle).toHaveAttribute('aria-expanded', 'false');
-        expect(screen.queryByRole('region', { name: 'Przewijana historia zdarzeń' })).toBeNull();
+        expect(
+            screen.queryByRole('region', {
+                name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+            }),
+        ).toBeNull();
 
         await user.click(toggle);
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -401,7 +475,7 @@ describe('App', () => {
 
         expect(screen.queryByRole('heading', { name: 'Humidity sensor' })).not.toBeInTheDocument();
         expect(
-            screen.getByText('Ponowne łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
+            screen.getByText(i18n.t('realtime.reconnecting', { ns: 'dashboard' })),
         ).toBeInTheDocument();
     });
 });

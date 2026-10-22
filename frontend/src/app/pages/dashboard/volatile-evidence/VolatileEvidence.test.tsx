@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { i18n } from '../../../i18n';
+
 import { VolatileEvidence } from './VolatileEvidence';
 
 describe('VolatileEvidence', () => {
@@ -8,15 +10,25 @@ describe('VolatileEvidence', () => {
         render(
             <VolatileEvidence
                 dimensions={[
-                    { label: 'Dostępność', durability: 'durable' },
-                    { label: 'Stan działania', durability: 'volatile' },
+                    { label: 'Availability dimension', durability: 'durable' },
+                    { label: 'Health dimension', durability: 'volatile' },
                 ]}
             />,
         );
         expect(screen.getByRole('listitem')).toHaveTextContent(
-            'Stan działania — dane nieutrwalone',
+            i18n.t('durability.volatileDimension', {
+                ns: 'dashboard',
+                dimension: 'Health dimension',
+            }),
         );
-        expect(screen.queryByText(/Dostępność/)).toBeNull();
+        expect(
+            screen.queryByText(
+                i18n.t('durability.volatileDimension', {
+                    ns: 'dashboard',
+                    dimension: 'Availability dimension',
+                }),
+            ),
+        ).toBeNull();
     });
 
     it('renders no empty list when every dimension is durable or absent', () => {

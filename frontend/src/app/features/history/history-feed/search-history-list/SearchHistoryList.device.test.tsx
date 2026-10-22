@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../../i18n';
 import type { HistorySearchState } from '../history-search-session';
 
 import { SearchHistoryList } from './SearchHistoryList';
@@ -75,7 +76,9 @@ describe('fixed-device history results', () => {
 
     it('shows empty device history', () => {
         render(view(makeState()));
-        expect(screen.getByRole('status')).toHaveTextContent('Brak zachowanych wpisów');
+        expect(screen.getByRole('status')).toHaveTextContent(
+            i18n.t('eventHistory.empty', { ns: 'deviceDetails' }),
+        );
     });
     it('ignores rendered-end callbacks and loads only from user scroll input without a paging button', async () => {
         const user = userEvent.setup();
@@ -89,7 +92,9 @@ describe('fixed-device history results', () => {
             ),
         );
         expect(
-            screen.queryByRole('button', { name: /Wczytaj starsze wpisy/ }),
+            screen.queryByRole('button', {
+                name: i18n.t('eventHistory.loadOlder', { ns: 'deviceDetails' }),
+            }),
         ).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Reach the end of the history' }));
         expect(loadOlder).not.toHaveBeenCalled();
@@ -127,7 +132,11 @@ describe('fixed-device history results', () => {
         const { rerender } = render(
             view(makeState({ status: 'error', error: 'history_unavailable', endReached: false })),
         );
-        await user.click(screen.getByRole('button', { name: 'Spróbuj ponownie' }));
+        await user.click(
+            screen.getByRole('button', {
+                name: i18n.t('eventHistory.retry', { ns: 'deviceDetails' }),
+            }),
+        );
         expect(retry).toHaveBeenCalledOnce();
         rerender(
             view(
@@ -139,7 +148,11 @@ describe('fixed-device history results', () => {
                 }),
             ),
         );
-        await user.click(screen.getByRole('button', { name: 'Odśwież historię' }));
+        await user.click(
+            screen.getByRole('button', {
+                name: i18n.t('eventHistory.refresh', { ns: 'deviceDetails' }),
+            }),
+        );
         expect(refresh).toHaveBeenCalledOnce();
     });
 });

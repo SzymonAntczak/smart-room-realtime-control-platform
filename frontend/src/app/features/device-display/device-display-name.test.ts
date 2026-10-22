@@ -2,20 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { getDeviceDisplayName } from './device-display-name';
 
-const translations = {
-    'devices.ledMain': 'Główne LED',
-    'devices.temperatureDesk': 'Temperatura biurka',
-    'devices.temperatureWindow': 'Temperatura okna',
-} as const;
-
 describe('getDeviceDisplayName', () => {
     it.each([
-        ['led-main', 'Main LED', 'Główne LED'],
-        ['temp-desk', 'Desk Temperature', 'Temperatura biurka'],
-        ['temp-window', 'Window Temperature', 'Temperatura okna'],
-    ])('uses the Polish label for the known %s device', (deviceId, name, expectedName) => {
-        expect(getDeviceDisplayName({ deviceId, name }, (key) => translations[key])).toBe(
-            expectedName,
+        ['led-main', 'Main LED', 'devices.ledMain'],
+        ['temp-desk', 'Desk Temperature', 'devices.temperatureDesk'],
+        ['temp-window', 'Window Temperature', 'devices.temperatureWindow'],
+    ])('translates the name key for the known %s device', (deviceId, name, expectedKey) => {
+        expect(getDeviceDisplayName({ deviceId, name }, (key) => `translated:${key}`)).toBe(
+            `translated:${expectedKey}`,
         );
     });
 
@@ -23,7 +17,7 @@ describe('getDeviceDisplayName', () => {
         expect(
             getDeviceDisplayName(
                 { deviceId: 'humidity-desk', name: 'Humidity sensor' },
-                (key) => translations[key],
+                (key) => `translated:${key}`,
             ),
         ).toBe('Humidity sensor');
     });

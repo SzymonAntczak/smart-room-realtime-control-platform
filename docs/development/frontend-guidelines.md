@@ -299,6 +299,12 @@ with the shared room provider.
   with the shared room provider in `frontend/src/app/features/room`. A translation
   test that renders a UI component belongs with that component.
 - Shared UI tests belong near their component under `frontend/src/app/ui`.
+- In UI behavior tests, derive expected translated text and accessible names from
+  the i18n key (for example, `i18n.t('feed.hideSidebar', { ns: 'dashboard' })`)
+  instead of hard-coding a locale's wording. This keeps behavior assertions
+  stable when translation copy changes and makes the expected key explicit.
+  Tests whose purpose is to verify locale resources or fallback behavior may
+  assert the concrete translated value.
 - Global test setup and genuinely reusable fixtures or mocks belong under
   `frontend/src/test`, grouped by domain in ordinary kebab-case modules.
 - Keep small scenario-specific helpers and mocks private in their test file.

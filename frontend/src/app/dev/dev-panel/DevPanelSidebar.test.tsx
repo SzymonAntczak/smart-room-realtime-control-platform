@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createPendingCommand } from '../../../test/room/room-realtime-fixtures';
+import { i18n } from '../../i18n';
 import { ledScenarioDefinition, temperatureScenarioDefinition } from '../scenarios';
 
 import { DevPanel } from './index';
@@ -44,11 +45,16 @@ describe('DevPanel.Sidebar', () => {
                 onRequestChange={onRequestChange}
             />,
         );
-        await userEvent
-            .setup()
-            .click(await screen.findByRole('button', { name: 'Potwierdź po 2 sekundach' }));
+        await userEvent.setup().click(
+            await screen.findByRole('button', {
+                name: i18n.t('scenarios.led.actions.confirmDelayed', { ns: 'development' }),
+            }),
+        );
         expect(await screen.findByRole('status')).toHaveTextContent(
-            'wybrano dla następnego polecenia LED',
+            i18n.t('actionSelected', {
+                ns: 'development',
+                action: i18n.t('scenarios.led.actions.confirmDelayed', { ns: 'development' }),
+            }),
         );
 
         rerender(
@@ -103,7 +109,9 @@ describe('DevPanel.Sidebar', () => {
         );
 
         expect(
-            await screen.findByRole('heading', { name: 'Scenariusze temperatury' }),
+            await screen.findByRole('heading', {
+                name: i18n.t('scenarios.temperature.title', { ns: 'development' }),
+            }),
         ).toBeInTheDocument();
         rerender(
             <DevPanel.Sidebar
@@ -114,7 +122,11 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        expect(await screen.findByRole('heading', { name: 'Scenariusze LED' })).toBeInTheDocument();
+        expect(
+            await screen.findByRole('heading', {
+                name: i18n.t('scenarios.led.title', { ns: 'development' }),
+            }),
+        ).toBeInTheDocument();
         expect(screen.getAllByRole('complementary')).toHaveLength(1);
     });
 
@@ -144,12 +156,23 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Wstrzymaj telemetrię' }));
+        await user.click(
+            await screen.findByRole('button', {
+                name: i18n.t('scenarios.temperature.actions.pause', { ns: 'development' }),
+            }),
+        );
 
         expect(await screen.findByRole('status')).toHaveTextContent(
-            'Scenariusz „Wstrzymaj telemetrię” został ukończony.',
+            i18n.t('actionCompleted', {
+                ns: 'development',
+                action: i18n.t('scenarios.temperature.actions.pause', { ns: 'development' }),
+            }),
         );
-        expect(await screen.findByText('Pominięte zdarzenia: 0')).toBeInTheDocument();
+        expect(
+            await screen.findByText(
+                i18n.t('diagnostics.ignoredEvents', { ns: 'development', count: 0 }),
+            ),
+        ).toBeInTheDocument();
     });
 
     it('uses the LED selection outcome without presenting a confirmed device state', async () => {
@@ -181,10 +204,17 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Potwierdź po 2 sekundach' }));
+        await user.click(
+            await screen.findByRole('button', {
+                name: i18n.t('scenarios.led.actions.confirmDelayed', { ns: 'development' }),
+            }),
+        );
 
         expect(await screen.findByRole('status')).toHaveTextContent(
-            'Scenariusz „Potwierdź po 2 sekundach” wybrano dla następnego polecenia LED.',
+            i18n.t('actionSelected', {
+                ns: 'development',
+                action: i18n.t('scenarios.led.actions.confirmDelayed', { ns: 'development' }),
+            }),
         );
     });
 
@@ -217,7 +247,11 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Potwierdź natychmiast' }));
+        await user.click(
+            await screen.findByRole('button', {
+                name: i18n.t('scenarios.led.actions.confirmImmediately', { ns: 'development' }),
+            }),
+        );
 
         await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
     });
@@ -247,10 +281,14 @@ describe('DevPanel.Sidebar', () => {
             />,
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Potwierdź po 2 sekundach' }));
+        await user.click(
+            await screen.findByRole('button', {
+                name: i18n.t('scenarios.led.actions.confirmDelayed', { ns: 'development' }),
+            }),
+        );
 
         expect(await screen.findByRole('status')).toHaveTextContent(
-            'Żądanie sterowania scenariuszem nie powiodło się.',
+            i18n.t('scenarioRequestFailed', { ns: 'development' }),
         );
     });
 });
@@ -291,7 +329,11 @@ it('formats diagnostic timestamps for the browser before rendering them', async 
         />,
     );
 
-    await userEvent.setup().click(await screen.findByRole('button', { name: /diagnostyk/ }));
+    await userEvent.setup().click(
+        await screen.findByRole('button', {
+            name: i18n.t('diagnostics.refresh', { ns: 'development' }),
+        }),
+    );
 
     expect(formatTimestamp).toHaveBeenCalledWith('2026-08-06T12:00:00Z');
     expect(await screen.findByText('formatted local timestamp')).toBeInTheDocument();

@@ -2,6 +2,8 @@ import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fix
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { i18n } from '../../../i18n';
+
 import { TelemetryTable } from './TelemetryTable';
 
 describe('TelemetryTable', () => {
@@ -9,21 +11,37 @@ describe('TelemetryTable', () => {
         const { telemetrySample } = createHistoryIdentityFixtures();
         render(<TelemetryTable samples={[telemetrySample]} />);
 
-        const table = screen.getByRole('table', { name: 'Pomiary temperatury' });
+        const table = screen.getByRole('table', {
+            name: i18n.t('table.caption', { ns: 'deviceDetails' }),
+        });
         expect(
-            within(table).getByRole('columnheader', { name: 'Czas obserwacji' }),
+            within(table).getByRole('columnheader', {
+                name: i18n.t('table.time', { ns: 'deviceDetails' }),
+            }),
         ).toBeInTheDocument();
-        expect(within(table).getByRole('columnheader', { name: 'Wartość' })).toBeInTheDocument();
-        expect(within(table).getByRole('columnheader', { name: 'Jednostka' })).toBeInTheDocument();
+        expect(
+            within(table).getByRole('columnheader', {
+                name: i18n.t('table.value', { ns: 'deviceDetails' }),
+            }),
+        ).toBeInTheDocument();
+        expect(
+            within(table).getByRole('columnheader', {
+                name: i18n.t('table.unit', { ns: 'deviceDetails' }),
+            }),
+        ).toBeInTheDocument();
         expect(within(table).getByRole('cell', { name: '22.5' })).toBeInTheDocument();
-        expect(within(table).getByRole('cell', { name: '°C' })).toBeInTheDocument();
+        expect(
+            within(table).getByRole('cell', {
+                name: i18n.t('temperatureUnit', { ns: 'deviceDetails' }),
+            }),
+        ).toBeInTheDocument();
     });
 
     it('keeps the table available and explains that its history is empty', () => {
         render(<TelemetryTable samples={[]} />);
 
-        expect(screen.getByRole('table', { name: 'Pomiary temperatury' })).toHaveTextContent(
-            'Historia pomiarów nie jest jeszcze dostępna.',
-        );
+        expect(
+            screen.getByRole('table', { name: i18n.t('table.caption', { ns: 'deviceDetails' }) }),
+        ).toHaveTextContent(i18n.t('historyUnavailable', { ns: 'deviceDetails' }));
     });
 });

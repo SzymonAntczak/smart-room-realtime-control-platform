@@ -5,6 +5,7 @@ import type {
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../i18n';
 import { ledScenarioDefinition, temperatureScenarioDefinition } from '../scenarios';
 
 import type { DeviceScenarioClient } from './device-scenario-client';
@@ -94,7 +95,12 @@ describe('scenario action requests', () => {
             await operation;
         });
         expect(result.current.activeAction).toBeUndefined();
-        expect(result.current.message).toContain('wybrano dla następnego polecenia LED');
+        expect(result.current.message).toBe(
+            i18n.t('actionSelected', {
+                ns: 'development',
+                action: i18n.t('scenarios.led.actions.confirmDelayed', { ns: 'development' }),
+            }),
+        );
         expect(onRequestChange.mock.calls).toEqual([[true], [false]]);
 
         rerender({ active: true });
@@ -134,14 +140,21 @@ describe('scenario action requests', () => {
             }),
         );
         await act(() => result.current.runScenario('confirm_delayed'));
-        expect(result.current.message).toBe('Żądanie sterowania scenariuszem nie powiodło się.');
+        expect(result.current.message).toBe(i18n.t('scenarioRequestFailed', { ns: 'development' }));
         expect(result.current.activeAction).toBeUndefined();
         expect(onRequestChange.mock.calls).toEqual([[true], [false]]);
 
         await act(() => result.current.runScenario('confirm_delayed'));
 
-        expect(result.current.message).toContain('wybrano dla następnego polecenia LED');
-        expect(result.current.message).not.toContain('nie powiodło');
+        expect(result.current.message).toBe(
+            i18n.t('actionSelected', {
+                ns: 'development',
+                action: i18n.t('scenarios.led.actions.confirmDelayed', { ns: 'development' }),
+            }),
+        );
+        expect(result.current.message).not.toContain(
+            i18n.t('scenarioRequestFailed', { ns: 'development' }),
+        );
     });
 
     it('reports completed temperature actions and refreshes diagnostics after success', async () => {
@@ -157,7 +170,12 @@ describe('scenario action requests', () => {
 
         await act(() => result.current.runScenario('pause_telemetry'));
 
-        expect(result.current.message).toContain('został ukończony');
+        expect(result.current.message).toBe(
+            i18n.t('actionCompleted', {
+                ns: 'development',
+                action: i18n.t('scenarios.temperature.actions.pause', { ns: 'development' }),
+            }),
+        );
         expect(client.getDiagnostics).toHaveBeenCalledOnce();
         expect(result.current.diagnostics).toEqual({ ignoredEvents: [] });
         expect(result.current.isRefreshingDiagnostics).toBe(false);
@@ -245,7 +263,9 @@ describe('scenario action requests', () => {
         await act(() => result.current.refreshDiagnostics());
         await act(() => result.current.refreshDiagnostics());
         expect(result.current.diagnostics).toEqual({ ignoredEvents: [] });
-        expect(result.current.diagnosticsErrorMessage).toBe('Nie udało się pobrać diagnostyki.');
+        expect(result.current.diagnosticsErrorMessage).toBe(
+            i18n.t('diagnosticsRequestFailed', { ns: 'development' }),
+        );
         expect(result.current.isRefreshingDiagnostics).toBe(false);
 
         await act(() => result.current.refreshDiagnostics());

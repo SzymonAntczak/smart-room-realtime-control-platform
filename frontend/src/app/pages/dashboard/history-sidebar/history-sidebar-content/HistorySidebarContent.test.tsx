@@ -44,6 +44,8 @@ vi.mock('../../../../features/history/history-feed/useHistory', () => ({
     }),
 }));
 
+import { i18n } from '../../../../i18n';
+
 import { HistorySidebarContent } from './HistorySidebarContent';
 
 describe('history sidebar controls', () => {
@@ -79,17 +81,25 @@ describe('history sidebar controls', () => {
             />,
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Szukaj' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+        );
         expect(screen.getByRole('dialog')).toHaveAttribute('open');
         expect(mocks.showNewest).not.toHaveBeenCalled();
         expect(mocks.loadOlder).not.toHaveBeenCalled();
 
-        const region = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
+        const region = screen.getByRole('region', {
+            name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+        });
         Object.defineProperty(region, 'scrollTop', { configurable: true, value: 2 });
         const scrollTo = vi.fn();
         Object.defineProperty(region, 'scrollTo', { configurable: true, value: scrollTo });
         vi.stubGlobal('matchMedia', () => ({ matches: false }));
-        fireEvent.click(screen.getByRole('button', { name: 'Na górę' }));
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: i18n.t('history.returnToTop', { ns: 'dashboard' }),
+            }),
+        );
         expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
         expect(mocks.showNewest).toHaveBeenCalledOnce();
     });
@@ -104,13 +114,19 @@ describe('history sidebar controls', () => {
             />,
         );
 
-        const region = screen.getByRole('region', { name: 'Przewijana historia zdarzeń' });
+        const region = screen.getByRole('region', {
+            name: i18n.t('history.scrollRegion', { ns: 'dashboard' }),
+        });
         Object.defineProperty(region, 'scrollTop', { configurable: true, value: 2 });
         const scrollTo = vi.fn();
         Object.defineProperty(region, 'scrollTo', { configurable: true, value: scrollTo });
         vi.stubGlobal('matchMedia', () => ({ matches: true }));
 
-        fireEvent.click(screen.getByRole('button', { name: 'Na górę' }));
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: i18n.t('history.returnToTop', { ns: 'dashboard' }),
+            }),
+        );
 
         expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' });
     });
@@ -126,10 +142,14 @@ describe('history sidebar controls', () => {
             />,
         );
 
-        const button = screen.getByRole('button', { name: 'Na górę' });
+        const button = screen.getByRole('button', {
+            name: i18n.t('history.returnToTop', { ns: 'dashboard' }),
+        });
         fireEvent.click(button);
         expect(mocks.showNewest).not.toHaveBeenCalled();
-        expect(screen.getByRole('tooltip')).toHaveTextContent('Jesteś już na samej górze');
+        expect(screen.getByRole('tooltip')).toHaveTextContent(
+            i18n.t('history.alreadyAtTop', { ns: 'dashboard' }),
+        );
         expect(button).toHaveAttribute('aria-describedby', 'history-top-tooltip');
 
         fireEvent.keyDown(button, { key: 'Escape' });

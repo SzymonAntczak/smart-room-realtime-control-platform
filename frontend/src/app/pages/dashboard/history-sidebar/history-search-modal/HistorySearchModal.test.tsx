@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../../i18n';
+
 import { HistorySearchModal } from './HistorySearchModal';
 
 const fixtures = createUserHistoryFixtures();
@@ -47,7 +49,7 @@ function renderSearchModal() {
                         setOpen(true);
                     }}
                 >
-                    Filtruj
+                    {i18n.t('history.filter', { ns: 'dashboard' })}
                 </button>
                 <HistorySearchModal open={open} onClose={() => setOpen(false)} devices={[]} />
             </>
@@ -72,37 +74,49 @@ describe('HistorySearchModal', () => {
         vi.stubGlobal('fetch', fetcher);
         renderSearchModal();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Filtruj' }));
-        const dialog = screen.getByRole('dialog', { name: 'Wyszukaj historię' });
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        );
+        const dialog = screen.getByRole('dialog', {
+            name: i18n.t('history.searchTitle', { ns: 'dashboard' }),
+        });
         expect(dialog.tagName).toBe('DIALOG');
         expect(dialog).toHaveAttribute('open');
         expect(fetcher).not.toHaveBeenCalled();
         expect(screen.getByRole('status')).toHaveTextContent(
-            'Wybierz co najmniej jedno kryterium i rozpocznij wyszukiwanie.',
+            i18n.t('history.searchInstruction', { ns: 'dashboard' }),
         );
-        const reload = screen.getByRole('button', { name: 'Odśwież wyniki' });
+        const reload = screen.getByRole('button', {
+            name: i18n.t('history.refresh', { ns: 'dashboard' }),
+        });
         expect(reload).toBeInTheDocument();
         fireEvent.click(reload);
         expect(screen.getByRole('tooltip')).toHaveTextContent(
-            'Wybierz filtr i kliknij Szukaj przed odświeżeniem.',
+            i18n.t('history.searchFilterRequired', { ns: 'dashboard' }),
         );
         fireEvent.keyDown(window, { key: 'Escape' });
         expect(screen.queryByRole('tooltip')).toBeNull();
         expect(dialog).toHaveAttribute('open');
         expect(fetcher).not.toHaveBeenCalled();
 
-        const search = screen.getByRole('button', { name: 'Szukaj' });
-        fireEvent.blur(screen.getByLabelText('Od'));
+        const search = screen.getByRole('button', {
+            name: i18n.t('history.search', { ns: 'dashboard' }),
+        });
+        fireEvent.blur(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })));
         expect(fetcher).not.toHaveBeenCalled();
 
-        fireEvent.change(screen.getByLabelText('Od'), { target: { value: '2026-03-08' } });
-        fireEvent.change(screen.getByLabelText('Do'), { target: { value: '2026-03-08' } });
-        fireEvent.blur(screen.getByLabelText('Do'));
+        fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+            target: { value: '2026-03-08' },
+        });
+        fireEvent.change(screen.getByLabelText(i18n.t('history.to', { ns: 'dashboard' })), {
+            target: { value: '2026-03-08' },
+        });
+        fireEvent.blur(screen.getByLabelText(i18n.t('history.to', { ns: 'dashboard' })));
         expect(fetcher).not.toHaveBeenCalled();
         fireEvent.click(search);
 
         await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
-        await screen.findByText('Brak zdarzeń spełniających te kryteria.');
+        await screen.findByText(i18n.t('history.noMatches', { ns: 'dashboard' }));
         const requestUrl = new URL(String(fetcher.mock.calls[0]?.[0]));
         expect(requestUrl.searchParams.get('from')).toBe(
             new Date(2026, 2, 8).toISOString().replace('.000Z', 'Z'),
@@ -110,8 +124,15 @@ describe('HistorySearchModal', () => {
         expect(requestUrl.searchParams.get('to')).toBe(
             new Date(2026, 2, 9).toISOString().replace('.000Z', 'Z'),
         );
-        expect(screen.getByText(/Zastosowane kryteria: Od: 2026-03-08/)).toBeInTheDocument();
-        expect(screen.getByText('Brak zdarzeń spełniających te kryteria.')).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                `${i18n.t('history.appliedCriteria', { ns: 'dashboard' })}: ${i18n.t('history.from', { ns: 'dashboard' })}: 2026-03-08`,
+                { exact: false },
+            ),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(i18n.t('history.noMatches', { ns: 'dashboard' })),
+        ).toBeInTheDocument();
     });
 
     it('keeps draft edits separate, starts empty on reopen and clears without a request', async () => {
@@ -121,43 +142,71 @@ describe('HistorySearchModal', () => {
             .mockResolvedValueOnce(pageResponse());
         vi.stubGlobal('fetch', fetcher);
         renderSearchModal();
-        fireEvent.click(screen.getByRole('button', { name: 'Filtruj' }));
-        const from = screen.getByLabelText('Od');
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        );
+        const from = screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }));
 
         fireEvent.change(from, { target: { value: '2026-03-08' } });
         fireEvent.blur(from);
         expect(fetcher).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: 'Szukaj' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+        );
         await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
         await waitFor(() =>
-            expect(screen.getByRole('button', { name: 'Odśwież wyniki' })).toBeEnabled(),
+            expect(
+                screen.getByRole('button', {
+                    name: i18n.t('history.refresh', { ns: 'dashboard' }),
+                }),
+            ).toBeEnabled(),
         );
         fireEvent.blur(from);
         expect(fetcher).toHaveBeenCalledOnce();
 
         fireEvent.change(from, { target: { value: '2026-03-09' } });
         expect(fetcher).toHaveBeenCalledOnce();
-        expect(screen.getByText(/Od: 2026-03-08/)).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Odśwież wyniki' }));
+        expect(
+            screen.getByText(`${i18n.t('history.from', { ns: 'dashboard' })}: 2026-03-08`, {
+                exact: false,
+            }),
+        ).toBeInTheDocument();
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+        );
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
         expect(new URL(String(fetcher.mock.calls[1]?.[0])).searchParams.get('from')).toBe(
             new Date(2026, 2, 8).toISOString().replace('.000Z', 'Z'),
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Zamknij wyszukiwanie historii' }));
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: i18n.t('history.closeSearch', { ns: 'dashboard' }),
+            }),
+        );
         expect(screen.queryByRole('dialog')).toBeNull();
-        expect(screen.getByRole('button', { name: 'Filtruj' })).toHaveFocus();
+        expect(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        ).toHaveFocus();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Filtruj' }));
-        expect(screen.getByLabelText('Od')).toHaveValue('');
-        expect(screen.queryByText(/Zastosowane kryteria/)).toBeNull();
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        );
+        expect(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }))).toHaveValue('');
+        expect(
+            screen.queryByText(i18n.t('history.appliedCriteria', { ns: 'dashboard' }), {
+                exact: false,
+            }),
+        ).toBeNull();
         expect(fetcher).toHaveBeenCalledTimes(2);
 
-        const clear = screen.getByRole('button', { name: 'Wyczyść filtry' });
+        const clear = screen.getByRole('button', {
+            name: i18n.t('history.clearFilters', { ns: 'dashboard' }),
+        });
         fireEvent.click(clear);
-        expect(screen.getByLabelText('Od')).toHaveValue('');
+        expect(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }))).toHaveValue('');
         expect(screen.getByRole('status')).toHaveTextContent(
-            'Wybierz co najmniej jedno kryterium i rozpocznij wyszukiwanie.',
+            i18n.t('history.searchInstruction', { ns: 'dashboard' }),
         );
         expect(fetcher).toHaveBeenCalledTimes(2);
 
@@ -168,20 +217,30 @@ describe('HistorySearchModal', () => {
         const fetcher = vi.fn<typeof fetch>().mockResolvedValue(pageResponse());
         vi.stubGlobal('fetch', fetcher);
         renderSearchModal();
-        fireEvent.click(screen.getByRole('button', { name: 'Filtruj' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        );
 
-        const from = screen.getByLabelText('Od');
+        const from = screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }));
         fireEvent.change(from, { target: { value: '2026-03-08' } });
         fireEvent.blur(from);
         expect(fetcher).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: 'Szukaj' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+        );
         await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
         await waitFor(() =>
-            expect(screen.getByRole('button', { name: 'Odśwież wyniki' })).toBeEnabled(),
+            expect(
+                screen.getByRole('button', {
+                    name: i18n.t('history.refresh', { ns: 'dashboard' }),
+                }),
+            ).toBeEnabled(),
         );
 
         fireEvent.change(from, { target: { value: '2026-03-09' } });
-        const refresh = screen.getByRole('button', { name: 'Odśwież wyniki' });
+        const refresh = screen.getByRole('button', {
+            name: i18n.t('history.refresh', { ns: 'dashboard' }),
+        });
         fireEvent.click(refresh);
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
 
@@ -194,24 +253,36 @@ describe('HistorySearchModal', () => {
         const fetcher = vi.fn<typeof fetch>();
         vi.stubGlobal('fetch', fetcher);
         renderSearchModal();
-        fireEvent.click(screen.getByRole('button', { name: 'Filtruj' }));
-        fireEvent.change(screen.getByLabelText('Od'), { target: { value: '2026-03-10' } });
-        fireEvent.change(screen.getByLabelText('Do'), { target: { value: '2026-03-09' } });
-        fireEvent.blur(screen.getByLabelText('Do'));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        );
+        fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+            target: { value: '2026-03-10' },
+        });
+        fireEvent.change(screen.getByLabelText(i18n.t('history.to', { ns: 'dashboard' })), {
+            target: { value: '2026-03-09' },
+        });
+        fireEvent.blur(screen.getByLabelText(i18n.t('history.to', { ns: 'dashboard' })));
         expect(screen.queryByRole('alert')).toBeNull();
         expect(fetcher).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: 'Szukaj' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+        );
 
         expect(screen.getByRole('alert')).toHaveTextContent(
-            'Data początkowa nie może być późniejsza niż końcowa.',
+            i18n.t('history.invalidDateRange', { ns: 'dashboard' }),
         );
         expect(fetcher).not.toHaveBeenCalled();
     });
 
     it('closes through the native dialog close cycle when its backdrop is clicked', () => {
         renderSearchModal();
-        fireEvent.click(screen.getByRole('button', { name: 'Filtruj' }));
-        const dialog = screen.getByRole('dialog', { name: 'Wyszukaj historię' });
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        );
+        const dialog = screen.getByRole('dialog', {
+            name: i18n.t('history.searchTitle', { ns: 'dashboard' }),
+        });
         vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({
             x: 100,
             y: 100,
@@ -227,6 +298,8 @@ describe('HistorySearchModal', () => {
         fireEvent.click(dialog, { clientX: 50, clientY: 150 });
 
         expect(screen.queryByRole('dialog')).toBeNull();
-        expect(screen.getByRole('button', { name: 'Filtruj' })).toHaveFocus();
+        expect(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        ).toHaveFocus();
     });
 });

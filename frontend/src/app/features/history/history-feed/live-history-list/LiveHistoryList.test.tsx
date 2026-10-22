@@ -7,6 +7,7 @@ import { createElement, createRef } from 'react';
 import type { Components, ContextProp, ItemProps, ListProps } from 'react-virtuoso';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../../i18n';
 import { createHistorySession } from '../history-session';
 
 import { LiveHistoryList } from './LiveHistoryList';
@@ -129,12 +130,8 @@ describe('LiveHistoryList Virtuoso integration', () => {
             <LiveHistoryList {...props} state={{ ...props.state, items: [] }} realtimeUncertain />,
         );
 
-        expect(
-            screen.getByText(
-                'Strumień łączy się ponownie. Wyświetlane są ostatnio znane zdarzenia.',
-            ),
-        ).toBeInTheDocument();
-        expect(screen.getByText('Brak istotnych zdarzeń.')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('feed.lastKnown', { ns: 'dashboard' }))).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('feed.empty', { ns: 'dashboard' }))).toBeInTheDocument();
         expect(screen.queryByRole('listitem')).toBeNull();
     });
 });

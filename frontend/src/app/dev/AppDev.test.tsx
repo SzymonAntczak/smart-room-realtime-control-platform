@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../../test/room/mock-event-source';
 import { RoomProvider } from '../features/room';
+import { i18n } from '../i18n';
 
 import { AppDev } from './AppDev';
 
@@ -52,20 +53,28 @@ describe('AppDev', () => {
         renderAppDev();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const trigger = screen.getByRole('button', { name: 'Scenariusze programistyczne' });
+        const trigger = screen.getByRole('button', {
+            name: i18n.t('trigger', { ns: 'development' }),
+        });
         await user.click(trigger);
 
         expect(
-            await screen.findByRole('heading', { name: 'Scenariusze temperatury' }),
+            await screen.findByRole('heading', {
+                name: i18n.t('scenarios.temperature.title', { ns: 'development' }),
+            }),
         ).toBeInTheDocument();
         expect(globalThis.fetch).toHaveBeenCalledWith(
             'http://localhost:4310/dev/devices/temp-desk/scenarios',
         );
 
-        await user.click(screen.getByRole('button', { name: 'Zamknij panel' }));
+        await user.click(
+            screen.getByRole('button', { name: i18n.t('closePanel', { ns: 'development' }) }),
+        );
 
         expect(
-            screen.queryByRole('complementary', { name: /Scenariusze programistyczne dla/ }),
+            screen.queryByRole('complementary', {
+                name: i18n.t('panelAriaLabel', { ns: 'development', deviceId: 'temp-desk' }),
+            }),
         ).not.toBeInTheDocument();
         await Promise.resolve();
         expect(trigger).toHaveFocus();
@@ -77,13 +86,19 @@ describe('AppDev', () => {
         renderAppDev();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
-        const trigger = screen.getByRole('button', { name: 'Scenariusze programistyczne' });
+        const trigger = screen.getByRole('button', {
+            name: i18n.t('trigger', { ns: 'development' }),
+        });
         await user.click(trigger);
-        await screen.findByRole('heading', { name: 'Scenariusze temperatury' });
+        await screen.findByRole('heading', {
+            name: i18n.t('scenarios.temperature.title', { ns: 'development' }),
+        });
         await user.keyboard('{Escape}');
 
         expect(
-            screen.queryByRole('complementary', { name: /Scenariusze programistyczne dla/ }),
+            screen.queryByRole('complementary', {
+                name: i18n.t('panelAriaLabel', { ns: 'development', deviceId: 'temp-desk' }),
+            }),
         ).not.toBeInTheDocument();
         await Promise.resolve();
         expect(trigger).toHaveFocus();
@@ -125,14 +140,24 @@ describe('AppDev', () => {
             MockEventSource.latest().emitMessage(createRoomSnapshotMessage([createLedDevice()])),
         );
 
-        await user.click(screen.getByRole('button', { name: 'Scenariusze programistyczne' }));
-        await user.click(await screen.findByRole('button', { name: 'Potwierdź po 2 sekundach' }));
+        await user.click(
+            screen.getByRole('button', { name: i18n.t('trigger', { ns: 'development' }) }),
+        );
+        await user.click(
+            await screen.findByRole('button', {
+                name: i18n.t('scenarios.led.actions.confirmDelayed', { ns: 'development' }),
+            }),
+        );
 
-        expect(screen.getByRole('button', { name: 'Włącz' })).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }),
+        ).toBeDisabled();
 
         resolveScenario?.();
 
-        expect(await screen.findByRole('button', { name: 'Włącz' })).toBeEnabled();
+        expect(
+            await screen.findByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }),
+        ).toBeEnabled();
     });
 });
 

@@ -2,6 +2,8 @@ import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fix
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { i18n } from '../../../i18n';
+
 import { TelemetryChart } from './TelemetryChart';
 
 const firstSample = createHistoryIdentityFixtures().telemetrySample;
@@ -11,8 +13,8 @@ describe('TelemetryChart', () => {
         render(<TelemetryChart samples={[]} />);
 
         expect(
-            screen.getByRole('img', { name: 'Wykres temperatury w czasie' }),
-        ).toHaveAccessibleDescription('Brak punktów pomiarowych do wyświetlenia.');
+            screen.getByRole('img', { name: i18n.t('chart.title', { ns: 'deviceDetails' }) }),
+        ).toHaveAccessibleDescription(i18n.t('chart.empty', { ns: 'deviceDetails' }));
     });
 
     it('plots a single measurement on a stable scale', () => {

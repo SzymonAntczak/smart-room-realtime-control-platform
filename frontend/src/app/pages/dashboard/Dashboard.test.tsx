@@ -9,6 +9,7 @@ import {
     createRoomSnapshotMessage,
     createTemperatureDevice,
 } from '../../../test/room/room-realtime-fixtures';
+import { i18n } from '../../i18n';
 
 import { Dashboard } from './Dashboard';
 import type { RenderableRoomSnapshot } from './useRoom';
@@ -126,9 +127,11 @@ describe('Dashboard composition', () => {
         });
         const { rerender } = renderDashboard({ renderOverlay: overlay });
         expect(
-            screen.getByText('Łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
+            screen.getByText(i18n.t('realtime.connecting', { ns: 'dashboard' })),
         ).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Włącz' })).toBeNull();
+        expect(
+            screen.queryByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }),
+        ).toBeNull();
         expect(overlay).toHaveBeenLastCalledWith(undefined);
 
         roomHook.mockReturnValue({
@@ -138,7 +141,7 @@ describe('Dashboard composition', () => {
         rerender({ renderOverlay: overlay });
 
         expect(
-            screen.getByText('Ponowne łączenie ze strumieniem pokoju w czasie rzeczywistym…'),
+            screen.getByText(i18n.t('realtime.reconnecting', { ns: 'dashboard' })),
         ).toBeInTheDocument();
         expect(overlay).toHaveBeenLastCalledWith(undefined);
     });
@@ -165,9 +168,10 @@ describe('Dashboard composition', () => {
             expect(warning).toHaveAttribute('data-variant', 'warning');
             expect(warning).toHaveTextContent(`${status}_test_reason`);
             expect(warning).toHaveTextContent(
-                status === 'degraded'
-                    ? 'Nowe polecenia są nieutrwalone i mogą zostać utracone po restarcie.'
-                    : 'Wysyłanie nowych poleceń jest chwilowo niedostępne.',
+                i18n.t(`storage.${status}`, {
+                    ns: 'dashboard',
+                    reason: ` (${status}_test_reason)`,
+                }),
             );
         },
     );
@@ -194,21 +198,21 @@ describe('Dashboard composition', () => {
         const { rerender } = renderDashboard();
 
         screen
-            .getAllByRole('button', { name: 'Włącz' })
+            .getAllByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) })
             .forEach((button) => expect(button).toBeEnabled());
 
         ready(snapshot(storageProjection('recovering')));
         rerender();
 
         screen
-            .getAllByRole('button', { name: 'Włącz' })
+            .getAllByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) })
             .forEach((button) => expect(button).toBeDisabled());
 
         ready(snapshot(storageProjection('available')));
         rerender();
 
         screen
-            .getAllByRole('button', { name: 'Włącz' })
+            .getAllByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) })
             .forEach((button) => expect(button).toBeEnabled());
     });
 
@@ -250,14 +254,27 @@ describe('Dashboard composition', () => {
 
         const main = within(screen.getByTestId('led-main-led-card'));
         const second = within(screen.getByTestId('led-second-led-card'));
-        expect(main.getByRole('button', { name: 'Włącz' })).toBeEnabled();
-        expect(main.getByText('Main device rejected the command.')).toBeInTheDocument();
-        expect(second.getByRole('button', { name: 'Włącz' })).toBeDisabled();
         expect(
-            second.getByText('Zażądano: Włączone — oczekiwanie na raport urządzenia.'),
+            main.getByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }),
+        ).toBeEnabled();
+        expect(main.getByText('Main device rejected the command.')).toBeInTheDocument();
+        expect(
+            second.getByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }),
+        ).toBeDisabled();
+        expect(
+            second.getByText(
+                i18n.t('led.alert.requested', {
+                    ns: 'dashboard',
+                    power: i18n.t('led.on', { ns: 'dashboard' }),
+                }),
+            ),
         ).toBeInTheDocument();
         expect(second.queryByText('Main device rejected the command.')).toBeNull();
-        expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
+        expect(
+            screen.getByRole('heading', {
+                name: i18n.t('devices.temperatureDesk', { ns: 'dashboard' }),
+            }),
+        ).toBeInTheDocument();
     });
 
     it('applies device extensions independently and gives the current snapshot to the overlay', () => {
@@ -277,11 +294,13 @@ describe('Dashboard composition', () => {
         });
 
         expect(
-            within(screen.getByTestId('led-main-led-card')).getByRole('button', { name: 'Włącz' }),
+            within(screen.getByTestId('led-main-led-card')).getByRole('button', {
+                name: i18n.t('led.turnOn', { ns: 'dashboard' }),
+            }),
         ).toBeDisabled();
         expect(
             within(screen.getByTestId('led-second-led-card')).getByRole('button', {
-                name: 'Włącz',
+                name: i18n.t('led.turnOn', { ns: 'dashboard' }),
             }),
         ).toBeEnabled();
         expect(screen.getAllByRole('button', { name: 'Device scenario' })).toHaveLength(1);
@@ -299,14 +318,12 @@ describe('Dashboard composition', () => {
 
         renderDashboard();
 
-        expect(screen.getAllByRole('button', { name: 'Włącz' })).toHaveLength(2);
-        screen
-            .getAllByRole('button', { name: 'Włącz' })
-            .forEach((button) => expect(button).toBeDisabled());
         expect(
-            screen.getByText(
-                'Strumień łączy się ponownie. Wyświetlane są ostatnio znane zdarzenia.',
-            ),
-        ).toBeInTheDocument();
+            screen.getAllByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) }),
+        ).toHaveLength(2);
+        screen
+            .getAllByRole('button', { name: i18n.t('led.turnOn', { ns: 'dashboard' }) })
+            .forEach((button) => expect(button).toBeDisabled());
+        expect(screen.getByText(i18n.t('feed.lastKnown', { ns: 'dashboard' }))).toBeInTheDocument();
     });
 });

@@ -3,6 +3,8 @@ import { isSchema } from '@smart-room/contracts/validation';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../i18n';
+
 import { TemperatureCard, type TemperatureSensorDeviceProjection } from './TemperatureCard';
 
 const formatTimestamp = vi.hoisted(() => vi.fn(() => 'formatted local timestamp'));
@@ -24,13 +26,43 @@ describe('TemperatureCard', () => {
         };
         expect(isSchema(deviceProjectionSchema, device)).toBe(true);
         const { rerender } = render(<TemperatureCard device={device} />);
-        expect(screen.getByText('Dane temperatury — dane nieutrwalone')).toBeInTheDocument();
-        expect(screen.getByText('Stan działania — dane nieutrwalone')).toBeInTheDocument();
-        expect(screen.queryByText('Dostępność — dane nieutrwalone')).toBeNull();
+        expect(
+            screen.getByText(
+                i18n.t('durability.volatileDimension', {
+                    ns: 'dashboard',
+                    dimension: i18n.t('durability.temperature', { ns: 'dashboard' }),
+                }),
+            ),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                i18n.t('durability.volatileDimension', {
+                    ns: 'dashboard',
+                    dimension: i18n.t('durability.health', { ns: 'dashboard' }),
+                }),
+            ),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByText(
+                i18n.t('durability.volatileDimension', {
+                    ns: 'dashboard',
+                    dimension: i18n.t('durability.availability', { ns: 'dashboard' }),
+                }),
+            ),
+        ).toBeNull();
         expect(screen.getByText(/formatted local timestamp/)).toBeInTheDocument();
         rerender(<TemperatureCard device={device} realtimeUncertain />);
-        expect(screen.getByText('Dane temperatury — dane nieutrwalone')).toBeInTheDocument();
-        expect(screen.getByText(/ponownie/)).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                i18n.t('durability.volatileDimension', {
+                    ns: 'dashboard',
+                    dimension: i18n.t('durability.temperature', { ns: 'dashboard' }),
+                }),
+            ),
+        ).toBeInTheDocument();
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            i18n.t('temperature.alert.realtimeReconnecting', { ns: 'dashboard' }),
+        );
     });
 
     it('labels unknown volatile evidence without fabricating a reading', () => {
@@ -45,8 +77,22 @@ describe('TemperatureCard', () => {
         };
         expect(isSchema(deviceProjectionSchema, device)).toBe(true);
         render(<TemperatureCard device={device} />);
-        expect(screen.getAllByText(/— dane nieutrwalone/)).toHaveLength(3);
-        expect(screen.queryByText('°C')).toBeNull();
+        expect(screen.getAllByRole('listitem')).toHaveLength(3);
+
+        for (const dimension of ['availability', 'health', 'temperature']) {
+            expect(
+                screen.getByText(
+                    i18n.t('durability.volatileDimension', {
+                        ns: 'dashboard',
+                        dimension: i18n.t(`durability.${dimension}`, { ns: 'dashboard' }),
+                    }),
+                ),
+            ).toBeInTheDocument();
+        }
+
+        expect(
+            screen.queryByText(i18n.t('temperature.units.celsius', { ns: 'dashboard' })),
+        ).toBeNull();
     });
 
     it('formats the last reading timestamp for the browser before rendering it', () => {
@@ -54,9 +100,15 @@ describe('TemperatureCard', () => {
 
         expect(formatTimestamp).toHaveBeenCalledWith('2026-08-06T12:00:00Z');
         expect(screen.getByText(/formatted local timestamp/)).toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: 'Temperatura biurka' })).toBeInTheDocument();
-        expect(screen.getByText('°C')).toBeInTheDocument();
-        expect(screen.queryByText(/dane nieutrwalone/)).toBeNull();
+        expect(
+            screen.getByRole('heading', {
+                name: i18n.t('devices.temperatureDesk', { ns: 'dashboard' }),
+            }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(i18n.t('temperature.units.celsius', { ns: 'dashboard' })),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole('list')).toBeNull();
     });
 
     it('does not render a unit without a valid temperature reading', () => {
@@ -72,7 +124,9 @@ describe('TemperatureCard', () => {
             />,
         );
 
-        expect(screen.queryByText('°C')).not.toBeInTheDocument();
+        expect(
+            screen.queryByText(i18n.t('temperature.units.celsius', { ns: 'dashboard' })),
+        ).not.toBeInTheDocument();
     });
 });
 
