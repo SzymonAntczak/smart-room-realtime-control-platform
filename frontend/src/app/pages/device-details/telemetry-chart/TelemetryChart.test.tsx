@@ -13,14 +13,18 @@ describe('TelemetryChart', () => {
         render(<TelemetryChart samples={[]} />);
 
         expect(
-            screen.getByRole('img', { name: i18n.t('chart.title', { ns: 'deviceDetails' }) }),
+            screen.getByRole('application', {
+                name: i18n.t('chart.title', { ns: 'deviceDetails' }),
+            }),
         ).toHaveAccessibleDescription(i18n.t('chart.empty', { ns: 'deviceDetails' }));
+        expect(screen.getByRole('application').querySelectorAll('circle')).toHaveLength(0);
     });
 
     it('plots a single measurement on a stable scale', () => {
         render(<TelemetryChart samples={[firstSample]} />);
 
-        expect(screen.getByRole('img')).toHaveAccessibleDescription(/22\.5/);
+        expect(screen.getByRole('application')).toHaveAccessibleDescription(/22\.5/);
+        expect(screen.getByRole('application').querySelectorAll('circle')).toHaveLength(1);
     });
 
     it('identifies volatile measurements in the accessible chart description', () => {
@@ -40,7 +44,7 @@ describe('TelemetryChart', () => {
             />,
         );
 
-        expect(screen.getByRole('img')).toHaveAccessibleDescription(
+        expect(screen.getByRole('application')).toHaveAccessibleDescription(
             expect.stringContaining(
                 i18n.t('telemetry.durability.volatile', { ns: 'deviceDetails' }),
             ),
@@ -53,10 +57,35 @@ describe('TelemetryChart', () => {
             recordId: `rec:v1:sha256:${'c'.repeat(64)}`,
             storageSequence: firstSample.storageSequence + 1,
         };
-        const { container } = render(<TelemetryChart samples={[firstSample, secondSample]} />);
+        render(<TelemetryChart samples={[firstSample, secondSample]} />);
 
-        expect(container.querySelector('polyline')?.getAttribute('points')).toMatch(
-            /^\d+(\.\d+)?,\d+(\.\d+)? \d+(\.\d+)?,\d+(\.\d+)?$/,
-        );
+        const points = screen.getByRole('application').querySelectorAll('circle');
+        expect(points).toHaveLength(2);
+
+        for (const point of points) {
+            expect(Number.isFinite(Number(point.getAttribute('cx')))).toBe(true);
+            expect(Number.isFinite(Number(point.getAttribute('cy')))).toBe(true);
+        }
+
+        expect(points[0].getAttribute('cx')).toBe(points[1].getAttribute('cx'));
+        expect(points[0].getAttribute('cy')).toBe(points[1].getAttribute('cy'));
+        expect(screen.getByRole('application')).toHaveTextContent('22');
+        expect(screen.getByRole('application')).toHaveTextContent('23');
+    });
+
+    it('preserves irregular observation intervals and every value at a shared timestamp', () => {
+        const samples = [0, 1000, 10000, 10000].map((offset, index) => ({
+            ...firstSample,
+            recordId: `rec:v1:sha256:${String(index).padStart(64, '0')}`,
+            value: 20 + index,
+            occurredAt: new Date(Date.parse(firstSample.occurredAt) + offset).toISOString(),
+        }));
+        render(<TelemetryChart samples={samples} />);
+        const points = [...screen.getByRole('application').querySelectorAll('circle')];
+        expect(points).toHaveLength(4);
+        const positions = points.map((point) => Number(point.getAttribute('cx')));
+        expect((positions[1] - positions[0]) / (positions[2] - positions[0])).toBeCloseTo(0.1);
+        expect(positions[2]).toBe(positions[3]);
+        expect(points[2].getAttribute('cy')).not.toBe(points[3].getAttribute('cy'));
     });
 });

@@ -8,7 +8,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../../../test/room/mock-event-source';
 import {
@@ -20,10 +20,14 @@ import { createAppRoutes } from '../../AppRoutes';
 import { formatTimestamp } from '../../features/date-time';
 import { i18n } from '../../i18n';
 
-function renderAppAt(initialEntry: string) {
+async function renderAppAt(initialEntry: string) {
     const router = createMemoryRouter(createAppRoutes(), { initialEntries: [initialEntry] });
 
-    return render(<RouterProvider router={router} />);
+    const view = render(<RouterProvider router={router} />);
+    await act(async () => vi.dynamicImportSettled());
+    await screen.findByRole('main');
+
+    return view;
 }
 
 function makeTelemetryPage(
@@ -51,6 +55,10 @@ function makeTelemetryPage(
 }
 
 describe('device details navigation', () => {
+    beforeAll(async () => {
+        await Promise.all([import('./DeviceDetails'), import('../dashboard/Dashboard')]);
+    });
+
     beforeEach(() => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-09-11T00:00:00.000Z'));
@@ -68,7 +76,7 @@ describe('device details navigation', () => {
     });
 
     it('shows sensor telemetry and starts its history only after a valid snapshot', async () => {
-        renderAppAt('/device-details/temp-desk');
+        await renderAppAt('/device-details/temp-desk');
 
         const heading = screen.getByRole('heading', {
             name: i18n.t('heading', { ns: 'deviceDetails' }),
@@ -96,7 +104,9 @@ describe('device details navigation', () => {
             screen.getByRole('table', { name: i18n.t('table.caption', { ns: 'deviceDetails' }) }),
         ).toHaveTextContent(i18n.t('telemetry.loading', { ns: 'deviceDetails' }));
         expect(
-            screen.getByRole('img', { name: i18n.t('chart.title', { ns: 'deviceDetails' }) }),
+            screen.getByRole('application', {
+                name: i18n.t('chart.title', { ns: 'deviceDetails' }),
+            }),
         ).toHaveAccessibleDescription(i18n.t('chart.empty', { ns: 'deviceDetails' }));
         expect(
             screen.getByRole('heading', {
@@ -136,7 +146,7 @@ describe('device details navigation', () => {
             );
         });
         vi.stubGlobal('fetch', fetcher);
-        renderAppAt('/device-details/temp-desk');
+        await renderAppAt('/device-details/temp-desk');
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ devices: [createTemperatureDevice()] }),
@@ -146,10 +156,11 @@ describe('device details navigation', () => {
         const table = screen.getByRole('table', {
             name: i18n.t('table.caption', { ns: 'deviceDetails' }),
         });
-        const chart = screen.getByRole('img', {
+        const chart = screen.getByRole('application', {
             name: i18n.t('chart.title', { ns: 'deviceDetails' }),
         });
-        expect(within(table).getAllByRole('row')).toHaveLength(103);
+        const rows = within(table).getAllByRole('row');
+        expect(rows).toHaveLength(103);
 
         const displayedValues = within(table)
             .getAllByRole('cell')
@@ -168,8 +179,8 @@ describe('device details navigation', () => {
             }),
         );
 
-        expect(within(table).getAllByRole('row')[1]).toHaveTextContent('300.125');
-        expect(within(table).getAllByRole('row').at(-1)).toHaveTextContent('199.125');
+        expect(rows[1]).toHaveTextContent('300.125');
+        expect(rows.at(-1)).toHaveTextContent('199.125');
         expect(
             screen.getByText(i18n.t('telemetry.baseline', { ns: 'deviceDetails' })),
         ).toBeInTheDocument();
@@ -207,7 +218,7 @@ describe('device details navigation', () => {
                 );
             });
             vi.stubGlobal('fetch', fetcher);
-            renderAppAt('/device-details/temp-desk');
+            await renderAppAt('/device-details/temp-desk');
             act(() =>
                 MockEventSource.latest().emitMessage(
                     createRoomSnapshotMessage({ devices: [createTemperatureDevice()] }),
@@ -257,7 +268,7 @@ describe('device details navigation', () => {
                     '25.25',
                 ]);
                 expect(
-                    screen.getByRole('img', {
+                    screen.getByRole('application', {
                         name: i18n.t('chart.title', { ns: 'deviceDetails' }),
                     }),
                 ).toHaveAccessibleDescription(
@@ -300,7 +311,7 @@ describe('device details navigation', () => {
                 });
             }),
         );
-        renderAppAt('/device-details/temp-desk');
+        await renderAppAt('/device-details/temp-desk');
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
         const establishedCount = MockEventSource.instances.length;
         const device = createTemperatureDevice();
@@ -359,7 +370,7 @@ describe('device details navigation', () => {
         const table = screen.getByRole('table', {
             name: i18n.t('table.caption', { ns: 'deviceDetails' }),
         });
-        const chart = screen.getByRole('img', {
+        const chart = screen.getByRole('application', {
             name: i18n.t('chart.title', { ns: 'deviceDetails' }),
         });
         expect(within(table).getAllByRole('row')).toHaveLength(3);
@@ -419,7 +430,7 @@ describe('device details navigation', () => {
             );
         });
         vi.stubGlobal('fetch', fetcher);
-        renderAppAt('/device-details/temp-desk');
+        await renderAppAt('/device-details/temp-desk');
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ devices: [createTemperatureDevice()] }),
@@ -446,7 +457,7 @@ describe('device details navigation', () => {
     it('loads retained LED history only after a snapshot confirms the selected device', async () => {
         const fetcher = vi.fn<typeof fetch>(() => new Promise(() => undefined));
         vi.stubGlobal('fetch', fetcher);
-        renderAppAt('/device-details/led-main');
+        await renderAppAt('/device-details/led-main');
         expect(fetcher).not.toHaveBeenCalled();
         act(() =>
             MockEventSource.latest().emitMessage(
@@ -465,14 +476,16 @@ describe('device details navigation', () => {
         expect(requestedUrl.searchParams.get('deviceId')).toBe('led-main');
         expect(requestedUrl.searchParams.get('pageSize')).toBe('50');
         expect(
-            screen.queryByRole('img', { name: i18n.t('chart.title', { ns: 'deviceDetails' }) }),
+            screen.queryByRole('application', {
+                name: i18n.t('chart.title', { ns: 'deviceDetails' }),
+            }),
         ).not.toBeInTheDocument();
         expect(
             screen.queryByRole('table', { name: i18n.t('table.caption', { ns: 'deviceDetails' }) }),
         ).not.toBeInTheDocument();
     });
-    it('reports an unknown device only after receiving its baseline', () => {
-        renderAppAt('/device-details/missing-device');
+    it('reports an unknown device only after receiving its baseline', async () => {
+        await renderAppAt('/device-details/missing-device');
         expect(screen.queryByText(i18n.t('notFound', { ns: 'deviceDetails' }))).toBeNull();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage({ devices: [] })));
         expect(screen.getByText(i18n.t('notFound', { ns: 'deviceDetails' }))).toBeInTheDocument();
@@ -489,6 +502,8 @@ describe('device details navigation', () => {
                 <RouterProvider router={router} />
             </StrictMode>,
         );
+        await act(async () => vi.dynamicImportSettled());
+        await screen.findByRole('main');
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({
@@ -557,8 +572,8 @@ describe('device details navigation', () => {
         expect(MockEventSource.instances).toHaveLength(establishedCount);
     });
 
-    it('shows a not-found page for incomplete or unknown URLs', () => {
-        renderAppAt('/device-details');
+    it('shows a not-found page for incomplete or unknown URLs', async () => {
+        await renderAppAt('/device-details');
 
         expect(
             screen.getByRole('heading', { name: i18n.t('pageNotFound', { ns: 'deviceDetails' }) }),

@@ -170,6 +170,15 @@ count, and explains when the sample limit leaves older measurements outside the
 view. The chart and table use the same samples in chronological order, with
 record identity breaking timestamp ties.
 
+The responsive chart has a numeric time axis preserving actual observation
+intervals, a temperature axis and a grid. A tooltip exposes the full local
+observation time, value, unit and durability, including every sample sharing
+the selected timestamp. The chart supports pointer interaction and keyboard
+navigation through a single Tab stop with visible focus and arrow keys. Its
+accessible name and full sample description complement the equivalent table.
+Rendering uses straight lines and visible points without animation, smoothing
+or aggregation.
+
 The HTTP range describes the durable baseline only. All live temperature samples
 for the selected device join that baseline through the shared room connection,
 including samples outside the HTTP interval. A separate live overlay retains at
@@ -189,6 +198,12 @@ defined by the [User History Projection and Virtualized Feed ADR](../decisions/a
 A shared room provider owns one realtime connection across the Dashboard and
 device-details routes. Navigation reuses the connection and validated snapshot.
 Leaving the live-room routes releases the connection.
+
+Dashboard and device-details page modules load on demand. While an initial page
+loads the UI shows loading feedback covering the room layout and page; the
+shared connection starts when that first page is ready. During navigation it keeps the current page
+and shared room connection until the next page is ready. A failed page load
+shows a localized error with a full-page reload action.
 
 ### Telemetry Storage
 

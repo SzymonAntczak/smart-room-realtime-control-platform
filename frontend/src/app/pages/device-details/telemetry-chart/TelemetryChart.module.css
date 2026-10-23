@@ -1,35 +1,36 @@
-.figure {
+﻿.figure {
     margin: 0;
     min-inline-size: 0;
 }
 
 .chart {
-    display: block;
+    position: relative;
     inline-size: 100%;
-    block-size: auto;
-    overflow: visible;
+    block-size: 18rem;
+    font-size: var(--font-size-label-sm);
 }
 
-.axis {
-    stroke: var(--color-border-strong);
-    stroke-width: 1.5;
+.chart :global(.recharts-surface):focus-visible {
+    outline: 0.125rem solid var(--color-action-primary);
+    outline-offset: 0.125rem;
+    border-radius: var(--radius-sm);
 }
 
-.axisLabel {
-    fill: var(--color-text-muted);
-    font-size: 12px;
+.description {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
-.line {
-    fill: none;
-    stroke: var(--color-action-primary);
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 3;
-}
-
-.point {
-    fill: var(--color-action-primary);
-    stroke: var(--color-surface);
-    stroke-width: 2;
+.empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    color: var(--color-text-muted);
+    pointer-events: none;
 }

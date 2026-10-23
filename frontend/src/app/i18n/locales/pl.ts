@@ -1,5 +1,11 @@
 export const pl = {
     common: {
+        route: {
+            loading: 'Ładowanie strony…',
+            failed: 'Nie udało się wczytać strony',
+            retryDescription: 'Odśwież stronę i spróbuj ponownie.',
+            reload: 'Odśwież stronę',
+        },
         alert: {
             none: 'Brak bieżących alertów.',
         },
@@ -78,6 +84,7 @@ export const pl = {
         },
         temperatureUnit: '°C',
         chart: {
+            measurements: 'Pomiary w wybranym czasie',
             title: 'Wykres temperatury w czasie',
             empty: 'Brak punktów pomiarowych do wyświetlenia.',
             description: 'Temperatura w czasie ({{unit}}): {{points}}.',

@@ -51,6 +51,13 @@ Organize `src/app` by responsibility:
   `AppRoutes.tsx` owns the route table. The Dashboard route is `/` and selected-device
   details use `/device-details/:deviceId`. The SPA host serves `index.html` for
   direct requests to application routes.
+  Both pages use React Router's `route.lazy` imports, including the development
+  Dashboard composition. Keep the room provider in the persistent eager layout;
+  route imports must not restart its connection. Show localized loading feedback
+  while a page module loads and a reload action if loading fails. Page-only
+  dependencies such as chart rendering belong in the deferred route graph.
+  The initial loading and error boundaries belong on the room layout so its
+  provider and first page mount together after the import finishes.
 
 The room API owns SSE, validation, revisions, reconnect and the current BFF
 snapshot, including its bounded feed. Dashboard's `useRoom` derives renderable room
@@ -136,8 +143,9 @@ Features must not import pages or application composition; pages must not import
 other pages or application composition. Application composition exposes only
 `AppRoutes.tsx` to bootstrap. Dashboard's `useRoom` remains private to the page and adapts shared room state.
 
-`AppRoutes.tsx` receives an optional Dashboard page element from bootstrap for the
-development composition; its production default is the public Dashboard page.
+`AppRoutes.tsx` receives an optional Dashboard route-loader callback from bootstrap
+for the development composition; its default callback dynamically imports the
+public Dashboard page.
 Development code remains dynamically imported only by the DEV branch in
 `src/main.tsx`.
 

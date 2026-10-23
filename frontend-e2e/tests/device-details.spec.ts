@@ -56,7 +56,9 @@ test('shows sensor telemetry alongside retained history scoped to that sensor', 
         }
     });
     await page.goto('/device-details/temp-desk');
-    await expect(page.getByRole('img', { name: 'Wykres temperatury w czasie' })).toBeVisible();
+    await expect(
+        page.getByRole('application', { name: 'Wykres temperatury w czasie' }),
+    ).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('table', { name: 'Pomiary temperatury' })).toBeVisible();
     const history = page.getByRole('region', { name: 'Przewijana historia zdarzeń urządzenia' });
     await expect(history.getByTestId(`history-item-${older.recordId}`)).toBeVisible();

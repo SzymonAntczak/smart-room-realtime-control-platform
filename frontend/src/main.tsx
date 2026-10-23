@@ -1,6 +1,6 @@
 import './globals.css';
 
-import { type ComponentType, StrictMode } from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 
@@ -10,18 +10,14 @@ import { i18nReady, loadDevelopmentTranslations } from './app/i18n';
 async function bootstrap(): Promise<void> {
     await i18nReady;
 
-    let DevelopmentDashboard: ComponentType | undefined;
+    let loadDashboard: Parameters<typeof createAppRoutes>[0];
 
     if (import.meta.env.DEV) {
         await loadDevelopmentTranslations();
-        const { AppDev } = await import('./app/dev/AppDev');
-
-        DevelopmentDashboard = AppDev;
+        loadDashboard = async () => ({ Component: (await import('./app/dev/AppDev')).AppDev });
     }
 
-    const router = createBrowserRouter(
-        createAppRoutes(DevelopmentDashboard ? <DevelopmentDashboard /> : undefined),
-    );
+    const router = createBrowserRouter(createAppRoutes(loadDashboard));
 
     createRoot(document.getElementById('root') as HTMLElement).render(
         <StrictMode>

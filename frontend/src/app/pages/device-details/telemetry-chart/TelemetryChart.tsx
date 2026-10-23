@@ -1,115 +1,125 @@
 import type { LiveTelemetrySampleProjection } from '@smart-room/contracts/history';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+    CartesianGrid,
+    Line,
+    LineChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
+} from 'recharts';
 
 import { formatTimestamp } from '../../../features/date-time';
 
+import { TelemetryTooltip } from './telemetry-tooltip/TelemetryTooltip';
 import styles from './TelemetryChart.module.css';
-
-const plot = { left: 64, right: 704, top: 24, bottom: 164 };
 
 export function TelemetryChart({ samples }: { samples: readonly LiveTelemetrySampleProjection[] }) {
     const { t } = useTranslation('deviceDetails');
-    const titleId = useId();
     const descriptionId = useId();
-    const dates = samples.map((sample) => Date.parse(sample.occurredAt));
-    const values = samples.map((sample) => sample.value);
-    const minimumDate =
-        dates.length > 0 ? dates.reduce((minimum, value) => Math.min(minimum, value), Infinity) : 0;
-    const maximumDate =
-        dates.length > 0
-            ? dates.reduce((maximum, value) => Math.max(maximum, value), -Infinity)
-            : 0;
-    const minimumValue =
-        values.length > 0
-            ? values.reduce((minimum, value) => Math.min(minimum, value), Infinity)
-            : 0;
-    const maximumValue =
-        values.length > 0
-            ? values.reduce((maximum, value) => Math.max(maximum, value), -Infinity)
-            : 0;
+    const data = samples.map((sample) => ({ ...sample, timestamp: Date.parse(sample.occurredAt) }));
+    const dates = data.map((sample) => sample.timestamp);
+    const values = data.map((sample) => sample.value);
+    const minimumDate = dates.length ? Math.min(...dates) : 0;
+    const maximumDate = dates.length ? Math.max(...dates) : 0;
+    const minimumValue = values.length ? Math.min(...values) : 0;
+    const maximumValue = values.length ? Math.max(...values) : 0;
+    const timePadding = minimumDate === maximumDate ? 1000 : 0;
     const valuePadding = minimumValue === maximumValue ? 0.5 : 0;
-    const valueRange = maximumValue - minimumValue + valuePadding * 2 || 1;
-    const timeRange = maximumDate - minimumDate || 1;
-    const points = samples.map((sample, index) => {
-        const x =
-            samples.length === 1
-                ? (plot.left + plot.right) / 2
-                : plot.left + ((dates[index] - minimumDate) / timeRange) * (plot.right - plot.left);
-        const y =
-            plot.bottom -
-            ((sample.value - minimumValue + valuePadding) / valueRange) * (plot.bottom - plot.top);
-
-        return `${x},${y}`;
-    });
 
     return (
         <figure className={styles.figure}>
-            <svg
-                className={styles.chart}
-                viewBox="0 0 740 210"
-                role="img"
-                aria-labelledby={titleId}
-                aria-describedby={descriptionId}
-                focusable="false"
-            >
-                <title id={titleId}>{t('chart.title')}</title>
-                <desc id={descriptionId}>
-                    {samples.length === 0
-                        ? t('chart.empty')
-                        : t('chart.description', {
-                              points: samples
-                                  .map(
-                                      (sample) =>
-                                          `${formatTimestamp(sample.occurredAt)}: ${sample.value}${sample.durability === 'volatile' ? ` (${t('telemetry.durability.volatile')})` : ''}`,
-                                  )
-                                  .join('; '),
-                              unit: t('temperatureUnit'),
-                          })}
-                </desc>
-                <line
-                    className={styles.axis}
-                    x1={plot.left}
-                    y1={plot.top}
-                    x2={plot.left}
-                    y2={plot.bottom}
-                />
-                <line
-                    className={styles.axis}
-                    x1={plot.left}
-                    y1={plot.bottom}
-                    x2={plot.right}
-                    y2={plot.bottom}
-                />
-                <text className={styles.axisLabel} x="384" y="202" textAnchor="middle">
-                    {t('chart.timeAxis')}
-                </text>
-                <text
-                    className={styles.axisLabel}
-                    x="15"
-                    y="94"
-                    textAnchor="middle"
-                    transform="rotate(-90 15 94)"
-                >
-                    {t('chart.temperatureAxis', { unit: t('temperatureUnit') })}
-                </text>
-                {points.length > 1 ? (
-                    <polyline className={styles.line} points={points.join(' ')} />
-                ) : null}
-                {points.map((point, index) => {
-                    const [cx, cy] = point.split(',').map(Number);
-
-                    return (
-                        <circle
-                            key={samples[index].recordId}
-                            className={styles.point}
-                            cx={cx}
-                            cy={cy}
-                            r="4"
+            <p id={descriptionId} className={styles.description}>
+                {samples.length === 0
+                    ? t('chart.empty')
+                    : t('chart.description', {
+                          points: samples
+                              .map(
+                                  (sample) =>
+                                      `${formatTimestamp(sample.occurredAt)}: ${sample.value}${sample.durability === 'volatile' ? ` (${t('telemetry.durability.volatile')})` : ''}`,
+                              )
+                              .join('; '),
+                          unit: t('temperatureUnit'),
+                      })}
+            </p>
+            <div className={styles.chart}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <LineChart
+                        data={data}
+                        accessibilityLayer
+                        role="application"
+                        aria-label={t('chart.title')}
+                        aria-describedby={descriptionId}
+                        margin={{ top: 16, right: 24, bottom: 12, left: 12 }}
+                    >
+                        <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
+                        <XAxis
+                            dataKey="timestamp"
+                            type="number"
+                            domain={[minimumDate - timePadding, maximumDate + timePadding]}
+                            tickFormatter={(value: number) =>
+                                formatTimestamp(new Date(value).toISOString())
+                            }
+                            minTickGap={24}
+                            height={64}
+                            tick={{ fill: 'var(--color-text-muted)', fontSize: 12 }}
+                            stroke="var(--color-border-strong)"
+                            label={{
+                                value: t('chart.timeAxis'),
+                                position: 'insideBottom',
+                                fill: 'var(--color-text-muted)',
+                            }}
+                            hide={samples.length === 0}
                         />
-                    );
-                })}
-            </svg>
+                        <YAxis
+                            domain={[minimumValue - valuePadding, maximumValue + valuePadding]}
+                            width={56}
+                            tick={{ fill: 'var(--color-text-muted)', fontSize: 12 }}
+                            stroke="var(--color-border-strong)"
+                            label={{
+                                value: t('chart.temperatureAxis', { unit: t('temperatureUnit') }),
+                                angle: -90,
+                                position: 'insideLeft',
+                                fill: 'var(--color-text-muted)',
+                            }}
+                            hide={samples.length === 0}
+                        />
+                        <Tooltip
+                            isAnimationActive={false}
+                            wrapperStyle={{ pointerEvents: 'auto' }}
+                            content={({ active, label }) => (
+                                <TelemetryTooltip
+                                    samples={
+                                        active && typeof label === 'number'
+                                            ? samples.filter(
+                                                  (sample) =>
+                                                      Date.parse(sample.occurredAt) === label,
+                                              )
+                                            : []
+                                    }
+                                />
+                            )}
+                        />
+                        <Line
+                            dataKey="value"
+                            type="linear"
+                            stroke="var(--color-action-primary)"
+                            strokeWidth={3}
+                            dot={{
+                                r: 4,
+                                fill: 'var(--color-action-primary)',
+                                stroke: 'var(--color-surface)',
+                                strokeWidth: 2,
+                            }}
+                            activeDot={{ r: 5 }}
+                            isAnimationActive={false}
+                        />
+                    </LineChart>
+                </ResponsiveContainer>
+                {samples.length === 0 ? <p className={styles.empty}>{t('chart.empty')}</p> : null}
+            </div>
         </figure>
     );
 }

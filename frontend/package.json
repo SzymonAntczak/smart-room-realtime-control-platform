@@ -20,8 +20,10 @@
         "react": "^19.2.7",
         "react-dom": "^19.2.7",
         "react-i18next": "^17.0.11",
+        "react-is": "19.2.8",
         "react-router": "8.4.0",
-        "react-virtuoso": "4.18.16"
+        "react-virtuoso": "4.18.16",
+        "recharts": "3.10.0"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

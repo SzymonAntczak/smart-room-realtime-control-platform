@@ -1,22 +1,38 @@
-import type { ReactNode } from 'react';
+import type { ComponentType } from 'react';
 import { Outlet, type RouteObject } from 'react-router';
 
 import { RoomProvider } from './features/room';
 import { PageNotFound } from './PageNotFound';
-import { Dashboard } from './pages/dashboard/Dashboard';
-import { DeviceDetails } from './pages/device-details/DeviceDetails';
+import { RouteError } from './route-error/RouteError';
+import { RouteLoading } from './route-loading/RouteLoading';
 
-export function createAppRoutes(dashboard?: ReactNode): RouteObject[] {
+export function createAppRoutes(
+    loadDashboard: () => Promise<{ Component: ComponentType }> = async () => ({
+        Component: (await import('./pages/dashboard/Dashboard')).Dashboard,
+    }),
+): RouteObject[] {
     return [
         {
             element: (
                 <RoomProvider>
+                    <RouteLoading />
                     <Outlet />
                 </RoomProvider>
             ),
+            hydrateFallbackElement: <RouteLoading initial />,
+            ErrorBoundary: RouteError,
             children: [
-                { path: '/', element: dashboard ?? <Dashboard /> },
-                { path: '/device-details/:deviceId', element: <DeviceDetails /> },
+                {
+                    path: '/',
+                    lazy: loadDashboard,
+                },
+                {
+                    path: '/device-details/:deviceId',
+                    lazy: async () => ({
+                        Component: (await import('./pages/device-details/DeviceDetails'))
+                            .DeviceDetails,
+                    }),
+                },
             ],
         },
         { path: '*', element: <PageNotFound /> },

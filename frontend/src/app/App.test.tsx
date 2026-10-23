@@ -8,17 +8,21 @@ import userEvent from '@testing-library/user-event';
 import type { ComponentType } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { Components, ContextProp, ItemProps, ListProps } from 'react-virtuoso';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../test/room/mock-event-source';
 
 import { createAppRoutes } from './AppRoutes';
 import { i18n } from './i18n';
 
-function renderApp() {
+async function renderApp() {
     const router = createMemoryRouter(createAppRoutes());
 
-    return render(<RouterProvider router={router} />);
+    const view = render(<RouterProvider router={router} />);
+    await act(async () => vi.dynamicImportSettled());
+    await screen.findByRole('main');
+
+    return view;
 }
 
 interface HistoryFeedContext {
@@ -74,6 +78,10 @@ vi.mock('./features/history/history-feed/live-history-list/useHistoryVirtualizer
     };
 });
 describe('App', () => {
+    beforeAll(async () => {
+        await import('./pages/dashboard/Dashboard');
+    });
+
     beforeEach(() => {
         MockEventSource.instances.length = 0;
         vi.stubGlobal('EventSource', MockEventSource);
@@ -85,8 +93,8 @@ describe('App', () => {
 
     afterEach(() => vi.unstubAllGlobals());
 
-    it('waits for a realtime snapshot before rendering device controls', () => {
-        renderApp();
+    it('waits for a realtime snapshot before rendering device controls', async () => {
+        await renderApp();
 
         expect(
             screen.getByText(i18n.t('realtime.connecting', { ns: 'dashboard' })),
@@ -103,7 +111,7 @@ describe('App', () => {
         expect(isUserHistoryPage(replacementPage)).toBe(true);
 
         const user = userEvent.setup();
-        const { unmount } = renderApp();
+        const { unmount } = await renderApp();
         await user.click(
             screen.getByRole('button', { name: i18n.t('feed.hideSidebar', { ns: 'dashboard' }) }),
         );
@@ -161,16 +169,16 @@ describe('App', () => {
         unmount();
     });
 
-    it('does not render development scenario controls', () => {
-        renderApp();
+    it('does not render development scenario controls', async () => {
+        await renderApp();
 
         expect(
             screen.queryByText(i18n.t('trigger', { ns: 'development' })),
         ).not.toBeInTheDocument();
     });
 
-    it('renders supported device cards from one room snapshot and maps LED commands by device', () => {
-        renderApp();
+    it('renders supported device cards from one room snapshot and maps LED commands by device', async () => {
+        await renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         expect(
@@ -199,8 +207,8 @@ describe('App', () => {
         ).not.toBeInTheDocument();
     });
 
-    it('keeps the temperature view visible and marks it uncertain while reconnecting', () => {
-        renderApp();
+    it('keeps the temperature view visible and marks it uncertain while reconnecting', async () => {
+        await renderApp();
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ devices: [temperatureDevice()], activeCommands: [] }),
@@ -218,8 +226,8 @@ describe('App', () => {
         ).toBeInTheDocument();
     });
 
-    it('renders the bounded snapshot feed and marks it last known while reconnecting', () => {
-        renderApp();
+    it('renders the bounded snapshot feed and marks it last known while reconnecting', async () => {
+        await renderApp();
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({
@@ -247,8 +255,8 @@ describe('App', () => {
         expect(screen.getByText(i18n.t('feed.lastKnown', { ns: 'dashboard' }))).toBeInTheDocument();
     });
 
-    it('adds a feed fact from a contiguous device update', () => {
-        renderApp();
+    it('adds a feed fact from a contiguous device update', async () => {
+        await renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', {
@@ -281,9 +289,9 @@ describe('App', () => {
         expect(feed).toHaveTextContent(i18n.t('devices.ledMain', { ns: 'dashboard' }));
     });
 
-    it('keeps live telemetry out of the significant-events feed', () => {
+    it('keeps live telemetry out of the significant-events feed', async () => {
         const { telemetrySample } = createHistoryIdentityFixtures();
-        renderApp();
+        await renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', {
@@ -309,8 +317,8 @@ describe('App', () => {
         ).not.toBeInTheDocument();
     });
 
-    it('keeps accepted non-applying facts out of the feed when only the watermark advances', () => {
-        renderApp();
+    it('keeps accepted non-applying facts out of the feed when only the watermark advances', async () => {
+        await renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const feed = screen.getByRole('region', {
@@ -335,9 +343,9 @@ describe('App', () => {
         ).not.toBeInTheDocument();
     });
 
-    it('does not add a no-change LED report after a command timeout', () => {
+    it('does not add a no-change LED report after a command timeout', async () => {
         const timedOutLed = { ...ledDevice(), activeCommandId: undefined };
-        renderApp();
+        await renderApp();
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({
@@ -398,7 +406,7 @@ describe('App', () => {
 
     it('opens the desktop feed by default and lets the same button hide and restore it', async () => {
         const user = userEvent.setup();
-        renderApp();
+        await renderApp();
 
         const toggle = screen.getByRole('button', {
             name: i18n.t('feed.hideSidebar', { ns: 'dashboard' }),
@@ -444,7 +452,7 @@ describe('App', () => {
         const media = createMockMediaQuery(true);
         vi.stubGlobal('matchMedia', media.matchMedia);
         const user = userEvent.setup();
-        renderApp();
+        await renderApp();
         act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
 
         const toggle = screen.getByRole('button', {
@@ -465,8 +473,8 @@ describe('App', () => {
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
     });
 
-    it('rejects a snapshot with a role outside the current platform contract', () => {
-        renderApp();
+    it('rejects a snapshot with a role outside the current platform contract', async () => {
+        await renderApp();
         act(() =>
             MockEventSource.latest().emitMessage(
                 createRoomSnapshotMessage({ devices: [unsupportedDevice()], activeCommands: [] }),
