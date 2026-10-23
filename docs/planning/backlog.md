@@ -526,8 +526,8 @@ Each item has one difficulty rating only:
   a device select, From/To date inputs, Search and a results area. All criteria
   are optional individually, but Search requires at least one. Device options
   come from the current validated room projection. Opening with no active
-search shows an instruction to submit at least one criterion, without a history
-GET. Valid submission keeps the modal open and displays results below the
+  search shows an instruction to submit at least one criterion, without a history
+  GET. Valid submission keeps the modal open and displays results below the
   form. Editing draft criteria does not fetch or change existing results;
   summarize the applied criteria beside those results. Refresh starts a new
   pinned session using the applied criteria, not unsaved draft values, and
@@ -630,7 +630,7 @@ GET. Valid submission keeps the modal open and displays results below the
 | `[x] ST-4-08-01` | Add selected-device entry point and accessible chart/table details view.       | none                                                   | `C`        | Component tests cover opening, focus/heading and table semantics.                                                                             |
 | `[x] ST-4-08-02` | Load a bounded telemetry baseline from paged HTTP history.                     | `ST-4-03-01`, `ST-4-08-01`                             | `C`        | Frontend tests prove pages cannot become unbounded memory.                                                                                    |
 | `[x] ST-4-08-03` | Merge live SSE telemetry into chart and table with deterministic eviction.     | `ST-4-04-03`, `ST-4-08-02`                             | `B`        | Tests cover additions before/after page response and duplicate identity.                                                                      |
-| `[ ] ST-4-08-04` | Verify reconnect/refetch and stale/offline presentation end to end.            | `ST-4-04-04`, `ST-4-08-03`                             | `B`        | Browser test proves no lost point and honest reliability labels.                                                                              |
+| `[x] ST-4-08-04` | Verify reconnect/refetch and stale/offline presentation end to end.            | `ST-4-04-04`, `ST-4-08-03`                             | `B`        | Browser test proves no lost point and honest reliability labels.                                                                              |
 | `[ ] ST-4-08-05` | Review the complete story against all criteria, integration and documentation. | `ST-4-08-01`, `ST-4-08-02`, `ST-4-08-03`, `ST-4-08-04` | `B`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-09` — Durable non-applying-input diagnostics

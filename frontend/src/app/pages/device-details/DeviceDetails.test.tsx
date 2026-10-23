@@ -131,6 +131,64 @@ describe('device details navigation', () => {
         expect(requestedUrl.searchParams.get('pageSize')).toBe('50');
     });
 
+    it.each([
+        { freshness: 'fresh', availability: 'online' },
+        { freshness: 'stale', availability: 'online' },
+        { freshness: 'stale', availability: 'offline' },
+        { freshness: 'unknown', availability: 'online' },
+    ] as const)(
+        'shows $freshness observation evidence independently of $availability availability',
+        async ({ freshness, availability }) => {
+            const lastObservedAt = '2026-06-08T09:30:00Z';
+            const device: ReturnType<typeof createTemperatureDevice> = {
+                ...createTemperatureDevice(),
+                availability,
+                ...(availability === 'offline'
+                    ? { availabilityReason: 'transport_disconnected' }
+                    : {}),
+                reportedState:
+                    freshness === 'unknown'
+                        ? {}
+                        : { temperature: 22.4, temperatureUnit: 'celsius' },
+                observationStatus: {
+                    temperature: {
+                        freshness,
+                        durability: 'durable',
+                        ...(freshness === 'unknown' ? {} : { lastObservedAt }),
+                    },
+                },
+            };
+            const message = createRoomSnapshotMessage({ devices: [device] });
+            expect(isRoomBffRealtimeServerMessage(message)).toBe(true);
+            await renderAppAt('/device-details/temp-desk');
+            act(() => MockEventSource.latest().emitMessage(message));
+
+            const observation = screen.getByRole('status', {
+                name: i18n.t('telemetry.observationStatus', { ns: 'deviceDetails' }),
+            });
+            expect(observation).toHaveTextContent(
+                i18n.t(`telemetry.freshness.${freshness}`, { ns: 'deviceDetails' }),
+            );
+            expect(
+                within(
+                    screen.getByRole('region', {
+                        name: i18n.t('summary', { ns: 'deviceDetails' }),
+                    }),
+                ).getByRole('status'),
+            ).toHaveTextContent(i18n.t(`availability.${availability}`, { ns: 'common' }));
+
+            if (freshness === 'unknown') {
+                expect(observation).not.toHaveTextContent(
+                    i18n.t('telemetry.lastObserved', { ns: 'deviceDetails' }),
+                );
+            } else {
+                expect(
+                    within(observation).getByText(formatTimestamp(lastObservedAt)),
+                ).toHaveAttribute('datetime', lastObservedAt);
+            }
+        },
+    );
+
     it('renders the same raw measurements from two HTTP pages in the chart and table', async () => {
         const first = makeTelemetryPage(300, 100, 'older');
         const second = makeTelemetryPage(200, 2, null);

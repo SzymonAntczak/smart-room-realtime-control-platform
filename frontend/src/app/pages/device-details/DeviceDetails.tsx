@@ -29,6 +29,8 @@ export function DeviceDetails() {
 
     const isReady = state.status === 'ready';
     const device = isReady ? state.device : undefined;
+    const temperatureObservation =
+        device?.role === 'temperature-sensor' ? device.observationStatus.temperature : undefined;
     const telemetry = useDeviceTelemetry(
         device?.role === 'temperature-sensor' ? device.deviceId : undefined,
     );
@@ -109,6 +111,20 @@ export function DeviceDetails() {
                     {device.role === 'temperature-sensor' ? (
                         <section className={styles.telemetry} aria-labelledby="telemetry-heading">
                             <h2 id="telemetry-heading">{t('telemetryTitle')}</h2>
+                            <p role="status" aria-label={t('telemetry.observationStatus')}>
+                                {t(
+                                    `telemetry.freshness.${temperatureObservation?.freshness ?? 'unknown'}`,
+                                )}
+                                {temperatureObservation?.lastObservedAt ? (
+                                    <>
+                                        {' · '}
+                                        {t('telemetry.lastObserved')}:{' '}
+                                        <time dateTime={temperatureObservation.lastObservedAt}>
+                                            {formatTimestamp(temperatureObservation.lastObservedAt)}
+                                        </time>
+                                    </>
+                                ) : null}
+                            </p>
                             <p>{t('telemetry.baseline')}</p>
                             {telemetryState?.range ? (
                                 <p>

@@ -35,6 +35,13 @@ export const pl = {
         },
         telemetryTitle: 'Historia pomiarów temperatury',
         telemetry: {
+            observationStatus: 'Świeżość pomiaru',
+            lastObserved: 'Ostatnia obserwacja',
+            freshness: {
+                fresh: 'Aktualny pomiar',
+                stale: 'Nieaktualny pomiar',
+                unknown: 'Brak obserwacji temperatury',
+            },
             baseline:
                 'Zachowana historia pomiarów pobrana przez HTTP i uzupełniana pomiarami na żywo, także spoza zakresu bazy HTTP.',
             range: 'Zakres bazy HTTP: od {{from}} do {{to}} (bez końca zakresu).',
