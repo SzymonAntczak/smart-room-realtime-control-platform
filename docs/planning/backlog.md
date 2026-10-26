@@ -608,7 +608,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-07-03` | Apply degraded warning, recovering disablement and racing-503 handling.        | `ST-4-07-01`                             | `C`        | Browser tests show no phantom state or automatic retry.                                                                                       |
 | `[x] ST-4-07-04` | Review the complete story against all criteria, integration and documentation. | `ST-4-07-01`, `ST-4-07-02`, `ST-4-07-03` | `C`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
-### [ ] `DS-4-08` — Accessible bounded telemetry details
+### [x] `DS-4-08` — Accessible bounded telemetry details
 
 - **Value / observable outcome:** a user can inspect a selected device’s trend and
   accessible raw-value table without unbounded frontend history retention.
@@ -631,7 +631,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-08-02` | Load a bounded telemetry baseline from paged HTTP history.                     | `ST-4-03-01`, `ST-4-08-01`                             | `C`        | Frontend tests prove pages cannot become unbounded memory.                                                                                    |
 | `[x] ST-4-08-03` | Merge live SSE telemetry into chart and table with deterministic eviction.     | `ST-4-04-03`, `ST-4-08-02`                             | `B`        | Tests cover additions before/after page response and duplicate identity.                                                                      |
 | `[x] ST-4-08-04` | Verify reconnect/refetch and stale/offline presentation end to end.            | `ST-4-04-04`, `ST-4-08-03`                             | `B`        | Browser test proves no lost point and honest reliability labels.                                                                              |
-| `[ ] ST-4-08-05` | Review the complete story against all criteria, integration and documentation. | `ST-4-08-01`, `ST-4-08-02`, `ST-4-08-03`, `ST-4-08-04` | `B`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
+| `[x] ST-4-08-05` | Review the complete story against all criteria, integration and documentation. | `ST-4-08-01`, `ST-4-08-02`, `ST-4-08-03`, `ST-4-08-04` | `B`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-09` — Durable non-applying-input diagnostics
 
