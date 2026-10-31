@@ -61,7 +61,10 @@ list. They make independent HTTP reads. The chart shows its heading and a
 200-sample window caption above the plot, with exceptional read states below
 it. The chart retains its full accessible sample description. Current
 temperature, observation freshness and observation time appear in a separate
-card beside device information; device event history also has its own card.
+card beside device information. The live chart, measurement list and device
+event history share one card: the chart spans its full width, with the list and
+event history in equal columns below. Narrow screens stack these sections.
+Devices without telemetry show event history across the full card width.
 
 ## Rejected Alternatives
 

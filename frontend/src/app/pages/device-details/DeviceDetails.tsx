@@ -144,33 +144,46 @@ export function DeviceDetails() {
                         </Card>
                     </div>
 
-                    {device.role === 'temperature-sensor' ? (
-                        <Card className={styles.telemetry} aria-labelledby="telemetry-heading">
-                            <h2 id="telemetry-heading">{t('telemetryTitle')}</h2>
-                            <p>{t('telemetry.limit')}</p>
-                            <TelemetryChart samples={samples} />
-                            <div role="status">
-                                {telemetryLoading ? <p>{t('telemetry.loading')}</p> : null}
-                                {telemetryStatus === 'ready' && samples.length === 0 ? (
-                                    <p>{t('telemetry.empty')}</p>
-                                ) : null}
-                                {telemetryState?.lastKnown ? <p>{t('telemetry.partial')}</p> : null}
-                                {telemetryState?.error ? (
-                                    <p>{t(`telemetry.errors.${telemetryState.error}`)}</p>
+                    <Card
+                        className={styles.detailsContent}
+                        aria-labelledby={
+                            device.role === 'temperature-sensor' ? 'telemetry-heading' : undefined
+                        }
+                    >
+                        {device.role === 'temperature-sensor' ? (
+                            <div className={styles.telemetry}>
+                                <h2 id="telemetry-heading">{t('telemetryTitle')}</h2>
+                                <p>{t('telemetry.limit')}</p>
+                                <TelemetryChart samples={samples} />
+                                <div role="status">
+                                    {telemetryLoading ? <p>{t('telemetry.loading')}</p> : null}
+                                    {telemetryStatus === 'ready' && samples.length === 0 ? (
+                                        <p>{t('telemetry.empty')}</p>
+                                    ) : null}
+                                    {telemetryState?.lastKnown ? (
+                                        <p>{t('telemetry.partial')}</p>
+                                    ) : null}
+                                    {telemetryState?.error ? (
+                                        <p>{t(`telemetry.errors.${telemetryState.error}`)}</p>
+                                    ) : null}
+                                </div>
+                                {telemetryStatus === 'error' ? (
+                                    <Button variant="outlined" onClick={telemetry.retry}>
+                                        {t('telemetry.retry')}
+                                    </Button>
                                 ) : null}
                             </div>
-                            {telemetryStatus === 'error' ? (
-                                <Button variant="outlined" onClick={telemetry.retry}>
-                                    {t('telemetry.retry')}
-                                </Button>
-                            ) : null}
+                        ) : null}
+                        {device.role === 'temperature-sensor' ? (
                             <TelemetryList key={device.deviceId} device={device} />
-                        </Card>
-                    ) : null}
-
-                    <Card aria-labelledby="event-history-title">
-                        <h2 id="event-history-title">{t('eventHistory.title')}</h2>
-                        <DeviceEventHistory key={device.deviceId} device={device} />
+                        ) : null}
+                        <section
+                            className={styles.eventHistory}
+                            aria-labelledby="event-history-title"
+                        >
+                            <h2 id="event-history-title">{t('eventHistory.title')}</h2>
+                            <DeviceEventHistory key={device.deviceId} device={device} />
+                        </section>
                     </Card>
                 </>
             ) : null}

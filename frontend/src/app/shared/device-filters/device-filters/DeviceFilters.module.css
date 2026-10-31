@@ -1,6 +1,8 @@
 .form {
+    container: device-filters / inline-size;
     display: grid;
     gap: var(--space-3);
+    min-inline-size: 0;
 }
 
 .summary {
@@ -118,11 +120,9 @@
 .form[data-fixed-device] .toFilter {
     grid-column: 3 / 5;
 }
-@media (max-width: 48rem) {
+@container device-filters (max-width: 40rem) {
     .controlLayout {
-        grid-template-columns: minmax(0, 1fr);
-        column-gap: var(--space-2);
-        row-gap: var(--space-2);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .deviceFilter,
@@ -131,37 +131,40 @@
     .clearAction,
     .reloadAction,
     .submitAction {
+        grid-row: auto;
+    }
+
+    .deviceFilter,
+    .submitAction {
+        grid-column: 1 / -1;
+    }
+
+    .fromFilter,
+    .clearAction,
+    .form[data-fixed-device] .fromFilter {
         grid-column: 1;
     }
 
-    .deviceFilter {
-        grid-row: 1;
-    }
-
-    .fromFilter {
-        grid-row: 2;
-    }
-
-    .toFilter {
-        grid-row: 3;
+    .toFilter,
+    .reloadAction,
+    .form[data-fixed-device] .toFilter {
+        grid-column: 2;
     }
 
     .clearAction {
-        grid-row: 4;
+        align-self: stretch;
     }
 
-    .reloadAction {
-        grid-row: 5;
-    }
-
-    .submitAction {
-        grid-row: 6;
+    .reloadButton {
+        block-size: 100%;
     }
 }
 
-@media (max-width: 48rem) {
+@container device-filters (max-width: 24rem) {
+    .fromFilter,
+    .toFilter,
     .form[data-fixed-device] .fromFilter,
     .form[data-fixed-device] .toFilter {
-        grid-column: 1;
+        grid-column: 1 / -1;
     }
 }
