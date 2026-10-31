@@ -114,9 +114,6 @@ async function publishSample(
 }
 
 async function expectMeasurements(page: Page, samples: readonly RawTelemetrySampleProjection[]) {
-    const table = page.getByRole('table', { name: 'Pomiary temperatury', exact: true });
-    await expect(table.getByRole('row')).toHaveCount(samples.length + 1);
-
     const formatter = new Intl.DateTimeFormat('pl-PL', {
         year: 'numeric',
         month: 'short',
@@ -131,10 +128,6 @@ async function expectMeasurements(page: Page, samples: readonly RawTelemetrySamp
         sample,
         time: formatter.format(new Date(sample.occurredAt)),
     }));
-    await expect(table.getByRole('cell')).toHaveText(
-        points.flatMap(({ sample, time }) => [time, String(sample.value), '°C', 'Utrwalone']),
-    );
-
     const description = points.map(({ sample, time }) => `${time}: ${sample.value}`).join('; ');
     const escaped = description.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
     await expect(page.getByRole('application')).toHaveAccessibleDescription(
@@ -175,7 +168,7 @@ test('retains telemetry through reconnect and merges refetched pages with live s
         const url = new URL(route.request().url());
         requests.push(url);
 
-        if (requests.length === 1) {
+        if (url.searchParams.get('to') === initialReadAt) {
             await route.fulfill({ json: initialPage });
         } else if (url.searchParams.has('cursor')) {
             await secondPageGate.promise;
@@ -189,6 +182,11 @@ test('retains telemetry through reconnect and merges refetched pages with live s
     try {
         await page.goto('/device-details/temp-desk');
         await expectMeasurements(page, [initial]);
+        const staticList = page.getByRole('region', {
+            name: 'Przewijana historia pomiarów urządzenia',
+        });
+        await expect(staticList.getByRole('listitem')).toHaveCount(1);
+        const initialRequests = requests.length;
         await publishSample(page, 0, beforeDisconnect);
         await expectMeasurements(page, [initial, beforeDisconnect]);
 
@@ -209,25 +207,29 @@ test('retains telemetry through reconnect and merges refetched pages with live s
         await expect(reconnecting).toBeVisible();
         await expect(partial).toBeVisible();
         await expectMeasurements(page, [initial, beforeDisconnect]);
-        expect(requests).toHaveLength(1);
+        expect(requests).toHaveLength(initialRequests);
 
         snapshotGate.resolve();
-        await expect.poll(() => requests.length).toBe(2);
+        await expect.poll(() => requests.length).toBe(initialRequests + 1);
         await expect(reconnecting).toHaveCount(0);
         await expect(partial).toBeVisible();
         await expectMeasurements(page, [initial, beforeDisconnect]);
-        expect(requests[1]?.searchParams.get('to')).toBe(replacementReadAt);
-        expect(requests[1]?.searchParams.get('from')).toBe('2026-05-09T09:37:00.000Z');
-        expect(requests[1]?.searchParams.has('cursor')).toBe(false);
+        expect(requests[initialRequests]?.searchParams.get('to')).toBe(replacementReadAt);
+        expect(requests[initialRequests]?.searchParams.get('from')).toBe(
+            '2026-05-09T09:37:00.000Z',
+        );
+        expect(requests[initialRequests]?.searchParams.has('cursor')).toBe(false);
 
         await publishSample(page, 0, duringRefetch);
         await expectMeasurements(page, [initial, beforeDisconnect, duringRefetch]);
         firstPageGate.resolve();
-        await expect.poll(() => requests.length).toBe(3);
+        await expect.poll(() => requests.length).toBe(initialRequests + 2);
         await expect(partial).toBeVisible();
-        expect(requests[2]?.searchParams.get('cursor')).toBe('older');
-        expect(requests[2]?.searchParams.get('from')).toBe(requests[1]?.searchParams.get('from'));
-        expect(requests[2]?.searchParams.get('to')).toBe(replacementReadAt);
+        expect(requests[initialRequests + 1]?.searchParams.get('cursor')).toBe('older');
+        expect(requests[initialRequests + 1]?.searchParams.get('from')).toBe(
+            requests[initialRequests]?.searchParams.get('from'),
+        );
+        expect(requests[initialRequests + 1]?.searchParams.get('to')).toBe(replacementReadAt);
         secondPageGate.resolve();
 
         const refetched = [initial, ...retainedHistory, beforeDisconnect, missed, duringRefetch];
@@ -235,7 +237,8 @@ test('retains telemetry through reconnect and merges refetched pages with live s
         await expect(partial).toHaveCount(0);
         await publishSample(page, 2, afterRefetch);
         await expectMeasurements(page, [...refetched, afterRefetch]);
-        expect(requests).toHaveLength(3);
+        expect(requests).toHaveLength(initialRequests + 2);
+        await expect(staticList.getByRole('listitem')).toHaveCount(1);
     } finally {
         snapshotGate.resolve();
         firstPageGate.resolve();

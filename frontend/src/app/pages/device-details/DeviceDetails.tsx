@@ -6,12 +6,13 @@ import { useParams } from 'react-router';
 
 import { formatTimestamp } from '../../features/date-time';
 import { getDeviceDisplayName } from '../../features/device-display';
-import { HistoryFeed, HistoryFilters, HistoryProvider } from '../../features/history';
+import { DeviceFilters } from '../../features/device-filters';
+import { HistoryFeed, HistoryProvider } from '../../features/history';
 import { Button, ButtonLink, StatusTag } from '../../ui';
 
 import styles from './DeviceDetails.module.css';
 import { TelemetryChart } from './telemetry-chart/TelemetryChart';
-import { TelemetryTable } from './telemetry-table/TelemetryTable';
+import { TelemetryList } from './telemetry-list/TelemetryList';
 import { useDeviceDetails } from './useDeviceDetails';
 import { useDeviceTelemetry } from './useDeviceTelemetry';
 
@@ -41,13 +42,6 @@ export function DeviceDetails() {
         telemetryStatus === 'loading' ||
         telemetryStatus === 'idle' ||
         telemetryStatus === 'waiting_for_baseline';
-    const emptyTelemetryMessage = t(
-        telemetryStatus === 'error'
-            ? 'telemetry.failed'
-            : telemetryStatus === 'ready'
-              ? 'telemetry.empty'
-              : 'telemetry.loading',
-    );
     const name = device
         ? getDeviceDisplayName(device, (key) => t(key, { ns: 'dashboard' }))
         : undefined;
@@ -154,18 +148,20 @@ export function DeviceDetails() {
                                 </Button>
                             ) : null}
                             <TelemetryChart samples={samples} />
-                            <TelemetryTable
-                                samples={samples}
-                                emptyMessage={emptyTelemetryMessage}
-                            />
+                            <TelemetryList key={device.deviceId} device={device} />
                         </section>
                     ) : null}
 
                     <section className={styles.history} aria-labelledby="event-history-title">
                         <h2 id="event-history-title">{t('eventHistory.title')}</h2>
                         <p>{t('eventHistory.completeness')}</p>
-                        <HistoryProvider key={device.deviceId} mode="search" devices={[device]}>
-                            <HistoryFilters device={device} />
+                        <HistoryProvider
+                            key={device.deviceId}
+                            mode="search"
+                            devices={[device]}
+                            fixedDeviceId={device.deviceId}
+                        >
+                            <DeviceFilters />
                             <HistoryFeed />
                         </HistoryProvider>
                     </section>

@@ -4,7 +4,7 @@ import { createRef } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { i18n } from '../../../../i18n';
-import { HistoryFilters } from '../../history-filters/HistoryFilters';
+import { DeviceFilters } from '../../../device-filters';
 import { HistoryProvider } from '../../HistoryProvider';
 import type { HistoryFeedHandle } from '../history-feed-handle';
 
@@ -53,7 +53,7 @@ it('resets its own scroll position for an applied query but leaves it alone duri
     );
     render(
         <HistoryProvider mode="search" devices={[]}>
-            <HistoryFilters />
+            <DeviceFilters />
             <SearchHistoryFeed />
         </HistoryProvider>,
     );
@@ -62,16 +62,16 @@ it('resets its own scroll position for an applied query but leaves it alone duri
     });
     const scrollTo = vi.fn();
     Object.defineProperty(region, 'scrollTo', { configurable: true, value: scrollTo });
-    fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+    fireEvent.change(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
         target: { value: '2026-10-20' },
     });
     expect(scrollTo).not.toHaveBeenCalled();
     fireEvent.click(
-        screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+        screen.getByRole('button', { name: i18n.t('search', { ns: 'deviceFilters' }) }),
     );
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' }));
     scrollTo.mockClear();
-    fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+    fireEvent.change(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
         target: { value: '2026-10-19' },
     });
     expect(scrollTo).not.toHaveBeenCalled();

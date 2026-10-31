@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { i18n } from '../../../i18n';
-import { HistoryFilters } from '../history-filters/HistoryFilters';
+import { DeviceFilters } from '../../device-filters';
 import { HistoryProvider } from '../HistoryProvider';
 
 import { HistoryFeed } from './HistoryFeed';
@@ -40,7 +40,7 @@ it('keeps a live feed intact while a sibling search feed loads its own results',
             </section>
             <section aria-label="Search">
                 <HistoryProvider mode="search" devices={[]}>
-                    <HistoryFilters />
+                    <DeviceFilters />
                     <HistoryFeed />
                 </HistoryProvider>
             </section>
@@ -52,11 +52,11 @@ it('keeps a live feed intact while a sibling search feed loads its own results',
     expect(live.queryByRole('button')).not.toBeInTheDocument();
     expect(fetcher).not.toHaveBeenCalled();
     const before = live.getByRole('status').textContent;
-    fireEvent.change(search.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+    fireEvent.change(search.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
         target: { value: '2026-10-20' },
     });
     fireEvent.click(
-        search.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+        search.getByRole('button', { name: i18n.t('search', { ns: 'deviceFilters' }) }),
     );
     expect(await search.findByText(i18n.t('history.noMatches', { ns: 'dashboard' }))).toBeVisible();
     expect(fetcher).toHaveBeenCalledOnce();

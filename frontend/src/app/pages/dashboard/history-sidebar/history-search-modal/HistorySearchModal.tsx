@@ -2,7 +2,8 @@ import { X } from 'lucide-react';
 import { type MouseEvent, useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { HistoryFeed, HistoryFilters, HistoryProvider } from '../../../../features/history';
+import { DeviceFilters } from '../../../../features/device-filters';
+import { HistoryFeed, HistoryProvider } from '../../../../features/history';
 import { Button } from '../../../../ui';
 import type { RenderableDeviceProjection } from '../../device-projection';
 
@@ -73,7 +74,7 @@ export function HistorySearchModal({
             </header>
             {open ? (
                 <HistoryProvider mode="search" devices={devices}>
-                    <HistoryFilters />
+                    <DeviceFilters />
                     <HistoryFeed />
                 </HistoryProvider>
             ) : null}

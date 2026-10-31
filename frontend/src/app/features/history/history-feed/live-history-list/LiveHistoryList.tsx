@@ -1,22 +1,14 @@
-import type { UserHistoryItem } from '@smart-room/contracts/user-history';
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
-import { type Components, Virtuoso } from 'react-virtuoso';
 
+import { getDeviceDisplayName } from '../../../device-display';
+import { InfiniteList } from '../../../infinite-scrolling';
 import type { HistoryDevice } from '../../history-context';
-import type { HistoryFeedContext } from '../history-feed-context';
-import { HistoryFeedList } from '../history-feed-list/HistoryFeedList';
-import { HistoryFeedRow } from '../history-feed-row/HistoryFeedRow';
+import { HistoryFeedItem } from '../history-feed-item/HistoryFeedItem';
 import type { HistoryReadingPosition, HistorySessionState } from '../history-session';
-import { useHistoryPaging } from '../useHistoryPaging';
 
 import styles from './LiveHistoryList.module.css';
 import { useHistoryVirtualizer } from './useHistoryVirtualizer';
-
-const components: Components<UserHistoryItem, HistoryFeedContext, HTMLUListElement> = {
-    List: HistoryFeedList,
-    Item: HistoryFeedRow,
-};
 
 export function LiveHistoryList({
     state,
@@ -44,34 +36,43 @@ export function LiveHistoryList({
         returningToTop,
         updateReadingPosition,
     });
-    useHistoryPaging({
-        state,
-        scrollViewport: customScrollParent,
-        loadOlder,
-        returningToTop,
-    });
-
-    const context: HistoryFeedContext = {
-        devices,
-        endReached: state.endReached,
-        totalItems: state.items.length,
-    };
 
     return (
         <div className={styles.feed}>
             {realtimeUncertain ? <p className={styles.notice}>{t('feed.lastKnown')}</p> : null}
             {state.items.length === 0 ? <p className={styles.empty}>{t('feed.empty')}</p> : null}
-            <Virtuoso
+            <InfiniteList
                 ref={virtuosoRef}
-                data={state.items}
-                customScrollParent={customScrollParent ?? undefined}
-                components={components}
-                context={context}
-                computeItemKey={(_index, item) => item.recordId}
-                defaultItemHeight={192}
-                minOverscanItemCount={{ top: 5, bottom: 5 }}
-                itemContent={() => null}
-            />
+                items={state.items}
+                getItemKey={(item) => item.recordId}
+                getItemTestId={(item) => 'history-item-' + item.recordId}
+                renderItem={(item) => {
+                    const device = devices.find(
+                        (d) => 'deviceId' in item && d.deviceId === item.deviceId,
+                    );
+
+                    return (
+                        <HistoryFeedItem
+                            item={item}
+                            deviceName={
+                                device ? getDeviceDisplayName(device, (key) => t(key)) : undefined
+                            }
+                        />
+                    );
+                }}
+                scrollParent={customScrollParent}
+                ariaLabel={t('history.scrollRegion')}
+                hasMore={
+                    state.status === 'ready' &&
+                    !state.error &&
+                    state.nextCursor !== null &&
+                    !state.endReached
+                }
+                loading={state.status === 'loading'}
+                endReached={state.endReached}
+                onLoadMore={loadOlder}
+                suspended={returningToTop}
+            />{' '}
         </div>
     );
 }

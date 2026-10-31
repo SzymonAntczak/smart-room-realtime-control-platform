@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
-import type { VirtuosoHandle } from 'react-virtuoso';
 
+import type { InfiniteListHandle } from '../../../infinite-scrolling';
 import type { HistoryReadingPosition, HistorySessionState } from '../history-session';
 
 /** Tracks reading identity and focus; Virtuoso owns row geometry and measurement corrections. */
@@ -15,7 +15,7 @@ export function useHistoryVirtualizer({
     returningToTop: boolean;
     updateReadingPosition(position: HistoryReadingPosition | null): void;
 }) {
-    const virtuosoRef = useRef<VirtuosoHandle | null>(null);
+    const virtuosoRef = useRef<InfiniteListHandle | null>(null);
     const position = useRef(state.position);
     const positionIndex = useRef<number | null>(null);
     const stateRef = useRef(state);

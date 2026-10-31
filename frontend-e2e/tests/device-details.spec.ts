@@ -59,7 +59,9 @@ test('shows sensor telemetry alongside retained history scoped to that sensor', 
     await expect(
         page.getByRole('application', { name: 'Wykres temperatury w czasie' }),
     ).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('table', { name: 'Pomiary temperatury' })).toBeVisible();
+    await expect(
+        page.getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' }),
+    ).toBeVisible();
     const history = page.getByRole('region', { name: 'Przewijana historia zdarzeń urządzenia' });
     await expect(history.getByTestId(`history-item-${older.recordId}`)).toBeVisible();
     await expect(history.getByTestId(`history-item-${newer.recordId}`)).toBeVisible();
@@ -67,15 +69,26 @@ test('shows sensor telemetry alongside retained history scoped to that sensor', 
     await expect(page.getByRole('combobox')).toHaveCount(0);
     const initialRequestCount = requests.length;
     expect(initialRequestCount).toBeGreaterThan(0);
-    await page.getByLabel('Od', { exact: true }).fill('2026-09-20');
+    await page
+        .getByRole('region', { name: 'Historia zdarzeń urządzenia', exact: true })
+        .getByLabel('Od', { exact: true })
+        .fill('2026-09-20');
     expect(requests).toHaveLength(initialRequestCount);
-    await page.getByRole('button', { name: 'Szukaj', exact: true }).click();
+    await page
+        .getByRole('region', { name: 'Historia zdarzeń urządzenia', exact: true })
+        .getByRole('button', { name: 'Szukaj', exact: true })
+        .click();
     await expect(history.getByTestId(`history-item-${newer.recordId}`)).toBeVisible();
     await expect(history.getByTestId(`history-item-${older.recordId}`)).toHaveCount(0);
-    await page.getByRole('button', { name: 'Wyczyść filtry' }).click();
+    await page
+        .getByRole('region', { name: 'Historia zdarzeń urządzenia', exact: true })
+        .getByRole('button', { name: 'Wyczyść filtry' })
+        .click();
     await expect(history.getByTestId(`history-item-${older.recordId}`)).toBeVisible();
     expect(requests.every((url) => url.searchParams.get('deviceId') === 'temp-desk')).toBe(true);
-    await expect(page.getByRole('table', { name: 'Pomiary temperatury' })).toBeVisible();
+    await expect(
+        page.getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' }),
+    ).toBeVisible();
 });
 
 test('filters LED history by dates and clears back to its automatically loaded device history', async ({

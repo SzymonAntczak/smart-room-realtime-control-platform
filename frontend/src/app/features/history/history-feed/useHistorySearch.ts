@@ -1,82 +1,25 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback } from 'react';
 
-import {
-    createHistorySearchSession,
-    type HistorySearchCriteria,
-    type HistorySearchSession,
-} from './history-search-session';
+import { useInfiniteSession } from '../../infinite-scrolling';
+
+import { createHistorySearchSession, type HistorySearchCriteria } from './history-search-session';
 
 export function useHistorySearch(enabled = true) {
-    const sessionRef = useRef<HistorySearchSession | null>(null);
-    const unsubscribeRef = useRef<(() => void) | null>(null);
-    const listeners = useRef(new Set<() => void>());
-    const [initialState] = useState(() => createHistorySearchSession().getState());
-    const subscribe = useCallback((listener: () => void) => {
-        listeners.current.add(listener);
-
-        return () => listeners.current.delete(listener);
-    }, []);
-    const getSnapshot = useCallback(
-        () => sessionRef.current?.getState() ?? initialState,
-        [initialState],
-    );
-    const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-
-    const notify = useCallback(() => {
-        for (const listener of listeners.current) {
-            listener();
-        }
-    }, []);
-    const close = useCallback(() => {
-        const session = sessionRef.current;
-
-        if (!session) {
-            return;
-        }
-
-        unsubscribeRef.current?.();
-        unsubscribeRef.current = null;
-        sessionRef.current = null;
-        session.close();
-        notify();
-    }, [notify]);
-    const start = useCallback(() => {
-        if (!enabled || sessionRef.current) {
-            return;
-        }
-
-        const session = createHistorySearchSession();
-        sessionRef.current = session;
-        unsubscribeRef.current = session.subscribe(notify);
-        notify();
-    }, [enabled, notify]);
-
-    useEffect(() => {
-        start();
-
-        return close;
-    }, [close, start]);
-
+    const { state, getSession } = useInfiniteSession(createHistorySearchSession, enabled);
     const search = useCallback(
-        (criteria: HistorySearchCriteria) => {
-            start();
-
-            return sessionRef.current?.search(criteria) ?? Promise.resolve(false);
-        },
-        [start],
+        (criteria: HistorySearchCriteria) =>
+            getSession()?.search(criteria) ?? Promise.resolve(false),
+        [getSession],
     );
-    const loadOlder = useCallback(() => {
-        return sessionRef.current?.loadOlder() ?? Promise.resolve();
-    }, []);
-    const retry = useCallback(() => {
-        return sessionRef.current?.retry() ?? Promise.resolve();
-    }, []);
-    const refresh = useCallback(() => {
-        return sessionRef.current?.refresh() ?? Promise.resolve();
-    }, []);
+    const loadOlder = useCallback(
+        () => getSession()?.loadOlder() ?? Promise.resolve(),
+        [getSession],
+    );
+    const retry = useCallback(() => getSession()?.retry() ?? Promise.resolve(), [getSession]);
+    const refresh = useCallback(() => getSession()?.refresh() ?? Promise.resolve(), [getSession]);
     const clear = useCallback(() => {
-        sessionRef.current?.clear();
-    }, []);
+        getSession()?.clear();
+    }, [getSession]);
 
     return { state, search, loadOlder, retry, refresh, clear };
 }

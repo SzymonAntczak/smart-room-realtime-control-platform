@@ -161,32 +161,32 @@ Expected responsibilities:
 
 The Dashboard links each device card to a selected-device details page. The
 details page identifies the selected device and presents a temperature sensor's
-telemetry as both a trend and an equivalent raw-value table. Temperature
+telemetry as a live trend and an independently filtered raw-measurement list. Temperature
 details load the newest retained measurements automatically, using
 HTTP pages of 100 and a baseline limited to 200 samples. The default range is
 the half-open interval from 30 days before the read starts up to its start time;
 the UTC bounds remain fixed across pages. The view shows its range and sample
 count, and explains when the sample limit leaves older measurements outside the
-view. The chart and table use the same samples in chronological order, with
-record identity breaking timestamp ties.
+view. The live chart uses its samples in chronological order, with record identity
+breaking timestamp ties. Its bounded sample cache is independent of the static
+measurement list described in the [Telemetry History List ADR](../decisions/adr-telemetry-history-list.md).
 
 The responsive chart has a numeric time axis preserving actual observation
 intervals, a temperature axis and a grid. A tooltip exposes the full local
 observation time, value, unit and durability, including every sample sharing
 the selected timestamp. The chart supports pointer interaction and keyboard
 navigation through a single Tab stop with visible focus and arrow keys. Its
-accessible name and full sample description complement the equivalent table.
+accessible name and full sample description expose every chart sample independently
+of the static measurement list.
 Rendering uses straight lines and visible points without animation, smoothing
 or aggregation.
 
 The HTTP range describes the durable baseline only. All live temperature samples
 for the selected device join that baseline through the shared room connection,
 including samples outside the HTTP interval. A separate live overlay retains at
-most 200 samples across paging and same-generation refetches. The combined chart
-and table also retain at most 200 samples, evicting the oldest by observation
+most 200 samples across paging and same-generation refetches. The chart also retains at most 200 samples, evicting the oldest by observation
 time and then record identity. HTTP and SSE copies share one logical sample;
-durable evidence takes precedence over volatile evidence. The table identifies
-sample durability, and the chart's accessible description marks volatile samples.
+durable evidence takes precedence over volatile evidence. The chart's accessible description marks volatile samples.
 Reconnect and storage recovery refetch a new 30-day baseline ending at the new
 read's start time; cursor restarts keep the current read's fixed range. Generation
 changes invalidate the old baseline and overlay before replacement data merges.

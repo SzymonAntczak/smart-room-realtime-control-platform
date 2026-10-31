@@ -87,12 +87,12 @@ describe('HistorySearchModal', () => {
             i18n.t('history.searchInstruction', { ns: 'dashboard' }),
         );
         const reload = screen.getByRole('button', {
-            name: i18n.t('history.refresh', { ns: 'dashboard' }),
+            name: i18n.t('refresh', { ns: 'deviceFilters' }),
         });
         expect(reload).toBeInTheDocument();
         fireEvent.click(reload);
         expect(screen.getByRole('tooltip')).toHaveTextContent(
-            i18n.t('history.searchFilterRequired', { ns: 'dashboard' }),
+            i18n.t('searchFilterRequired', { ns: 'deviceFilters' }),
         );
         fireEvent.keyDown(window, { key: 'Escape' });
         expect(screen.queryByRole('tooltip')).toBeNull();
@@ -100,18 +100,18 @@ describe('HistorySearchModal', () => {
         expect(fetcher).not.toHaveBeenCalled();
 
         const search = screen.getByRole('button', {
-            name: i18n.t('history.search', { ns: 'dashboard' }),
+            name: i18n.t('search', { ns: 'deviceFilters' }),
         });
-        fireEvent.blur(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })));
+        fireEvent.blur(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })));
         expect(fetcher).not.toHaveBeenCalled();
 
-        fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+        fireEvent.change(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
             target: { value: '2026-03-08' },
         });
-        fireEvent.change(screen.getByLabelText(i18n.t('history.to', { ns: 'dashboard' })), {
+        fireEvent.change(screen.getByLabelText(i18n.t('to', { ns: 'deviceFilters' })), {
             target: { value: '2026-03-08' },
         });
-        fireEvent.blur(screen.getByLabelText(i18n.t('history.to', { ns: 'dashboard' })));
+        fireEvent.blur(screen.getByLabelText(i18n.t('to', { ns: 'deviceFilters' })));
         expect(fetcher).not.toHaveBeenCalled();
         fireEvent.click(search);
 
@@ -126,7 +126,7 @@ describe('HistorySearchModal', () => {
         );
         expect(
             screen.getByText(
-                `${i18n.t('history.appliedCriteria', { ns: 'dashboard' })}: ${i18n.t('history.from', { ns: 'dashboard' })}: 2026-03-08`,
+                `${i18n.t('appliedCriteria', { ns: 'deviceFilters' })}: ${i18n.t('from', { ns: 'deviceFilters' })}: 2026-03-08`,
                 { exact: false },
             ),
         ).toBeInTheDocument();
@@ -145,19 +145,19 @@ describe('HistorySearchModal', () => {
         fireEvent.click(
             screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
         );
-        const from = screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }));
+        const from = screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' }));
 
         fireEvent.change(from, { target: { value: '2026-03-08' } });
         fireEvent.blur(from);
         expect(fetcher).not.toHaveBeenCalled();
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('search', { ns: 'deviceFilters' }) }),
         );
         await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
         await waitFor(() =>
             expect(
                 screen.getByRole('button', {
-                    name: i18n.t('history.refresh', { ns: 'dashboard' }),
+                    name: i18n.t('refresh', { ns: 'deviceFilters' }),
                 }),
             ).toBeEnabled(),
         );
@@ -167,12 +167,12 @@ describe('HistorySearchModal', () => {
         fireEvent.change(from, { target: { value: '2026-03-09' } });
         expect(fetcher).toHaveBeenCalledOnce();
         expect(
-            screen.getByText(`${i18n.t('history.from', { ns: 'dashboard' })}: 2026-03-08`, {
+            screen.getByText(`${i18n.t('from', { ns: 'deviceFilters' })}: 2026-03-08`, {
                 exact: false,
             }),
         ).toBeInTheDocument();
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('refresh', { ns: 'deviceFilters' }) }),
         );
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
         expect(new URL(String(fetcher.mock.calls[1]?.[0])).searchParams.get('from')).toBe(
@@ -192,19 +192,19 @@ describe('HistorySearchModal', () => {
         fireEvent.click(
             screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
         );
-        expect(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }))).toHaveValue('');
+        expect(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' }))).toHaveValue('');
         expect(
-            screen.queryByText(i18n.t('history.appliedCriteria', { ns: 'dashboard' }), {
+            screen.queryByText(i18n.t('appliedCriteria', { ns: 'deviceFilters' }), {
                 exact: false,
             }),
         ).toBeNull();
         expect(fetcher).toHaveBeenCalledTimes(2);
 
         const clear = screen.getByRole('button', {
-            name: i18n.t('history.clearFilters', { ns: 'dashboard' }),
+            name: i18n.t('clearFilters', { ns: 'deviceFilters' }),
         });
         fireEvent.click(clear);
-        expect(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }))).toHaveValue('');
+        expect(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' }))).toHaveValue('');
         expect(screen.getByRole('status')).toHaveTextContent(
             i18n.t('history.searchInstruction', { ns: 'dashboard' }),
         );
@@ -221,25 +221,25 @@ describe('HistorySearchModal', () => {
             screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
         );
 
-        const from = screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }));
+        const from = screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' }));
         fireEvent.change(from, { target: { value: '2026-03-08' } });
         fireEvent.blur(from);
         expect(fetcher).not.toHaveBeenCalled();
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('search', { ns: 'deviceFilters' }) }),
         );
         await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
         await waitFor(() =>
             expect(
                 screen.getByRole('button', {
-                    name: i18n.t('history.refresh', { ns: 'dashboard' }),
+                    name: i18n.t('refresh', { ns: 'deviceFilters' }),
                 }),
             ).toBeEnabled(),
         );
 
         fireEvent.change(from, { target: { value: '2026-03-09' } });
         const refresh = screen.getByRole('button', {
-            name: i18n.t('history.refresh', { ns: 'dashboard' }),
+            name: i18n.t('refresh', { ns: 'deviceFilters' }),
         });
         fireEvent.click(refresh);
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
@@ -256,21 +256,21 @@ describe('HistorySearchModal', () => {
         fireEvent.click(
             screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
         );
-        fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+        fireEvent.change(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
             target: { value: '2026-03-10' },
         });
-        fireEvent.change(screen.getByLabelText(i18n.t('history.to', { ns: 'dashboard' })), {
+        fireEvent.change(screen.getByLabelText(i18n.t('to', { ns: 'deviceFilters' })), {
             target: { value: '2026-03-09' },
         });
-        fireEvent.blur(screen.getByLabelText(i18n.t('history.to', { ns: 'dashboard' })));
+        fireEvent.blur(screen.getByLabelText(i18n.t('to', { ns: 'deviceFilters' })));
         expect(screen.queryByRole('alert')).toBeNull();
         expect(fetcher).not.toHaveBeenCalled();
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('search', { ns: 'deviceFilters' }) }),
         );
 
         expect(screen.getByRole('alert')).toHaveTextContent(
-            i18n.t('history.invalidDateRange', { ns: 'dashboard' }),
+            i18n.t('invalidDateRange', { ns: 'deviceFilters' }),
         );
         expect(fetcher).not.toHaveBeenCalled();
     });

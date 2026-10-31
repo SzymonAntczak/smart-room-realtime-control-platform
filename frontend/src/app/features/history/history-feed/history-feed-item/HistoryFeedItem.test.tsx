@@ -25,25 +25,25 @@ describe('user history entry', () => {
         expect(isUserHistoryItem(durableOther)).toBe(true);
         const { rerender } = render(
             <ol>
-                <HistoryFeedItem item={item} index={0} setSize={2} />
-                <HistoryFeedItem item={durableOther} index={1} setSize={2} />
+                <HistoryFeedItem item={item} />
+                <HistoryFeedItem item={durableOther} />
             </ol>,
         );
-        const entries = screen.getAllByRole('listitem');
+        const entries = screen.getAllByRole('article');
         expect(entries).toHaveLength(2);
         expect(
-            within(screen.getByTestId(`history-item-${item.recordId}`)).getByText(
+            within(screen.getAllByRole('article')[0]).getByText(
                 i18n.t('feed.volatile', { ns: 'dashboard' }),
             ),
         ).toBeInTheDocument();
         expect(
-            within(screen.getByTestId(`history-item-${durableOther.recordId}`)).queryByText(
+            within(screen.getAllByRole('article')[1]).queryByText(
                 i18n.t('feed.volatile', { ns: 'dashboard' }),
             ),
         ).toBeNull();
         rerender(
             <ol>
-                <HistoryFeedItem item={fixtures.failure} index={0} setSize={1} />
+                <HistoryFeedItem item={fixtures.failure} />
             </ol>,
         );
         expect(screen.queryByText(i18n.t('feed.volatile', { ns: 'dashboard' }))).toBeNull();
@@ -53,10 +53,10 @@ describe('user history entry', () => {
         expect(isUserHistoryItem(item)).toBe(true);
         render(
             <ol>
-                <HistoryFeedItem item={item} index={14} setSize={-1} />
+                <HistoryFeedItem item={item} />
             </ol>,
         );
-        const entry = screen.getByRole('listitem');
+        const entry = screen.getByRole('article');
         expect(entry).toHaveTextContent(
             item.kind === 'history_gap'
                 ? i18n.t('history.room', { ns: 'dashboard' })
@@ -92,8 +92,6 @@ describe('user history entry', () => {
             }),
         };
         expect(entry).toHaveTextContent(descriptions[item.kind]);
-        expect(entry).toHaveAttribute('aria-posinset', '15');
-        expect(entry).toHaveAttribute('aria-setsize', '-1');
         expect(entry.querySelector('details')).toBeNull();
         expect(entry).not.toHaveTextContent(item.recordId);
         expect(entry).not.toHaveTextContent(item.source);
@@ -101,10 +99,10 @@ describe('user history entry', () => {
     it('does not claim a timeout proves that the device did not act', () => {
         render(
             <ol>
-                <HistoryFeedItem item={fixtures.timeout} index={0} setSize={1} />
+                <HistoryFeedItem item={fixtures.timeout} />
             </ol>,
         );
-        expect(screen.getByRole('listitem')).toHaveTextContent(
+        expect(screen.getByRole('article')).toHaveTextContent(
             i18n.t('history.confirmationMissing', {
                 ns: 'dashboard',
                 power: i18n.t('led.on', { ns: 'dashboard' }),
@@ -134,10 +132,10 @@ describe('user history entry', () => {
             expect(isUserHistoryItem(item)).toBe(true);
             render(
                 <ol>
-                    <HistoryFeedItem item={item} index={0} setSize={1} />
+                    <HistoryFeedItem item={item} />
                 </ol>,
             );
-            expect(screen.getByRole('listitem')).toHaveTextContent(text);
+            expect(screen.getByRole('article')).toHaveTextContent(text);
         },
     );
     it('labels volatile observations without implying durable storage', () => {
@@ -155,10 +153,10 @@ describe('user history entry', () => {
         expect(isUserHistoryItem(item)).toBe(true);
         render(
             <ol>
-                <HistoryFeedItem item={item} index={0} setSize={1} />
+                <HistoryFeedItem item={item} />
             </ol>,
         );
-        expect(screen.getByRole('listitem')).toHaveTextContent(
+        expect(screen.getByRole('article')).toHaveTextContent(
             i18n.t('feed.volatile', { ns: 'dashboard' }),
         );
     });

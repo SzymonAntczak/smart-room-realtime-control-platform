@@ -1,10 +1,10 @@
 import { forwardRef, type Ref } from 'react';
 import type { ListProps } from 'react-virtuoso';
 
-import styles from './HistoryFeedList.module.css';
+import styles from './InfiniteListContainer.module.css';
 
-export const HistoryFeedList = forwardRef<HTMLUListElement, ListProps<HTMLUListElement>>(
-    function HistoryFeedList({ children, style, 'data-testid': testId }, ref) {
+export const InfiniteListContainer = forwardRef<HTMLUListElement, ListProps<HTMLUListElement>>(
+    function InfiniteListContainer({ children, style, 'data-testid': testId }, ref) {
         return (
             <ol
                 className={styles.list}

@@ -5,7 +5,7 @@ import { detectLocale, FALLBACK_LOCALE, SUPPORTED_LOCALES } from './locale';
 import { pl } from './locales/pl';
 
 export const i18nReady = i18n.use(initReactI18next).init({
-    ns: ['common', 'dashboard', 'deviceDetails'],
+    ns: ['common', 'dashboard', 'deviceDetails', 'deviceFilters'],
     fallbackLng: FALLBACK_LOCALE,
     lng: detectLocale(),
     supportedLngs: SUPPORTED_LOCALES,

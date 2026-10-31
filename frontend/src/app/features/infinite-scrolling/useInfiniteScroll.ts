@@ -1,25 +1,17 @@
 import { useEffect, useRef } from 'react';
 
-import type { HistorySessionState } from './history-session';
+const pagingOffset = 320;
+const scrollKeys = new Set(['ArrowDown', 'ArrowUp', 'End', 'Home', 'PageDown', 'PageUp', ' ']);
 
-const historyPagingOffset = 320;
-const historyScrollKeys = new Set([
-    'ArrowDown',
-    'ArrowUp',
-    'End',
-    'Home',
-    'PageDown',
-    'PageUp',
-    ' ',
-]);
-
-export function useHistoryPaging({
-    state,
+export function useInfiniteScroll({
+    canLoadMore,
+    loading,
     scrollViewport,
     loadOlder,
     returningToTop,
 }: {
-    state: Pick<HistorySessionState, 'status' | 'nextCursor' | 'endReached'> & { error: unknown };
+    canLoadMore: boolean;
+    loading: boolean;
     scrollViewport: HTMLElement | null;
     loadOlder(): void;
     returningToTop: boolean;
@@ -31,10 +23,10 @@ export function useHistoryPaging({
     useEffect(() => {
         userScrollIntentUntil.current = 0;
 
-        if (state.status !== 'loading') {
+        if (!loading) {
             requestPending.current = false;
         }
-    }, [returningToTop, state.nextCursor, state.status]);
+    }, [returningToTop, canLoadMore, loading]);
 
     useEffect(() => {
         if (!scrollViewport) {
@@ -45,12 +37,7 @@ export function useHistoryPaging({
         let boundaryFrame: number | undefined;
 
         const canLoadOlder = () =>
-            !requestPending.current &&
-            !returningToTop &&
-            state.status === 'ready' &&
-            !state.endReached &&
-            !state.error &&
-            state.nextCursor !== null;
+            !requestPending.current && !returningToTop && !loading && canLoadMore;
 
         const handleScroll = () => {
             if (
@@ -66,7 +53,7 @@ export function useHistoryPaging({
                 scrollViewport.clientHeight -
                 scrollViewport.scrollTop;
 
-            if (distanceToEnd <= historyPagingOffset) {
+            if (distanceToEnd <= pagingOffset) {
                 // Consume this approach before React publishes loading or measures the new page.
                 requestPending.current = true;
                 userScrollIntentUntil.current = 0;
@@ -131,7 +118,7 @@ export function useHistoryPaging({
                 target instanceof HTMLElement &&
                 target.closest('button, input, select, textarea, [contenteditable="true"]');
 
-            if (!isInteractiveTarget && historyScrollKeys.has(event.key)) {
+            if (!isInteractiveTarget && scrollKeys.has(event.key)) {
                 markScrollIntent();
 
                 if (['ArrowDown', 'End', 'PageDown', ' '].includes(event.key)) {
@@ -163,13 +150,5 @@ export function useHistoryPaging({
             view?.removeEventListener('pointerup', handlePointerUp);
             view?.removeEventListener('pointercancel', handlePointerUp);
         };
-    }, [
-        loadOlder,
-        returningToTop,
-        scrollViewport,
-        state.endReached,
-        state.error,
-        state.nextCursor,
-        state.status,
-    ]);
+    }, [loadOlder, returningToTop, scrollViewport, canLoadMore, loading]);
 }

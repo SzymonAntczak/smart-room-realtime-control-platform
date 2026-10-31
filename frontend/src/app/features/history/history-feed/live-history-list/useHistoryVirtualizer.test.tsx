@@ -1,8 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useInsertionEffect, useRef } from 'react';
-import type { VirtuosoHandle } from 'react-virtuoso';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { InfiniteListHandle } from '../../../infinite-scrolling';
 import { createHistorySession, type HistorySessionState } from '../history-session';
 
 import { useHistoryVirtualizer } from './useHistoryVirtualizer';
@@ -49,7 +49,7 @@ function Harness({
     useInsertionEffect(() => {
         virtuosoRef.current = {
             scrollToIndex: controls.scrollToIndex,
-        } as unknown as VirtuosoHandle;
+        } as unknown as InfiniteListHandle;
     }, [virtuosoRef]);
 
     return (

@@ -1,0 +1,12 @@
+.viewport {
+    min-block-size: 22rem;
+    block-size: min(70dvh, 48rem);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    border-block-start: var(--border-width-thin) solid var(--color-border);
+    padding-block-start: var(--space-3);
+}
+.viewport:focus-visible {
+    outline: var(--border-width-thin) solid var(--color-info-text);
+    outline-offset: var(--space-1);
+}

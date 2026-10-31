@@ -160,7 +160,7 @@ describe('SearchHistoryList', () => {
         );
         expect(loadOlder).toHaveBeenCalledOnce();
         expect(
-            screen.queryByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+            screen.queryByRole('button', { name: i18n.t('refresh', { ns: 'deviceFilters' }) }),
         ).toBeNull();
     });
 
@@ -186,7 +186,7 @@ describe('SearchHistoryList', () => {
         );
 
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('refresh', { ns: 'deviceFilters' }) }),
         );
         expect(refresh).toHaveBeenCalledOnce();
         expect(retry).not.toHaveBeenCalled();
@@ -304,7 +304,7 @@ describe('SearchHistoryList', () => {
         );
 
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('refresh', { ns: 'deviceFilters' }) }),
         );
         expect(scrollParent.scrollTop).toBe(0);
         expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' });

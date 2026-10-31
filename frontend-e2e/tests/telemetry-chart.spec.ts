@@ -66,8 +66,8 @@ async function openTelemetry(page: Page, samples: RawTelemetrySampleProjection[]
     expect(isRawTelemetryPage(baseline)).toBe(true);
     await page.route('**/room/history/telemetry?*', (route) => route.fulfill({ json: baseline }));
     await page.goto('/device-details/temp-desk');
-    const table = page.getByRole('table');
-    await expect(table.getByRole('row')).toHaveCount(Math.max(samples.length, 1) + 1);
+    const list = page.getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' });
+    await expect(list.getByRole('listitem')).toHaveCount(samples.length);
 
     return page.getByRole('application');
 }
@@ -136,7 +136,11 @@ for (const width of [390, 1440]) {
             '2026-09-11T00:00:01.000Z',
         );
         await publishMockRoomUpdate(page.request, { ...update, telemetrySample: liveSample });
-        await expect(page.getByRole('table').getByRole('row')).toHaveCount(6);
+        await expect(
+            page
+                .getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' })
+                .getByRole('listitem'),
+        ).toHaveCount(samples.length);
         await expect(chart).toHaveAccessibleDescription(/25\.5 \(Nieutrwalone\)/);
         await expect(tooltip.getByRole('listitem')).toHaveCount(3);
         await chart.press('ArrowLeft');

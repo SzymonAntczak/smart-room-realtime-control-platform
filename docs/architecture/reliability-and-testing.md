@@ -401,7 +401,8 @@ loading, date Search, applied-only Refresh and Clear reloading device-only histo
 Provider tests protect independent sessions, identity replacement, display-name
 stability, cancellation and StrictMode cleanup. Browser coverage verifies the
 shared feed in all three consumers with the existing room connection.
-Sensor details must show their telemetry chart and table alongside their own
+Sensor details must show their live telemetry chart and independent static
+measurement list alongside their own
 retained event history, without displaying another device's history.
 
 ## Manual Acceptance Checklist

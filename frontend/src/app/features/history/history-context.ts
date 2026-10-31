@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from 'react';
 import { createContext, useContext } from 'react';
 
 import type { useHistory } from './history-feed/useHistory';
@@ -23,7 +22,6 @@ export type HistoryContextValue = HistoryContextBase &
               mode: 'search';
               search: ReturnType<typeof useHistorySearch>;
               fixedDeviceId: string | null;
-              setFixedDeviceId: Dispatch<SetStateAction<string | null>>;
           }
     );
 export const HistoryContext = createContext<HistoryContextValue | null>(null);

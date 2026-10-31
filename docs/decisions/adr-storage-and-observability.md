@@ -893,7 +893,8 @@ sample live, but it deliberately does not deliver accepted significant facts
 classified outside the recent-event feed. Those non-feed facts become visible
 only in a new HTTP pagination session or explicit refetch.
 
-Before sending the first HTTP request, the client creates a live overlay and
+For live views (including the telemetry chart), before sending the first HTTP
+request, the client creates a live overlay and
 buffers every SSE-delivered history or telemetry addition for the entire
 pagination session, not only while one page request is in flight. Page changes
 append their pinned results without replacing that overlay. When a response
@@ -926,6 +927,9 @@ first pages and subsequent SSE additions. A client with no previous non-null ID
 adopts the new one without treating first initialization as replacement.
 Globally unique `recordId` values still prevent collisions, but records from
 different generations are never merged into one pagination session.
+
+Static telemetry lists use explicit refresh and no live overlay, as specified
+by the [Telemetry History List ADR](adr-telemetry-history-list.md).
 
 On reconnect the client replaces its 20-entry feed from the revision-0
 snapshot, refetches each open HTTP range and applies buffered additions only

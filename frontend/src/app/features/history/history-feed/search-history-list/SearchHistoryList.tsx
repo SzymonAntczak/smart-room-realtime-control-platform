@@ -1,22 +1,14 @@
-import type { UserHistoryItem } from '@smart-room/contracts/user-history';
 import { LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { type Components, Virtuoso } from 'react-virtuoso';
 
 import { Button } from '../../../../ui';
+import { getDeviceDisplayName } from '../../../device-display';
+import { InfiniteList } from '../../../infinite-scrolling';
 import type { HistoryDevice } from '../../history-context';
-import type { HistoryFeedContext } from '../history-feed-context';
-import { HistoryFeedList } from '../history-feed-list/HistoryFeedList';
-import { HistoryFeedRow } from '../history-feed-row/HistoryFeedRow';
+import { HistoryFeedItem } from '../history-feed-item/HistoryFeedItem';
 import type { HistorySearchSession } from '../history-search-session';
-import { useHistoryPaging } from '../useHistoryPaging';
 
 import styles from './SearchHistoryList.module.css';
-
-const components: Components<UserHistoryItem, HistoryFeedContext, HTMLUListElement> = {
-    List: HistoryFeedList,
-    Item: HistoryFeedRow,
-};
 
 type SearchState = ReturnType<HistorySearchSession['getState']>;
 
@@ -37,14 +29,8 @@ export function SearchHistoryList({
     refresh(): Promise<void>;
     deviceScoped?: boolean;
 }) {
-    useHistoryPaging({ state, scrollViewport: scrollParent, loadOlder, returningToTop: false });
     const { t } = useTranslation('dashboard');
     const { t: deviceT } = useTranslation('deviceDetails');
-    const context: HistoryFeedContext = {
-        devices,
-        endReached: state.endReached,
-        totalItems: state.items.length,
-    };
 
     function refreshFromTop() {
         if (scrollParent) {
@@ -72,18 +58,40 @@ export function SearchHistoryList({
                     {deviceScoped ? deviceT('eventHistory.empty') : t('history.noMatches')}
                 </p>
             ) : null}
-            {state.items.length > 0 && scrollParent && !state.lastKnown ? (
-                <Virtuoso
-                    data={state.items}
-                    customScrollParent={scrollParent}
-                    components={components}
-                    context={context}
-                    computeItemKey={(_index, item) => item.recordId}
-                    defaultItemHeight={192}
-                    minOverscanItemCount={{ top: 5, bottom: 5 }}
-                    itemContent={() => null}
+            {
+                <InfiniteList
+                    items={state.lastKnown || state.status === 'error' ? [] : state.items}
+                    getItemKey={(item) => item.recordId}
+                    getItemTestId={(item) => 'history-item-' + item.recordId}
+                    renderItem={(item) => {
+                        const device = devices.find(
+                            (d) => 'deviceId' in item && d.deviceId === item.deviceId,
+                        );
+
+                        return (
+                            <HistoryFeedItem
+                                item={item}
+                                deviceName={
+                                    device
+                                        ? getDeviceDisplayName(device, (key) => t(key))
+                                        : undefined
+                                }
+                            />
+                        );
+                    }}
+                    scrollParent={scrollParent}
+                    ariaLabel={t('history.searchResults')}
+                    hasMore={
+                        state.status === 'ready' &&
+                        !state.error &&
+                        state.nextCursor !== null &&
+                        !state.limitReached
+                    }
+                    loading={state.status === 'loading'}
+                    endReached={state.endReached}
+                    onLoadMore={loadOlder}
                 />
-            ) : null}
+            }
             {state.status === 'error' ? (
                 <div className={styles.error} role="alert">
                     <p>
@@ -106,7 +114,9 @@ export function SearchHistoryList({
                                       ? 'eventHistory.refresh'
                                       : 'eventHistory.retry',
                               )
-                            : t(state.refreshRequired ? 'history.refresh' : 'history.retry')}
+                            : state.refreshRequired
+                              ? t('refresh', { ns: 'deviceFilters' })
+                              : t('history.retry')}
                     </Button>
                 </div>
             ) : null}

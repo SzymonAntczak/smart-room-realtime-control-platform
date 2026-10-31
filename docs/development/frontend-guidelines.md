@@ -27,15 +27,16 @@ Organize `src/app` by responsibility:
 - `features/<module>` owns a cohesive business module with actual reuse by
   multiple consumers. Shared modules include date-time formatting. Reuse across independent modules
   on one page counts; hypothetical future reuse and tests alone do not. The
-  `history` feature owns independent live and static HTTP sessions, the complete
-  filter section and virtualized feed shared by Dashboard sidebar, historical
-  search and device details. Each view composes a local provider; pages own their
+  `history` feature owns live sessions and static-history adapters shared by
+  Dashboard sidebar, historical search and device details. `device-filters` owns
+  reusable filter forms; `infinite-scrolling` owns reusable pagination and list
+  infrastructure, including its components and hooks. Each view composes a local provider; pages own their
   framing and open/close interactions.
   The sidebar owns its footer buttons and tooltip; the feed exposes a small
   scroll-to-top ref API instead of accepting page actions or footer slots.
   Device details mounts fixed-device filters only after its validated snapshot
   confirms the selected device. For temperature sensors, the page directly
-  composes its telemetry chart and table alongside history. Production transport belongs
+  composes its live telemetry chart and independent static telemetry list alongside history. Production transport belongs
   in `api`; history consumes the shared room connection through its own source port.
 - `ui/<component>` owns a basic reusable UI component, its styles and tests.
   Keep shared presentation primitives directly under `app/ui` instead of
@@ -66,8 +67,12 @@ validated room snapshot through the public room feature API. Dashboard's device 
 own their renderable device projection types. The `device-display` feature owns
 localized display names shared across pages. The history feature owns its live source port and update contract; the room feature
 owns the connection bridge. The history API owns HTTP clients and response
-validation. The shared `history` feature owns filters, session lifecycle, list
-rendering, paging and scrolling for each independently scoped consumer.
+validation. The `device-filters` feature owns independent draft/applied device/date forms.
+The `infinite-scrolling` feature owns generic cursor sessions, scroll-triggered
+paging and measured list rendering. It depends on UI primitives and injected
+sources, never history, pages or API clients. History owns its domain adapters,
+live overlay and reading-position recovery; static history uses the generic
+session. Each consumer has independent state.
 The shared room provider publishes validated history updates before the new room
 view.
 
@@ -110,7 +115,8 @@ The folder owns that component, its hooks, styles and tests;
 child components have their own folders. Keep module entrypoints at the
 page or feature boundary rather than adding an `index.ts` to every component folder.
 Nest private component folders under the component that owns their composition:
-the history feature owns its feed, which owns its private lists and item components.
+the history feature owns its feed and domain item components; the infinite-scrolling
+feature owns the shared virtual list and its private containers.
 
 Name custom-hook files in camelCase matching the exported hook, including tests:
 `useLedCommandRequest.ts` and `useLedCommandRequest.test.tsx`. Other non-component modules retain

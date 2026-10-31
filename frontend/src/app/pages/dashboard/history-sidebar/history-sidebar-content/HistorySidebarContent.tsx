@@ -42,12 +42,12 @@ export function HistorySidebarContent({
                         variant="outlined"
                         type="button"
                         className={styles.filterButton}
-                        aria-label={t('history.search')}
+                        aria-label={t('search', { ns: 'deviceFilters' })}
                         aria-haspopup="dialog"
                         onClick={() => setSearchOpen(true)}
                     >
                         <Search aria-hidden="true" size={18} />
-                        <span>{t('history.search')}</span>
+                        <span>{t('search', { ns: 'deviceFilters' })}</span>
                     </Button>
                     <div className={styles.topAction}>
                         {topTooltip ? (

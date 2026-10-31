@@ -3,10 +3,10 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { i18n } from '../../../i18n';
-import { HistoryProvider } from '../HistoryProvider';
+import { i18n } from '../../i18n';
+import { DeviceFilters } from '../device-filters';
 
-import { HistoryFilters } from './HistoryFilters';
+import { HistoryProvider } from './HistoryProvider';
 
 const device = { deviceId: 'led-main', name: 'LED' };
 const fixture = createUserHistoryFixtures();
@@ -21,8 +21,8 @@ function view(name = 'LED', deviceId = 'led-main') {
     const selected = { deviceId, name };
 
     return (
-        <HistoryProvider key={deviceId} mode="search" devices={[selected]}>
-            <HistoryFilters device={selected} />
+        <HistoryProvider key={deviceId} mode="search" devices={[selected]} fixedDeviceId={deviceId}>
+            <DeviceFilters />
         </HistoryProvider>
     );
 }
@@ -40,22 +40,22 @@ describe('fixed-device history filters', () => {
             device.deviceId,
         );
 
-        fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+        fireEvent.change(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
             target: { value: '2026-10-20' },
         });
         expect(fetcher).toHaveBeenCalledTimes(1);
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('search', { ns: 'deviceFilters' }) }),
         );
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
         const applied = new URL(String(fetcher.mock.calls[1]?.[0])).searchParams;
         expect(applied.get('deviceId')).toBe(device.deviceId);
         expect(applied.get('from')).toBe(new Date(2026, 9, 20).toISOString().replace('.000Z', 'Z'));
-        fireEvent.change(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' })), {
+        fireEvent.change(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
             target: { value: '2026-10-19' },
         });
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.refresh', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('refresh', { ns: 'deviceFilters' }) }),
         );
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
         expect(new URL(String(fetcher.mock.calls[2]?.[0])).searchParams.get('from')).toBe(
@@ -64,7 +64,7 @@ describe('fixed-device history filters', () => {
 
         fireEvent.click(
             screen.getByRole('button', {
-                name: i18n.t('history.clearFilters', { ns: 'dashboard' }),
+                name: i18n.t('clearFilters', { ns: 'deviceFilters' }),
             }),
         );
         await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(4));
@@ -72,7 +72,7 @@ describe('fixed-device history filters', () => {
         expect(cleared.get('deviceId')).toBe(device.deviceId);
         expect(cleared.has('from')).toBe(false);
         expect(cleared.has('to')).toBe(false);
-        expect(screen.getByLabelText(i18n.t('history.from', { ns: 'dashboard' }))).toHaveValue('');
+        expect(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' }))).toHaveValue('');
     });
 
     it('retains the session through renaming and aborts it on device identity replacement or unmount', async () => {

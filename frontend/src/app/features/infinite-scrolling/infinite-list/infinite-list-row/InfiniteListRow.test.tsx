@@ -2,7 +2,7 @@ import { createUserHistoryFixtures } from '@smart-room/contracts/user-history-fi
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { HistoryFeedRow } from './HistoryFeedRow';
+import { InfiniteListRow } from './InfiniteListRow';
 
 describe('history virtual row', () => {
     it('adapts the virtual position and reveals the set size only at the end', () => {
@@ -13,11 +13,11 @@ describe('history virtual row', () => {
             'data-item-index': 14,
             'data-known-size': 192,
             style: { height: 192 },
-            context: { devices: [], endReached: false, totalItems: 50 },
+            context: { renderItem: () => 'Sample', endReached: false, totalItems: 50 },
         };
         const { rerender } = render(
             <ol>
-                <HistoryFeedRow {...props} />
+                <InfiniteListRow {...props} />
             </ol>,
         );
         const row = screen.getByRole('listitem');
@@ -27,7 +27,7 @@ describe('history virtual row', () => {
 
         rerender(
             <ol>
-                <HistoryFeedRow {...props} context={{ ...props.context, endReached: true }} />
+                <InfiniteListRow {...props} context={{ ...props.context, endReached: true }} />
             </ol>,
         );
         expect(row).toHaveAttribute('aria-setsize', '50');

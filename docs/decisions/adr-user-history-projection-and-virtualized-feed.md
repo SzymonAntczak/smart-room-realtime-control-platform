@@ -348,9 +348,11 @@ above are part of this decision.
 
 ### Reusable frontend history and selected-device filters
 
-The frontend `features/history` module owns filters, independent live/static
-sessions, entry rendering, virtual lists, pagination and reading position.
-Each consumer composes its own local `HistoryProvider`, `HistoryFilters` and
+The frontend `features/history` module owns domain adapters, live sessions,
+entry rendering and live reading-position recovery. `features/device-filters`
+owns reusable draft/applied filters; `features/infinite-scrolling` owns static
+pagination sessions, user-scroll paging and measured list rendering.
+Each consumer composes its own local `HistoryProvider`, `DeviceFilters` and
 `HistoryFeed`. The shared room provider keeps the connection and synchronously forwards
 validated updates through the feature-owned source port; history creates no
 additional SSE connection. Closing a view releases only its own history session.
@@ -363,7 +365,7 @@ live-overlay recovery inside the feed.
 
 Device details mounts history only after a validated room snapshot confirms the
 selected device. Both LEDs and temperature sensors show retained event history.
-`HistoryFilters device={device}` hides the device select and fixes
+`HistoryProvider fixedDeviceId={device.deviceId}` hides the device select and fixes
 every query to that device. Mounting starts a static device-only query. Date
 edits remain drafts until Search, and Refresh repeats applied criteria. Clear
 removes date drafts and starts a new device-only query. A device identity change
@@ -373,8 +375,9 @@ retains its larger virtual viewport and scroll-triggered older-page loading with
 Load older button. Paging requires real user scroll input within 320 pixels of the
 end and consumes that intent once; measurement and programmatic scrolling do not
 request further pages. Static device results never merge SSE or rebuild on reconnect.
-Temperature details presents telemetry as a chart and equivalent raw-value table
-alongside this event history. The page composes these telemetry components directly.
+Temperature details presents a live chart and independent static measurement
+list alongside this event history, as defined by the Telemetry History List ADR.
+The page composes these telemetry components directly.
 Temperature measurements remain separate from user-history events such as
 availability and health changes.
 

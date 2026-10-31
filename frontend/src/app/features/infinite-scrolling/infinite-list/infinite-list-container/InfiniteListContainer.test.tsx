@@ -2,15 +2,19 @@ import { render, screen } from '@testing-library/react';
 import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { HistoryFeedList } from './HistoryFeedList';
+import { InfiniteListContainer } from './InfiniteListContainer';
 
 describe('history virtual list', () => {
     it('keeps ordered-list semantics and forwards the measured style and ref', () => {
         const ref = createRef<HTMLUListElement>();
         render(
-            <HistoryFeedList ref={ref} style={{ paddingTop: 192 }} data-testid="measured-list">
+            <InfiniteListContainer
+                ref={ref}
+                style={{ paddingTop: 192 }}
+                data-testid="measured-list"
+            >
                 <li>Entry</li>
-            </HistoryFeedList>,
+            </InfiniteListContainer>,
         );
 
         const list = screen.getByRole('list');

@@ -32,6 +32,8 @@ Keep agreed target system behavior in [architecture](../architecture/). Promote 
 - [User History Projection and Virtualized Feed](adr-user-history-projection-and-virtualized-feed.md)
 - [Test Suite Boundaries](adr-test-suite-boundaries.md)
 
+- [Telemetry History List](adr-telemetry-history-list.md)
+
 ## Superseded ADRs
 
 - [Versioned Room Realtime Synchronization](adr-versioned-room-realtime-sync.md)

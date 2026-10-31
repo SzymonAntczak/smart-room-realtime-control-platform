@@ -129,7 +129,9 @@ describe('useHistory', () => {
 
         const next = deferredResponse();
         fetcher.mockReturnValueOnce(next.promise);
-        act(() => result.current.loadOlder());
+        act(() => {
+            void result.current.loadOlder();
+        });
         const nextSignal = fetcher.mock.calls.at(-1)?.[1]?.signal;
         expect(result.current.state.status).toBe('loading');
         expect(nextSignal?.aborted).toBe(false);

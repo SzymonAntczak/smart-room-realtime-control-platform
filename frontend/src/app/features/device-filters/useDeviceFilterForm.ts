@@ -1,7 +1,6 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 
-import { useHistoryContext } from '../history-context';
-import type { HistorySearchCriteria } from '../history-feed/history-search-session';
+import { type DeviceFilterCriteria, toDeviceFilterCriteria } from './device-filter-criteria';
 interface SearchForm {
     deviceId: string;
     from: string;
@@ -10,18 +9,21 @@ interface SearchForm {
 
 const emptyForm: SearchForm = { deviceId: '', from: '', to: '' };
 
-export function useHistoryFilters(deviceId: string | undefined) {
-    const context = useHistoryContext();
-
-    if (context.mode !== 'search') {
-        throw new Error('HistoryFilters requires search mode');
-    }
-
-    const {
-        devices,
-        search: { search: runSearch, refresh, clear },
-        setFixedDeviceId,
-    } = context;
+export function useDeviceFilterForm({
+    devices,
+    fixedDeviceId: deviceId,
+    onApply: runSearch,
+    onRefresh: refresh,
+    onClear: clear,
+    validate,
+}: {
+    devices: readonly { deviceId: string; name: string }[];
+    fixedDeviceId?: string;
+    onApply(criteria: DeviceFilterCriteria): void;
+    onRefresh(): void;
+    onClear(): void;
+    validate?(criteria: DeviceFilterCriteria): boolean;
+}) {
     const initialForm = deviceId ? { ...emptyForm, deviceId } : emptyForm;
     const appliedFormRef = useRef<SearchForm>(initialForm);
     const formId = useId();
@@ -32,13 +34,6 @@ export function useHistoryFilters(deviceId: string | undefined) {
     const [formError, setFormError] = useState<'range' | null>(null);
     const [reloadTooltip, setReloadTooltip] = useState(false);
 
-    useEffect(() => {
-        setFixedDeviceId(deviceId ?? null);
-
-        if (deviceId) {
-            void runSearch({ deviceId });
-        }
-    }, [deviceId, runSearch, setFixedDeviceId]);
     useEffect(() => {
         if (!reloadTooltip) {
             return;
@@ -71,7 +66,16 @@ export function useHistoryFilters(deviceId: string | undefined) {
             return;
         }
 
-        const criteria = toSearchCriteria({ ...nextForm, deviceId: deviceId ?? nextForm.deviceId });
+        const criteria = toDeviceFilterCriteria({
+            ...nextForm,
+            deviceId: deviceId ?? nextForm.deviceId,
+        });
+
+        if (criteria && validate && !validate(criteria)) {
+            setFormError('range');
+
+            return;
+        }
 
         if (!criteria) {
             setFormError(null);
@@ -94,7 +98,7 @@ export function useHistoryFilters(deviceId: string | undefined) {
     }
 
     function handleReload() {
-        const criteria = toSearchCriteria(appliedFormRef.current);
+        const criteria = toDeviceFilterCriteria(appliedFormRef.current);
 
         if (!criteria) {
             setReloadTooltip(true);
@@ -114,11 +118,7 @@ export function useHistoryFilters(deviceId: string | undefined) {
         appliedFormRef.current = next ?? emptyForm;
         setAppliedForm(next);
 
-        if (deviceId) {
-            void runSearch({ deviceId });
-        } else {
-            clear();
-        }
+        clear();
     }
 
     return {
@@ -135,28 +135,4 @@ export function useHistoryFilters(deviceId: string | undefined) {
         handleReload,
         handleClear,
     };
-}
-
-function toSearchCriteria(form: SearchForm): HistorySearchCriteria | null {
-    if (!form.deviceId && !form.from && !form.to) {
-        return null;
-    }
-
-    return {
-        ...(form.deviceId ? { deviceId: form.deviceId } : {}),
-        ...(form.from ? { from: localDayStart(form.from) } : {}),
-        ...(form.to ? { to: nextLocalDayStart(form.to) } : {}),
-    };
-}
-
-function localDayStart(day: string): string {
-    const [year, month, date] = day.split('-').map(Number);
-
-    return new Date(year, month - 1, date).toISOString();
-}
-
-function nextLocalDayStart(day: string): string {
-    const [year, month, date] = day.split('-').map(Number);
-
-    return new Date(year, month - 1, date + 1).toISOString();
 }

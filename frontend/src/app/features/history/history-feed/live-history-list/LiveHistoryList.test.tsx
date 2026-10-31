@@ -14,7 +14,9 @@ import { LiveHistoryList } from './LiveHistoryList';
 
 const hooks = vi.hoisted(() => ({ virtualize: vi.fn(), paging: vi.fn(), virtuosoProps: vi.fn() }));
 vi.mock('./useHistoryVirtualizer', () => ({ useHistoryVirtualizer: hooks.virtualize }));
-vi.mock('../useHistoryPaging', () => ({ useHistoryPaging: hooks.paging }));
+vi.mock('../../../infinite-scrolling/useInfiniteScroll', () => ({
+    useInfiniteScroll: hooks.paging,
+}));
 interface TestContext {
     devices: [];
     endReached: boolean;
@@ -76,7 +78,7 @@ const props = {
     devices: [],
     realtimeUncertain: false,
     scrollRoot: createRef<HTMLElement>(),
-    customScrollParent: null,
+    customScrollParent: document.createElement('div'),
     returningToTop: false,
     updateReadingPosition: vi.fn(),
     loadOlder: vi.fn(),
@@ -114,7 +116,6 @@ describe('LiveHistoryList Virtuoso integration', () => {
         render(<LiveHistoryList {...props} />);
         expect(hooks.paging).toHaveBeenLastCalledWith(
             expect.objectContaining({
-                loadOlder: props.loadOlder,
                 scrollViewport: props.customScrollParent,
             }),
         );

@@ -2,15 +2,15 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../../ui';
 import { getDeviceDisplayName } from '../../device-display';
-import type { HistoryDevice } from '../history-context';
+import { useDeviceFilters } from '../device-filters-context';
 
-import styles from './HistoryFilters.module.css';
-import { useHistoryFilters } from './useHistoryFilters';
+import styles from './DeviceFilters.module.css';
 
-export function HistoryFilters({ device }: { device?: HistoryDevice }) {
-    const { t } = useTranslation('dashboard');
+export function DeviceFilters() {
+    const { t } = useTranslation('deviceFilters');
     const {
         devices,
+        fixedDeviceId,
         form,
         setForm,
         appliedForm,
@@ -22,20 +22,20 @@ export function HistoryFilters({ device }: { device?: HistoryDevice }) {
         handleSubmit,
         handleReload,
         handleClear,
-    } = useHistoryFilters(device?.deviceId);
+    } = useDeviceFilters();
 
     return (
         <form
             className={styles.form}
-            data-fixed-device={device ? true : undefined}
+            data-fixed-device={fixedDeviceId ? true : undefined}
             onSubmit={handleSubmit}
             noValidate
         >
             <div className={styles.controlLayout}>
                 <div className={styles.filters}>
-                    {!device ? (
+                    {!fixedDeviceId ? (
                         <label className={styles.deviceFilter}>
-                            <span>{t('history.device')}</span>
+                            <span>{t('device')}</span>
                             <select
                                 value={form.deviceId}
                                 onChange={(event) => {
@@ -46,17 +46,19 @@ export function HistoryFilters({ device }: { device?: HistoryDevice }) {
                                     setFormError(null);
                                 }}
                             >
-                                <option value="">{t('history.anyDevice')}</option>
+                                <option value="">{t('anyDevice')}</option>
                                 {devices.map((device) => (
                                     <option key={device.deviceId} value={device.deviceId}>
-                                        {getDeviceDisplayName(device, (key) => t(key))}
+                                        {getDeviceDisplayName(device, (key) =>
+                                            t(key, { ns: 'dashboard' }),
+                                        )}
                                     </option>
                                 ))}
                             </select>
                         </label>
                     ) : null}
                     <label className={styles.fromFilter}>
-                        <span>{t('history.from')}</span>
+                        <span>{t('from')}</span>
                         <input
                             type="date"
                             value={form.from}
@@ -73,7 +75,7 @@ export function HistoryFilters({ device }: { device?: HistoryDevice }) {
                         />
                     </label>
                     <label className={styles.toFilter}>
-                        <span>{t('history.to')}</span>
+                        <span>{t('to')}</span>
                         <input
                             type="date"
                             value={form.to}
@@ -95,7 +97,7 @@ export function HistoryFilters({ device }: { device?: HistoryDevice }) {
                         data-search-action
                         onClick={handleClear}
                     >
-                        {t('history.clearFilters')}
+                        {t('clearFilters')}
                     </Button>
                     <div className={styles.reloadAction}>
                         <Button
@@ -109,7 +111,7 @@ export function HistoryFilters({ device }: { device?: HistoryDevice }) {
                             onBlur={() => setReloadTooltip(false)}
                             onClick={handleReload}
                         >
-                            {t('history.refresh')}
+                            {t('refresh')}
                         </Button>
                         {reloadTooltip ? (
                             <span
@@ -117,12 +119,12 @@ export function HistoryFilters({ device }: { device?: HistoryDevice }) {
                                 role="tooltip"
                                 className={styles.tooltip}
                             >
-                                {t('history.searchFilterRequired')}
+                                {t('searchFilterRequired')}
                             </span>
                         ) : null}
                     </div>
                     <Button variant="filled" type="submit" className={styles.submitAction}>
-                        {t('history.search')}
+                        {t('search')}
                     </Button>
                 </div>
             </div>
@@ -131,14 +133,14 @@ export function HistoryFilters({ device }: { device?: HistoryDevice }) {
                     {describeCriteria(
                         appliedForm,
                         devices,
+                        (key) => t(key, { ns: 'dashboard' }),
                         (key) => t(key),
-                        (key) => t(`history.${key}`),
                     )}
                 </p>
             ) : null}
             {formError ? (
                 <p id={`${formId}-criteria-error`} className={styles.validation} role="alert">
-                    {t('history.invalidDateRange')}
+                    {t('invalidDateRange')}
                 </p>
             ) : null}
         </form>
@@ -146,8 +148,8 @@ export function HistoryFilters({ device }: { device?: HistoryDevice }) {
 }
 
 function describeCriteria(
-    criteria: ReturnType<typeof useHistoryFilters>['form'],
-    devices: readonly HistoryDevice[],
+    criteria: ReturnType<typeof useDeviceFilters>['form'],
+    devices: readonly { deviceId: string; name: string }[],
     translate: (key: string) => string,
     historyTranslate: (key: string) => string,
 ): string {

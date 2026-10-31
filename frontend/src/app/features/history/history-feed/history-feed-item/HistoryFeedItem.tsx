@@ -1,6 +1,5 @@
 import type { UserHistoryItem } from '@smart-room/contracts/user-history';
 import type { TFunction } from 'i18next';
-import type { CSSProperties, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../date-time';
@@ -10,32 +9,16 @@ import styles from './HistoryFeedItem.module.css';
 export function HistoryFeedItem({
     item,
     deviceName,
-    index,
-    setSize,
-    style,
-    ref,
 }: {
     item: UserHistoryItem;
     deviceName?: string;
-    index: number;
-    setSize: number;
-    style?: CSSProperties;
-    ref?: Ref<HTMLLIElement>;
 }) {
     const { t } = useTranslation('dashboard');
     const resolvedDeviceName =
         deviceName ?? ('deviceId' in item ? item.deviceName : t('history.room'));
 
     return (
-        <li
-            className={styles.entry}
-            data-index={index}
-            data-testid={`history-item-${item.recordId}`}
-            aria-posinset={index + 1}
-            aria-setsize={setSize}
-            style={style}
-            ref={ref}
-        >
+        <article className={styles.entry}>
             <strong>{resolvedDeviceName}</strong>
             <p>{describeHistoryItem(item, t)}</p>
             <div className={styles.context}>
@@ -44,7 +27,7 @@ export function HistoryFeedItem({
                     <span className={styles.volatile}>{t('feed.volatile')}</span>
                 ) : null}
             </div>
-        </li>
+        </article>
     );
 }
 

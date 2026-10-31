@@ -1,15 +1,40 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createHistorySession, type HistorySessionState } from './history-session';
-import { useHistoryPaging } from './useHistoryPaging';
+import { useInfiniteScroll } from './useInfiniteScroll';
+type HistorySessionState = {
+    status: string;
+    nextCursor: string | null;
+    endReached: boolean;
+    error: unknown;
+    items: unknown[];
+};
+
+function useHistoryPaging({
+    state,
+    ...props
+}: {
+    state: HistorySessionState;
+    returningToTop: boolean;
+    scrollViewport: HTMLElement;
+    loadOlder(): void;
+}) {
+    useInfiniteScroll({
+        ...props,
+        canLoadMore:
+            state.status === 'ready' &&
+            state.nextCursor !== null &&
+            !state.endReached &&
+            !state.error,
+        loading: state.status === 'loading',
+    });
+}
 
 describe('history paging', () => {
     afterEach(() => vi.restoreAllMocks());
 
     const root = document.createElement('div');
     const readyState: HistorySessionState = {
-        ...createHistorySession().getState(),
         status: 'ready',
         items: [],
         nextCursor: 'older',

@@ -25,7 +25,7 @@ export function useHistory(source: HistoryLiveSource | undefined) {
     );
     const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
     const loadOlder = useCallback(() => {
-        void sessionRef.current?.loadNextPage();
+        return sessionRef.current?.loadNextPage() ?? Promise.resolve();
     }, []);
 
     useEffect(() => {

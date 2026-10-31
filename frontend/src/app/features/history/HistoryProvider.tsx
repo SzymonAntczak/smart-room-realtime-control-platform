@@ -1,4 +1,6 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect } from 'react';
+
+import { DeviceFiltersProvider } from '../device-filters';
 
 import { HistoryContext, type HistoryContextValue, type HistoryDevice } from './history-context';
 import { useHistory } from './history-feed/useHistory';
@@ -12,13 +14,19 @@ type HistoryProviderProps = { devices: readonly HistoryDevice[]; children: React
           waitingForRoom: boolean;
           realtimeUncertain: boolean;
       }
-    | { mode: 'search' }
+    | { mode: 'search'; fixedDeviceId?: string }
 );
 
 export function HistoryProvider(props: HistoryProviderProps) {
     const history = useHistory(props.mode === 'live' ? props.source : undefined);
     const search = useHistorySearch(props.mode === 'search');
-    const [fixedDeviceId, setFixedDeviceId] = useState<string | null>(null);
+    const fixedDeviceId = props.mode === 'search' ? (props.fixedDeviceId ?? null) : null;
+    const runSearch = search.search;
+    useEffect(() => {
+        if (fixedDeviceId) {
+            void runSearch({ deviceId: fixedDeviceId });
+        }
+    }, [fixedDeviceId, runSearch]);
     const value: HistoryContextValue =
         props.mode === 'live'
             ? {
@@ -28,7 +36,33 @@ export function HistoryProvider(props: HistoryProviderProps) {
                   waitingForRoom: props.waitingForRoom,
                   realtimeUncertain: props.realtimeUncertain,
               }
-            : { mode: 'search', devices: props.devices, search, fixedDeviceId, setFixedDeviceId };
+            : { mode: 'search', devices: props.devices, search, fixedDeviceId };
 
-    return <HistoryContext value={value}>{props.children}</HistoryContext>;
+    return (
+        <HistoryContext value={value}>
+            {props.mode === 'search' ? (
+                <DeviceFiltersProvider
+                    devices={props.devices}
+                    fixedDeviceId={props.fixedDeviceId}
+                    onApply={(criteria) => {
+                        void search.search(criteria);
+                    }}
+                    onRefresh={() => {
+                        void search.refresh();
+                    }}
+                    onClear={() => {
+                        if (fixedDeviceId) {
+                            void search.search({ deviceId: fixedDeviceId });
+                        } else {
+                            search.clear();
+                        }
+                    }}
+                >
+                    {props.children}
+                </DeviceFiltersProvider>
+            ) : (
+                props.children
+            )}
+        </HistoryContext>
+    );
 }

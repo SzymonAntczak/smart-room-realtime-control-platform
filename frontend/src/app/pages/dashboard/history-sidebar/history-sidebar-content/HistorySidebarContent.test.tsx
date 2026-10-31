@@ -82,7 +82,7 @@ describe('history sidebar controls', () => {
         );
 
         fireEvent.click(
-            screen.getByRole('button', { name: i18n.t('history.search', { ns: 'dashboard' }) }),
+            screen.getByRole('button', { name: i18n.t('search', { ns: 'deviceFilters' }) }),
         );
         expect(screen.getByRole('dialog')).toHaveAttribute('open');
         expect(mocks.showNewest).not.toHaveBeenCalled();
