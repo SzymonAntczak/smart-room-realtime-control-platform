@@ -7,6 +7,7 @@ import {
     type RejectedCommandResponse,
     type SetPowerCommandRequest,
 } from '@smart-room/contracts/commands';
+import type { DurableDiagnosticsSnapshot } from '@smart-room/contracts/diagnostics';
 import type { CommandFailedEvent, PlatformEvent } from '@smart-room/contracts/events';
 import {
     type LiveTelemetrySampleProjection,
@@ -30,6 +31,7 @@ import {
     type SetPowerCommandRoute,
 } from '../command-processing/set-power-command-controller';
 import { createSetPowerTimeoutEvent } from '../command-processing/set-power-command-policy';
+import { createRoomDiagnosticsReader } from '../diagnostics/room-diagnostics-reader';
 import {
     createEventProcessingDiagnostics,
     type EventProcessingDiagnosticsSnapshot,
@@ -143,6 +145,7 @@ export interface RoomEngine {
     isStarted(): boolean;
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readDiagnosticsSnapshot(): RoomHistoryReadResult<DurableDiagnosticsSnapshot>;
     readPinnedSignificantFactSnapshot(
         bounds?: PinnedHistoryBounds,
     ): RoomHistoryReadResult<PinnedSignificantFactSnapshot>;
@@ -553,6 +556,18 @@ export function createRoomEngine({
         },
         getDiagnosticsSnapshot() {
             return roomState.diagnostics.getSnapshot();
+        },
+        readDiagnosticsSnapshot() {
+            if (!storageSession.storage || storageSession.status.status !== 'available') {
+                return { status: 'unavailable' };
+            }
+
+            return handleHistoryRead(
+                createRoomDiagnosticsReader({
+                    storage: storageSession.storage,
+                    now: clock.now,
+                }).readDiagnosticsSnapshot(),
+            );
         },
         readPinnedSignificantFactSnapshot(bounds) {
             const reader = availableHistoryReader();

@@ -40,6 +40,97 @@ import {
 import { createTemperatureRoomRuntime } from './temperature-room-runtime';
 
 describe('createTemperatureRoomRuntime', () => {
+    it('keeps persisted diagnostics unavailable throughout degraded and recovering operation', () => {
+        const storage = createScriptedStorage();
+        const recoveryTimer = createManualTimer();
+        let firstOpen = true;
+        const runtime = createTemperatureRoomRuntime({
+            clock: createMutableClock('2026-09-10T10:00:00.000Z'),
+            timer: createManualTimer(),
+            recoveryTimer,
+            storageFactory() {
+                if (firstOpen) {
+                    firstOpen = false;
+
+                    throw new StorageAvailabilityError('startup unavailable', null);
+                }
+
+                return storage.port;
+            },
+        });
+        const duringRecovery: unknown[] = [];
+        runtime.subscribeRoomSnapshot((snapshot) => {
+            if (snapshot.platform.storage.status === 'recovering') {
+                duringRecovery.push(runtime.readDiagnosticsSnapshot());
+            }
+        });
+
+        try {
+            runtime.start();
+            expect(runtime.readDiagnosticsSnapshot()).toEqual({ status: 'unavailable' });
+            recoveryTimer.runInterval(5_000);
+            expect(duringRecovery).toEqual([{ status: 'unavailable' }]);
+            expect(runtime.readDiagnosticsSnapshot()).toMatchObject({
+                status: 'available',
+                value: {
+                    historyGenerationId: 'scripted-generation',
+                    entries: [],
+                },
+            });
+        } finally {
+            runtime.stop();
+        }
+    });
+
+    it.each([
+        {
+            status: 'confirmed_rolled_back' as const,
+            error: new StorageAvailabilityError('busy', null),
+            fatal: false,
+        },
+        {
+            status: 'confirmed_rolled_back' as const,
+            error: new StorageInvariantError('invariant', null),
+            fatal: true,
+        },
+        {
+            status: 'indeterminate' as const,
+            error: new StorageAvailabilityError('uncertain', null),
+            fatal: true,
+        },
+    ])(
+        'classifies diagnostics transaction $status ($error.name) using storage policy',
+        ({ status, error, fatal }) => {
+            const storage = createScriptedStorage();
+            const runtime = createTemperatureRoomRuntime({
+                storage: storage.port,
+                clock: createMutableClock('2026-09-10T10:00:00.000Z'),
+                timer: createManualTimer(),
+            });
+
+            try {
+                runtime.start();
+                storage.failNext(status, error);
+
+                if (fatal) {
+                    expect(() => runtime.readDiagnosticsSnapshot()).toThrow(
+                        new Error(
+                            status === 'indeterminate'
+                                ? 'storage_commit_outcome_unknown'
+                                : 'storage_fatal_error',
+                            { cause: error },
+                        ),
+                    );
+                } else {
+                    expect(runtime.readDiagnosticsSnapshot()).toEqual({ status: 'unavailable' });
+                    expect(runtime.getRoomSnapshot().platform.storage.status).toBe('degraded');
+                }
+            } finally {
+                runtime.stop();
+            }
+        },
+    );
+
     it('uses the configured default reporting cadence for temperature sensors only', () => {
         const clock = createMutableClock('2026-06-08T09:30:00Z');
         const timer = createManualTimer();
@@ -5480,6 +5571,15 @@ function createScriptedStorage() {
                         retentionAsOf: options.retentionAsOf,
                         expiresAt: options.retentionAsOf,
                     };
+                },
+                listQuarantineEntries() {
+                    operations.push('listQuarantineEntries');
+
+                    return [...quarantineEntries, ...stagedQuarantine].sort(
+                        (a, b) =>
+                            Date.parse(b.recordedAt) - Date.parse(a.recordedAt) ||
+                            b.internalSequence - a.internalSequence,
+                    );
                 },
                 listPinnedSignificantFacts() {
                     operations.push('listPinnedSignificantFacts');

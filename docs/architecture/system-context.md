@@ -165,8 +165,13 @@ shows responsibility boundaries, not required production deployment boundaries.
 ## Realtime and Durable History
 
 `GET /room` is a debug/read snapshot endpoint, not the frontend runtime fallback.
-`GET /diagnostics` provides bounded, metadata-only diagnostics for ignored inputs;
-durable quarantine and structured logs remain technical inspection surfaces.
+`GET /diagnostics` returns persisted quarantine metadata as
+`{ historyGenerationId, entries }`. It retains at most 1,000 active entries from
+the last 30 days by backend `recordedAt`, ordered by `recordedAt` and then
+`internalSequence`, both descending. Entries expose only diagnostic metadata,
+never raw input or payload. The endpoint returns a structured `503` while
+storage is degraded or recovering; process-memory diagnostics are not a fallback.
+Quarantine and structured logs remain technical inspection surfaces.
 
 The same SSE connection keeps its snapshot
 baseline and revision-linked deltas. The BFF snapshot contains bounded `userHistory` and `platform.storage`, which solely owns the durable history

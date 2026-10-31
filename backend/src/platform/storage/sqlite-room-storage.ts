@@ -705,6 +705,19 @@ export function createSqliteRoomStorageTransaction(
         appendQuarantineEntry(input) {
             return insertQuarantineEntry(database, input);
         },
+        listQuarantineEntries() {
+            retireExpiredRecords(database, retention);
+
+            return database
+                .prepare(
+                    `SELECT internal_sequence, event_id, reason, recorded_at, raw_event_json
+                     FROM quarantine_entries
+                     WHERE retired_at IS NULL
+                     ORDER BY recorded_at DESC, internal_sequence DESC`,
+                )
+                .all()
+                .map(toStoredQuarantineEntry);
+        },
         upsertAcceptedInputIdentity(input) {
             database
                 .prepare(

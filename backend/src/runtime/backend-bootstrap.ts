@@ -94,7 +94,7 @@ export function createBackend({
     );
     const server = createRoomBffServer({
         getRoomSnapshot: runtime.getRoomSnapshot,
-        getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
+        readDiagnosticsSnapshot: runtime.readDiagnosticsSnapshot,
         readSignificantFactPage: runtime.readSignificantFactPage,
         readPinnedSignificantFactSnapshot: runtime.readPinnedSignificantFactSnapshot,
         readRawTelemetryPage: runtime.readRawTelemetryPage,

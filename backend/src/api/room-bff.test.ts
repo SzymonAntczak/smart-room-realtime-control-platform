@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { DeviceScenarioAction } from '@smart-room/contracts/development';
+import type { DurableDiagnosticsSnapshot } from '@smart-room/contracts/diagnostics';
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 import type { RoomSnapshotProjection } from '@smart-room/contracts/projections';
 import type { RoomPublicationBatch } from '@smart-room/contracts/realtime';
@@ -11,7 +12,6 @@ import type { RoomBffRealtimeServerMessage } from '@smart-room/contracts/room-bf
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 import { createHistoryCursorCodec } from '../platform/history/room-history-cursor';
 import { createRoomHistoryReader } from '../platform/history/room-history-reader';
 import { createSqliteRoomStorage } from '../platform/storage/sqlite-room-storage';
@@ -758,7 +758,7 @@ describe('createRoomBffServer', () => {
         expect(response.headers.get('access-control-allow-methods')).toBe('GET, POST, OPTIONS');
     });
 
-    it('serves the current event processing diagnostics snapshot', async () => {
+    it('serves the persisted quarantine diagnostics snapshot', async () => {
         const server = await listen(createRoomBffServer(createRoomBffConfig()));
         openServers.push(server);
 
@@ -768,6 +768,62 @@ describe('createRoomBffServer', () => {
         expect(response.headers.get('content-type')).toContain('application/json');
         await expect(response.json()).resolves.toEqual(createDiagnosticsSnapshot());
     });
+
+    it('returns structured service unavailable when durable diagnostics cannot be read', async () => {
+        const server = createRoomBffServer({
+            ...createRoomBffConfig(),
+            readDiagnosticsSnapshot: () => ({ status: 'unavailable' }),
+        });
+        openServers.push(server);
+        const response = await server.inject({ method: 'GET', url: '/diagnostics' });
+        expect(response.statusCode).toBe(503);
+        expect(response.json()).toMatchObject({ error: 'durable_history_unavailable' });
+        expect(response.headers['access-control-allow-origin']).toBe('*');
+    });
+
+    it.each(['ordering', 'duplicates', 'bounds', 'raw_input', 'invalid_internal_data'] as const)(
+        'rejects invalid durable diagnostics: %s',
+        async (invalid) => {
+            const snapshot = createDiagnosticsSnapshot();
+            const first = snapshot.entries[0];
+
+            if (!first) {
+                throw new Error('Missing fixture entry');
+            }
+
+            if (invalid === 'ordering') {
+                snapshot.entries.push({ ...first, internalSequence: 2 });
+            }
+
+            if (invalid === 'duplicates') {
+                snapshot.entries.push({ ...first });
+            }
+
+            if (invalid === 'bounds') {
+                snapshot.entries = Array.from({ length: 1001 }, (_, index) => ({
+                    ...first,
+                    internalSequence: 1001 - index,
+                }));
+            }
+
+            if (invalid === 'raw_input') {
+                Object.assign(first, { rawEvent: { secret: 'do-not-expose' } });
+            }
+
+            const server = createRoomBffServer({
+                ...createRoomBffConfig(),
+                readDiagnosticsSnapshot: () =>
+                    invalid === 'invalid_internal_data'
+                        ? { status: 'invalid_internal_data' }
+                        : { status: 'available', value: snapshot },
+            });
+            openServers.push(server);
+            const response = await server.inject({ method: 'GET', url: '/diagnostics' });
+            expect(response.statusCode).toBe(500);
+            expect(response.json()).toMatchObject({ error: 'invalid_server_response' });
+            expect(response.body).not.toContain('do-not-expose');
+        },
+    );
 
     it('returns 405 for unsupported diagnostics route methods', async () => {
         const server = await listen(createRoomBffServer(createRoomBffConfig()));
@@ -1123,8 +1179,8 @@ function createRoomBffConfig({
         getRoomSnapshot() {
             return roomSnapshot;
         },
-        getDiagnosticsSnapshot() {
-            return createDiagnosticsSnapshot();
+        readDiagnosticsSnapshot() {
+            return { status: 'available' as const, value: createDiagnosticsSnapshot() };
         },
         subscribeRoomSnapshot() {
             return () => undefined;
@@ -1169,8 +1225,8 @@ function createRoomBffHarness({
             getRoomSnapshot() {
                 return currentRoomSnapshot;
             },
-            getDiagnosticsSnapshot() {
-                return createDiagnosticsSnapshot();
+            readDiagnosticsSnapshot() {
+                return { status: 'available' as const, value: createDiagnosticsSnapshot() };
             },
             subscribeRoomPublicationBatch(listener: (batch: RoomPublicationBatch) => void) {
                 listeners.add(listener);
@@ -1400,18 +1456,19 @@ function availableStorage() {
     };
 }
 
-function createDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot {
+function createDiagnosticsSnapshot(): DurableDiagnosticsSnapshot {
     return {
-        ignoredEvents: [
+        historyGenerationId: 'generation-1',
+        entries: [
             {
-                diagnosticId: 'diag-1',
+                internalSequence: 1,
                 reason: 'duplicate_event',
-                observedAt: '2026-06-08T09:30:01Z',
+                recordedAt: '2026-06-08T09:30:01.000Z',
                 eventId: 'evt-temperature-1',
                 eventType: 'telemetry.reading.recorded',
                 source: 'simulator-adapter',
                 deviceId: 'temp-desk',
-                occurredAt: '2026-06-08T09:30:01Z',
+                occurredAt: '2026-06-08T09:30:01.000Z',
             },
         ],
     };

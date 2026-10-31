@@ -145,7 +145,9 @@ describe('DevPanel.Sidebar', () => {
             .mockResolvedValueOnce(
                 new Response(JSON.stringify({ action: 'pause_telemetry', status: 'completed' })),
             )
-            .mockResolvedValueOnce(new Response(JSON.stringify({ ignoredEvents: [] })));
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify({ historyGenerationId: 'generation-1', entries: [] })),
+            );
         vi.stubGlobal('fetch', fetchMock);
         render(
             <DevPanel.Sidebar
@@ -309,11 +311,12 @@ it('formats diagnostic timestamps for the browser before rendering them', async 
             .mockResolvedValueOnce(
                 new Response(
                     JSON.stringify({
-                        ignoredEvents: [
+                        historyGenerationId: 'generation-1',
+                        entries: [
                             {
-                                diagnosticId: 'diagnostic-1',
+                                internalSequence: 1,
                                 reason: 'invalid_payload',
-                                observedAt: '2026-08-06T12:00:00Z',
+                                recordedAt: '2026-08-06T12:00:00.000Z',
                             },
                         ],
                     }),
@@ -335,7 +338,7 @@ it('formats diagnostic timestamps for the browser before rendering them', async 
         }),
     );
 
-    expect(formatTimestamp).toHaveBeenCalledWith('2026-08-06T12:00:00Z');
+    expect(formatTimestamp).toHaveBeenCalledWith('2026-08-06T12:00:00.000Z');
     expect(await screen.findByText('formatted local timestamp')).toBeInTheDocument();
 });
 

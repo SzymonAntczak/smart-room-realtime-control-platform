@@ -12,6 +12,7 @@ import type {
     DeviceScenarioList,
     DeviceScenarioResult,
 } from '@smart-room/contracts/development';
+import type { DurableDiagnosticsSnapshot } from '@smart-room/contracts/diagnostics';
 import type {
     NormalizedRawTelemetryPageQuery,
     NormalizedTrendQuery,
@@ -83,6 +84,7 @@ export interface TemperatureRoomRuntime {
     stop(): void;
     getRoomSnapshot(): RoomSnapshotProjection;
     getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readDiagnosticsSnapshot(): RoomHistoryReadResult<DurableDiagnosticsSnapshot>;
     readPinnedSignificantFactSnapshot(
         bounds?: PinnedHistoryBounds,
     ): RoomHistoryReadResult<PinnedSignificantFactSnapshot>;
@@ -206,6 +208,7 @@ export function createTemperatureRoomRuntime({
         stop: () => requireEngine().stop(),
         getRoomSnapshot: () => requireEngine().getRoomSnapshot(),
         getDiagnosticsSnapshot: () => requireEngine().getDiagnosticsSnapshot(),
+        readDiagnosticsSnapshot: () => requireEngine().readDiagnosticsSnapshot(),
         readPinnedSignificantFactSnapshot: (bounds) =>
             requireEngine().readPinnedSignificantFactSnapshot(bounds),
         readSignificantFactPage: (query) => requireEngine().readSignificantFactPage(query),

@@ -71,8 +71,10 @@ frontend runtime reads room state from `http://localhost:4310/room/realtime` usi
 `GET http://localhost:4310/room` remains available as a debug/read snapshot
 endpoint. Both room HTTP and SSE expose strict BFF `userHistory` contracts;
 internal platform snapshots/publications and raw history APIs retain their
-existing technical facts. Runtime event processing diagnostics are available at
-`GET http://localhost:4310/diagnostics`. The port can be overridden with `PORT`.
+existing technical facts. Persisted quarantine metadata is available at
+`GET http://localhost:4310/diagnostics` as `{ historyGenerationId, entries }`,
+with at most 1,000 entries retained for 30 days. This endpoint returns `503`
+while storage is degraded or recovering. The port can be overridden with `PORT`.
 
 When storage is available, durable history is exposed through these HTTP reads:
 

@@ -31,7 +31,7 @@ describe('temperature native source through backend HTTP and SSE', () => {
             snapshot.devices.find((device) => device.deviceId === 'temp-window')?.reportedState
                 .temperature,
         ).toBe(21);
-        expect((await backend.request('/diagnostics')).body).toMatchObject({ ignoredEvents: [] });
+        expect((await backend.request('/diagnostics')).body).toMatchObject({ entries: [] });
     });
 
     it('projects native temperature into a validated HTTP snapshot and SSE delta', async () => {
@@ -81,7 +81,7 @@ describe('temperature native source through backend HTTP and SSE', () => {
                 ?.reportedState.temperature,
         ).toBe(22.5);
         expect((await backend.request('/diagnostics')).body).toMatchObject({
-            ignoredEvents: expect.arrayContaining([
+            entries: expect.arrayContaining([
                 expect.objectContaining({ reason: 'event_identity_conflict' }),
             ]),
         });
@@ -140,7 +140,7 @@ describe('temperature native source through backend HTTP and SSE', () => {
                 ?.reportedState.temperature,
         ).toBe(22.5);
         expect((await backend.request('/diagnostics')).body).toMatchObject({
-            ignoredEvents: expect.arrayContaining([
+            entries: expect.arrayContaining([
                 expect.objectContaining({ reason: 'duplicate_event' }),
             ]),
         });
@@ -156,7 +156,7 @@ describe('temperature native source through backend HTTP and SSE', () => {
                 ?.reportedState.temperature,
         ).toBe(22.5);
         expect((await backend.request('/diagnostics')).body).toMatchObject({
-            ignoredEvents: expect.arrayContaining([
+            entries: expect.arrayContaining([
                 expect.objectContaining({ reason: 'invalid_payload' }),
             ]),
         });

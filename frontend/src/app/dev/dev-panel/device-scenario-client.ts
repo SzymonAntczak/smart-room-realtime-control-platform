@@ -3,15 +3,17 @@ import {
     deviceScenarioListSchema,
     type DeviceScenarioResult,
     deviceScenarioResultSchema,
-    type EventProcessingDiagnosticsSnapshot,
-    eventProcessingDiagnosticsSnapshotSchema,
 } from '@smart-room/contracts/development';
+import {
+    type DurableDiagnosticsSnapshot,
+    isDurableDiagnosticsSnapshot,
+} from '@smart-room/contracts/diagnostics';
 import { isSchema } from '@smart-room/contracts/validation';
 
 const defaultBffUrl = 'http://localhost:4310';
 
 export interface DeviceScenarioClient {
-    getDiagnostics(): Promise<EventProcessingDiagnosticsSnapshot>;
+    getDiagnostics(): Promise<DurableDiagnosticsSnapshot>;
     getScenarios(): Promise<DeviceScenarioList>;
     runScenario(action: DeviceScenarioResult['action']): Promise<DeviceScenarioResult>;
 }
@@ -71,11 +73,11 @@ export function createDeviceScenarioClient(
 
             const result: unknown = await response.json();
 
-            if (!isSchema(eventProcessingDiagnosticsSnapshotSchema, result)) {
+            if (!isDurableDiagnosticsSnapshot(result)) {
                 throw new Error('Diagnostics returned an invalid response.');
             }
 
-            return result as EventProcessingDiagnosticsSnapshot;
+            return result;
         },
     };
 }

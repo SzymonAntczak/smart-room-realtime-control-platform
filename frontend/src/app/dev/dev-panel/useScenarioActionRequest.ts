@@ -1,7 +1,5 @@
-import type {
-    DeviceScenarioAction,
-    EventProcessingDiagnosticsSnapshot,
-} from '@smart-room/contracts/development';
+import type { DeviceScenarioAction } from '@smart-room/contracts/development';
+import type { DurableDiagnosticsSnapshot } from '@smart-room/contracts/diagnostics';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -23,7 +21,7 @@ export function useScenarioActionRequest({
     const [activeAction, setActiveAction] = useState<DeviceScenarioAction>();
     const [message, setMessage] = useState<string>();
     const [selectedAction, setSelectedAction] = useState<DeviceScenarioAction>();
-    const [diagnostics, setDiagnostics] = useState<EventProcessingDiagnosticsSnapshot>();
+    const [diagnostics, setDiagnostics] = useState<DurableDiagnosticsSnapshot>();
     const [diagnosticsErrorMessage, setDiagnosticsErrorMessage] = useState<string>();
     const [isRefreshingDiagnostics, setIsRefreshingDiagnostics] = useState(false);
     const latestDiagnosticsRequest = useRef(0);

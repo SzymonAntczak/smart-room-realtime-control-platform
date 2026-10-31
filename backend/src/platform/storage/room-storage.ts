@@ -80,6 +80,8 @@ export interface RoomStorageTransaction {
     appendSignificantFact(input: SignificantFactInput): StoredSignificantFact;
     appendTelemetrySample(input: TelemetrySampleInput): StoredTelemetrySample;
     appendQuarantineEntry(input: QuarantineEntryInput): StoredQuarantineEntry;
+    /** Retires due entries before reading newest-first active quarantine. */
+    listQuarantineEntries(): StoredQuarantineEntry[];
     upsertAcceptedInputIdentity(input: AcceptedInputIdentity): void;
     /** Captures one durable-history boundary after due maintenance in this transaction. */
     capturePinnedHistoryBounds(): PinnedHistoryBounds;

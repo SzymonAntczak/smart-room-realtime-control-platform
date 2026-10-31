@@ -635,7 +635,7 @@ function createHarness() {
     );
     const server = createRoomBffServer({
         getRoomSnapshot: () => snapshot,
-        getDiagnosticsSnapshot() {
+        readDiagnosticsSnapshot() {
             throw new Error('Diagnostics are outside this test boundary.');
         },
         subscribeRoomPublicationBatch: () => () => undefined,

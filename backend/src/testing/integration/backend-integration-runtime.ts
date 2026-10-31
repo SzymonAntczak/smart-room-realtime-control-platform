@@ -112,7 +112,7 @@ export async function createBackendIntegrationRuntime({
         const streams: Array<{ close(): Promise<void> }> = [];
         const server = createRoomBffServer({
             getRoomSnapshot: runtime.getRoomSnapshot,
-            getDiagnosticsSnapshot: runtime.getDiagnosticsSnapshot,
+            readDiagnosticsSnapshot: runtime.readDiagnosticsSnapshot,
             readSignificantFactPage: runtime.readSignificantFactPage,
             readPinnedSignificantFactSnapshot: runtime.readPinnedSignificantFactSnapshot,
             readRawTelemetryPage: runtime.readRawTelemetryPage,

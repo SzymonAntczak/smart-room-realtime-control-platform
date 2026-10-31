@@ -52,15 +52,64 @@ describe('createDeviceScenarioClient', () => {
     it('rejects malformed diagnostics at the HTTP boundary', async () => {
         const client = createDeviceScenarioClient(
             'temp-desk',
-            vi
-                .fn()
-                .mockResolvedValue(
-                    new Response(
-                        JSON.stringify({ ignoredEvents: [{ observedAt: 'not-a-timestamp' }] }),
-                    ),
+            vi.fn().mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        historyGenerationId: 'generation-1',
+                        entries: [
+                            {
+                                internalSequence: 1,
+                                reason: 'duplicate_event',
+                                recordedAt: 'not-a-timestamp',
+                            },
+                        ],
+                    }),
                 ),
+            ),
         );
 
+        await expect(client.getDiagnostics()).rejects.toThrow(
+            'Diagnostics returned an invalid response.',
+        );
+    });
+
+    it('validates persisted diagnostics and rejects non-successful storage responses', async () => {
+        const snapshot = {
+            historyGenerationId: 'generation-1',
+            entries: [
+                {
+                    internalSequence: 1,
+                    reason: 'duplicate_event',
+                    recordedAt: '2026-09-10T10:00:00.000Z',
+                },
+            ],
+        };
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(snapshot)))
+            .mockResolvedValueOnce(new Response('{}', { status: 503 }));
+        const client = createDeviceScenarioClient('temp-desk', fetchMock);
+        await expect(client.getDiagnostics()).resolves.toEqual(snapshot);
+        await expect(client.getDiagnostics()).rejects.toThrow('Diagnostics request failed (503).');
+        expect(fetchMock.mock.calls[0]?.[0]).toBe('http://localhost:4310/diagnostics');
+    });
+
+    it('rejects structurally valid diagnostics in the wrong order', async () => {
+        const client = createDeviceScenarioClient(
+            'temp-desk',
+            vi.fn().mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        historyGenerationId: 'generation-1',
+                        entries: [1, 2].map((internalSequence) => ({
+                            internalSequence,
+                            reason: 'duplicate_event',
+                            recordedAt: '2026-09-10T10:00:00.000Z',
+                        })),
+                    }),
+                ),
+            ),
+        );
         await expect(client.getDiagnostics()).rejects.toThrow(
             'Diagnostics returned an invalid response.',
         );

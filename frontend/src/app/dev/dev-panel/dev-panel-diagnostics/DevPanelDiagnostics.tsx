@@ -1,4 +1,4 @@
-import type { EventProcessingDiagnosticsSnapshot } from '@smart-room/contracts/development';
+import type { DurableDiagnosticsSnapshot } from '@smart-room/contracts/diagnostics';
 import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -14,7 +14,7 @@ export function DevPanelDiagnostics({
     isRefreshing,
     onRefresh,
 }: {
-    diagnostics?: EventProcessingDiagnosticsSnapshot;
+    diagnostics?: DurableDiagnosticsSnapshot;
     errorMessage?: string;
     isActionActive: boolean;
     isRefreshing: boolean;
@@ -29,7 +29,7 @@ export function DevPanelDiagnostics({
                     <h3 id="scenario-diagnostics">{t('diagnostics.heading')}</h3>
                     <p>
                         {t('diagnostics.ignoredEvents', {
-                            count: diagnostics?.ignoredEvents.length ?? t('diagnostics.notLoaded'),
+                            count: diagnostics?.entries.length ?? t('diagnostics.notLoaded'),
                         })}
                     </p>
                 </div>
@@ -43,16 +43,16 @@ export function DevPanelDiagnostics({
                 </DevPanelButton>
             </div>
             {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-            {diagnostics?.ignoredEvents.length === 0 ? <p>{t('diagnostics.empty')}</p> : null}
-            {diagnostics && diagnostics.ignoredEvents.length > 0 ? (
+            {diagnostics?.entries.length === 0 ? <p>{t('diagnostics.empty')}</p> : null}
+            {diagnostics && diagnostics.entries.length > 0 ? (
                 <ol className={styles.list}>
-                    {diagnostics.ignoredEvents.map((event) => (
-                        <li key={event.diagnosticId}>
+                    {diagnostics.entries.map((event) => (
+                        <li key={`${diagnostics.historyGenerationId}:${event.internalSequence}`}>
                             <strong>{event.reason}</strong>
                             <span>{event.eventType ?? t('diagnostics.unknownEvent')}</span>
                             <span>{event.deviceId ?? t('diagnostics.noDevice')}</span>
-                            <time dateTime={event.observedAt}>
-                                {formatTimestamp(event.observedAt)}
+                            <time dateTime={event.recordedAt}>
+                                {formatTimestamp(event.recordedAt)}
                             </time>
                         </li>
                     ))}

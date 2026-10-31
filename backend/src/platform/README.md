@@ -7,6 +7,8 @@ control model rather than to one external source.
 
 - `event-processing/` validates platform events, deduplicates them and applies
   event-processing rules before state changes are accepted.
+- `diagnostics/` reads retained quarantine metadata for technical inspection
+  through the durable diagnostics API.
 - `read-model/` owns backend projections derived from accepted platform events.
   The realtime API/BFF reads these projections instead of interpreting raw
   device-native messages.

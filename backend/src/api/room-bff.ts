@@ -17,8 +17,12 @@ import {
     deviceScenarioRequestSchema,
     type DeviceScenarioResult,
     deviceScenarioResultSchema,
-    eventProcessingDiagnosticsSnapshotSchema,
 } from '@smart-room/contracts/development';
+import {
+    type DurableDiagnosticsSnapshot,
+    durableDiagnosticsSnapshotSchema,
+    isDurableDiagnosticsSnapshot,
+} from '@smart-room/contracts/diagnostics';
 import {
     type NormalizedRawTelemetryPageQuery,
     type NormalizedTrendQuery,
@@ -55,7 +59,6 @@ import Fastify, {
     type FastifyRequest,
 } from 'fastify';
 
-import type { EventProcessingDiagnosticsSnapshot } from '../platform/event-processing/event-processing-diagnostics';
 import type {
     RoomHistoryReader,
     RoomHistoryReadResult,
@@ -73,7 +76,7 @@ import { toRoomBffSnapshot } from './user-history/user-history-projection';
 
 export interface RoomBffConfig {
     getRoomSnapshot(): RoomSnapshotProjection;
-    getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readDiagnosticsSnapshot(): RoomHistoryReadResult<DurableDiagnosticsSnapshot>;
     readPinnedSignificantFactSnapshot?: RoomHistoryReader['readPinnedSignificantFactSnapshot'];
     readSignificantFactPage?: (
         query: SignificantFactPageQuery,
@@ -92,7 +95,7 @@ export interface RoomBffConfig {
 
 export function createRoomBffServer({
     getRoomSnapshot,
-    getDiagnosticsSnapshot,
+    readDiagnosticsSnapshot,
     readSignificantFactPage,
     readPinnedSignificantFactSnapshot,
     readRawTelemetryPage,
@@ -110,7 +113,7 @@ export function createRoomBffServer({
         : undefined;
     const handlers: RoomBffHandlers = {
         getRoomSnapshot,
-        getDiagnosticsSnapshot,
+        readDiagnosticsSnapshot,
         readSignificantFactPage,
         readRawTelemetryPage,
         readTrend,
@@ -498,7 +501,7 @@ export function createRoomBffServer({
 
     server.all(
         '/diagnostics',
-        { schema: { response: { 200: eventProcessingDiagnosticsSnapshotSchema } } },
+        { schema: { response: { 200: durableDiagnosticsSnapshotSchema } } },
         (request, response) => {
             handleRoomBffRequest(request, response, handlers);
         },
@@ -516,7 +519,7 @@ export function createRoomBffServer({
 
 interface RoomBffHandlers {
     getRoomSnapshot(): RoomSnapshotProjection;
-    getDiagnosticsSnapshot(): EventProcessingDiagnosticsSnapshot;
+    readDiagnosticsSnapshot(): RoomHistoryReadResult<DurableDiagnosticsSnapshot>;
     readSignificantFactPage?: RoomBffConfig['readSignificantFactPage'];
     readRawTelemetryPage?: RoomBffConfig['readRawTelemetryPage'];
     readTrend?: RoomBffConfig['readTrend'];
@@ -574,15 +577,15 @@ function handleRoomBffRequest(
     }
 
     if (request.routeOptions.url === '/diagnostics') {
-        const snapshot = handlers.getDiagnosticsSnapshot();
+        const result = handlers.readDiagnosticsSnapshot();
 
-        if (!isSchema(eventProcessingDiagnosticsSnapshotSchema, snapshot)) {
+        if (result.status === 'available' && !isDurableDiagnosticsSnapshot(result.value)) {
             writeInvalidServerResponse(response);
 
             return;
         }
 
-        writeJson(response, 200, snapshot);
+        writeHistoryReadResponse(response, result);
 
         return;
     }

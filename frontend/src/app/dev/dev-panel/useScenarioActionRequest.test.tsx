@@ -1,7 +1,5 @@
-import type {
-    DeviceScenarioResult,
-    EventProcessingDiagnosticsSnapshot,
-} from '@smart-room/contracts/development';
+import type { DeviceScenarioResult } from '@smart-room/contracts/development';
+import type { DurableDiagnosticsSnapshot } from '@smart-room/contracts/diagnostics';
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -36,7 +34,7 @@ function clients() {
             .mockImplementation(async (action) => ({ action, status: 'completed' })),
         getDiagnostics: vi
             .fn<DeviceScenarioClient['getDiagnostics']>()
-            .mockResolvedValue({ ignoredEvents: [] }),
+            .mockResolvedValue({ historyGenerationId: 'generation-1', entries: [] }),
     };
 
     return client;
@@ -177,14 +175,17 @@ describe('scenario action requests', () => {
             }),
         );
         expect(client.getDiagnostics).toHaveBeenCalledOnce();
-        expect(result.current.diagnostics).toEqual({ ignoredEvents: [] });
+        expect(result.current.diagnostics).toEqual({
+            historyGenerationId: 'generation-1',
+            entries: [],
+        });
         expect(result.current.isRefreshingDiagnostics).toBe(false);
     });
 
     it('keeps the latest diagnostics while ignoring an older failure', async () => {
         const client = clients();
-        const older = deferred<EventProcessingDiagnosticsSnapshot>();
-        const newer = deferred<EventProcessingDiagnosticsSnapshot>();
+        const older = deferred<DurableDiagnosticsSnapshot>();
+        const newer = deferred<DurableDiagnosticsSnapshot>();
         client.getDiagnostics.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
         const { result } = renderHook(() =>
             useScenarioActionRequest({
@@ -209,19 +210,22 @@ describe('scenario action requests', () => {
         expect(result.current.isRefreshingDiagnostics).toBe(true);
         expect(result.current.diagnosticsErrorMessage).toBeUndefined();
         await act(async () => {
-            newer.resolve({ ignoredEvents: [] });
+            newer.resolve({ historyGenerationId: 'generation-1', entries: [] });
             await second;
         });
 
-        expect(result.current.diagnostics).toEqual({ ignoredEvents: [] });
+        expect(result.current.diagnostics).toEqual({
+            historyGenerationId: 'generation-1',
+            entries: [],
+        });
         expect(result.current.diagnosticsErrorMessage).toBeUndefined();
         expect(result.current.isRefreshingDiagnostics).toBe(false);
     });
 
     it('ignores an older successful refresh after newer diagnostics arrive', async () => {
         const client = clients();
-        const older = deferred<EventProcessingDiagnosticsSnapshot>();
-        const latest = { ignoredEvents: [], deduplicationEvictions: [] };
+        const older = deferred<DurableDiagnosticsSnapshot>();
+        const latest = { historyGenerationId: 'generation-2', entries: [] };
         client.getDiagnostics.mockReturnValueOnce(older.promise).mockResolvedValueOnce(latest);
         const { result } = renderHook(() =>
             useScenarioActionRequest({
@@ -239,7 +243,7 @@ describe('scenario action requests', () => {
         expect(result.current.diagnostics).toEqual(latest);
 
         await act(async () => {
-            older.resolve({ ignoredEvents: [] });
+            older.resolve({ historyGenerationId: 'generation-1', entries: [] });
             await first;
         });
 
@@ -250,7 +254,7 @@ describe('scenario action requests', () => {
     it('keeps last-known diagnostics on refresh failure and clears the error after retry', async () => {
         const client = clients();
         client.getDiagnostics
-            .mockResolvedValueOnce({ ignoredEvents: [] })
+            .mockResolvedValueOnce({ historyGenerationId: 'generation-1', entries: [] })
             .mockRejectedValueOnce(new Error('Failed'));
         const { result } = renderHook(() =>
             useScenarioActionRequest({
@@ -262,7 +266,10 @@ describe('scenario action requests', () => {
         );
         await act(() => result.current.refreshDiagnostics());
         await act(() => result.current.refreshDiagnostics());
-        expect(result.current.diagnostics).toEqual({ ignoredEvents: [] });
+        expect(result.current.diagnostics).toEqual({
+            historyGenerationId: 'generation-1',
+            entries: [],
+        });
         expect(result.current.diagnosticsErrorMessage).toBe(
             i18n.t('diagnosticsRequestFailed', { ns: 'development' }),
         );
