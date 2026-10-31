@@ -75,11 +75,10 @@ for (const width of [390, 1440]) {
             await route.fulfill({ json: response(latest, url.searchParams.get('cursor')) });
         });
         await page.goto('/device-details/temp-desk');
-        const section = page.getByRole('region', { name: 'Historia pomiarów', exact: true });
+        const section = page.getByRole('region', { name: 'Lista pomiarów', exact: true });
         const list = page.getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' });
-        await expect(
-            section.getByText('Liczba wyświetlanych pomiarów: 100.', { exact: true }),
-        ).toBeVisible();
+        await expect(list.getByTestId(`telemetry-item-${sample(1000).recordId}`)).toBeVisible();
+        await expect(page.getByRole('application')).toHaveAccessibleDescription(/20\.0801/);
         await expect(
             page.getByText(
                 'Wyświetlono 200 najnowszych pomiarów. Starsze pomiary pozostają poza widokiem.',
@@ -94,8 +93,8 @@ for (const width of [390, 1440]) {
             await list.focus();
             await list.press('End');
             await expect(
-                section.getByText(`Liczba wyświetlanych pomiarów: ${count}.`, { exact: true }),
-            ).toBeVisible();
+                list.getByTestId(`telemetry-item-${sample(1100 - count).recordId}`),
+            ).toBeAttached();
             expect(requests).toHaveLength(before + 1);
         }
 
@@ -117,15 +116,14 @@ for (const width of [390, 1440]) {
         });
         await expect(page.getByRole('application')).toHaveAccessibleDescription(/27\.123456789/);
         expect(requests).toHaveLength(baselineRequests);
-        await expect(
-            section.getByText('Liczba wyświetlanych pomiarów: 1000.', { exact: true }),
-        ).toBeVisible();
+        await expect(list.getByText('Koniec pomiarów w wybranym zakresie.')).toBeVisible();
+        await list.press('Home');
+        await expect(list.getByTestId(`telemetry-item-${sample(1000).recordId}`)).toBeVisible();
+        await expect(list.getByTestId(`telemetry-item-${live.recordId}`)).toHaveCount(0);
         latest = 1001;
         await section.getByRole('button', { name: 'Odśwież wyniki', exact: true }).click();
         await expect(list.getByTestId(`telemetry-item-${live.recordId}`)).toBeVisible();
-        await expect(
-            section.getByText('Liczba wyświetlanych pomiarów: 100.', { exact: true }),
-        ).toBeVisible();
+        await expect(list.getByText('Koniec pomiarów w wybranym zakresie.')).toHaveCount(0);
         expect(requests).toHaveLength(baselineRequests + 1);
         await page.screenshot({
             path: testInfo.outputPath(`telemetry-list-${width}.png`),
@@ -147,10 +145,8 @@ test('applies inclusive DST days, refreshes applied criteria and clears without 
         await route.fulfill({ json: response(1, null) });
     });
     await page.goto('/device-details/temp-desk');
-    const section = page.getByRole('region', { name: 'Historia pomiarów', exact: true });
-    await expect(
-        section.getByText('Liczba wyświetlanych pomiarów: 1.', { exact: true }),
-    ).toBeVisible();
+    const section = page.getByRole('region', { name: 'Lista pomiarów', exact: true });
+    await expect(section.getByTestId(`telemetry-item-${sample(1).recordId}`)).toBeVisible();
     await expect(page.getByRole('application')).toHaveAccessibleDescription(/20\.0001/);
     const chart = page.getByRole('application');
     const description = await chart.getAttribute('aria-describedby');
@@ -195,18 +191,9 @@ test('requires explicit refresh after cursor expiry and never automatically refe
     });
     await page.goto('/device-details/temp-desk');
     const list = page.getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' });
-    await expect(
-        page
-            .getByRole('region', { name: 'Historia pomiarów', exact: true })
-            .getByText('Liczba wyświetlanych pomiarów: 100.', { exact: true }),
-    ).toBeVisible();
+    await expect(list.getByTestId(`telemetry-item-${sample(1000).recordId}`)).toBeVisible();
     // Wait for the independent chart baseline before expiring the static cursor.
-    await expect(
-        page.getByText(
-            'Wyświetlono 200 najnowszych pomiarów. Starsze pomiary pozostają poza widokiem.',
-            { exact: true },
-        ),
-    ).toBeVisible();
+    await expect(page.getByRole('application')).toHaveAccessibleDescription(/20\.0801/);
     const initialRequests = requests;
     expire = true;
     await list.focus();

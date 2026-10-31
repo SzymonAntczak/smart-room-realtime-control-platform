@@ -34,9 +34,11 @@ applied criteria, recomputing omitted bounds; Clear removes dates and loads the
 default selected-device range. Search, Refresh and Clear return to the top.
 
 Pages retain descending (occurredAt, storageSequence) order and recordId keys.
-Each record shows full local time, unrounded value, unit and durability. The
-view shows effective range, loaded count, loading, empty, end, limit and error
-states and explains its independence from the live chart. New queries hide
+Each record shows full local time, unrounded value and unit. Durable records
+omit a durability label; volatile records show a warning tag beside the value.
+The list has its own heading, no description and only the applied-criteria
+summary between filters and records. Loading, empty, end, limit and error
+states remain explicit. New queries hide
 previous results until ready; paging retains loaded results. Errors show the
 appropriate explicit retry or refresh action rather than stale results.
 
@@ -55,8 +57,11 @@ History live recovery and overlays remain owned by history.
 ## Consequences
 
 The chart may contain newer or volatile observations absent from the static
-list. Both contexts label their own range, count and state. They make independent
-HTTP reads. The chart retains its full accessible sample description.
+list. They make independent HTTP reads. The chart shows its heading and a
+200-sample window caption above the plot, with exceptional read states below
+it. The chart retains its full accessible sample description. Current
+temperature, observation freshness and observation time appear in a separate
+card beside device information; device event history also has its own card.
 
 ## Rejected Alternatives
 

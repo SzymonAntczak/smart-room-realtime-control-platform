@@ -25,21 +25,31 @@
     justify-self: start;
 }
 
-.summary,
-.telemetry {
+.overview {
     display: grid;
     gap: var(--space-4);
-    min-inline-size: 0;
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-5);
-    background: var(--color-surface);
-    box-shadow: var(--shadow-panel);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+
+.overview > :only-child {
+    grid-column: 1 / -1;
+}
+
+.temperatureReading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+}
+
+.temperatureReading strong {
+    font-size: var(--font-size-display-md);
+    line-height: var(--line-height-tight);
 }
 
 .summary dl {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
     gap: var(--space-4);
     margin: 0;
 }
@@ -62,8 +72,8 @@
     overflow-wrap: anywhere;
 }
 
-.history {
-    display: grid;
-    gap: var(--space-4);
-    min-inline-size: 0;
+@media (max-width: 48rem) {
+    .overview {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }

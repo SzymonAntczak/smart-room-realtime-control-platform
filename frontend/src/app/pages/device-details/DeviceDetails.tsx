@@ -6,7 +6,7 @@ import { useParams } from 'react-router';
 
 import { formatTimestamp } from '../../shared/date-time';
 import { getDeviceDisplayName } from '../../shared/device-display';
-import { Button, ButtonLink, StatusTag } from '../../shared/ui';
+import { Button, ButtonLink, Card, StatusTag } from '../../shared/ui';
 
 import { DeviceEventHistory } from './device-event-history/DeviceEventHistory';
 import styles from './DeviceDetails.module.css';
@@ -31,6 +31,12 @@ export function DeviceDetails() {
     const device = isReady ? state.device : undefined;
     const temperatureObservation =
         device?.role === 'temperature-sensor' ? device.observationStatus.temperature : undefined;
+    const temperature =
+        typeof device?.reportedState.temperature === 'number' &&
+        device.reportedState.temperatureUnit === 'celsius' &&
+        temperatureObservation?.lastObservedAt
+            ? device.reportedState.temperature
+            : undefined;
     const telemetry = useDeviceTelemetry(
         device?.role === 'temperature-sensor' ? device.deviceId : undefined,
     );
@@ -75,66 +81,78 @@ export function DeviceDetails() {
 
             {device ? (
                 <>
-                    <section className={styles.summary} aria-labelledby="device-summary-heading">
-                        <h2 id="device-summary-heading">{t('summary')}</h2>
-                        <dl>
-                            <div>
-                                <dt>{t('name')}</dt>
-                                <dd>{name}</dd>
-                            </div>
-                            <div>
-                                <dt>{t('identifier')}</dt>
-                                <dd>{device.deviceId}</dd>
-                            </div>
-                            <div>
-                                <dt>{t('role')}</dt>
-                                <dd>{t(`roles.${device.role}`)}</dd>
-                            </div>
-                            <div>
-                                <dt>{t('availability')}</dt>
-                                <dd>
-                                    <StatusTag tone={availabilityTone(device.availability)}>
-                                        {t(`availability.${device.availability}`, { ns: 'common' })}
-                                    </StatusTag>
-                                </dd>
-                            </div>
-                        </dl>
-                    </section>
+                    <div className={styles.overview}>
+                        {device.role === 'temperature-sensor' ? (
+                            <Card aria-labelledby="current-temperature-heading">
+                                <h2 id="current-temperature-heading">{t('currentTemperature')}</h2>
+                                <div className={styles.temperatureReading}>
+                                    <strong>
+                                        {temperature === undefined
+                                            ? '—'
+                                            : `${temperature} ${t('temperatureUnit')}`}
+                                    </strong>
+                                    {temperatureObservation?.durability === 'volatile' ? (
+                                        <StatusTag tone="warning">
+                                            {t('telemetry.durability.volatile')}
+                                        </StatusTag>
+                                    ) : null}
+                                </div>
+                                <p role="status" aria-label={t('telemetry.observationStatus')}>
+                                    {t(
+                                        `telemetry.freshness.${temperatureObservation?.freshness ?? 'unknown'}`,
+                                    )}
+                                    {temperatureObservation?.lastObservedAt ? (
+                                        <>
+                                            {' · '}
+                                            {t('telemetry.lastObserved')}:{' '}
+                                            <time dateTime={temperatureObservation.lastObservedAt}>
+                                                {formatTimestamp(
+                                                    temperatureObservation.lastObservedAt,
+                                                )}
+                                            </time>
+                                        </>
+                                    ) : null}
+                                </p>
+                            </Card>
+                        ) : null}
+                        <Card className={styles.summary} aria-labelledby="device-summary-heading">
+                            <h2 id="device-summary-heading">{t('summary')}</h2>
+                            <dl>
+                                <div>
+                                    <dt>{t('name')}</dt>
+                                    <dd>{name}</dd>
+                                </div>
+                                <div>
+                                    <dt>{t('identifier')}</dt>
+                                    <dd>{device.deviceId}</dd>
+                                </div>
+                                <div>
+                                    <dt>{t('role')}</dt>
+                                    <dd>{t(`roles.${device.role}`)}</dd>
+                                </div>
+                                <div>
+                                    <dt>{t('availability')}</dt>
+                                    <dd>
+                                        <StatusTag tone={availabilityTone(device.availability)}>
+                                            {t(`availability.${device.availability}`, {
+                                                ns: 'common',
+                                            })}
+                                        </StatusTag>
+                                    </dd>
+                                </div>
+                            </dl>
+                        </Card>
+                    </div>
 
                     {device.role === 'temperature-sensor' ? (
-                        <section className={styles.telemetry} aria-labelledby="telemetry-heading">
+                        <Card className={styles.telemetry} aria-labelledby="telemetry-heading">
                             <h2 id="telemetry-heading">{t('telemetryTitle')}</h2>
-                            <p role="status" aria-label={t('telemetry.observationStatus')}>
-                                {t(
-                                    `telemetry.freshness.${temperatureObservation?.freshness ?? 'unknown'}`,
-                                )}
-                                {temperatureObservation?.lastObservedAt ? (
-                                    <>
-                                        {' · '}
-                                        {t('telemetry.lastObserved')}:{' '}
-                                        <time dateTime={temperatureObservation.lastObservedAt}>
-                                            {formatTimestamp(temperatureObservation.lastObservedAt)}
-                                        </time>
-                                    </>
-                                ) : null}
-                            </p>
-                            <p>{t('telemetry.baseline')}</p>
-                            {telemetryState?.range ? (
-                                <p>
-                                    {t('telemetry.range', {
-                                        from: formatTimestamp(telemetryState.range.from),
-                                        to: formatTimestamp(telemetryState.range.to),
-                                    })}
-                                </p>
-                            ) : null}
-                            <p>{t('telemetry.count', { count: samples.length })}</p>
+                            <p>{t('telemetry.limit')}</p>
+                            <TelemetryChart samples={samples} />
                             <div role="status">
                                 {telemetryLoading ? <p>{t('telemetry.loading')}</p> : null}
                                 {telemetryStatus === 'ready' && samples.length === 0 ? (
                                     <p>{t('telemetry.empty')}</p>
-                                ) : null}
-                                {telemetryState?.limitReached ? (
-                                    <p>{t('telemetry.limit')}</p>
                                 ) : null}
                                 {telemetryState?.lastKnown ? <p>{t('telemetry.partial')}</p> : null}
                                 {telemetryState?.error ? (
@@ -146,16 +164,14 @@ export function DeviceDetails() {
                                     {t('telemetry.retry')}
                                 </Button>
                             ) : null}
-                            <TelemetryChart samples={samples} />
                             <TelemetryList key={device.deviceId} device={device} />
-                        </section>
+                        </Card>
                     ) : null}
 
-                    <section className={styles.history} aria-labelledby="event-history-title">
+                    <Card aria-labelledby="event-history-title">
                         <h2 id="event-history-title">{t('eventHistory.title')}</h2>
-                        <p>{t('eventHistory.completeness')}</p>
                         <DeviceEventHistory key={device.deviceId} device={device} />
-                    </section>
+                    </Card>
                 </>
             ) : null}
         </main>

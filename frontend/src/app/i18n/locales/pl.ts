@@ -29,8 +29,7 @@ export const pl = {
     },
     deviceDetails: {
         telemetryList: {
-            title: 'Historia pomiarów',
-            static: 'Utrwalone pomiary z wybranego zakresu. Lista jest odświeżana ręcznie, niezależnie od wykresu aktualizowanego na żywo.',
+            title: 'Lista pomiarów',
             scrollRegion: 'Przewijana historia pomiarów urządzenia',
             end: 'Koniec pomiarów w wybranym zakresie.',
             limit: 'Osiągnięto limit 10 000 pomiarów lub 100 stron. Zawęź zakres dat.',
@@ -52,6 +51,7 @@ export const pl = {
             'Nie udało się zweryfikować nowej wiadomości. Dane mogą być nieaktualne.',
         notFound: 'Nie znaleziono urządzenia o tym identyfikatorze.',
         summary: 'Informacje o urządzeniu',
+        currentTemperature: 'Aktualna temperatura',
         name: 'Nazwa',
         identifier: 'Identyfikator',
         role: 'Rodzaj urządzenia',

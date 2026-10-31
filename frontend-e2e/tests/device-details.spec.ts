@@ -213,7 +213,7 @@ test('opens LED details from the accessible icon and presents only paged events 
     const firstEvent = page.getByTestId(`history-item-${ledEvents[0]?.recordId}`);
     await expect(firstEvent).toBeVisible();
     await pageRequest;
-    await expect(page.getByText(/dostępne zachowane wpisy historii użytkownika/i)).toBeVisible();
+    await expect(page.getByText(/dostępne zachowane wpisy historii użytkownika/i)).toHaveCount(0);
     await expect(page.getByTestId(`history-item-${temperatureEvent.recordId}`)).toHaveCount(0);
 
     const scrollRegion = page.getByRole('region', {

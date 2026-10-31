@@ -143,6 +143,20 @@ describe('device details navigation', () => {
                 name: i18n.t('eventHistory.title', { ns: 'deviceDetails' }),
             }),
         ).toBeInTheDocument();
+        const current = screen.getByRole('region', {
+            name: i18n.t('currentTemperature', { ns: 'deviceDetails' }),
+        });
+        expect(current).toHaveTextContent('22.4 °C');
+        expect(
+            screen.getByRole('region', {
+                name: i18n.t('telemetryTitle', { ns: 'deviceDetails' }),
+            }),
+        ).toHaveTextContent(i18n.t('telemetry.limit', { ns: 'deviceDetails' }));
+        expect(
+            screen.getByRole('region', {
+                name: i18n.t('eventHistory.title', { ns: 'deviceDetails' }),
+            }),
+        ).toBeVisible();
         expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
         await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(3));
         const calls = vi.mocked(globalThis.fetch).mock.calls;
@@ -211,6 +225,11 @@ describe('device details navigation', () => {
                 expect(observation).not.toHaveTextContent(
                     i18n.t('telemetry.lastObserved', { ns: 'deviceDetails' }),
                 );
+                const current = screen.getByRole('region', {
+                    name: i18n.t('currentTemperature', { ns: 'deviceDetails' }),
+                });
+                expect(current).toHaveTextContent('—');
+                expect(current).not.toHaveTextContent('°C');
             } else {
                 expect(
                     within(observation).getByText(formatTimestamp(lastObservedAt)),
@@ -218,6 +237,41 @@ describe('device details navigation', () => {
             }
         },
     );
+
+    it('updates the current temperature from room projections and warns about volatile evidence', async () => {
+        await renderAppAt('/device-details/temp-desk');
+        act(() => MockEventSource.latest().emitMessage(createRoomSnapshotMessage()));
+        const current = screen.getByRole('region', {
+            name: i18n.t('currentTemperature', { ns: 'deviceDetails' }),
+        });
+        expect(current).toHaveTextContent('22.4 °C');
+        const device = createTemperatureDevice();
+        const update = {
+            messageType: 'device.updated',
+            previousRevision: 0,
+            revision: 1,
+            sentAt: '2026-06-08T09:30:02Z',
+            payload: {
+                ...device,
+                reportedState: { temperature: 23.1, temperatureUnit: 'celsius' },
+                observationStatus: {
+                    temperature: {
+                        freshness: 'fresh',
+                        lastObservedAt: '2026-06-08T09:30:02Z',
+                        durability: 'volatile',
+                    },
+                },
+            },
+        } as const;
+        expect(isRoomBffRealtimeServerMessage(update)).toBe(true);
+        act(() => MockEventSource.latest().emitMessage(update));
+        expect(current).toHaveTextContent('23.1 °C');
+        expect(
+            within(current).getByText(
+                i18n.t('telemetry.durability.volatile', { ns: 'deviceDetails' }),
+            ),
+        ).toHaveAttribute('data-tone', 'warning');
+    });
 
     it('loads a static first page independently while the live chart reads its bounded baseline', async () => {
         const first = makeTelemetryPage(300, 100, 'older');

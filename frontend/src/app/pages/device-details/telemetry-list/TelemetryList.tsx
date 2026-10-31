@@ -1,12 +1,12 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { formatTimestamp } from '../../../shared/date-time';
 import { DeviceFilters, DeviceFiltersProvider } from '../../../shared/device-filters';
 import { InfiniteList, type InfiniteListHandle } from '../../../shared/infinite-scrolling';
 import { Button } from '../../../shared/ui';
 
 import { TelemetryItem } from './telemetry-item/TelemetryItem';
+import styles from './TelemetryList.module.css';
 import { useTelemetryList } from './useTelemetryList';
 
 export function TelemetryList({ device }: { device: { deviceId: string; name: string } }) {
@@ -21,9 +21,8 @@ export function TelemetryList({ device }: { device: { deviceId: string; name: st
     const visibleItems = state.lastKnown || state.status === 'error' ? [] : state.items;
 
     return (
-        <section aria-labelledby="telemetry-list-heading">
+        <section className={styles.list} aria-labelledby="telemetry-list-heading">
             <h3 id="telemetry-list-heading">{t('telemetryList.title')}</h3>
-            <p>{t('telemetryList.static')}</p>
             <DeviceFiltersProvider
                 devices={[device]}
                 fixedDeviceId={device.deviceId}
@@ -36,15 +35,6 @@ export function TelemetryList({ device }: { device: { deviceId: string; name: st
             >
                 <DeviceFilters />
             </DeviceFiltersProvider>
-            {state.metadata && !state.lastKnown ? (
-                <p>
-                    {t('telemetry.range', {
-                        from: formatTimestamp(state.metadata.range.from),
-                        to: formatTimestamp(state.metadata.range.to),
-                    })}
-                </p>
-            ) : null}
-            <p>{t('telemetry.count', { count: visibleItems.length })}</p>
             <InfiniteList
                 ref={list}
                 items={visibleItems}

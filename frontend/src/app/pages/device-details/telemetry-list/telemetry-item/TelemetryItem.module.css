@@ -5,8 +5,13 @@
     border-block-end: var(--border-width-thin) solid var(--color-border);
     overflow-wrap: anywhere;
 }
-.entry time,
-.entry span {
+.reading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.entry time {
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
 }

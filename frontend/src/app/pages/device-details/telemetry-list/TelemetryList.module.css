@@ -1,0 +1,10 @@
+.list {
+    display: grid;
+    gap: var(--space-4);
+    min-inline-size: 0;
+}
+
+.list h3 {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+}

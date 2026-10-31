@@ -1,0 +1,11 @@
+.card {
+    display: grid;
+    align-content: start;
+    gap: var(--space-4);
+    min-inline-size: 0;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-5);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-panel);
+}
