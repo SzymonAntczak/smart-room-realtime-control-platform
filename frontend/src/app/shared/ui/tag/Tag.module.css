@@ -1,4 +1,4 @@
-.status {
+.tag {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
@@ -13,25 +13,25 @@
     font-weight: var(--font-weight-bold);
 }
 
-.status[data-tone='neutral'] {
+.tag[data-tone='neutral'] {
     --status-border: var(--color-border-strong);
     --status-text: var(--color-neutral-text);
     --status-surface: var(--color-neutral-surface);
 }
 
-.status[data-tone='success'] {
+.tag[data-tone='success'] {
     --status-border: var(--color-success-strong);
     --status-text: var(--color-success-text);
     --status-surface: var(--color-success-surface);
 }
 
-.status[data-tone='warning'] {
+.tag[data-tone='warning'] {
     --status-border: var(--color-warning-strong);
     --status-text: var(--color-warning-text);
     --status-surface: var(--color-warning-surface);
 }
 
-.status[data-tone='danger'] {
+.tag[data-tone='danger'] {
     --status-border: var(--color-danger-strong);
     --status-text: var(--color-danger-text);
     --status-surface: var(--color-danger-surface);

@@ -6,7 +6,7 @@ import { useParams } from 'react-router';
 
 import { formatTimestamp } from '../../shared/date-time';
 import { getDeviceDisplayName } from '../../shared/device-display';
-import { Button, ButtonLink, Card, StatusTag } from '../../shared/ui';
+import { Button, Card, Tag } from '../../shared/ui';
 
 import { DeviceEventHistory } from './device-event-history/DeviceEventHistory';
 import styles from './DeviceDetails.module.css';
@@ -53,7 +53,8 @@ export function DeviceDetails() {
 
     return (
         <main className={styles.page}>
-            <ButtonLink
+            <Button
+                as="link"
                 to="/"
                 state={{ focusDashboard: true }}
                 viewTransition
@@ -62,7 +63,7 @@ export function DeviceDetails() {
             >
                 <ArrowLeft aria-hidden="true" size={18} />
                 {t('back')}
-            </ButtonLink>
+            </Button>
             <h1 ref={headingRef} tabIndex={-1}>
                 {name ? t('title', { name }) : t('heading')}
             </h1>
@@ -92,9 +93,9 @@ export function DeviceDetails() {
                                             : `${temperature} ${t('temperatureUnit')}`}
                                     </strong>
                                     {temperatureObservation?.durability === 'volatile' ? (
-                                        <StatusTag tone="warning">
+                                        <Tag tone="warning" role="status" aria-live="polite">
                                             {t('telemetry.durability.volatile')}
-                                        </StatusTag>
+                                        </Tag>
                                     ) : null}
                                 </div>
                                 <p role="status" aria-label={t('telemetry.observationStatus')}>
@@ -133,11 +134,15 @@ export function DeviceDetails() {
                                 <div>
                                     <dt>{t('availability')}</dt>
                                     <dd>
-                                        <StatusTag tone={availabilityTone(device.availability)}>
+                                        <Tag
+                                            tone={availabilityTone(device.availability)}
+                                            role="status"
+                                            aria-live="polite"
+                                        >
                                             {t(`availability.${device.availability}`, {
                                                 ns: 'common',
                                             })}
-                                        </StatusTag>
+                                        </Tag>
                                     </dd>
                                 </div>
                             </dl>

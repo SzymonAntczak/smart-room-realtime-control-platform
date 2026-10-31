@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../shared/date-time';
 import { getDeviceDisplayName } from '../../../shared/device-display';
-import { Alert, type AlertVariant, DeviceCard } from '../../../shared/ui';
+import { Alert, type AlertVariant } from '../../../shared/ui';
+import { DeviceCard } from '../device-card/DeviceCard';
 import { VolatileEvidence } from '../volatile-evidence/VolatileEvidence';
 
 import styles from './TemperatureCard.module.css';

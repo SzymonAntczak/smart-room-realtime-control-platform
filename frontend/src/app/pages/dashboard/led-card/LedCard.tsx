@@ -10,7 +10,8 @@ import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../shared/date-time';
 import { getDeviceDisplayName } from '../../../shared/device-display';
-import { Alert, Button, DeviceCard } from '../../../shared/ui';
+import { Alert, Button } from '../../../shared/ui';
+import { DeviceCard } from '../device-card/DeviceCard';
 
 import { type LedCardAlert, toLedCardViewModel } from './led-card-view-model';
 import styles from './LedCard.module.css';

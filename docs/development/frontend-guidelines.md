@@ -85,8 +85,10 @@ bridge against that contract and publishes validated history updates before the
 new room view. Production transport remains in `api`; history never opens a
 separate SSE stream.
 
-Use the shared `StatusTag` for device availability and `ButtonLink` for
-navigation styled as a button. Route links that change pages opt into React
+Use the shared `Tag` for device availability, explicitly passing `role="status"`
+and `aria-live="polite"` where status announcements are needed; `Tag` is neutral
+by default. Use `Button as="link"` for navigation styled as a button and plain
+`Button` for native button actions. Route links that change pages opt into React
 Router view transitions; global CSS uses a short fade with a slight horizontal
 offset, and `prefers-reduced-motion` reduces that animation to an imperceptible
 duration. Browsers without View Transitions keep ordinary navigation behavior.

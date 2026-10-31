@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { Alert } from '../alert/Alert';
-import { StatusTag, type StatusTagTone } from '../status-tag/StatusTag';
+import { Alert, Card, Tag, type TagTone } from '../../../shared/ui';
 
 import styles from './DeviceCard.module.css';
 
@@ -12,7 +11,7 @@ interface DeviceCardProps {
     headerAction?: ReactNode;
     children: ReactNode;
     bottomAlert?: ReactNode;
-    statusTone?: StatusTagTone;
+    statusTone?: TagTone;
     statusAriaLive?: 'off' | 'polite' | 'assertive';
     statusRole?: 'status';
     titleId?: string;
@@ -33,27 +32,27 @@ export function DeviceCard({
     testId,
 }: DeviceCardProps) {
     return (
-        <section className={styles.card} aria-labelledby={titleId} data-testid={testId}>
+        <Card className={styles.card} aria-labelledby={titleId} data-testid={testId}>
             <div className={styles.header}>
                 <div>
                     <h2 id={titleId}>{title}</h2>
                 </div>
                 <div className={styles.headerActions}>
                     {headerAction}
-                    <StatusTag
+                    <Tag
                         tone={statusTone}
                         icon={statusIcon}
                         testId={`${testId}-status`}
                         role={statusRole}
-                        ariaLive={statusAriaLive}
+                        aria-live={statusAriaLive}
                     >
                         {status}
-                    </StatusTag>
+                    </Tag>
                 </div>
             </div>
 
             <div className={styles.body}>{children}</div>
             <div className={styles.bottomAlert}>{bottomAlert}</div>
-        </section>
+        </Card>
     );
 }

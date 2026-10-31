@@ -2,7 +2,7 @@ import type { LiveTelemetrySampleProjection } from '@smart-room/contracts/histor
 import { useTranslation } from 'react-i18next';
 
 import { formatTimestamp } from '../../../../shared/date-time';
-import { StatusTag } from '../../../../shared/ui';
+import { Tag } from '../../../../shared/ui';
 
 import styles from './TelemetryItem.module.css';
 
@@ -16,7 +16,9 @@ export function TelemetryItem({ item }: { item: LiveTelemetrySampleProjection })
                     {String(item.value)} {t('temperatureUnit')}
                 </strong>
                 {item.durability === 'volatile' ? (
-                    <StatusTag tone="warning">{t('telemetry.durability.volatile')}</StatusTag>
+                    <Tag tone="warning" role="status" aria-live="polite">
+                        {t('telemetry.durability.volatile')}
+                    </Tag>
                 ) : null}
             </div>
             <time dateTime={item.occurredAt}>{formatTimestamp(item.occurredAt)}</time>

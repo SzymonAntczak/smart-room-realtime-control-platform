@@ -1,12 +1,10 @@
-.card {
+.card.card {
     display: flex;
     flex-direction: column;
+    gap: 0;
     inline-size: 100%;
+    min-inline-size: auto;
     padding: var(--space-8);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    box-shadow: var(--shadow-panel);
 }
 
 .body {
@@ -50,7 +48,7 @@
 }
 
 @media (max-width: 32.5rem) {
-    .card {
+    .card.card {
         padding: var(--space-6);
     }
 }
