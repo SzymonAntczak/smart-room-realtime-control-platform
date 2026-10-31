@@ -13,7 +13,7 @@ export function useInfiniteScroll({
     canLoadMore: boolean;
     loading: boolean;
     scrollViewport: HTMLElement | null;
-    loadOlder(): void;
+    loadOlder(): void | Promise<void>;
     returningToTop: boolean;
 }) {
     const userScrollIntentUntil = useRef(0);
@@ -57,7 +57,16 @@ export function useInfiniteScroll({
                 // Consume this approach before React publishes loading or measures the new page.
                 requestPending.current = true;
                 userScrollIntentUntil.current = 0;
-                loadOlder();
+
+                const releaseRequest = () => {
+                    requestPending.current = false;
+                };
+
+                try {
+                    void Promise.resolve(loadOlder()).then(releaseRequest, releaseRequest);
+                } catch {
+                    releaseRequest();
+                }
             }
         };
 

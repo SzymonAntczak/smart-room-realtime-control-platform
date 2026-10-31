@@ -17,7 +17,7 @@ function useHistoryPaging({
     state: HistorySessionState;
     returningToTop: boolean;
     scrollViewport: HTMLElement;
-    loadOlder(): void;
+    loadOlder(): void | Promise<void>;
 }) {
     useInfiniteScroll({
         ...props,
@@ -166,6 +166,42 @@ describe('history paging', () => {
             root.dispatchEvent(new Event('wheel'));
             root.dispatchEvent(new Event('scroll'));
         });
+        expect(loadOlder).toHaveBeenCalledTimes(2);
+    });
+
+    it('releases the request guard when a page settles without a loading render', async () => {
+        const loadOlder = vi.fn(() => Promise.resolve());
+        Object.defineProperties(root, {
+            clientHeight: { configurable: true, value: 320 },
+            scrollHeight: { configurable: true, value: 1200 },
+            scrollTop: { configurable: true, writable: true, value: 600 },
+        });
+        const { rerender } = renderHook(
+            ({ currentState }: { currentState: HistorySessionState }) =>
+                useHistoryPaging({
+                    returningToTop: false,
+                    state: currentState,
+                    scrollViewport: root,
+                    loadOlder,
+                }),
+            { initialProps: { currentState: readyState } },
+        );
+
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
+        expect(loadOlder).toHaveBeenCalledOnce();
+
+        await act(async () => {
+            await Promise.resolve();
+        });
+        rerender({ currentState: { ...readyState, nextCursor: 'next-page' } });
+        act(() => {
+            root.dispatchEvent(new Event('wheel'));
+            root.dispatchEvent(new Event('scroll'));
+        });
+
         expect(loadOlder).toHaveBeenCalledTimes(2);
     });
 

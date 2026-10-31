@@ -54,9 +54,7 @@ export function InfiniteList<T>({
     const viewport = scrollParent === undefined ? localViewport : scrollParent;
     const virtuoso = useRef<VirtuosoHandle | null>(null);
     const focused = useRef<HTMLElement | null>(null);
-    const loadOlder = useCallback(() => {
-        void onLoadMore();
-    }, [onLoadMore]);
+    const loadOlder = useCallback(() => onLoadMore(), [onLoadMore]);
     useInfiniteScroll({
         canLoadMore: hasMore,
         loading,
