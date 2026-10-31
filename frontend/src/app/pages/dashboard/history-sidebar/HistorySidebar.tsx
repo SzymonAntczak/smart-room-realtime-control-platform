@@ -1,8 +1,8 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import type { HistoryLiveSource } from '../../../features/history';
-import { Button } from '../../../ui';
+import type { HistoryLiveSource } from '../../../shared/history';
+import { Button } from '../../../shared/ui';
 import type { RenderableDeviceProjection } from '../device-projection';
 
 import { HistorySidebarContent } from './history-sidebar-content/HistorySidebarContent';

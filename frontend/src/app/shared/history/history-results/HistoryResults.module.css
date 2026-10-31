@@ -1,0 +1,80 @@
+.scrollRegion,
+.deviceScrollRegion {
+    min-block-size: 10rem;
+    block-size: min(45dvh, 32rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    border-block-start: var(--border-width-thin) solid var(--color-border);
+    padding-block-start: var(--space-3);
+}
+.deviceScrollRegion {
+    block-size: min(70dvh, 48rem);
+    min-block-size: 22rem;
+    overscroll-behavior: auto;
+}
+.scrollRegion:focus-visible,
+.deviceScrollRegion:focus-visible {
+    outline: var(--border-width-thin) solid var(--color-info-text);
+    outline-offset: var(--space-1);
+}
+@media (max-width: 48rem) {
+    .scrollRegion {
+        block-size: min(42dvh, 32rem);
+    }
+}
+
+.results {
+    display: grid;
+    align-content: start;
+    block-size: 100%;
+    gap: var(--space-3);
+    min-block-size: 100%;
+    inline-size: 100%;
+}
+
+.status,
+.error p {
+    margin: 0;
+    color: var(--color-text-muted);
+}
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.instruction {
+    display: block;
+    inline-size: 100%;
+    margin-block-start: var(--space-4);
+    text-align: center;
+}
+
+.status svg {
+    flex: none;
+    animation: spin 1s linear infinite;
+}
+
+.error {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-2);
+}
+
+.error button,
+.action {
+    min-block-size: 2.75rem;
+}
+
+.action:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

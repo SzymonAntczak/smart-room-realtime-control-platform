@@ -1,7 +1,7 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 
 import type { RoomRealtimeConnectionStatus } from '../../api/room';
-import { useRoomConnection } from '../../features/room';
+import { useRoomConnection } from '../../shared/room-realtime';
 
 type DeviceDetailsState =
     | {

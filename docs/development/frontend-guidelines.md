@@ -17,64 +17,73 @@ Organize `src/app` by responsibility:
 
 - `api/<resource>` owns production HTTP/SSE transport, endpoint configuration,
   request construction, response validation and room-stream synchronization.
-  Group related operations by resource; each module exposes a small `index.ts`
-  API. There is no aggregate `api/index.ts`. API modules do not depend on React,
-  features, pages, application composition or development tooling.
+  Each resource exposes a small `index.ts` API; there is no aggregate API
+  entrypoint. API modules do not depend on React, shared UI/business modules,
+  pages, routing or development tooling.
 - `pages/<page>` composes one screen and owns its local components, hooks,
-  supporting models, tests and layout interactions. Dashboard owns LED controls,
-  temperature readings and composition of its live history and search modal. Pages do not
-  import other pages.
-- `features/<module>` owns a cohesive business module with actual reuse by
-  multiple consumers. Shared modules include date-time formatting. Reuse across independent modules
-  on one page counts; hypothetical future reuse and tests alone do not. The
-  `history` feature owns live sessions and static-history adapters shared by
-  Dashboard sidebar, historical search and device details. `device-filters` owns
-  reusable filter forms; `infinite-scrolling` owns reusable pagination and list
-  infrastructure, including its components and hooks. Each view composes a local provider; pages own their
-  framing and open/close interactions.
-  The sidebar owns its footer buttons and tooltip; the feed exposes a small
-  scroll-to-top ref API instead of accepting page actions or footer slots.
-  Device details mounts fixed-device filters only after its validated snapshot
-  confirms the selected device. For temperature sensors, the page directly
-  composes its live telemetry chart and independent static telemetry list alongside history. Production transport belongs
-  in `api`; history consumes the shared room connection through its own source port.
-- `ui/<component>` owns a basic reusable UI component, its styles and tests.
-  Keep shared presentation primitives directly under `app/ui` instead of
-  `features`.
-- `features/room` owns the shared room provider, validated realtime state and
-  history-source bridge. A persistent route layout mounts it around Dashboard and
-  Device Details; navigation reuses the connection. Pages select and adapt its
-  state without owning transport. Leaving those routes closes the connection.
-  Development composition decorates the Dashboard through `getDeviceExtension`
-  and the `renderOverlay` slot.
+  supporting models, tests and layout interactions. Pages do not import other
+  pages. Prefer composing independent business modules here, including wiring
+  their actions and managing their view-specific lifecycles.
+- `shared/<module>` owns one cohesive reusable responsibility and exposes a
+  small public API through `index.ts`. Actual reuse by independent consumers
+  on one page counts; hypothetical reuse and tests alone do not. Modules may
+  consume other shared public APIs without cycles. Formatting, pagination,
+  virtualization and base UI are natural dependencies. When a module starts
+  managing another business module's lifecycle or wiring its actions, prefer
+  moving that composition into the consuming page. There is no blanket ban on
+  imports between shared modules.
+- `shared/ui/<component>` owns a basic reusable UI component, its styles and
+  tests. UI components do not depend on business modules or API resources.
+- `shared/room-realtime` owns the shared room provider, validated realtime state and
+  history-source bridge. A persistent route layout mounts it around Dashboard
+  and Device Details; navigation reuses the connection. Pages select and adapt
+  its state without owning transport. Leaving those routes closes the connection.
+- `routing` owns the route table in `app-routes/AppRoutes.tsx`, route loading,
+  route errors and page-not-found rendering.
 - `dev` owns development tooling and may compose production public APIs.
-- `src/main.tsx` owns bootstrap, the browser data router and build-mode selection;
-  `AppRoutes.tsx` owns the route table. The Dashboard route is `/` and selected-device
-  details use `/device-details/:deviceId`. The SPA host serves `index.html` for
-  direct requests to application routes.
-  Both pages use React Router's `route.lazy` imports, including the development
-  Dashboard composition. Keep the room provider in the persistent eager layout;
-  route imports must not restart its connection. Show localized loading feedback
-  while a page module loads and a reload action if loading fails. Page-only
-  dependencies such as chart rendering belong in the deferred route graph.
-  The initial loading and error boundaries belong on the room layout so its
-  provider and first page mount together after the import finishes.
+- `i18n` owns application i18n configuration and translations.
+- `src/main.tsx` owns bootstrap, browser data-router creation and build-mode
+  selection. The Dashboard route is `/` and device details use
+  `/device-details/:deviceId`. The SPA host serves `index.html` for direct
+  requests to application routes.
+
+Dashboard owns LED controls, temperature readings, its live history sidebar and
+search modal. Development composition decorates it through `getDeviceExtension`
+and `renderOverlay`. Both pages use React Router's `route.lazy` imports,
+including the development Dashboard composition. Keep the room provider in the
+persistent eager layout; route imports must not restart its connection. Show
+localized loading feedback while a page module loads and a reload action if
+loading fails. Page-only dependencies such as chart rendering belong in the
+deferred route graph. Initial loading and error boundaries belong on the room
+layout so its provider and first page mount together after the import finishes.
 
 The room API owns SSE, validation, revisions, reconnect and the current BFF
-snapshot, including its bounded feed. Dashboard's `useRoom` derives renderable room
-state and maps its device projections for rendering. Device Details consumes the
-validated room snapshot through the public room feature API. Dashboard's device cards
-own their renderable device projection types. The `device-display` feature owns
-localized display names shared across pages. The history feature owns its live source port and update contract; the room feature
-owns the connection bridge. The history API owns HTTP clients and response
-validation. The `device-filters` feature owns independent draft/applied device/date forms.
-The `infinite-scrolling` feature owns generic cursor sessions, scroll-triggered
-paging and measured list rendering. It depends on UI primitives and injected
-sources, never history, pages or API clients. History owns its domain adapters,
-live overlay and reading-position recovery; static history uses the generic
-session. Each consumer has independent state.
-The shared room provider publishes validated history updates before the new room
-view.
+snapshot, including its bounded feed. Dashboard's private `useRoom` adapts room
+state for rendering; its device cards own their renderable projection types.
+Device Details consumes the validated snapshot through the room public API.
+
+`shared/history` owns live and static sessions, domain adapters, entry rendering
+and live reading-position recovery. It exposes `LiveHistoryFeed`,
+`useHistorySearch` and `HistoryResults`. The sidebar owns its footer buttons
+and tooltip; the live feed exposes a small scroll-to-top ref API instead of
+accepting page actions or footer slots. The modal and device-details view each
+compose their own search hook, `DeviceFiltersProvider`, `DeviceFilters` and
+results. Device details mounts this composition only after a validated snapshot
+confirms the selected device; its page owns initial device-only search and Clear.
+Each consumer has independent state. Temperature details directly composes its
+live chart and independent static telemetry list alongside history.
+
+`shared/device-filters` owns reusable draft/applied device/date forms.
+`shared/infinite-scrolling` owns generic bounded cursor sessions, user-scroll
+paging and measured lists. It depends on UI primitives and injected sources,
+never domain history, pages or API clients. History and telemetry own their
+validated domain adapters. `shared/device-display` owns localized device names,
+and `shared/date-time` owns reusable timestamp formatting.
+
+History owns its live source port and update contract; room implements the
+bridge against that contract and publishes validated history updates before the
+new room view. Production transport remains in `api`; history never opens a
+separate SSE stream.
 
 Use the shared `StatusTag` for device availability and `ButtonLink` for
 navigation styled as a button. Route links that change pages opt into React
@@ -83,14 +92,14 @@ offset, and `prefers-reduced-motion` reduces that animation to an imperceptible
 duration. Browsers without View Transitions keep ordinary navigation behavior.
 
 Keep each module's API small, with named exports through its designated entrypoint.
-Features and API resources use `index.ts`; the dashboard exposes only
+Shared modules and API resources use `index.ts`; the dashboard exposes only
 `pages/dashboard/Dashboard.tsx`, including `DeviceControlExtension`, and has no
 `index.ts`. Import that page directly through `pages/dashboard/Dashboard`; its
 `RenderableDeviceProjection` type is also available there for development
 composition, while components and hooks remain private. Other page entrypoints
 retain their existing conventions. Application i18n configuration and translations live in
 `app/i18n`; reusable timestamp formatting is exposed through
-`features/date-time` without coupling consumers to initialization.
+`shared/date-time` without coupling consumers to initialization.
 Import another module through its public API; within the same module, import files
 directly instead of its own entrypoint. Use relative imports and colocate tests
 and CSS Modules with their owner. Do not export test helpers through production
@@ -113,10 +122,10 @@ name: `temperature-card/TemperatureCard.tsx`. Name its colocated test and
 CSS Module `TemperatureCard.test.tsx` and `TemperatureCard.module.css`.
 The folder owns that component, its hooks, styles and tests;
 child components have their own folders. Keep module entrypoints at the
-page or feature boundary rather than adding an `index.ts` to every component folder.
+page or shared-module boundary rather than adding an `index.ts` to every component folder.
 Nest private component folders under the component that owns their composition:
-the history feature owns its feed and domain item components; the infinite-scrolling
-feature owns the shared virtual list and its private containers.
+history owns its live feed, results and entry components; infinite-scrolling
+owns the shared virtual list and its private containers.
 
 Name custom-hook files in camelCase matching the exported hook, including tests:
 `useLedCommandRequest.ts` and `useLedCommandRequest.test.tsx`. Other non-component modules retain
@@ -133,27 +142,28 @@ history keeps its separate `TelemetryHistory` names.
 Keep small helpers used by one owner private in that owner's module. Components
 and hooks own their dedicated pure view models and stateful sessions as colocated
 non-React modules, with their tests. Shared state modules remain in their owning
-feature. Production HTTP/SSE clients belong in API resource modules. Do not
+module. Production HTTP/SSE clients belong in API resource modules. Do not
 introduce a hook merely to wrap a pure mapping or to reduce the number of files.
 
 | Importing area          | Allowed dependencies outside its own module                             |
 | ----------------------- | ----------------------------------------------------------------------- |
 | `api/<resource>`        | Shared contracts and public APIs of other API resources, without cycles |
-| `features/<module>`     | Public API resource APIs and other feature APIs, without cycles         |
-| `ui/<component>`        | Public APIs of other UI components                                      |
-| `pages/<page>`          | Public feature, API resource and UI APIs                                |
-| Application composition | Public page, feature, API resource and UI APIs                          |
-| `dev`                   | Public page/feature/API resource/UI APIs                                |
+| `shared/<module>`       | Public API resource APIs and other shared module APIs, without cycles   |
+| `shared/ui/<component>` | Public APIs of other UI components and lower-level shared helpers       |
+| `pages/<page>`          | Public shared, API resource and UI APIs                                 |
+| `routing`               | Public page, shared, API resource and UI APIs                           |
+| `dev`                   | Public page, shared, API resource and UI APIs                           |
 
-Features must not import pages or application composition; pages must not import
-other pages or application composition. Application composition exposes only
-`AppRoutes.tsx` to bootstrap. Dashboard's `useRoom` remains private to the page and adapts shared room state.
+Shared modules must not import pages, routing or development tooling. Pages must
+not import other pages or routing. UI and lower-level helpers must not depend on
+the business modules that consume them. Application composition exposes
+`routing/app-routes/AppRoutes.tsx` to bootstrap. Dashboard's `useRoom` remains
+private to the page and adapts shared room state.
 
-`AppRoutes.tsx` receives an optional Dashboard route-loader callback from bootstrap
-for the development composition; its default callback dynamically imports the
-public Dashboard page.
-Development code remains dynamically imported only by the DEV branch in
-`src/main.tsx`.
+`AppRoutes.tsx` receives an optional Dashboard route-loader callback from
+bootstrap for the development composition; its default callback dynamically
+imports the public Dashboard page. Development code remains dynamically imported
+only by the DEV branch in `src/main.tsx`.
 
 External libraries and `@smart-room/contracts` follow the existing contract and
 package boundaries. Production modules must not import test-only code or global
@@ -168,8 +178,8 @@ These exceptions never apply to production.
 Tests may import reusable fixtures and mocks from `src/test`; production modules
 must not import that directory. Shared test modules retain the application
 module directions and public API rules when importing production code, and do
-not re-export production implementations. Room/history composition tests belong
-with the shared room provider.
+not re-export production implementations. Room/history source-bridge tests belong with room; screen composition tests
+belong with the consuming page.
 
 ## React
 
@@ -308,11 +318,12 @@ with the shared room provider.
 ## Testing
 
 - Domain UI behavior tests belong near their owner in
-  `frontend/src/app/features/<domain>` or `frontend/src/app/pages/<page>`.
-- Feature and API client tests belong near their module; tests composing room and history belong
-  with the shared room provider in `frontend/src/app/features/room`. A translation
+  `frontend/src/app/shared/<domain>` or `frontend/src/app/pages/<page>`.
+- Shared-module and API client tests belong near their module; tests composing room and history belong
+  with room when they protect the source bridge, or with the consuming page
+  when they protect screen composition. A translation
   test that renders a UI component belongs with that component.
-- Shared UI tests belong near their component under `frontend/src/app/ui`.
+- Shared UI tests belong near their component under `frontend/src/app/shared/ui`.
 - In UI behavior tests, derive expected translated text and accessible names from
   the i18n key (for example, `i18n.t('feed.hideSidebar', { ns: 'dashboard' })`)
   instead of hard-coding a locale's wording. This keeps behavior assertions

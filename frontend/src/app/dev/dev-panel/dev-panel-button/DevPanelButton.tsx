@@ -1,6 +1,6 @@
 import type { ComponentPropsWithRef, ReactNode } from 'react';
 
-import { Button } from '../../../ui';
+import { Button } from '../../../shared/ui';
 
 import styles from './DevPanelButton.module.css';
 

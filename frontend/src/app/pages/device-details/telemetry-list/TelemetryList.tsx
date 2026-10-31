@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { formatTimestamp } from '../../../features/date-time';
-import { DeviceFilters, DeviceFiltersProvider } from '../../../features/device-filters';
-import { InfiniteList, type InfiniteListHandle } from '../../../features/infinite-scrolling';
-import { Button } from '../../../ui';
+import { formatTimestamp } from '../../../shared/date-time';
+import { DeviceFilters, DeviceFiltersProvider } from '../../../shared/device-filters';
+import { InfiniteList, type InfiniteListHandle } from '../../../shared/infinite-scrolling';
+import { Button } from '../../../shared/ui';
 
 import { TelemetryItem } from './telemetry-item/TelemetryItem';
 import { useTelemetryList } from './useTelemetryList';

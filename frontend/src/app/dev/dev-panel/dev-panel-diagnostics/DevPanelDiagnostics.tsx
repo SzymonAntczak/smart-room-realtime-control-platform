@@ -2,7 +2,7 @@ import type { EventProcessingDiagnosticsSnapshot } from '@smart-room/contracts/d
 import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { formatTimestamp } from '../../../features/date-time';
+import { formatTimestamp } from '../../../shared/date-time';
 import { DevPanelButton } from '../dev-panel-button/DevPanelButton';
 
 import styles from './DevPanelDiagnostics.module.css';

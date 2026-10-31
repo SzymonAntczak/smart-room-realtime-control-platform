@@ -7,7 +7,7 @@ import {
 } from '@smart-room/contracts/history';
 
 import { createTelemetryHistoryClient, type TelemetryHistoryClient } from '../../api/history';
-import type { HistoryLiveUpdate } from '../../features/history';
+import type { HistoryLiveUpdate } from '../../shared/history';
 
 const pageSize = 100;
 const sampleLimit = 200;

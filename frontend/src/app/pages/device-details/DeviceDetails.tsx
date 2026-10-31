@@ -4,12 +4,11 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-import { formatTimestamp } from '../../features/date-time';
-import { getDeviceDisplayName } from '../../features/device-display';
-import { DeviceFilters } from '../../features/device-filters';
-import { HistoryFeed, HistoryProvider } from '../../features/history';
-import { Button, ButtonLink, StatusTag } from '../../ui';
+import { formatTimestamp } from '../../shared/date-time';
+import { getDeviceDisplayName } from '../../shared/device-display';
+import { Button, ButtonLink, StatusTag } from '../../shared/ui';
 
+import { DeviceEventHistory } from './device-event-history/DeviceEventHistory';
 import styles from './DeviceDetails.module.css';
 import { TelemetryChart } from './telemetry-chart/TelemetryChart';
 import { TelemetryList } from './telemetry-list/TelemetryList';
@@ -155,15 +154,7 @@ export function DeviceDetails() {
                     <section className={styles.history} aria-labelledby="event-history-title">
                         <h2 id="event-history-title">{t('eventHistory.title')}</h2>
                         <p>{t('eventHistory.completeness')}</p>
-                        <HistoryProvider
-                            key={device.deviceId}
-                            mode="search"
-                            devices={[device]}
-                            fixedDeviceId={device.deviceId}
-                        >
-                            <DeviceFilters />
-                            <HistoryFeed />
-                        </HistoryProvider>
+                        <DeviceEventHistory key={device.deviceId} device={device} />
                     </section>
                 </>
             ) : null}

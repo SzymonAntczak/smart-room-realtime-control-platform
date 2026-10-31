@@ -10,7 +10,7 @@ import { isSchema } from '@smart-room/contracts/validation';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TelemetryHistoryClient } from '../../api/history';
-import type { HistoryLiveUpdate } from '../../features/history';
+import type { HistoryLiveUpdate } from '../../shared/history';
 
 import { createTelemetrySession } from './telemetry-session';
 

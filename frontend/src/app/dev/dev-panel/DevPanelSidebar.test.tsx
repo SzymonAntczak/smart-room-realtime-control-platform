@@ -11,7 +11,7 @@ import { DevPanel } from './index';
 
 const formatTimestamp = vi.hoisted(() => vi.fn(() => 'formatted local timestamp'));
 
-vi.mock('../../features/date-time', () => ({ formatTimestamp }));
+vi.mock('../../shared/date-time', () => ({ formatTimestamp }));
 
 describe('DevPanel.Sidebar', () => {
     afterEach(() => vi.unstubAllGlobals());

@@ -47,7 +47,7 @@ clearing, changing device or closing cancels previous work and ignores late
 responses. Unrelated generations never merge. Backend contracts and retention
 are unchanged.
 
-The frontend infinite-scrolling feature owns generic bounded cursor sessions,
+The frontend `shared/infinite-scrolling` module owns generic bounded cursor sessions,
 scroll input and virtual list rendering. History and telemetry supply separate
 validated source adapters. Device filters have one local provider per consumer.
 History live recovery and overlays remain owned by history.

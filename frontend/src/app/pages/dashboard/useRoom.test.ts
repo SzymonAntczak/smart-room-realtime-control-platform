@@ -7,7 +7,7 @@ import {
     createRoomSnapshotMessage,
     createTemperatureDevice,
 } from '../../../test/room/room-realtime-fixtures';
-import { RoomProvider } from '../../features/room';
+import { RoomProvider } from '../../shared/room-realtime';
 
 import { useRoom } from './useRoom';
 it('maps shared room devices to Dashboard projections', () => {

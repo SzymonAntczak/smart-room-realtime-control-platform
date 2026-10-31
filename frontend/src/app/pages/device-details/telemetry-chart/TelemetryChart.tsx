@@ -11,7 +11,7 @@ import {
     YAxis,
 } from 'recharts';
 
-import { formatTimestamp } from '../../../features/date-time';
+import { formatTimestamp } from '../../../shared/date-time';
 
 import { TelemetryTooltip } from './telemetry-tooltip/TelemetryTooltip';
 import styles from './TelemetryChart.module.css';

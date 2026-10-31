@@ -348,13 +348,14 @@ above are part of this decision.
 
 ### Reusable frontend history and selected-device filters
 
-The frontend `features/history` module owns domain adapters, live sessions,
-entry rendering and live reading-position recovery. `features/device-filters`
-owns reusable draft/applied filters; `features/infinite-scrolling` owns static
+The frontend `shared/history` module owns domain adapters, live sessions,
+entry rendering and live reading-position recovery. `shared/device-filters`
+owns reusable draft/applied filters; `shared/infinite-scrolling` owns static
 pagination sessions, user-scroll paging and measured list rendering.
-Each consumer composes its own local `HistoryProvider`, `DeviceFilters` and
-`HistoryFeed`. The shared room provider keeps the connection and synchronously forwards
-validated updates through the feature-owned source port; history creates no
+The Dashboard composes `LiveHistoryFeed`. Each static-history view composes a
+local `useHistorySearch` controller, `DeviceFiltersProvider`, `DeviceFilters`
+and `HistoryResults`; the view wires filter actions to its search session. The shared room provider keeps the connection and synchronously forwards
+validated updates through the history-owned source port; history creates no
 additional SSE connection. Closing a view releases only its own history session.
 
 The Dashboard sidebar owns its title, footer, search trigger, Return to top button
@@ -365,11 +366,12 @@ live-overlay recovery inside the feed.
 
 Device details mounts history only after a validated room snapshot confirms the
 selected device. Both LEDs and temperature sensors show retained event history.
-`HistoryProvider fixedDeviceId={device.deviceId}` hides the device select and fixes
-every query to that device. Mounting starts a static device-only query. Date
+The page passes the selected device to `DeviceFiltersProvider`, hides the device
+select and fixes every query to that device. Mounting the local history view
+starts a static device-only query. Date
 edits remain drafts until Search, and Refresh repeats applied criteria. Clear
 removes date drafts and starts a new device-only query. A device identity change
-creates a new provider/session; a display-name change does not refetch. Dates use
+creates a new local search/filter session; a display-name change does not refetch. Dates use
 the same inclusive browser-local calendar-day rules as modal search. Details
 retains its larger virtual viewport and scroll-triggered older-page loading without a
 Load older button. Paging requires real user scroll input within 320 pixels of the

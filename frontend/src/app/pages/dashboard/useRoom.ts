@@ -1,7 +1,7 @@
 import type { DeviceProjection } from '@smart-room/contracts/projections';
 import type { RoomBffSnapshot } from '@smart-room/contracts/room-bff';
 
-import { useRoomConnection } from '../../features/room';
+import { useRoomConnection } from '../../shared/room-realtime';
 
 import type { RenderableDeviceProjection } from './device-projection';
 

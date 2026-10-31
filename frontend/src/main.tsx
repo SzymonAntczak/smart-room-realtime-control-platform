@@ -4,8 +4,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 
-import { createAppRoutes } from './app/AppRoutes';
 import { i18nReady, loadDevelopmentTranslations } from './app/i18n';
+import { createAppRoutes } from './app/routing/app-routes/AppRoutes';
 
 async function bootstrap(): Promise<void> {
     await i18nReady;

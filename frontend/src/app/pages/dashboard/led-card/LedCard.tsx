@@ -8,9 +8,9 @@ import { Lightbulb, LightbulbOff, LoaderCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { formatTimestamp } from '../../../features/date-time';
-import { getDeviceDisplayName } from '../../../features/device-display';
-import { Alert, Button, DeviceCard } from '../../../ui';
+import { formatTimestamp } from '../../../shared/date-time';
+import { getDeviceDisplayName } from '../../../shared/device-display';
+import { Alert, Button, DeviceCard } from '../../../shared/ui';
 
 import { type LedCardAlert, toLedCardViewModel } from './led-card-view-model';
 import styles from './LedCard.module.css';

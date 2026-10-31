@@ -12,8 +12,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { formatTimestamp } from '../../../features/date-time';
 import { i18n } from '../../../i18n';
+import { formatTimestamp } from '../../../shared/date-time';
 
 import { LedCard, type LedDeviceProjection } from './LedCard';
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from 'react';
 
-import type { DeviceFilterCriteria } from '../../../features/device-filters';
-import { useInfiniteSession } from '../../../features/infinite-scrolling';
+import type { DeviceFilterCriteria } from '../../../shared/device-filters';
+import { useInfiniteSession } from '../../../shared/infinite-scrolling';
 import { createTelemetrySearchSession, resolveTelemetryRange } from '../telemetry-search-session';
 
 export function useTelemetryList(deviceId: string) {

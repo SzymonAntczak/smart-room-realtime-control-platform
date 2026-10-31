@@ -9,7 +9,7 @@ import { TemperatureCard, type TemperatureSensorDeviceProjection } from './Tempe
 
 const formatTimestamp = vi.hoisted(() => vi.fn(() => 'formatted local timestamp'));
 
-vi.mock('../../../features/date-time', () => ({ formatTimestamp }));
+vi.mock('../../../shared/date-time', () => ({ formatTimestamp }));
 
 describe('TemperatureCard', () => {
     it('keeps volatile temperature and health independent of durable availability through stale and reconnect', () => {

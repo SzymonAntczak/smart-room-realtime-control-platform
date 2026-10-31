@@ -13,12 +13,12 @@ import {
     createRoomSnapshotMessage,
     createTemperatureDevice,
 } from '../../../test/room/room-realtime-fixtures';
-import { createAppRoutes } from '../../AppRoutes';
-import { formatTimestamp } from '../../features/date-time';
-import type * as InfiniteScrollingModule from '../../features/infinite-scrolling';
 import { i18n } from '../../i18n';
+import { createAppRoutes } from '../../routing/app-routes/AppRoutes';
+import { formatTimestamp } from '../../shared/date-time';
+import type * as InfiniteScrollingModule from '../../shared/infinite-scrolling';
 
-vi.mock('../../features/infinite-scrolling', async (importOriginal) => {
+vi.mock('../../shared/infinite-scrolling', async (importOriginal) => {
     const actual = await importOriginal<typeof InfiniteScrollingModule>();
 
     return {

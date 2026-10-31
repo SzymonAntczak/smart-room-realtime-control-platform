@@ -4,8 +4,8 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 
-import { getDeviceDisplayName } from '../../features/device-display';
-import { Alert } from '../../ui';
+import { getDeviceDisplayName } from '../../shared/device-display';
+import { Alert } from '../../shared/ui';
 
 import styles from './Dashboard.module.css';
 import type { RenderableDeviceProjection } from './device-projection';

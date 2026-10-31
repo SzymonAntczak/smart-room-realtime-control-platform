@@ -302,4 +302,33 @@ describe('HistorySearchModal', () => {
             screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
         ).toHaveFocus();
     });
+
+    it('returns to the top for a submitted query while draft edits preserve scroll', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn<typeof fetch>().mockImplementation(async () => pageResponse()),
+        );
+        renderSearchModal();
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('history.filter', { ns: 'dashboard' }) }),
+        );
+        const region = screen.getByRole('region', {
+            name: i18n.t('history.searchResults', { ns: 'dashboard' }),
+        });
+        const scrollTo = vi.fn();
+        Object.defineProperty(region, 'scrollTo', { configurable: true, value: scrollTo });
+        fireEvent.change(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
+            target: { value: '2026-10-20' },
+        });
+        expect(scrollTo).not.toHaveBeenCalled();
+        fireEvent.click(
+            screen.getByRole('button', { name: i18n.t('search', { ns: 'deviceFilters' }) }),
+        );
+        await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' }));
+        scrollTo.mockClear();
+        fireEvent.change(screen.getByLabelText(i18n.t('from', { ns: 'deviceFilters' })), {
+            target: { value: '2026-10-19' },
+        });
+        expect(scrollTo).not.toHaveBeenCalled();
+    });
 });

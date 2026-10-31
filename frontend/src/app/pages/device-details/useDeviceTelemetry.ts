@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 
-import { useRoomConnection } from '../../features/room';
+import { useRoomConnection } from '../../shared/room-realtime';
 
 import { createTelemetrySession } from './telemetry-session';
 

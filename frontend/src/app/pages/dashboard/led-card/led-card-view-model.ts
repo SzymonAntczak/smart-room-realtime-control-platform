@@ -5,7 +5,7 @@ import type {
     TerminalCommandProjection,
 } from '@smart-room/contracts/commands';
 
-import type { AlertVariant } from '../../../ui';
+import type { AlertVariant } from '../../../shared/ui';
 
 import type { LedDeviceProjection } from './LedCard';
 

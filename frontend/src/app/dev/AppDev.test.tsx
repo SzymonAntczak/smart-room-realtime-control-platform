@@ -4,8 +4,8 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../../test/room/mock-event-source';
-import { RoomProvider } from '../features/room';
 import { i18n } from '../i18n';
+import { RoomProvider } from '../shared/room-realtime';
 
 import { AppDev } from './AppDev';
 
@@ -19,11 +19,11 @@ function renderAppDev() {
     );
 }
 
-vi.mock('../features/history/history-feed/live-history-list/useHistoryVirtualizer', async () => {
+vi.mock('../shared/history/live-history-feed/useHistoryReadingPosition', async () => {
     const { createRef } = await import('react');
 
     return {
-        useHistoryVirtualizer: () => ({
+        useHistoryReadingPosition: () => ({
             virtuosoRef: createRef(),
         }),
     };

@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockEventSource } from '../../../test/room/mock-event-source';
-import { RoomProvider } from '../../features/room';
+import { RoomProvider } from '../../shared/room-realtime';
 
 import { useDeviceDetails } from './useDeviceDetails';
 

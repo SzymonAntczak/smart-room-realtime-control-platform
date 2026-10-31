@@ -24,10 +24,11 @@ and releases its cache when closed. ST-4-06a-05 adds measured virtual rendering
 with stable record keys, five overscan entries per side and keyboard-accessible
 scrolling and controls. Width changes preserve the first unobscured reading
 anchor; DOM rows and measurement observers are released as the range changes.
-Temperature device details use `/room/history/telemetry` to load up to 200 newest
-raw measurements from the last 30 days, in pages of 100. This independent HTTP
-baseline supplies the same chronologically ordered samples to the chart and
-table, with loading, empty, limited and partial/error states and explicit retry.
+Temperature device details use `/room/history/telemetry` for an independent
+live chart and static measurement list. The chart keeps up to 200 samples with
+HTTP recovery and live updates. The list pages through retained measurements
+with its own device/date criteria and explicit refresh, bounded to 10,000 samples
+and 100 pages. Both expose loading, empty, limited and error states.
 Raw significant-fact history remains a technical inspection surface. Backend
 integration verifies telemetry HTTP/SSE contracts with native-source doubles and
 real BFF/SQLite.
@@ -41,24 +42,24 @@ real BFF/SQLite.
 
 ## Structure
 
-- `src/main.tsx`: Vite/React bootstrap and build-mode selection.
+- `src/main.tsx`: Vite/React bootstrap, browser router creation and build-mode selection.
 - `src/globals.css`: global reset and shared design tokens.
-- `src/app/App.tsx`: production composition root.
-- `src/app/features/room`: shared room connection lifecycle, validated snapshots
-  and synchronous room-to-history integration for Dashboard and Device Details.
-- `src/app/pages/dashboard/useRoom.ts`: maps shared room state to dashboard projections.
-- `src/app/api/commands`: LED command HTTP client and validation.
-- `src/app/api/history`: user-history and telemetry-history HTTP clients and validation.
-- `src/app/api/room`: validated SSE client, revisions, reconnect and BFF snapshots.
+- `src/app/routing`: route table, lazy page loading, loading/error feedback and page-not-found rendering.
+- `src/app/api`: resource-scoped HTTP/SSE clients and response validation.
 - `src/app/pages/dashboard`: dashboard composition, local device projections,
-  display names and LED and temperature controls, plus history presentation and session.
-- `src/app/pages/device-details`: selected-device view, bounded telemetry baseline,
-  chart and table, alongside independently scoped event history.
+  LED and temperature controls, live history sidebar and independent search modal.
+- `src/app/pages/device-details`: selected-device view, live telemetry chart,
+  independent static telemetry list and device-scoped event-history composition.
+- `src/app/shared/history`: history sessions, domain adapters, live feed and static results.
+- `src/app/shared/device-filters`: reusable draft/applied device/date forms.
+- `src/app/shared/infinite-scrolling`: generic cursor sessions, scroll paging and virtual lists.
+- `src/app/shared/room-realtime`: persistent room connection, validated snapshots and
+  synchronous room-to-history source bridge.
+- `src/app/shared/date-time` and `src/app/shared/device-display`: timestamp and device-name presentation.
+- `src/app/shared/ui`: reusable UI building blocks.
 - `src/app/i18n`: initialization, locale detection and translations.
-- `src/app/features/date-time`: shared timestamp formatting.
-- `src/app/ui`: reusable UI building blocks.
 - `src/app/dev`: development composition, scenario definitions and device sidebar.
-- `src/test`: global test setup and shared domain fixtures and mocks, including room SSE fixtures.
+- `src/test`: global test setup and shared domain fixtures and mocks.
 
 Frontend-owned modules use `History` names; shared `UserHistory` contracts,
 wire `userHistory` fields and the BFF history endpoint retain their protocol
@@ -66,10 +67,10 @@ names. Small test helpers stay in their test file; reusable fixtures and mocks
 live under `src/test`. Application folders contain no `*.test-support.*` files,
 and production entrypoints never export test helpers.
 
-Feature and API resource modules expose named exports through small `index.ts`
+Shared and API resource modules expose named exports through small `index.ts`
 entrypoints; API resources have no aggregate `api/index.ts`. Import private
 files only inside their owner.
-Keep modules in `features` only when they have actual reuse across independent
+Keep modules in `shared` only when they have actual reuse across independent
 consumers, including modules within one page. Page-specific components, hooks,
 models, sessions and tests belong with their owning components or hooks; tests
 and hypothetical future reuse do not establish sharing. Production HTTP/SSE
@@ -79,9 +80,14 @@ transport remains in `dev`.
 Dependency directions and test seams are specified in
 [frontend guidelines](../docs/development/frontend-guidelines.md#application-structure-and-imports)
 and checked during review. ESLint enforces filename conventions; it does not
-check module import directions or feature/API cycles. `RoomProvider` connects the
+check module import directions or shared-module/API cycles. `RoomProvider` connects the
 room API to the shared history source, publishing history before the new room
 view. Dashboard and Device Details share that provider across navigation.
+Pages compose independent business modules and wire their actions. Shared modules
+may import other shared public APIs; prefer page composition when a module would
+otherwise manage another business module's lifecycle. History exposes
+`LiveHistoryFeed`, `useHistorySearch` and `HistoryResults`; modal and device
+views connect search to their own filter provider.
 Each history context owns its HTTP session; only the Dashboard sidebar merges
 SSE additions. Search and device history stay static until explicitly refreshed.
 

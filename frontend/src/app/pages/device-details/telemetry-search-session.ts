@@ -1,8 +1,8 @@
 import type { RawTelemetryPage, RawTelemetrySampleProjection } from '@smart-room/contracts/history';
 
 import { createTelemetryHistoryClient, type TelemetryHistoryClient } from '../../api/history';
-import type { DeviceFilterCriteria } from '../../features/device-filters';
-import { createInfiniteSession, type InfiniteSource } from '../../features/infinite-scrolling';
+import type { DeviceFilterCriteria } from '../../shared/device-filters';
+import { createInfiniteSession, type InfiniteSource } from '../../shared/infinite-scrolling';
 
 const duration = 30 * 24 * 60 * 60 * 1000;
 type Error = 'unavailable' | 'invalid_response' | 'request_failed' | 'cursor_error' | 'limit';

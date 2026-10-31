@@ -1,7 +1,7 @@
 import type { RawTelemetrySampleProjection } from '@smart-room/contracts/history';
 import { useTranslation } from 'react-i18next';
 
-import { formatTimestamp } from '../../../../features/date-time';
+import { formatTimestamp } from '../../../../shared/date-time';
 
 import styles from './TelemetryItem.module.css';
 

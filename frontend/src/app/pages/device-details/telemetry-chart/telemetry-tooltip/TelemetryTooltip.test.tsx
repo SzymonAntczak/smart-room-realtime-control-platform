@@ -2,8 +2,8 @@ import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fix
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { formatTimestamp } from '../../../../features/date-time';
 import { i18n } from '../../../../i18n';
+import { formatTimestamp } from '../../../../shared/date-time';
 
 import { TelemetryTooltip } from './TelemetryTooltip';
 

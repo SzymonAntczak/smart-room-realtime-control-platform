@@ -70,7 +70,7 @@ test('loads exactly one older page per user approach to the end', async ({ page 
             return ((await response.json()) as { held: boolean }).held;
         })
         .toBe(true);
-    expect(cursors).toEqual([null, 'older-one']);
+    await expect.poll(() => [...cursors]).toEqual([null, 'older-one']);
 
     const oldHeight = await root.evaluate((element) => element.scrollHeight);
     const secondPage = page.waitForResponse((response) =>
@@ -91,7 +91,7 @@ test('loads exactly one older page per user approach to the end', async ({ page 
             return ((await response.json()) as { held: boolean }).held;
         })
         .toBe(true);
-    expect(cursors).toEqual([null, 'older-one', 'older-two']);
+    await expect.poll(() => [...cursors]).toEqual([null, 'older-one', 'older-two']);
     await configureMockHistory(page.request, { release: true });
     await expect(item(page, records[99]?.recordId ?? 'missing')).toHaveAttribute(
         'aria-setsize',

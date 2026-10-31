@@ -17,11 +17,8 @@ const nativeDialog = {
     close: HTMLDialogElement.prototype.close,
 };
 
-vi.mock('../../../../features/history/history-feed/live-history-list/LiveHistoryList', () => ({
-    LiveHistoryList: () => null,
-}));
-vi.mock('../../../../features/history/history-feed/useHistory', () => ({
-    useHistory: () => ({
+vi.mock('../../../../shared/history/useLiveHistory', () => ({
+    useLiveHistory: () => ({
         state: {
             status: 'ready',
             items: [],

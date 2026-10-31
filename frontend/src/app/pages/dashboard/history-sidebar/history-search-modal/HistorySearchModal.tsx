@@ -2,9 +2,9 @@ import { X } from 'lucide-react';
 import { type MouseEvent, useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { DeviceFilters } from '../../../../features/device-filters';
-import { HistoryFeed, HistoryProvider } from '../../../../features/history';
-import { Button } from '../../../../ui';
+import { DeviceFilters, DeviceFiltersProvider } from '../../../../shared/device-filters';
+import { HistoryResults, useHistorySearch } from '../../../../shared/history';
+import { Button } from '../../../../shared/ui';
 import type { RenderableDeviceProjection } from '../../device-projection';
 
 import styles from './HistorySearchModal.module.css';
@@ -18,6 +18,7 @@ export function HistorySearchModal({
     onClose(): void;
     devices: readonly RenderableDeviceProjection[];
 }) {
+    const search = useHistorySearch(open);
     const { t } = useTranslation('dashboard');
     const dialogRef = useRef<HTMLDialogElement | null>(null);
     const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -73,10 +74,19 @@ export function HistorySearchModal({
                 </Button>
             </header>
             {open ? (
-                <HistoryProvider mode="search" devices={devices}>
+                <DeviceFiltersProvider
+                    devices={devices}
+                    onApply={(criteria) => {
+                        void search.search(criteria);
+                    }}
+                    onRefresh={() => {
+                        void search.refresh();
+                    }}
+                    onClear={search.clear}
+                >
                     <DeviceFilters />
-                    <HistoryFeed />
-                </HistoryProvider>
+                    <HistoryResults {...search} devices={devices} />
+                </DeviceFiltersProvider>
             ) : null}
         </dialog>
     );

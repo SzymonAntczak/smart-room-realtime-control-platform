@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { HistoryFeedHandle } from '../../../../features/history';
+import type { HistoryFeedHandle } from '../../../../shared/history';
 
 export function useHistorySidebarContent() {
     const feedRef = useRef<HistoryFeedHandle | null>(null);

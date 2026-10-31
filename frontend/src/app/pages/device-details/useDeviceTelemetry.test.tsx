@@ -5,7 +5,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { HistoryLiveSource, HistoryLiveUpdate } from '../../features/history';
+import type { HistoryLiveSource, HistoryLiveUpdate } from '../../shared/history';
 
 import { useDeviceTelemetry } from './useDeviceTelemetry';
 
@@ -15,7 +15,7 @@ let source: HistoryLiveSource;
 let currentBaseline: Extract<HistoryLiveUpdate, { kind: 'baseline' }> | undefined;
 let realtimeListeners: Set<(update: HistoryLiveUpdate) => void>;
 
-vi.mock('../../features/room', () => ({
+vi.mock('../../shared/room-realtime', () => ({
     useRoomConnection: () => ({ historySource: source }),
 }));
 
