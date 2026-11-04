@@ -4166,6 +4166,97 @@ describe('createTemperatureRoomRuntime', () => {
         }
     });
 
+    it.each([
+        {
+            action: 'emit_invalid_reading',
+            reason: 'invalid_payload',
+            reportOffsetMs: 0,
+        },
+        {
+            action: 'emit_future_dated_reading',
+            reason: 'future_dated_report',
+            reportOffsetMs: 2_000,
+        },
+    ] as const)(
+        'preserves stale observations after $action and accepts the next time-valid reading',
+        ({ action, reason, reportOffsetMs }) => {
+            const clock = createMutableClock('2026-06-08T09:30:00.000Z');
+            const timer = createManualTimer();
+            let nativeMessageSequence = 0;
+            const runtime = createTemperatureRoomRuntime({
+                intervalMs: 1000,
+                snapshotBroadcastIntervalMs: 1000,
+                clock,
+                timer,
+                sourceTimer: createManualTimer(),
+                generateEventId: createEventIdGenerator(),
+                generateNativeMessageId: () => `native-${++nativeMessageSequence}`,
+            });
+
+            try {
+                runtime.start();
+                clock.advanceBy(10_001);
+                timer.runInterval(1000);
+                const targetBefore = device(runtime, 'temp-window');
+                const otherBefore = device(runtime, 'temp-desk');
+                expect(targetBefore).toMatchObject({
+                    availability: 'online',
+                    reportedState: { temperature: 20, temperatureUnit: 'celsius' },
+                    observationStatus: {
+                        temperature: {
+                            freshness: 'stale',
+                            lastObservedAt: '2026-06-08T09:30:00Z',
+                        },
+                    },
+                });
+                expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toEqual([]);
+                const actionAt = clock.now();
+                const occurredAt = new Date(Date.parse(actionAt) + reportOffsetMs).toISOString();
+
+                expect(runtime.runDeviceScenario('temp-window', action)).toEqual({
+                    action,
+                    status: 'completed',
+                });
+
+                expect(clock.now()).toBe(actionAt);
+                expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toEqual([
+                    expect.objectContaining({
+                        reason,
+                        eventId: `simulator-adapter:temp-window-native:native-${nativeMessageSequence}`,
+                        eventType: 'telemetry.reading.recorded',
+                        deviceId: 'temp-window',
+                        source: 'simulator-adapter',
+                        occurredAt,
+                        observedAt: actionAt,
+                    }),
+                ]);
+                expect(device(runtime, 'temp-window')).toEqual(targetBefore);
+                expect(device(runtime, 'temp-desk')).toEqual(otherBefore);
+
+                clock.advanceBy(1);
+                expect(runtime.runDeviceScenario('temp-window', 'emit_next_reading')).toEqual({
+                    action: 'emit_next_reading',
+                    status: 'completed',
+                });
+
+                expect(device(runtime, 'temp-window')).toMatchObject({
+                    availability: 'online',
+                    reportedState: { temperature: 20.4, temperatureUnit: 'celsius' },
+                    observationStatus: {
+                        temperature: {
+                            freshness: 'fresh',
+                            lastObservedAt: '2026-06-08T09:30:10.002Z',
+                        },
+                    },
+                });
+                expect(device(runtime, 'temp-desk')).toEqual(otherBefore);
+                expect(runtime.getDiagnosticsSnapshot().ignoredEvents).toHaveLength(1);
+            } finally {
+                runtime.stop();
+            }
+        },
+    );
+
     it('records invalid and duplicate scenarios without changing the other sensor projection', () => {
         const runtime = createTemperatureRoomRuntime({
             clock: createMutableClock('2026-06-08T09:30:00Z'),

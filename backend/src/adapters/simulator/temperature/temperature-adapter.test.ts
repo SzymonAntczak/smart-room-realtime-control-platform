@@ -1,12 +1,13 @@
 import type { PlatformEvent } from '@smart-room/contracts/events';
-import type {
-    TemperatureAvailabilityListener,
-    TemperatureAvailabilityMessage,
-    TemperatureHealthListener,
-    TemperatureHealthMessage,
-    TemperatureReadingListener,
-    TemperatureReadingMessage,
-    TemperatureSensorSimulator,
+import {
+    createTemperatureSensorScenario,
+    type TemperatureAvailabilityListener,
+    type TemperatureAvailabilityMessage,
+    type TemperatureHealthListener,
+    type TemperatureHealthMessage,
+    type TemperatureReadingListener,
+    type TemperatureReadingMessage,
+    type TemperatureSensorSimulator,
 } from '@smart-room/simulator';
 import { describe, expect, it } from 'vitest';
 
@@ -16,6 +17,80 @@ import { createRoomProjector } from '../../../platform/read-model/room-projectio
 import { createSimulatorTemperatureAdapter } from './temperature-adapter';
 
 describe('createSimulatorTemperatureAdapter', () => {
+    it.each([
+        {
+            method: 'emitInvalidReading' as const,
+            recordedAt: '2026-06-08T09:30:00.000Z',
+            value: Number.NaN,
+            reason: 'invalid_payload',
+        },
+        {
+            method: 'emitFutureDatedReading' as const,
+            recordedAt: '2026-06-08T09:30:02.000Z',
+            value: 22,
+            reason: 'future_dated_report',
+        },
+    ])(
+        'passes the native $method observation unchanged to processor validation as $reason',
+        ({ method, recordedAt, value, reason }) => {
+            const sensor = createTemperatureSensorScenario({
+                sensorId: 'temp-native',
+                baseTemperature: 22,
+                readingPattern: [0],
+                generateMessageId: () => 'native-reading-1',
+            });
+            const devices = [
+                { deviceId: 'temp-platform', name: 'Temperature', role: 'temperature-sensor' },
+            ] as const;
+            const processor = createEventProcessor({
+                devices: [...devices],
+                roomProjector: createRoomProjector({
+                    devices: [...devices],
+                    initialUpdatedAt: '2026-06-08T09:29:59.000Z',
+                }),
+                clock: { now: () => '2026-06-08T09:30:00.000Z' },
+            });
+            const events: PlatformEvent[] = [];
+            const results: ReturnType<typeof processor.processEvent>[] = [];
+            const adapter = createSimulatorTemperatureAdapter({
+                sensor,
+                nativeSensorId: 'temp-native',
+                platformDeviceId: 'temp-platform',
+                emitEvent(event) {
+                    events.push(event);
+                    results.push(processor.processEvent(event));
+                },
+            });
+
+            try {
+                const nativeReading = sensor[method](recordedAt);
+
+                expect(nativeReading).toEqual({
+                    messageId: 'native-reading-1',
+                    messageType: 'temperature.reading',
+                    sensorId: 'temp-native',
+                    sequence: 0,
+                    value,
+                    unit: 'celsius',
+                    recordedAt,
+                });
+                expect(events).toEqual([
+                    {
+                        eventId: 'simulator-adapter:temp-native:native-reading-1',
+                        eventType: 'telemetry.reading.recorded',
+                        occurredAt: recordedAt,
+                        source: 'simulator-adapter',
+                        deviceId: 'temp-platform',
+                        payload: { metric: 'temperature', value, unit: 'celsius' },
+                    },
+                ]);
+                expect(results).toMatchObject([{ status: 'ignored', reason }]);
+            } finally {
+                adapter.stop();
+            }
+        },
+    );
+
     it('lets the processor deduplicate replayed availability and health facts', () => {
         const sensor = createControllableSensor();
         const devices = [
