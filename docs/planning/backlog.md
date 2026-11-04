@@ -633,7 +633,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-08-04` | Verify reconnect/refetch and stale/offline presentation end to end.            | `ST-4-04-04`, `ST-4-08-03`                             | `B`        | Browser test proves no lost point and honest reliability labels.                                                                              |
 | `[x] ST-4-08-05` | Review the complete story against all criteria, integration and documentation. | `ST-4-08-01`, `ST-4-08-02`, `ST-4-08-03`, `ST-4-08-04` | `B`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
-### [ ] `DS-4-09` — Durable non-applying-input diagnostics
+### [x] `DS-4-09` — Durable non-applying-input diagnostics
 
 - **Value / observable outcome:** an operator can explain ignored inputs without
   letting them corrupt current state, accepted history or product feed.
@@ -656,7 +656,7 @@ Each item has one difficulty rating only:
 | `[x] ST-4-09-01` | Expose bounded persisted quarantine metadata at `GET /diagnostics`.            | `ST-4-01-01`, `ST-4-02-02`               | `C`        | API tests cover schema, ordering, bounds and degraded storage.                                                                                |
 | `[x] ST-4-09-02` | Complete malformed and future-dated development scenarios on normal flow.      | none                                     | `C`        | Scenario tests trace native input through adapter and processor.                                                                              |
 | `[x] ST-4-09-03` | Prove duplicate, malformed and future-dated diagnostics stay non-applying.     | `ST-4-09-01`, `ST-4-09-02`               | `B`        | Integration tests verify diagnostics/logs appear while projection/history/feed do not change.                                                 |
-| `[ ] ST-4-09-04` | Review the complete story against all criteria, integration and documentation. | `ST-4-09-01`, `ST-4-09-02`, `ST-4-09-03` | `B`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
+| `[x] ST-4-09-04` | Review the complete story against all criteria, integration and documentation. | `ST-4-09-01`, `ST-4-09-02`, `ST-4-09-03` | `B`        | All preceding subtasks and story criteria pass; independent review returns PASS and the human accepts it. Results stay in conversation or PR. |
 
 ### [ ] `DS-4-10` — Reproducible Stage 4 acceptance evidence
 
