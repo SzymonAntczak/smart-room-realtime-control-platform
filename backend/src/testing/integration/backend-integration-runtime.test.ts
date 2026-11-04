@@ -34,4 +34,23 @@ describe('backend integration runtime harness', () => {
         ).toBe(22);
         expect(original.historyGenerationId).not.toBe(next.historyGenerationId);
     });
+
+    it('captures rejected-input logs only in the owning backend instance', async () => {
+        const original = await createBackendIntegrationRuntime();
+        const next = await createBackendIntegrationRuntime();
+        const originalLogCount = original.logs.length;
+        const nextLogs = [...next.logs];
+        const reading = original.sources.desk.scenario.emitInvalidReading(original.clock.now());
+
+        expect(original.logs.slice(originalLogCount)).toEqual([
+            {
+                event: 'platform_event_rejected',
+                eventId: `simulator-adapter:temp-desk-native:${reading.messageId}`,
+                deviceId: 'temp-desk',
+                source: 'simulator-adapter',
+                reason: 'invalid_payload',
+            },
+        ]);
+        expect(next.logs).toEqual(nextLogs);
+    });
 });

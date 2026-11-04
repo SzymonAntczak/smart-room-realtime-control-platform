@@ -86,6 +86,7 @@ export async function createBackendIntegrationRuntime({
             () => storageFailing,
             () => readsFailing,
         );
+        const logs: Record<string, unknown>[] = [];
         const runtime = createTemperatureRoomRuntime({
             storage: runtimeStorage,
             storageFactory: () => runtimeStorage,
@@ -102,6 +103,7 @@ export async function createBackendIntegrationRuntime({
             generateNativeMessageId: () => `integration-${identityPrefix}-native-${++identity}`,
             generateCommandId: () => `integration-${identityPrefix}-command-${++identity}`,
             historyCursorSecret: new Uint8Array(32).fill(1),
+            operationalLog: (entry) => logs.push(entry),
         });
         disposers.push(() => runtime.stop());
         const sources = {
@@ -138,6 +140,7 @@ export async function createBackendIntegrationRuntime({
             server,
             clock,
             sources,
+            logs,
             close,
             baseUrl,
             get historyGenerationId() {
