@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { isRawTelemetryPage } from '@smart-room/contracts/history';
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 
@@ -61,6 +61,44 @@ async function prepare(page: Page) {
     await configureMockHistory(page.request, { pages: [createHistoryPage([])] });
 }
 
+function deferred() {
+    let resolve: () => void = () => undefined;
+    const promise = new Promise<void>((complete) => {
+        resolve = complete;
+    });
+
+    return { promise, resolve };
+}
+
+async function revealMeasurement(list: Locator, sequence: number) {
+    const item = list.getByTestId(`telemetry-item-${sample(sequence).recordId}`);
+    const position = 1001 - sequence;
+    await expect
+        .poll(async () => {
+            if (await item.count()) {
+                return true;
+            }
+
+            const firstPosition = Number(
+                await list.getByRole('listitem').first().getAttribute('aria-posinset'),
+            );
+            await list.evaluate(
+                (element, direction) =>
+                    element.scrollBy({
+                        top: direction * element.clientHeight * 0.5,
+                        behavior: 'instant',
+                    }),
+                firstPosition > position ? -1 : 1,
+            );
+
+            return false;
+        })
+        .toBe(true);
+    await item.scrollIntoViewIfNeeded();
+    await expect(item).toHaveRole('listitem');
+    await expect(item).toBeVisible();
+}
+
 for (const width of [390, 1440]) {
     test(`pages through 1,000 static samples with bounded DOM and preserves live-chart independence at ${width}px`, async ({
         page,
@@ -68,10 +106,12 @@ for (const width of [390, 1440]) {
         await page.setViewportSize({ width, height: 1000 });
         await prepare(page);
         let latest = 1000;
+        let responseGate: ReturnType<typeof deferred> | undefined;
         const requests: URL[] = [];
         await page.route('**/room/history/telemetry?*', async (route) => {
             const url = new URL(route.request().url());
             requests.push(url);
+            await responseGate?.promise;
             await route.fulfill({ json: response(latest, url.searchParams.get('cursor')) });
         });
         await page.goto('/device-details/temp-desk');
@@ -90,16 +130,35 @@ for (const width of [390, 1440]) {
 
         for (let count = 200; count <= 1000; count += 100) {
             const before = requests.length;
-            await list.focus();
-            await list.press('End');
-            await expect(
-                list.getByTestId(`telemetry-item-${sample(1100 - count).recordId}`),
-            ).toBeAttached();
-            expect(requests).toHaveLength(before + 1);
+            const gate = deferred();
+            responseGate = gate;
+
+            try {
+                await list.focus();
+                await list.press('End');
+                await expect.poll(() => requests.length).toBe(before + 1);
+                const loading = list.getByRole('status').filter({ hasText: /Ładowanie/u });
+                await expect(loading).toBeVisible();
+                // Finish the native scroll against the old page before appending new rows.
+                await expect(
+                    list.getByTestId(`telemetry-item-${sample(1101 - count).recordId}`),
+                ).toBeVisible();
+                gate.resolve();
+                await expect(loading).toHaveCount(0);
+                // Virtualized rows may be recycled; navigate to the record being checked.
+                await revealMeasurement(list, 1100 - count);
+                expect(requests).toHaveLength(before + 1);
+            } finally {
+                gate.resolve();
+                responseGate = undefined;
+            }
         }
 
         await list.press('End');
         await expect(list.getByText('Koniec pomiarów w wybranym zakresie.')).toBeVisible();
+        const oldest = list.getByTestId(`telemetry-item-${sample(1).recordId}`);
+        await expect(oldest).toBeVisible();
+        await expect(oldest).toHaveAttribute('aria-setsize', '1000');
         expect(await list.getByRole('listitem').count()).toBeLessThan(80);
         expect(
             requests.every(

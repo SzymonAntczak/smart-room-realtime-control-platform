@@ -79,6 +79,9 @@ for (const viewport of [
             await expect(
                 page.getByRole('status').filter({ hasText: 'Ładowanie historii' }),
             ).toBeVisible();
+            await expect
+                .poll(async () => (await page.request.get(mockBffUrls.historyControl)).json())
+                .toEqual({ held: true });
             await configureMockHistory(page.request, { release: true });
             await loadedPage;
             await expect(

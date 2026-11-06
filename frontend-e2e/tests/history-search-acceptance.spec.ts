@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { mockBffUrls } from './browser-test-runtime';
 import {
     configureMockHistory,
     resetMockRoom,
@@ -261,6 +262,9 @@ for (const width of [1440, 390]) {
             await results.press('End');
             const loading = results.getByRole('status').filter({ hasText: /Ładowanie/ });
             await expect(loading).toBeVisible();
+            await expect
+                .poll(async () => (await page.request.get(mockBffUrls.historyControl)).json())
+                .toEqual({ held: true });
             await configureMockHistory(page.request, { release: true });
             await pageResponse;
             await expect(loading).toHaveCount(0);

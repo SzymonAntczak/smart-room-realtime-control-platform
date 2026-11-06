@@ -36,8 +36,9 @@ export default defineConfig({
                             const normalizedFilename = filename.replaceAll('\\', '/');
 
                             if (
-                                normalizedFilename.endsWith('/LiveHistoryList.tsx') ||
-                                normalizedFilename.endsWith('/useHistoryVirtualizer.ts')
+                                normalizedFilename.endsWith('/LiveHistoryFeed.tsx') ||
+                                normalizedFilename.endsWith('/InfiniteList.tsx') ||
+                                normalizedFilename.endsWith('/useHistoryReadingPosition.ts')
                             ) {
                                 const name = normalizedFilename.slice(
                                     normalizedFilename.lastIndexOf('/') + 1,

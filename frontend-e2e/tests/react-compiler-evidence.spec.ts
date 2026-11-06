@@ -9,7 +9,9 @@ import { createOnlineLedRoomSnapshot } from './mock-bff/mock-bff-fixtures';
 import { createHistoryItems, createHistoryPage } from './mock-bff/recent-feed-fixtures';
 import { historyEntry, openHistory } from './page-objects/history';
 
-test('compiles the history feed and position controller with React Compiler', async ({ page }) => {
+test('compiles the history feed, virtual list and reading-position controller with React Compiler', async ({
+    page,
+}) => {
     await resetMockRoom(page.request);
     const snapshot = createOnlineLedRoomSnapshot();
     snapshot.platform.storage = {
@@ -28,20 +30,17 @@ test('compiles the history feed and position controller with React Compiler', as
     const response = await page.request.get('/__test/react-compiler-evidence');
     expect(response.ok()).toBe(true);
     const events = (await response.json()) as Record<string, string[]>;
-    const historyEvents = events['LiveHistoryList.tsx']?.map(
-        (event) => JSON.parse(event) as { kind: string; fnName?: string },
-    );
-    const controllerEvents = events['useHistoryVirtualizer.ts']?.map(
-        (event) => JSON.parse(event) as { kind: string; fnName?: string },
-    );
-    expect(historyEvents).toEqual(
-        expect.arrayContaining([
-            expect.objectContaining({ kind: 'CompileSuccess', fnName: 'LiveHistoryList' }),
-        ]),
-    );
-    expect(controllerEvents).toEqual(
-        expect.arrayContaining([
-            expect.objectContaining({ kind: 'CompileSuccess', fnName: 'useHistoryVirtualizer' }),
-        ]),
-    );
+
+    for (const [filename, fnName] of [
+        ['LiveHistoryFeed.tsx', 'LiveHistoryFeed'],
+        ['InfiniteList.tsx', 'InfiniteList'],
+        ['useHistoryReadingPosition.ts', 'useHistoryReadingPosition'],
+    ]) {
+        const moduleEvents = events[filename]?.map(
+            (event) => JSON.parse(event) as { kind: string; fnName?: string },
+        );
+        expect(moduleEvents).toEqual(
+            expect.arrayContaining([expect.objectContaining({ kind: 'CompileSuccess', fnName })]),
+        );
+    }
 });
