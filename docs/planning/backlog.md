@@ -598,6 +598,10 @@ Each item has one difficulty rating only:
   warning, recovering block and no phantom command on a racing `503`.
 - **Non-goals:** automatic resubmission of user intent.
 - **Story verification:** mocked-BFF sequence available → degraded → recovering.
+- **Current presentation:** the [storage-aware UI rules](../architecture/reliability-and-testing.md#ui-behavior-tests)
+  retain volatile observation/feed labels and established LED command alerts;
+  command, lifecycle and per-device evidence durability remain in technical
+  observability.
 
 - **Final review difficulty rationale:** Review covers established storage indicators, durability labels and command controls across frontend boundaries.
 
@@ -622,6 +626,10 @@ Each item has one difficulty rating only:
   bounded baseline, live updates and reconnect refetch with honest labels.
 - **Non-goals:** unbounded raw cache or editing telemetry.
 - **Story verification:** browser test with HTTP baseline, SSE sample and reconnect.
+- **Supersession:** the accepted [Telemetry History List ADR](../decisions/adr-telemetry-history-list.md)
+  replaces the original equivalent chart/table with an independent live chart
+  and static measurement list. The original table wording below is historical;
+  verify the current list's accessibility and independence alongside the chart.
 
 - **Final review difficulty rationale:** Review crosses HTTP/SSE ordering, bounded telemetry, reconnect and accessible chart/table behavior.
 
@@ -677,7 +685,7 @@ Each item has one difficulty rating only:
 
 | Subtask          | Purpose / primary boundary                                                                           | Depends on                                              | Difficulty | Verification / done when                                                                                                                      |
 | ---------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `[ ] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence.                        | all Stage 4 implementation stories                      | `C`        | Each outcome links to evidence or a new narrow follow-up.                                                                                     |
+| `[x] ST-4-10-01` | Audit every completed item against its narrowest credible automated evidence.                        | all Stage 4 implementation stories                      | `C`        | Each outcome links to evidence or a new narrow follow-up.                                                                                     |
 | `[ ] ST-4-10-02` | Validate Stage 4 mocked-BFF fixtures and deterministic synchronization.                              | `DS-4-06`, `DS-4-06a`, `DS-4-06b`, `DS-4-07`, `DS-4-08` | `C`        | Fixture-validation suite and browser typecheck pass.                                                                                          |
 | `[ ] ST-4-10-03` | Maintain the reusable simulator-only checklist and walkthrough in reliability/testing documentation. | `ST-4-10-01`                                            | `E`        | A clean local setup can follow the instructions without hidden knowledge.                                                                     |
 | `[ ] ST-4-10-04` | Execute the local acceptance walkthrough and report results in the conversation or PR.               | `ST-4-10-02`, `ST-4-10-03`                              | `C`        | A reviewer can reproduce the maintained instructions; this run produces no repository acceptance report.                                      |
@@ -700,6 +708,24 @@ Each item has one difficulty rating only:
   batching and the future-dated scenario already have implementation evidence;
   audit them against their new Done conditions before writing duplicate code.
 - **Human decisions required:** none for Stage 4.
+
+#### Automated verification follow-ups
+
+- [ ] Protect production SQLite connection settings with a temporary-file test
+      through `openSqliteDatabase`.
+      The [storage ADR](../decisions/adr-storage-and-observability.md#storage-boundary-and-connection)
+      requires WAL, FULL synchronous writes, zero busy timeout, foreign-key
+      enforcement, defensive mode and disabled extension loading.
+      Done when: assertions check the connection's PRAGMA values and observable
+      defensive/extension restrictions, and fail if a required setting is removed.
+
+- [ ] Add simulator-only full-system smoke coverage under `e2e/`.
+      Follow the [test-suite boundaries](../decisions/adr-test-suite-boundaries.md)
+      with the real frontend, BFF and normal simulator runtime.
+      Done when: a documented runnable command verifies live telemetry, confirmed
+      LED control with retained history, and paged history with live additions
+      through the UI. Mocked-BFF browser tests and native-source backend tests
+      remain the owners of their detailed failure matrices.
 
 ### Stage 6 - Physical LED Actuation
 
