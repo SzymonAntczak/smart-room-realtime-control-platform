@@ -407,11 +407,273 @@ retained event history, without displaying another device's history.
 
 ## Manual Acceptance Checklist
 
-Before treating a milestone as done, verify:
+Use the simulator-only walkthrough below to verify the local control loop,
+history and failure visibility. Run it through the ordinary development
+launcher, real BFF, SQLite and frontend. The launcher starts the simulator
+inside the backend; this walkthrough requires neither physical devices nor a
+separate simulator process or MQTT broker. MQTT transport acceptance belongs to
+the [MQTT runtime checks](#mqtt-runtime-and-transport-tests).
 
-- a user can see current room state
-- a user can send a command
-- the UI shows the command as pending before confirmation
-- the UI updates after a device report
-- command outcome and failure state remain visible
-- at least one failure scenario is visible, not hidden
+- [ ] Both temperature sensors update through the live room stream.
+- [ ] Temperature freshness, explicit availability and health change independently.
+- [ ] LED intent remains distinct from reported power while a command is pending.
+- [ ] Confirmation, rejection, timeout and a late report have distinct visible outcomes.
+- [ ] Retained user history explains changes and unsuccessful command attempts;
+      older pages remain readable while new entries arrive.
+- [ ] Device details show the selected device's telemetry and independent event history.
+- [ ] Static history searches keep their applied criteria and results until explicit refresh.
+- [ ] Ignored readings appear in diagnostics and correlated logs without changing
+      observations, accepted history or the product feed.
+- [ ] Storage degradation remains visible while volatile updates continue;
+      recovery records a gap without backfilling outage observations.
+- [ ] Realtime reconnect retains the last valid state and restores fresh updates;
+      restart preserves retained durable history in the same generation.
+
+### Simulator-only setup
+
+Use Node `>=24.15 <25`, npm and a browser with developer tools. The commands
+below use PowerShell. Open two terminals at the repository root; a third is
+used only for the storage lock drill. Leave port `4310` free for the BFF and
+`5173` free for Vite. Stop any earlier development runtime first.
+
+In terminal A, install the workspaces and select a new, isolated database:
+
+```powershell
+node --version
+npm --version
+npm install
+
+$walkthroughDirectory = Join-Path (Get-Location).Path ('data/walkthrough-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $walkthroughDirectory | Out-Null
+$env:SMART_ROOM_STORAGE_PATH = Join-Path $walkthroughDirectory 'smart-room.sqlite'
+$env:PORT = '4310'
+$env:LOG_LEVEL = 'info'
+$env:VITE_BFF_URL = 'http://localhost:4310'
+$env:VITE_ROOM_COMMAND_URL = 'http://localhost:4310/room/commands'
+$env:VITE_ROOM_REALTIME_URL = 'http://localhost:4310/room/realtime'
+Write-Host "Walkthrough database: $env:SMART_ROOM_STORAGE_PATH"
+npm run dev
+```
+
+Keep the printed absolute database path for the storage drill. The explicit
+URLs keep this run on the real BFF even if the shell previously targeted a
+mock. Remove conflicting values from local Vite environment files if needed.
+Wait for `backend_started` in the backend's JSON output and Vite's ready URL,
+then open that frontend URL (normally `http://localhost:5173`).
+`npm run dev` enables the development scenario endpoints automatically. For
+separate backend startup, use `ENABLE_DEV_SCENARIOS=true` as described in the
+[backend instructions](../../backend/README.md#commands).
+
+In terminal B, define the scenario helper and check readiness:
+
+```powershell
+$walkthroughBff = 'http://localhost:4310'
+function Invoke-DeviceScenario {
+    param([string]$DeviceId, [string]$Action)
+    Invoke-RestMethod -Method Post -Uri "$walkthroughBff/dev/devices/$DeviceId/scenarios" -ContentType 'application/json' -Body (@{ action = $Action } | ConvertTo-Json)
+}
+Invoke-RestMethod "$walkthroughBff/room"
+Invoke-RestMethod "$walkthroughBff/dev/devices/temp-desk/scenarios"
+Invoke-RestMethod "$walkthroughBff/dev/devices/led-main/scenarios"
+```
+
+The room snapshot must contain `temp-desk`, `temp-window` and `led-main`,
+storage `available`, a non-null `historyGenerationId` and no active command.
+Keep the generation value for the restart check. The sensors report every 10
+and 20 seconds respectively. Health may initially be `unknown`; do not infer
+`healthy` from telemetry. In the browser Network panel, `/room/realtime` must
+remain one open SSE request. A pending SSE request is normal.
+
+Each device card's flask button, **Scenariusze programistyczne**, opens its
+scenario panel. Use the matching buttons or terminal B's helper; action IDs
+below identify the same dev-only boundary. For example:
+
+```powershell
+Invoke-DeviceScenario temp-desk pause_telemetry
+Invoke-DeviceScenario temp-desk emit_next_reading
+```
+
+A completed scenario response acknowledges the development action, not a
+command confirmation. Observe the resulting room projection/UI before moving
+on. These controls drive native simulator input through the adapter and
+processor; never edit SQLite rows or inject frontend state to produce a result.
+
+### Walkthrough: observations and control
+
+1. On the Dashboard, watch both temperature cards until their observation
+   timestamps advance. Open **Szczegóły urządzenia** for `temp-desk`: its chart
+   combines retained HTTP samples with live readings. Its measurement list and
+   event history are separate static reads. Return to the Dashboard; navigation
+   must reuse the room stream rather than opening another subscription.
+2. Run `pause_telemetry` for `temp-desk`. Note its last observation timestamp;
+   after its age exceeds 30 seconds, freshness becomes `stale` while availability
+   stays `online` and the last value remains visible. `temp-window` continues
+   updating. Run `emit_next_reading`: a new accepted reading restores freshness
+   without resuming the periodic schedule.
+3. While periodic desk telemetry remains paused, run `disconnect_device`.
+   Availability becomes `offline`; the last observation remains. Run
+   `reconnect_device`: availability returns to `online` independently of that
+   observation. Run `emit_next_reading` to refresh it, then `resume_telemetry`
+   to restore the periodic schedule. Telemetry actions are unavailable while
+   the sensor is offline.
+4. Run `degrade_device` for the desk sensor: health becomes `degraded` with a
+   reason while availability stays `online` and readings continue. Run
+   `recover_device`: health becomes `healthy` without rewriting availability or
+   observation time.
+5. Open the LED scenario panel. Before **each** row below, select its action,
+   then use the Dashboard LED control to request the opposite of the currently
+   reported power. Selection configures only the next command; it sends no
+   command and does not change reported power. Wait for a terminal outcome
+   before choosing another scenario, and for the late report before continuing
+   after the final row.
+
+    | Action                 | What to observe after sending the command                                                                                                                                                             |
+    | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `confirm_delayed`      | For about 2 seconds the command is `pending`, requested power differs from reported power and the control prevents overlap; the matching report then changes reported power and confirms the command. |
+    | `confirm_immediately`  | The matching report confirms the command; the intermediate pending state may be too brief to see manually.                                                                                            |
+    | `reject_command`       | A terminal `failed` outcome and reason remain visible; reported power does not change.                                                                                                                |
+    | `omit_confirmation`    | After 5 seconds the command is `timed_out`; reported power does not change.                                                                                                                           |
+    | `report_after_timeout` | The command times out at 5 seconds. At about 6 seconds the report changes observed power, but the command remains `timed_out`.                                                                        |
+
+6. Check the LED's terminal command history for the retained outcome, reason
+   where applicable and timestamps. Use browser Network responses or
+   `GET /room` to inspect `commandId`, intent/lifecycle durability and delivery
+   timing when needed. A `202` command response means acceptance only; the
+   matching report-derived SSE projection establishes confirmation. The
+   Dashboard's user history shows device changes and unsuccessful attempts,
+   rather than every requested/dispatched lifecycle fact or raw reading.
+7. With no active command, run `disconnect_device` for `led-main`: its last
+   power remains visible and new commands are blocked. Run `reconnect_device`,
+   then `degrade_device`: degraded health and its reason remain distinct from
+   online availability and block new commands. Restore with `recover_device`.
+
+### Walkthrough: paged history and static searches
+
+Create enough real user-visible changes to exercise more than the default
+50-entry history page. In terminal B, this alternates accepted health reports
+through the normal simulator boundary:
+
+```powershell
+1..30 | ForEach-Object {
+    Invoke-DeviceScenario temp-desk degrade_device | Out-Null
+    Invoke-DeviceScenario temp-desk recover_device | Out-Null
+}
+```
+
+1. Reload the Dashboard to start a new history session. Scroll its history
+   sidebar toward older entries; Network must show
+   `/room/history/user-history` requests with opaque cursors. Keep an older
+   entry visible and run one more `degrade_device`/`recover_device` pair.
+   New entries must not jump the reader to the top. Use **Na górę** to see
+   them; continued paging must not duplicate them. Virtual scrolling keeps
+   only a portion of the loaded entries in the DOM.
+2. Open **Filtruj**. Choose the desk device and today's dates, then **Szukaj**.
+   The applied-criteria summary identifies those results. Change the draft
+   device without submitting: results stay unchanged, and **Odśwież wyniki**
+   repeats the applied desk criteria. Generate another health change: live
+   Dashboard history updates, while this search stays static until refresh.
+   Use **Wczytaj starsze** if available. Clear or close the modal, then reopen:
+   it starts empty and makes no search request until criteria are submitted.
+3. Open desk device details. Its event history loads only desk entries and
+   retains its own date filters and refresh action. The temperature chart
+   continues live while the measurement list stays static until explicit
+   refresh. Search today's measurements and scroll for older samples if
+   available; sensor readings are not user-history entries. Open window sensor
+   details and confirm that desk results do not leak into either list.
+
+### Walkthrough: ignored inputs and diagnostics
+
+Pause **both** temperature sensors to isolate ignored-input effects. Emit one
+valid desk reading before replaying it:
+
+```powershell
+Invoke-DeviceScenario temp-desk pause_telemetry
+Invoke-DeviceScenario temp-window pause_telemetry
+Invoke-DeviceScenario temp-desk emit_next_reading
+$beforeIgnored = Invoke-RestMethod "$walkthroughBff/room"
+Invoke-DeviceScenario temp-desk replay_last_reading
+Invoke-DeviceScenario temp-desk emit_invalid_reading
+Invoke-DeviceScenario temp-desk emit_future_dated_reading
+$afterIgnored = Invoke-RestMethod "$walkthroughBff/room"
+(Invoke-RestMethod "$walkthroughBff/diagnostics").entries | Format-Table reason,eventId,deviceId,recordedAt
+```
+
+Expect `duplicate_event`, `invalid_payload` and `future_dated_report` entries,
+newest first. The future-dated scenario is two seconds ahead, beyond the
+one-second tolerance. Correlate each diagnostic's `eventId`, `deviceId`,
+`source` and `reason` with a `platform_event_rejected` JSON log in terminal A.
+The invalid-reading action tests an invalid payload; malformed-envelope
+coverage belongs to native-source backend tests.
+
+Compare desk reported temperature and `lastObservedAt`, `userHistory` and
+`platform.storage.storedThroughSequence` before and after: the ignored inputs
+must not change them or add chart samples. Freshness can independently become
+stale as wall time advances, so do not compare whole snapshots for equality.
+Diagnostics are technical metadata, not entries in the product history feed.
+Emit a new valid desk reading and observe a fresh value, then resume telemetry
+for **both** sensors.
+
+### Walkthrough: storage degradation and recovery
+
+Use a temporary SQLite write lock against **only** the isolated walkthrough
+database. Keep terminal A running, and open terminal C at the repository root.
+Paste the absolute database path printed during setup when prompted:
+
+```powershell
+$walkthroughDatabase = Read-Host 'Walkthrough database path (without quotes)'
+node --input-type=module -e 'import { DatabaseSync } from "node:sqlite"; const db = new DatabaseSync(process.argv[1]); db.exec("PRAGMA busy_timeout = 1000; BEGIN IMMEDIATE"); console.log("Write lock held; press Ctrl+C to release."); setInterval(() => {}, 1000);' $walkthroughDatabase
+```
+
+If the lock command exits with `database is locked`, retry it; do not proceed
+until it prints `Write lock held`. This transaction writes no application
+data. Keep it open while completing the next checks:
+
+1. Emit a desk reading from terminal B. The backend's write fails and rolls
+   back, storage becomes `degraded`, and the fresh reading continues as
+   volatile. The Dashboard displays a persistent storage warning. History and
+   `/diagnostics` HTTP reads return `503`; cached values must not look like a
+   successful fresh durable read.
+2. Select `confirm_delayed` for the LED and request opposite power. Controls
+   remain usable with the storage warning; the command confirms from its
+   report while intent and lifecycle remain volatile. Inspect these axes in
+   `GET /room`; the command alert need not list separate durability fields.
+3. In terminal C, press Ctrl+C to release the lock. Leave the backend running.
+   Its default five-second probe restores storage through `recovering` to
+   `available`. Correlated storage logs and the room stream establish the
+   transition even if `recovering` is too brief to see; new commands are
+   temporarily blocked during that state. HTTP history and diagnostics become
+   readable again. One storage-gap entry explains the outage with no automatic
+   backfill; outage readings must not appear as durable historical samples.
+4. Emit another reading and send a normal LED command after storage is
+   available. New work is durable; recovery does not retroactively promote
+   earlier volatile command evidence or retry the completed volatile command.
+
+### Walkthrough: reconnect, restart and cleanup
+
+1. In browser developer tools, set Network to Offline until the UI shows
+   reconnecting. Last valid values remain visible as last-known data. Restore
+   online networking and wait for a new `/room/realtime` snapshot and a later
+   reading; live updates and history resume without duplicate entries. Static
+   search results still require their own explicit refresh.
+2. Wait for all LED commands and any scheduled late report to finish. Note a
+   durable history entry and its timestamp, plus the history generation from
+   `GET /room`. Stop terminal A with Ctrl+C; wait until its child processes
+   release the ports. Restart with `npm run dev` in the **same terminal**,
+   preserving `SMART_ROOM_STORAGE_PATH`. Refresh any static searches. The
+   retained entry remains readable under the same generation; startup simulator
+   reports may add newer observations, so do not expect whole-snapshot equality
+   or the simulator's physical power to be preserved across restart.
+3. Restore both sensors with `reconnect_device`, `recover_device` and
+   `resume_telemetry`; restore LED availability/health and select
+   `confirm_immediately` with no active command. Release any remaining lock,
+   stop the launcher and close the walkthrough terminals to discard their
+   environment overrides. Keep the isolated database if inspection is useful;
+   a fresh run creates a new directory rather than deleting existing data.
+
+Report an execution's observed results, failures and environment in the
+conversation or PR. This checklist remains reusable instructions and contains
+no saved acceptance verdict. The automated companions are the contract,
+simulator, backend unit/integration and frontend suites described above;
+[mocked-BFF Playwright](../../frontend-e2e/README.md) validates browser behavior
+but does not substitute for this real-runtime walkthrough or full-system smoke
+coverage.
