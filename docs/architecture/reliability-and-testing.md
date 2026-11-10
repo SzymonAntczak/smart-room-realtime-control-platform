@@ -432,9 +432,9 @@ the [MQTT runtime checks](#mqtt-runtime-and-transport-tests).
 ### Simulator-only setup
 
 Use Node `>=24.15 <25`, npm and a browser with developer tools. The commands
-below use PowerShell. Open two terminals at the repository root; a third is
-used only for the storage lock drill. Leave port `4310` free for the BFF and
-`5173` free for Vite. Stop any earlier development runtime first.
+below use PowerShell. Open terminals A, B and C at the repository root. Open
+terminal D for the storage lock drill. Leave ports `4310`, `4311` and `5173`
+free for the BFF, SSE proxy and Vite. Stop any earlier development runtime first.
 
 In terminal A, install the workspaces and select a new, isolated database:
 
@@ -450,16 +450,23 @@ $env:PORT = '4310'
 $env:LOG_LEVEL = 'info'
 $env:VITE_BFF_URL = 'http://localhost:4310'
 $env:VITE_ROOM_COMMAND_URL = 'http://localhost:4310/room/commands'
-$env:VITE_ROOM_REALTIME_URL = 'http://localhost:4310/room/realtime'
+$env:VITE_ROOM_REALTIME_URL = 'http://127.0.0.1:4311/room/realtime'
 Write-Host "Walkthrough database: $env:SMART_ROOM_STORAGE_PATH"
 npm run dev
 ```
 
 Keep the printed absolute database path for the storage drill. The explicit
-URLs keep this run on the real BFF even if the shell previously targeted a
-mock. Remove conflicting values from local Vite environment files if needed.
-Wait for `backend_started` in the backend's JSON output and Vite's ready URL,
-then open that frontend URL (normally `http://localhost:5173`).
+URLs keep HTTP requests on the real BFF and route only SSE through the local
+walkthrough proxy. Remove conflicting values from local Vite environment files
+if needed. In terminal C, start the proxy:
+
+```powershell
+node scripts/walkthrough-sse-proxy.mjs
+```
+
+Wait for `backend_started` in terminal A, Vite's ready URL and `SSE proxy
+listening` in terminal C. Open the frontend URL (normally
+`http://localhost:5173`).
 `npm run dev` enables the development scenario endpoints automatically. For
 separate backend startup, use `ENABLE_DEV_SCENARIOS=true` as described in the
 [backend instructions](../../backend/README.md#commands).
@@ -567,7 +574,8 @@ through the normal simulator boundary:
    New entries must not jump the reader to the top. Use **Na górę** to see
    them; continued paging must not duplicate them. Virtual scrolling keeps
    only a portion of the loaded entries in the DOM.
-2. Open **Filtruj**. Choose the desk device and today's dates, then **Szukaj**.
+2. In the Dashboard history sidebar, click **Szukaj** to open the search dialog.
+   Choose the desk device and today's dates, then click **Szukaj** in the dialog.
    The applied-criteria summary identifies those results. Change the draft
    device without submitting: results stay unchanged, and **Odśwież wyniki**
    repeats the applied desk criteria. Generate another health change: live
@@ -616,7 +624,7 @@ for **both** sensors.
 ### Walkthrough: storage degradation and recovery
 
 Use a temporary SQLite write lock against **only** the isolated walkthrough
-database. Keep terminal A running, and open terminal C at the repository root.
+database. Keep terminal A running, and open terminal D at the repository root.
 Paste the absolute database path printed during setup when prompted:
 
 ```powershell
@@ -637,7 +645,7 @@ data. Keep it open while completing the next checks:
    remain usable with the storage warning; the command confirms from its
    report while intent and lifecycle remain volatile. Inspect these axes in
    `GET /room`; the command alert need not list separate durability fields.
-3. In terminal C, press Ctrl+C to release the lock. Leave the backend running.
+3. In terminal D, press Ctrl+C to release the lock. Leave the backend running.
    Its default five-second probe restores storage through `recovering` to
    `available`. Correlated storage logs and the room stream establish the
    transition even if `recovering` is too brief to see; new commands are
@@ -650,11 +658,13 @@ data. Keep it open while completing the next checks:
 
 ### Walkthrough: reconnect, restart and cleanup
 
-1. In browser developer tools, set Network to Offline until the UI shows
-   reconnecting. Last valid values remain visible as last-known data. Restore
-   online networking and wait for a new `/room/realtime` snapshot and a later
-   reading; live updates and history resume without duplicate entries. Static
-   search results still require their own explicit refresh.
+1. Keep the BFF and frontend running. In terminal C, type `drop` and press
+   Enter. The proxy closes the open `/room/realtime` connection and keeps new
+   connections closed. Wait for the Dashboard to show reconnecting while the
+   last valid values remain visible. Type `resume` and press Enter. In the
+   browser Network panel, check that a new `/room/realtime` stream delivers a
+   snapshot and a later reading. Live updates and history resume without
+   duplicate entries. Static search results still require explicit refresh.
 2. Wait for all LED commands and any scheduled late report to finish. Note a
    durable history entry and its timestamp, plus the history generation from
    `GET /room`. Stop terminal A with Ctrl+C; wait until its child processes
@@ -666,9 +676,10 @@ data. Keep it open while completing the next checks:
 3. Restore both sensors with `reconnect_device`, `recover_device` and
    `resume_telemetry`; restore LED availability/health and select
    `confirm_immediately` with no active command. Release any remaining lock,
-   stop the launcher and close the walkthrough terminals to discard their
-   environment overrides. Keep the isolated database if inspection is useful;
-   a fresh run creates a new directory rather than deleting existing data.
+   stop the launcher and the proxy with Ctrl+C, and close the walkthrough
+   terminals to discard their environment overrides. Keep the isolated database
+   if inspection is useful; a fresh run creates a new directory rather than
+   deleting existing data.
 
 Report an execution's observed results, failures and environment in the
 conversation or PR. This checklist remains reusable instructions and contains
