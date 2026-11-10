@@ -1,15 +1,16 @@
 import { expect, type Page, test } from '@playwright/test';
-import {
-    isRawTelemetryPage,
-    type RawTelemetrySampleProjection,
-} from '@smart-room/contracts/history';
+import type { RawTelemetrySampleProjection } from '@smart-room/contracts/history';
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 
 import {
     configureMockHistory,
+    configureMockTelemetryHistory,
     disconnectMockRealtime,
+    isMockTelemetryResponseHeld,
+    observeTelemetryHistoryRequests,
     publishMockRoomUpdate,
     resetMockRoom,
+    resumeMockRealtime,
     setMockRoomSnapshot,
 } from './mock-bff/mock-bff-control';
 import {
@@ -45,7 +46,7 @@ function telemetryPage(
     retentionAsOf = initialReadAt,
     nextCursor: string | null = null,
 ) {
-    const page = {
+    return {
         ...createHistoryIdentityFixtures().rawTelemetryPage,
         historyGenerationId: 'mock-history-generation',
         throughSequence,
@@ -54,18 +55,6 @@ function telemetryPage(
         items: [...samples].reverse(),
         nextCursor,
     };
-    expect(isRawTelemetryPage(page)).toBe(true);
-
-    return page;
-}
-
-function deferred() {
-    let resolve: () => void = () => undefined;
-    const promise = new Promise<void>((complete) => {
-        resolve = complete;
-    });
-
-    return { promise, resolve };
 }
 
 function deviceForSample(sample: RawTelemetrySampleProjection) {
@@ -152,11 +141,8 @@ test('retains telemetry through reconnect and merges refetched pages with live s
     const duringRefetch = measurement(102, 23.1, '2026-06-08T09:37:01.000Z');
     const afterRefetch = measurement(103, 23.2, '2026-06-08T09:37:02.000Z');
     const snapshot = await prepareTelemetry(page, initial);
-    const snapshotGate = deferred();
-    const firstPageGate = deferred();
-    const secondPageGate = deferred();
-    const requests: URL[] = [];
-    const initialPage = telemetryPage([initial], 1);
+    await configureMockTelemetryHistory(page.request, { pages: [telemetryPage([initial], 1)] });
+    const requests = observeTelemetryHistoryRequests(page);
     const replacementPage = telemetryPage(
         [...retainedHistory, beforeDisconnect, missed],
         101,
@@ -164,20 +150,6 @@ test('retains telemetry through reconnect and merges refetched pages with live s
         'older',
     );
     const olderPage = telemetryPage([initial], 101, replacementReadAt);
-    await page.route('**/room/history/telemetry?*', async (route) => {
-        const url = new URL(route.request().url());
-        requests.push(url);
-
-        if (url.searchParams.get('to') === initialReadAt) {
-            await route.fulfill({ json: initialPage });
-        } else if (url.searchParams.has('cursor')) {
-            await secondPageGate.promise;
-            await route.fulfill({ json: olderPage });
-        } else {
-            await firstPageGate.promise;
-            await route.fulfill({ json: replacementPage });
-        }
-    });
 
     try {
         await page.goto('/device-details/temp-desk');
@@ -195,12 +167,12 @@ test('retains telemetry through reconnect and merges refetched pages with live s
         snapshot.devices = [deviceForSample(missed)];
         snapshot.platform.storage.storedThroughSequence = missed.storageSequence;
         await setMockRoomSnapshot(page.request, snapshot);
-        await page.route('**/room/realtime', async (route) => {
-            await snapshotGate.promise;
-            await route.continue();
+        await configureMockTelemetryHistory(page.request, {
+            pages: [replacementPage, olderPage],
+            hold: true,
         });
         await page.clock.setFixedTime(new Date(replacementReadAt));
-        await disconnectMockRealtime(page.request);
+        await disconnectMockRealtime(page.request, { holdReconnect: true });
 
         const reconnecting = page.getByRole('status').filter({ hasText: /łączy się ponownie/u });
         const partial = page.getByRole('status').filter({ hasText: /Kompletność/u });
@@ -209,8 +181,9 @@ test('retains telemetry through reconnect and merges refetched pages with live s
         await expectMeasurements(page, [initial, beforeDisconnect]);
         expect(requests).toHaveLength(initialRequests);
 
-        snapshotGate.resolve();
+        await resumeMockRealtime(page.request);
         await expect.poll(() => requests.length).toBe(initialRequests + 1);
+        await expect.poll(() => isMockTelemetryResponseHeld(page.request)).toBe(true);
         await expect(reconnecting).toHaveCount(0);
         await expect(partial).toBeVisible();
         await expectMeasurements(page, [initial, beforeDisconnect]);
@@ -222,15 +195,16 @@ test('retains telemetry through reconnect and merges refetched pages with live s
 
         await publishSample(page, 0, duringRefetch);
         await expectMeasurements(page, [initial, beforeDisconnect, duringRefetch]);
-        firstPageGate.resolve();
+        await configureMockTelemetryHistory(page.request, { hold: true, release: true });
         await expect.poll(() => requests.length).toBe(initialRequests + 2);
+        await expect.poll(() => isMockTelemetryResponseHeld(page.request)).toBe(true);
         await expect(partial).toBeVisible();
         expect(requests[initialRequests + 1]?.searchParams.get('cursor')).toBe('older');
         expect(requests[initialRequests + 1]?.searchParams.get('from')).toBe(
             requests[initialRequests]?.searchParams.get('from'),
         );
         expect(requests[initialRequests + 1]?.searchParams.get('to')).toBe(replacementReadAt);
-        secondPageGate.resolve();
+        await configureMockTelemetryHistory(page.request, { release: true });
 
         const refetched = [initial, ...retainedHistory, beforeDisconnect, missed, duringRefetch];
         await expectMeasurements(page, refetched);
@@ -240,9 +214,8 @@ test('retains telemetry through reconnect and merges refetched pages with live s
         expect(requests).toHaveLength(initialRequests + 2);
         await expect(staticList.getByRole('listitem')).toHaveCount(1);
     } finally {
-        snapshotGate.resolve();
-        firstPageGate.resolve();
-        secondPageGate.resolve();
+        await resumeMockRealtime(page.request);
+        await configureMockTelemetryHistory(page.request, { release: true });
     }
 });
 
@@ -252,8 +225,7 @@ test('keeps availability and observation freshness independent while retaining t
     const initial = measurement(1, 22.8, '2026-06-08T09:31:00.000Z');
     const recovered = measurement(2, 23.1, '2026-06-08T09:35:00.000Z');
     await prepareTelemetry(page, initial);
-    const baseline = telemetryPage([initial], 1);
-    await page.route('**/room/history/telemetry?*', (route) => route.fulfill({ json: baseline }));
+    await configureMockTelemetryHistory(page.request, { pages: [telemetryPage([initial], 1)] });
     await page.goto('/device-details/temp-desk');
     const freshness = page.getByRole('status', { name: 'Świeżość pomiaru' });
     const availability = page

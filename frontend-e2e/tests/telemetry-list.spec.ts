@@ -1,9 +1,11 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
-import { isRawTelemetryPage } from '@smart-room/contracts/history';
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 
 import {
     configureMockHistory,
+    configureMockTelemetryHistory,
+    isMockTelemetryResponseHeld,
+    observeTelemetryHistoryRequests,
     publishMockRoomUpdate,
     resetMockRoom,
     setMockRoomSnapshot,
@@ -12,6 +14,7 @@ import {
     createDeviceUpdatedMessage,
     createOnlineTemperatureDeviceProjection,
     createOnlineTemperatureRoomSnapshot,
+    createPlatformUpdatedMessage,
 } from './mock-bff/mock-bff-fixtures';
 import { createHistoryPage } from './mock-bff/recent-feed-fixtures';
 
@@ -28,23 +31,23 @@ function sample(sequence: number) {
     };
 }
 
-function response(first = 1000, cursor: string | null = '100') {
-    const offset = cursor === null ? 0 : Number(cursor);
-    const items = Array.from({ length: Math.min(100, first - offset) }, (_, i) =>
-        sample(first - offset - i),
-    );
-    const page = {
-        ...createHistoryIdentityFixtures().rawTelemetryPage,
-        historyGenerationId: 'mock-history-generation',
-        throughSequence: 1001,
-        retentionAsOf: instant,
-        pageSize: 100,
-        items,
-        nextCursor: offset + items.length < first ? String(offset + items.length) : null,
-    };
-    expect(isRawTelemetryPage(page)).toBe(true);
+function telemetryPages(latest: number) {
+    const fixture = createHistoryIdentityFixtures().rawTelemetryPage;
 
-    return page;
+    return Array.from({ length: Math.ceil(latest / 100) }, (_, index) => {
+        const offset = index * 100;
+        const count = Math.min(100, latest - offset);
+
+        return {
+            ...fixture,
+            historyGenerationId: 'mock-history-generation',
+            throughSequence: latest,
+            retentionAsOf: instant,
+            pageSize: 100,
+            items: Array.from({ length: count }, (_, i) => sample(latest - offset - i)),
+            nextCursor: offset + count < latest ? `measurements-${index + 1}` : null,
+        };
+    });
 }
 
 async function prepare(page: Page) {
@@ -59,15 +62,6 @@ async function prepare(page: Page) {
     };
     await setMockRoomSnapshot(page.request, snapshot);
     await configureMockHistory(page.request, { pages: [createHistoryPage([])] });
-}
-
-function deferred() {
-    let resolve: () => void = () => undefined;
-    const promise = new Promise<void>((complete) => {
-        resolve = complete;
-    });
-
-    return { promise, resolve };
 }
 
 async function revealMeasurement(list: Locator, sequence: number) {
@@ -105,15 +99,8 @@ for (const width of [390, 1440]) {
     }, testInfo) => {
         await page.setViewportSize({ width, height: 1000 });
         await prepare(page);
-        let latest = 1000;
-        let responseGate: ReturnType<typeof deferred> | undefined;
-        const requests: URL[] = [];
-        await page.route('**/room/history/telemetry?*', async (route) => {
-            const url = new URL(route.request().url());
-            requests.push(url);
-            await responseGate?.promise;
-            await route.fulfill({ json: response(latest, url.searchParams.get('cursor')) });
-        });
+        await configureMockTelemetryHistory(page.request, { pages: telemetryPages(1000) });
+        const requests = observeTelemetryHistoryRequests(page);
         await page.goto('/device-details/temp-desk');
         const section = page.getByRole('region', { name: 'Lista pomiarów', exact: true });
         const list = page.getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' });
@@ -130,27 +117,26 @@ for (const width of [390, 1440]) {
 
         for (let count = 200; count <= 1000; count += 100) {
             const before = requests.length;
-            const gate = deferred();
-            responseGate = gate;
+            await configureMockTelemetryHistory(page.request, { hold: true });
 
             try {
                 await list.focus();
                 await list.press('End');
                 await expect.poll(() => requests.length).toBe(before + 1);
+                await expect.poll(() => isMockTelemetryResponseHeld(page.request)).toBe(true);
                 const loading = list.getByRole('status').filter({ hasText: /Ładowanie/u });
                 await expect(loading).toBeVisible();
                 // Finish the native scroll against the old page before appending new rows.
                 await expect(
                     list.getByTestId(`telemetry-item-${sample(1101 - count).recordId}`),
                 ).toBeVisible();
-                gate.resolve();
+                await configureMockTelemetryHistory(page.request, { release: true });
                 await expect(loading).toHaveCount(0);
                 // Virtualized rows may be recycled; navigate to the record being checked.
                 await revealMeasurement(list, 1100 - count);
                 expect(requests).toHaveLength(before + 1);
             } finally {
-                gate.resolve();
-                responseGate = undefined;
+                await configureMockTelemetryHistory(page.request, { release: true });
             }
         }
 
@@ -170,16 +156,30 @@ for (const width of [390, 1440]) {
         const baselineRequests = requests.length;
         const live = { ...sample(1001), value: 27.123456789 };
         await publishMockRoomUpdate(page.request, {
-            ...createDeviceUpdatedMessage(0, createOnlineTemperatureDeviceProjection()),
+            ...createDeviceUpdatedMessage(0, {
+                ...createOnlineTemperatureDeviceProjection(),
+                reportedState: { temperature: live.value, temperatureUnit: 'celsius' },
+                observationStatus: {
+                    temperature: {
+                        freshness: 'fresh',
+                        lastObservedAt: live.occurredAt,
+                        durability: 'durable',
+                    },
+                },
+            }),
             telemetrySample: live,
         });
+        await publishMockRoomUpdate(
+            page.request,
+            createPlatformUpdatedMessage(1, live.storageSequence, live.occurredAt),
+        );
         await expect(page.getByRole('application')).toHaveAccessibleDescription(/27\.123456789/);
         expect(requests).toHaveLength(baselineRequests);
         await expect(list.getByText('Koniec pomiarów w wybranym zakresie.')).toBeVisible();
         await list.press('Home');
         await expect(list.getByTestId(`telemetry-item-${sample(1000).recordId}`)).toBeVisible();
         await expect(list.getByTestId(`telemetry-item-${live.recordId}`)).toHaveCount(0);
-        latest = 1001;
+        await configureMockTelemetryHistory(page.request, { pages: telemetryPages(1001) });
         await section.getByRole('button', { name: 'Odśwież wyniki', exact: true }).click();
         await expect(list.getByTestId(`telemetry-item-${live.recordId}`)).toBeVisible();
         await expect(list.getByText('Koniec pomiarów w wybranym zakresie.')).toHaveCount(0);
@@ -198,11 +198,8 @@ test('applies inclusive DST days, refreshes applied criteria and clears without 
     page,
 }) => {
     await prepare(page);
-    const requests: URL[] = [];
-    await page.route('**/room/history/telemetry?*', async (route) => {
-        requests.push(new URL(route.request().url()));
-        await route.fulfill({ json: response(1, null) });
-    });
+    await configureMockTelemetryHistory(page.request, { pages: telemetryPages(1) });
+    const requests = observeTelemetryHistoryRequests(page);
     await page.goto('/device-details/temp-desk');
     const section = page.getByRole('region', { name: 'Lista pomiarów', exact: true });
     await expect(section.getByTestId(`telemetry-item-${sample(1).recordId}`)).toBeVisible();
@@ -237,29 +234,24 @@ test('requires explicit refresh after cursor expiry and never automatically refe
     page,
 }) => {
     await prepare(page);
-    let requests = 0;
-    let expire = false;
-    await page.route('**/room/history/telemetry?*', async (route) => {
-        requests += 1;
-        const cursor = new URL(route.request().url()).searchParams.get('cursor');
-        await route.fulfill(
-            cursor && expire
-                ? { status: 400, json: { error: 'cursor_expired', message: 'Expired' } }
-                : { json: response(1000, cursor) },
-        );
-    });
+    await configureMockTelemetryHistory(page.request, { pages: telemetryPages(1000) });
+    const requests = observeTelemetryHistoryRequests(page);
     await page.goto('/device-details/temp-desk');
     const list = page.getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' });
     await expect(list.getByTestId(`telemetry-item-${sample(1000).recordId}`)).toBeVisible();
     // Wait for the independent chart baseline before expiring the static cursor.
     await expect(page.getByRole('application')).toHaveAccessibleDescription(/20\.0801/);
-    const initialRequests = requests;
-    expire = true;
+    const initialRequests = requests.length;
+    await configureMockTelemetryHistory(page.request, {
+        error: { error: 'cursor_expired', message: 'Expired' },
+    });
     await list.focus();
     await list.press('End');
     await expect(list.getByRole('alert')).toContainText('Sesja pomiarów wygasła');
-    expect(requests).toBe(initialRequests + 1);
+    expect(requests).toHaveLength(initialRequests + 1);
+    expect(requests.at(-1)?.searchParams.get('cursor')).toBe('measurements-1');
     await list.getByRole('button', { name: 'Odśwież wyniki', exact: true }).click();
     await expect(list.getByRole('alert')).toHaveCount(0);
-    expect(requests).toBe(initialRequests + 2);
+    expect(requests).toHaveLength(initialRequests + 2);
+    expect(requests.at(-1)?.searchParams.has('cursor')).toBe(false);
 });

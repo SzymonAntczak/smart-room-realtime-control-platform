@@ -1,12 +1,10 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
-import {
-    isRawTelemetryPage,
-    type RawTelemetrySampleProjection,
-} from '@smart-room/contracts/history';
+import type { RawTelemetrySampleProjection } from '@smart-room/contracts/history';
 import { createHistoryIdentityFixtures } from '@smart-room/contracts/history-fixtures';
 
 import {
     configureMockHistory,
+    configureMockTelemetryHistory,
     publishMockRoomUpdate,
     resetMockRoom,
     setMockRoomSnapshot,
@@ -63,8 +61,7 @@ async function openTelemetry(page: Page, samples: RawTelemetrySampleProjection[]
         items: [...samples].reverse(),
         nextCursor: null,
     };
-    expect(isRawTelemetryPage(baseline)).toBe(true);
-    await page.route('**/room/history/telemetry?*', (route) => route.fulfill({ json: baseline }));
+    await configureMockTelemetryHistory(page.request, { pages: [baseline] });
     await page.goto('/device-details/temp-desk');
     const list = page.getByRole('region', { name: 'Przewijana historia pomiarów urządzenia' });
     await expect(list.getByRole('listitem')).toHaveCount(samples.length);

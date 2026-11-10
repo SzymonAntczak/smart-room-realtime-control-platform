@@ -17,6 +17,8 @@ export const mockBffPaths = {
     health: '/health',
     history: '/room/history/user-history',
     historyControl: '/test/room/history',
+    telemetryHistory: '/room/history/telemetry',
+    telemetryHistoryControl: '/test/room/history/telemetry',
     realtime: '/room/realtime',
     commands: '/room/commands',
     reset: '/test/room/reset',
@@ -26,11 +28,14 @@ export const mockBffPaths = {
     snapshot: '/test/room/snapshot',
     scenarioRealtime: '/test/room/realtime',
     disconnectRealtime: '/test/room/realtime/disconnect',
+    resumeRealtime: '/test/room/realtime/resume',
 } as const;
 
 export const mockBffUrls = {
     health: `${browserTestUrls.mockBff}${mockBffPaths.health}`,
     historyControl: `${browserTestUrls.mockBff}${mockBffPaths.historyControl}`,
+    telemetryHistory: `${browserTestUrls.mockBff}${mockBffPaths.telemetryHistory}`,
+    telemetryHistoryControl: `${browserTestUrls.mockBff}${mockBffPaths.telemetryHistoryControl}`,
     realtime: `${browserTestUrls.mockBff}${mockBffPaths.realtime}`,
     commands: `${browserTestUrls.mockBff}${mockBffPaths.commands}`,
     reset: `${browserTestUrls.mockBff}${mockBffPaths.reset}`,
@@ -40,4 +45,5 @@ export const mockBffUrls = {
     snapshot: `${browserTestUrls.mockBff}${mockBffPaths.snapshot}`,
     scenarioRealtime: `${browserTestUrls.mockBff}${mockBffPaths.scenarioRealtime}`,
     disconnectRealtime: `${browserTestUrls.mockBff}${mockBffPaths.disconnectRealtime}`,
+    resumeRealtime: `${browserTestUrls.mockBff}${mockBffPaths.resumeRealtime}`,
 } as const;

@@ -16,15 +16,19 @@ import {
 import { MockCommandResponses } from './mock-command-responses';
 import { MockHistory } from './mock-history';
 import { MockRoomScenario } from './mock-room-scenario';
+import { MockTelemetryHistory } from './mock-telemetry-history';
 import { createHistoryPage } from './recent-feed-fixtures';
 
 const realtimeStreams = new Set<ServerResponse>();
+const waitingRealtimeStreams = new Set<ServerResponse>();
 const roomScenario = new MockRoomScenario();
 const history = new MockHistory();
+const telemetryHistory = new MockTelemetryHistory();
 const commandResponses = new MockCommandResponses();
 let nextCommandId = 1;
 let rejectNextCommand = false;
 let publishAcceptedBeforeResponse = false;
+let holdRealtimeReconnect = false;
 
 const server = createServer((request, response) => {
     void handleRequest(request, response);
@@ -64,6 +68,45 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
             if (!response.destroyed) {
                 respondJson(response, result.status, result.body);
             }
+        } catch (error) {
+            respondScenarioError(response, error);
+        }
+
+        return;
+    }
+
+    if (request.method === 'GET' && url.pathname === mockBffPaths.telemetryHistory) {
+        try {
+            const storage = roomScenario.snapshotMessage().payload.platform.storage;
+            const result = await telemetryHistory.read(url, {
+                historyGenerationId: storage.historyGenerationId ?? 'unknown',
+                throughSequence: storage.storedThroughSequence ?? 0,
+            });
+
+            if (!response.destroyed) {
+                respondJson(response, result.status, result.body);
+            }
+        } catch (error) {
+            respondJson(response, 400, {
+                error: 'invalid_request',
+                message:
+                    error instanceof Error ? error.message : 'Invalid telemetry history request',
+            });
+        }
+
+        return;
+    }
+
+    if (url.pathname === mockBffPaths.telemetryHistoryControl) {
+        try {
+            if (request.method === 'GET') {
+                respondJson(response, 200, { held: telemetryHistory.hasHeldResponse() });
+
+                return;
+            }
+
+            telemetryHistory.configure(parseJson(await readRequestBody(request)));
+            respondJson(response, 204, undefined);
         } catch (error) {
             respondScenarioError(response, error);
         }
@@ -120,7 +163,12 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     }
 
     if (request.method === 'GET' && request.url === mockBffPaths.realtime) {
-        openRealtimeStream(request, response);
+        if (holdRealtimeReconnect) {
+            waitingRealtimeStreams.add(response);
+            response.once('close', () => waitingRealtimeStreams.delete(response));
+        } else {
+            openRealtimeStream(response);
+        }
 
         return;
     }
@@ -128,6 +176,9 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (request.method === 'POST' && request.url === mockBffPaths.reset) {
         roomScenario.reset();
         history.reset();
+        telemetryHistory.reset();
+        holdRealtimeReconnect = false;
+        closeWaitingRealtimeStreams();
         commandResponses.reset();
         nextCommandId = 1;
         rejectNextCommand = false;
@@ -208,8 +259,22 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         return;
     }
 
-    if (request.method === 'POST' && request.url === mockBffPaths.disconnectRealtime) {
+    if (request.method === 'POST' && url.pathname === mockBffPaths.disconnectRealtime) {
+        holdRealtimeReconnect = url.searchParams.get('holdReconnect') === 'true';
         closeRealtimeStreams();
+        respondJson(response, 204, undefined);
+
+        return;
+    }
+
+    if (request.method === 'POST' && request.url === mockBffPaths.resumeRealtime) {
+        holdRealtimeReconnect = false;
+
+        for (const stream of waitingRealtimeStreams) {
+            openRealtimeStream(stream);
+        }
+
+        waitingRealtimeStreams.clear();
         respondJson(response, 204, undefined);
 
         return;
@@ -290,7 +355,7 @@ function setCorsHeaders(response: ServerResponse): void {
     response.setHeader('access-control-allow-headers', 'content-type');
 }
 
-function openRealtimeStream(request: IncomingMessage, response: ServerResponse): void {
+function openRealtimeStream(response: ServerResponse): void {
     response.writeHead(200, {
         'cache-control': 'no-cache',
         connection: 'keep-alive',
@@ -300,9 +365,8 @@ function openRealtimeStream(request: IncomingMessage, response: ServerResponse):
     realtimeStreams.add(response);
     response.write(serializeMockSseMessage(roomScenario.snapshotMessage()));
 
-    request.on('close', () => {
+    response.once('close', () => {
         realtimeStreams.delete(response);
-        response.end();
     });
 }
 
@@ -318,6 +382,14 @@ function closeRealtimeStreams(): void {
     for (const response of realtimeStreams) {
         response.end();
     }
+}
+
+function closeWaitingRealtimeStreams(): void {
+    for (const response of waitingRealtimeStreams) {
+        response.destroy();
+    }
+
+    waitingRealtimeStreams.clear();
 }
 
 function parseJson(body: string): unknown {
@@ -351,6 +423,8 @@ function respondJson(response: ServerResponse, statusCode: number, body: unknown
 
 function stopServer(): void {
     closeRealtimeStreams();
+    closeWaitingRealtimeStreams();
+    telemetryHistory.reset();
 
     server.close(() => {
         process.exit(0);
