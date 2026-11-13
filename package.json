@@ -7,6 +7,7 @@
     },
     "workspaces": [
         "backend",
+        "e2e",
         "frontend",
         "frontend-e2e",
         "shared",
@@ -26,14 +27,16 @@
         "test:contracts": "npm run test --workspace @smart-room/contracts",
         "test:codex-hooks": "node --test scripts/codex-verify.test.mjs",
         "test:simulator": "npm run test --workspace @smart-room/simulator",
-        "typecheck": "npm run typecheck --workspace @smart-room/contracts && npm run typecheck --workspace @smart-room/backend && npm run typecheck --workspace @smart-room/frontend && npm run typecheck --workspace @smart-room/simulator && npm run typecheck --workspace @smart-room/frontend-e2e",
+        "typecheck": "npm run typecheck --workspace @smart-room/contracts && npm run typecheck --workspace @smart-room/backend && npm run typecheck --workspace @smart-room/frontend && npm run typecheck --workspace @smart-room/simulator && npm run typecheck --workspace @smart-room/frontend-e2e && npm run typecheck --workspace @smart-room/e2e",
         "test:backend:unit": "npm run test:unit --workspace @smart-room/backend",
         "test:backend:integration": "npm run test:integration --workspace @smart-room/backend",
         "test:frontend-e2e": "npm run test --workspace @smart-room/frontend-e2e --",
         "test:frontend-e2e:compiler": "npm run test:compiler --workspace @smart-room/frontend-e2e --",
         "test:frontend-e2e:unit": "npm run test:unit --workspace @smart-room/frontend-e2e --",
         "typecheck:frontend-e2e": "npm run typecheck --workspace @smart-room/frontend-e2e --",
-        "install:frontend-e2e": "npm run install:browser --workspace @smart-room/frontend-e2e --"
+        "install:frontend-e2e": "npm run install:browser --workspace @smart-room/frontend-e2e --",
+        "test:e2e": "npm run test --workspace @smart-room/e2e --",
+        "install:e2e": "npm run install:browser --workspace @smart-room/e2e --"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

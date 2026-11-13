@@ -719,7 +719,7 @@ Each item has one difficulty rating only:
       Done when: assertions check the connection's PRAGMA values and observable
       defensive/extension restrictions, and fail if a required setting is removed.
 
-- [ ] Add simulator-only full-system smoke coverage under `e2e/`.
+- [x] Add simulator-only full-system smoke coverage under `e2e/`.
       Follow the [test-suite boundaries](../decisions/adr-test-suite-boundaries.md)
       with the real frontend, BFF and normal simulator runtime.
       Done when: a documented runnable command verifies live telemetry, confirmed

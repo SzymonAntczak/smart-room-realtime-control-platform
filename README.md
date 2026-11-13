@@ -65,3 +65,21 @@ npm run install:frontend-e2e
 
 When a browser test fails, Playwright retains its trace, screenshot and video
 artifacts in `test-results/frontend-integration`.
+
+### Full-system smoke with the simulator
+
+From the repository root with Node `>=24.15 <25` and ports `4312` and `5175` free:
+
+```bash
+npm ci
+npm run install:e2e
+npm run test:e2e
+```
+
+The suite starts the real BFF on port `4312` and the Vite frontend on port
+`5175`. The BFF starts the simulator and uses a fresh temporary SQLite
+database for each run. The runner stops both processes and removes the database
+at teardown. The browser checks live readings from both temperature sensors,
+confirmed LED control with retained history, and older history pages with live
+additions. On failure, Playwright keeps traces and screenshots in
+`test-results/full-system`.

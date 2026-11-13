@@ -10,6 +10,7 @@ import tseslint from 'typescript-eslint';
 const frontendSourceFiles = [
     'frontend/**/*.{ts,tsx}',
     'src/**/*.{ts,tsx}',
+    'e2e/tests/**/*.spec.ts',
     'frontend-e2e/tests/**/*.spec.ts',
     'frontend-e2e/tests/page-objects/**/*.ts',
     'tests/**/*.spec.ts',
@@ -20,9 +21,13 @@ const frontendHookFiles = ['frontend/src/**/use*.{ts,tsx}', 'src/**/use*.{ts,tsx
 const frontendTestSupportBlocklist = {
     '**/*.test-support.{ts,tsx}': '**/src/test/**/*.ts',
 };
-const browserIntegrationSpecFiles = ['frontend-e2e/tests/**/*.spec.ts', 'tests/**/*.spec.ts'];
+const browserIntegrationSpecFiles = [
+    'e2e/tests/**/*.spec.ts',
+    'frontend-e2e/tests/**/*.spec.ts',
+    'tests/**/*.spec.ts',
+];
 const mockBffSourceFiles = ['frontend-e2e/**/*.ts', 'tests/mock-bff/**/*.ts', '*.config.ts'];
-const nodeSourceFiles = ['backend/**/*.ts', 'simulator/**/*.ts'];
+const nodeSourceFiles = ['backend/**/*.ts', 'e2e/**/*.ts', 'simulator/**/*.ts'];
 const nodeScriptFiles = ['scripts/**/*.mjs'];
 const sharedSourceFiles = ['shared/**/*.ts'];
 const configFiles = ['*.config.js', 'frontend/*.config.js'];
@@ -30,9 +35,11 @@ const configFiles = ['*.config.js', 'frontend/*.config.js'];
 export default tseslint.config(
     {
         ignores: [
+            '**/.cache/**',
             '**/coverage/**',
             '**/dist/**',
             '**/node_modules/**',
+            '**/test-results/**',
             'frontend/src/vite-env.d.ts',
         ],
     },
