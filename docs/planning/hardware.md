@@ -7,6 +7,8 @@ complete.
 
 ## Buy Before Stage 6
 
+Start ESP32 integration after [Stage 5.5 LAN security acceptance](roadmap.md#stage-55---end-to-end-lan-security).
+
 - **ESP32 development board** with a USB data cable. Choose a commonly
   supported board with accessible GPIO and Wi-Fi; USB-C is convenient but not
   required.
@@ -23,7 +25,8 @@ complete.
 - **One MQTT-capable standalone relay/switch** that can expose relay state and
   accept on/off control through its local MQTT configuration. A Shelly device
   is one possible choice; select the exact model only after confirming local
-  MQTT support and the intended physical installation.
+  MQTT support, compatibility with the Stage 5.5 broker security requirements
+  and the intended physical installation.
 
 ## Not Required Initially
 

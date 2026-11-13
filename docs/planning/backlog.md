@@ -727,7 +727,10 @@ Each item has one difficulty rating only:
       through the UI. Mocked-BFF browser tests and native-source backend tests
       remain the owners of their detailed failure matrices.
 
-### Stage 6 - Physical LED Actuation
+### Stage 6 - ESP32 / ESPHome Source
+
+Physical LED actuation follows [Stage 5.5 LAN security acceptance](roadmap.md#stage-55---end-to-end-lan-security)
+and uses the ESP32 source's scoped MQTT access.
 
 - [ ] Map physical LED reports through the external-actuation adapter boundary.
       Implement physical LED actuation according to the external-actuation ADR

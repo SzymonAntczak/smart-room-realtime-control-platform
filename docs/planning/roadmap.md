@@ -51,10 +51,10 @@ checklist for temperature first. Before the first hardware integration, the
 project should add one narrow simulated LED command slice. This establishes the
 full bidirectional control loop—user intent, command dispatch, observed device
 report and confirmation—under repeatable simulator conditions. The real
-temperature sensor path is deferred until Stage 4 completes telemetry,
-diagnostics and the simulator demo after browser-level frontend integration
-tests. The simulated LED slice remains the reference implementation for later
-controllable-device hardware.
+temperature sensor path follows the simulator platform in Stage 4, the MQTT
+runtime in Stage 5 and LAN security verification in Stage 5.5. The simulated
+LED slice remains the reference implementation for later controllable-device
+hardware.
 
 This keeps the project from becoming either a broad dashboard with shallow
 behavior or a hardware demo that skips reliability. Each later device should
@@ -98,8 +98,8 @@ deployment posture with cloud operations, fleet management or full monitoring.
 | Stage 3   | Simulated LED command reference slice     | User intent, commands and LED confirmation are visible in the simulator                                   |
 | Stage 3.5 | Frontend integration test reference suite | Browser tests validate every currently supported device role against a mocked BFF                         |
 | Stage 4   | Simulator platform readiness              | Telemetry, diagnostics and a repeatable local demo make the simulator slice a complete platform reference |
-| Stage 4.5 | LAN security foundation                   | Secure LAN access and MQTT identities are established without burdening the loopback development path     |
-| Stage 5   | MQTT-backed simulator runtime             | Mosquitto becomes the normal local simulator transport boundary and establishes root-level E2E            |
+| Stage 5   | MQTT-backed simulator runtime             | The isolated local MQTT runtime uses scoped client access and is covered by root-level E2E                |
+| Stage 5.5 | End-to-end LAN security                   | Access to the BFF, realtime stream and MQTT broker is secured and verified before hardware integration    |
 | Stage 6   | ESP32 / ESPHome source                    | Environmental telemetry and on/off control use MQTT from minimal custom hardware                          |
 | Stage 7   | Standalone MQTT device source             | A second, native MQTT device validates independent adapter and physical-actuation behavior                |
 | Stage 8   | Dashboard source-parity gate              | All three MQTT runtime sources work concurrently with equivalent visibility and control guarantees        |
@@ -310,51 +310,19 @@ reference: its state, telemetry, diagnostics and command outcomes can be
 explained and verified end to end. Later MQTT and hardware stages must conform
 to this reference rather than redefining its user-visible semantics.
 
-## Stage 4.5 - LAN Security Foundation
-
-Stage 4.5 establishes the minimum security posture for a platform that remains
-local-first but is intentionally reachable from a trusted LAN. It is a boundary
-before the MQTT and hardware stages, while preserving explicit isolated test
-seams for deterministic domain and adapter tests.
-
-The goal is to protect the frontend-facing BFF, its realtime connection and
-the local MQTT broker without introducing cloud identity or Internet exposure.
-The durable access, transport and broker rules must be recorded in accepted
-decisions before implementation.
-
-Expected outcome:
-
-- the runtime has explicit `dev` and `lan` profiles: `dev` remains loopback-only
-  and keeps isolated deterministic tests free of LAN credentials or deployment
-  certificates; after Stage 5 its normal simulator runtime uses the local
-  broker;
-- the LAN profile uses HTTPS and WSS, requires local user authentication,
-  session-based access, CSRF protection for state-changing requests and
-  backend-enforced authorization for reads, diagnostics, commands and realtime
-  subscriptions;
-- development scenario controls remain an explicitly enabled development-only
-  surface and are unavailable in the LAN profile;
-- secrets and credentials are kept outside version control and are redacted
-  from frontend-visible errors and operational logs;
-- each MQTT adapter and device source has its own credentials and the broker
-  restricts publish and subscribe access to the minimum required topic scope;
-- automated tests and a local LAN acceptance run demonstrate rejected
-  unauthenticated or unauthorized access, rejected cross-device MQTT access,
-  and preservation of isolated fast domain and adapter tests.
-
-Stage 4.5 is complete when LAN access has an explicit, tested security boundary
-and isolated deterministic tests remain frictionless. Stage 5 must not
-introduce the MQTT-backed simulator runtime until this foundation and its
-relevant architectural decisions are complete.
-
 ## Stage 5 - MQTT-Backed Simulator Runtime
 
-Stage 5 makes MQTT the normal local simulator transport boundary. It builds on
-the LAN security foundation established in Stage 4.5. Native-source/transport doubles remain test seams for backend unit and
-integration suites, not an alternate simulator runtime.
+Stage 5 makes MQTT the normal simulator transport in the isolated local
+development runtime. Backend unit and integration suites can use native-source
+or transport doubles. Full-system E2E uses the real local broker.
 
 Expected outcome:
 
+- the BFF stays loopback-only, and the broker is reachable only from the
+  isolated local development and full-system E2E runtimes;
+- the broker requires separate credentials for the simulator and its backend
+  adapter, with topic ACLs granting each client only the publish and subscribe
+  access it needs;
 - the simulator device model publishes simulator-native MQTT messages through
   local Mosquitto and receives simulator-native MQTT commands through the same
   boundary,
@@ -369,8 +337,8 @@ Expected outcome:
 - development scenario controls invoke simulator behavior through a dev-only
   backend boundary, while every resulting observation returns through MQTT;
 - backend unit/integration tests use native-source or transport doubles for
-  deterministic failure cases; real broker security and infrastructure acceptance
-  retain their required evidence.
+  deterministic failure cases, and real-broker checks verify that the local
+  configuration rejects unauthenticated clients and access outside topic ACLs;
 - a root-level full-runtime end-to-end suite exercises the frontend, real BFF,
   local Mosquitto broker and MQTT simulator together without a mocked BFF or an
   alternate transport path. Its smoke scenarios cover live temperature updates,
@@ -378,20 +346,53 @@ Expected outcome:
   and recovery after broker loss. Detailed failure matrices remain in backend
   unit/integration and mocked-BFF frontend tests.
 
-Stage 5 is complete when the MQTT simulator provides the supported sensor and
-on/off behavior through the ordinary local runtime, transport-specific failure
-behavior remains explicit, and the first root-level end-to-end suite protects
-that runtime path.
+Stage 5 is complete when the isolated MQTT runtime provides the supported sensor
+and on/off behavior, broker access restrictions are verified, and the root-level
+end-to-end suite covers the normal runtime path and recovery from broker loss.
 
-## Stage 6 - ESP32 / ESPHome Source
+## Stage 5.5 - End-to-End LAN Security
 
-Stage 6 adds minimal custom hardware through MQTT: one environmental sensor
-for temperature and humidity, and one low-voltage on/off output.
+Stage 5.5 uses the working MQTT simulator runtime to secure the full control
+loop for access from a trusted LAN. It covers the Dashboard connection to the
+BFF, the realtime stream and the local MQTT broker. The deployment uses local
+identities and limits network exposure to the LAN. Record the durable access,
+transport and broker rules in accepted decisions before implementing them.
 
 Expected outcome:
 
-- ESP32/ESPHome publishes device-native telemetry and availability through
-  Mosquitto and receives `set.power` commands through MQTT,
+- the runtime has explicit `dev` and `lan` profiles. The `dev` profile keeps the
+  BFF loopback-only and the MQTT broker isolated locally. Deterministic domain
+  and adapter tests run without LAN credentials or deployment certificates;
+- the LAN profile uses HTTPS for HTTP requests and the
+  [SSE stream](../decisions/adr-server-sent-events-realtime-bff.md). The BFF
+  authenticates local users, enforces session-based authorization for reads,
+  diagnostics, commands and realtime subscriptions, and checks CSRF protection
+  on state-changing requests;
+- development scenario controls require explicit enablement in `dev` and are
+  unavailable in `lan`;
+- secrets and credentials are kept outside version control and are redacted
+  from frontend-visible errors and operational logs;
+- MQTT connections over the LAN use TLS. Each adapter and device source uses
+  its own credentials, and the broker grants only the publish and subscribe
+  access needed for its topics;
+- automated checks and a local LAN acceptance run verify an authorized
+  Dashboard command and its MQTT-backed confirmation. They also verify that
+  the BFF and realtime stream deny unauthenticated or unauthorized clients and
+  that the real broker rejects cross-device access using separate test identities.
+
+Stage 5.5 is complete when the secured LAN profile passes end-to-end acceptance
+with the MQTT simulator and the isolated development and test paths still work.
+Complete this stage before opening regular LAN access or starting Stage 6.
+
+## Stage 6 - ESP32 / ESPHome Source
+
+After Stage 5.5, Stage 6 adds an environmental sensor for temperature and
+humidity and a low-voltage on/off output through the secured MQTT runtime.
+
+Expected outcome:
+
+- ESP32/ESPHome uses its own MQTT credentials and topic permissions to publish
+  device-native telemetry and availability and receive `set.power` commands,
 - an ESPHome adapter maps those native messages to the existing platform event
   and command model without requiring its payloads to match simulator payloads,
 - UI commands remain pending until a matching ESP32 state report arrives,
@@ -412,6 +413,8 @@ the architecture does not depend on a particular vendor or product.
 
 Expected outcome:
 
+- the standalone device connects through the same secured broker with its own
+  credentials and topic permissions;
 - a standalone-device adapter maps its native MQTT topics, retained state and physical
   relay changes to platform facts and `set.power` commands,
 - a UI-initiated command and a physical switch change both update reported
