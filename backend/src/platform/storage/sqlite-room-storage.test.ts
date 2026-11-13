@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,7 +8,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createRoomProjector } from '../read-model/room-projection';
 
 import { migrateSqliteDatabase, roomStorageMigrations } from './sqlite-migrations';
-import { createSqliteRoomStorage, executeStorageTransaction } from './sqlite-room-storage';
+import {
+    createSqliteRoomStorage,
+    executeStorageTransaction,
+    openSqliteDatabase,
+} from './sqlite-room-storage';
 import { createSqliteRoomStorageLifecycle } from './sqlite-room-storage-lifecycle';
 import {
     classifySqliteError,
@@ -29,6 +33,31 @@ afterEach(() => {
 });
 
 describe('SQLite room storage', () => {
+    it('opens a SQLite connection with the required durability and safety settings', () => {
+        const databasePath = temporaryDatabasePath();
+        const database = openSqliteDatabase(databasePath);
+
+        try {
+            expect(database.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
+            expect(database.prepare('PRAGMA synchronous').get()?.synchronous).toBe(2); // FULL
+            expect(database.prepare('PRAGMA busy_timeout').get()?.timeout).toBe(0);
+            expect(database.prepare('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1);
+
+            database.exec('PRAGMA writable_schema = ON');
+            expect(database.prepare('PRAGMA writable_schema').get()?.writable_schema).toBe(0);
+
+            const missingExtensionPath = join(dirname(databasePath), 'missing-extension');
+            expect(() =>
+                database.prepare('SELECT load_extension(?)').get(missingExtensionPath),
+            ).toThrow('not authorized');
+            expect(() => database.enableLoadExtension(true)).toThrow(
+                expect.objectContaining({ code: 'ERR_INVALID_STATE' }),
+            );
+        } finally {
+            database.close();
+        }
+    });
+
     it('AC-6 migrates SQLite 7/checkpoint 4 without inventing evidence and round-trips new evidence in rows and checkpoint 5', () => {
         const databasePath = temporaryDatabasePath();
         const generation = 'evidence-migration-generation';

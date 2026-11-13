@@ -711,7 +711,7 @@ Each item has one difficulty rating only:
 
 #### Automated verification follow-ups
 
-- [ ] Protect production SQLite connection settings with a temporary-file test
+- [x] Protect production SQLite connection settings with a temporary-file test
       through `openSqliteDatabase`.
       The [storage ADR](../decisions/adr-storage-and-observability.md#storage-boundary-and-connection)
       requires WAL, FULL synchronous writes, zero busy timeout, foreign-key
